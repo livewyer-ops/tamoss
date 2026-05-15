@@ -281,6 +281,10 @@ This reapplies the Kind Helmfile target without recreating the cluster.
 Remote clusters can be targeted directly without assuming this repo owns the cluster
 CD system.
 
+For production operations on a generic remote cluster, including rollout,
+rollback, credentials, scaling, and smoke checks, see
+[production.md](./production.md).
+
 ### Additional prerequisites
 
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
@@ -458,5 +462,6 @@ For the Kubernetes deployment path, the main configuration lives in:
 
 - [usage.md](./usage.md): Using the UI and API
 - [troubleshooting.md](./troubleshooting.md): Common issues and fixes
+- [production.md](./production.md): Remote production operations
 - [CONTRIBUTING.md](../CONTRIBUTING.md): Developer setup
 - [configuration.md](./configuration.md): Full environment variable reference

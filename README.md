@@ -167,6 +167,7 @@ TAMS resources.
 | Guide                                            | Description                                      |
 | ------------------------------------------------ | ------------------------------------------------ |
 | [Deployment](docs/deployment.md)                 | Deploy and use TAMOSS on Kind or remote Kubernetes |
+| [Production](docs/production.md)                 | Operate TAMOSS on a generic remote Kubernetes cluster |
 | [Usage](docs/usage.md)                           | Use the web UI, API, and ingest helper           |
 | [Troubleshooting](docs/troubleshooting.md)       | Common issues and fixes                          |
 | [Configuration](docs/configuration.md)           | Runtime and Helm configuration reference         |
