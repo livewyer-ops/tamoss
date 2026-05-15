@@ -18,7 +18,7 @@ env:
   # Push images for trusted release/internal PR branches so deploy tests can
   # consume pr-* and sha-* tags. Forked public PRs remain build-only because
   # Docker Hub credentials must not be exposed to untrusted workflow code.
-  PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+  PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
 jobs:
   tamoss-api:
