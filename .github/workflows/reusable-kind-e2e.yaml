@@ -61,7 +61,7 @@ jobs:
 
       - name: Cache helmfile binary
         id: bincache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local/bin/helmfile
           key: ${{ runner.os }}-bin-helmfile${{ steps.aqua-versions.outputs.helmfile }}
