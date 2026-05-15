@@ -7,7 +7,7 @@ Do not report security vulnerabilities through public GitHub issues.
 Instead, please report them via one of the following methods:
 
 1. **Email**: Send details to <hello@livewyer.com>
-2. **Private Security Advisory**: Use GitHub's [private vulnerability reporting](https://github.com/livewyer-ops/tams/security/advisories/new)
+2. **Private Security Advisory**: Use GitHub's [private vulnerability reporting](https://github.com/livewyer-ops/tamoss/security/advisories/new)
 
 ### What to Include
 
@@ -123,4 +123,4 @@ controls in the storage path:
 
 For security concerns, contact: <hello@livewyer.com>
 
-For general questions, use the [GitHub Discussions](https://github.com/livewyer-ops/tams/discussions) page.
+For general questions, use the [GitHub Discussions](https://github.com/livewyer-ops/tamoss/discussions) page.

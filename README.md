@@ -133,8 +133,8 @@ builds pin their own runtimes where those environments need different packaging
 or base images. See [aqua.yml](aqua.yml) for the full list.
 
 ```bash
-git clone https://github.com/livewyer-ops/tams.git
-cd tams
+git clone https://github.com/livewyer-ops/tamoss.git
+cd tamoss
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
 ```
@@ -185,8 +185,8 @@ All contributors are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md
 
 ## Community
 
-- **Bug reports and feature requests**: [GitHub Issues](https://github.com/livewyer-ops/tams/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/livewyer-ops/tams/discussions)
+- **Bug reports and feature requests**: [GitHub Issues](https://github.com/livewyer-ops/tamoss/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/livewyer-ops/tamoss/discussions)
 - **Security vulnerabilities**: See [SECURITY.md](SECURITY.md) for responsible disclosure
 
 ## Related Projects

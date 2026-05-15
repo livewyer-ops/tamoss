@@ -11,8 +11,8 @@ yamlfmt, jq, gh).
 See [aqua.yml](aqua.yml) for the full list.
 
 ```bash
-git clone https://github.com/livewyer-ops/tams.git
-cd tams
+git clone https://github.com/livewyer-ops/tamoss.git
+cd tamoss
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
 ```
@@ -31,9 +31,9 @@ Also install `ffmpeg` and `uuidgen` if you use the ingest helper.
 
 ```bash
 # Fork on GitHub, then
-git clone https://github.com/<your-username>/tams.git
-cd tams
-git remote add upstream https://github.com/livewyer-ops/tams.git
+git clone https://github.com/<your-username>/tamoss.git
+cd tamoss
+git remote add upstream https://github.com/livewyer-ops/tamoss.git
 git checkout -b feat/your-feature-name   # or fix/your-bug-fix
 ```
 
@@ -184,7 +184,7 @@ Fixes #89
 
 ## Reporting bugs and suggesting features
 
-- **Bugs**: check [issues](https://github.com/livewyer-ops/tams/issues)
+- **Bugs**: check [issues](https://github.com/livewyer-ops/tamoss/issues)
   for duplicates, then open one with reproduction steps, expected vs.
   actual behaviour, and environment details.
 - **Features**: open an issue with the `enhancement` label; describe
@@ -193,8 +193,8 @@ Fixes #89
 
 ## Getting help
 
-- Bugs and feature requests: [GitHub Issues](https://github.com/livewyer-ops/tams/issues)
-- Questions: [GitHub Discussions](https://github.com/livewyer-ops/tams/discussions)
+- Bugs and feature requests: [GitHub Issues](https://github.com/livewyer-ops/tamoss/issues)
+- Questions: [GitHub Discussions](https://github.com/livewyer-ops/tamoss/discussions)
 - Security disclosure: [SECURITY.md](SECURITY.md)
 
 ## License
