@@ -3,7 +3,7 @@ FROM python:3.11.14-alpine3.22
 
 LABEL "org.opencontainers.image.authors"="LiveWyer"
 LABEL "org.opencontainers.image.description"="TAMOSS API server"
-LABEL "org.opencontainers.image.source"="https://github.com/livewyer-ops/tams"
+LABEL "org.opencontainers.image.source"="https://github.com/livewyer-ops/tamoss"
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /uvx /bin/
 
