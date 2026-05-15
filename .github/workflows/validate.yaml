@@ -1,0 +1,214 @@
+name: Validate
+
+on:
+  pull_request:
+  workflow_dispatch:
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read # access to check out code and install dependencies
+  actions: read
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.0
+        with:
+          version: v3.18.6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Resolve Helmfile version
+        id: aqua-versions
+        run: echo "helmfile=$(python3 .github/scripts/aqua-version.py helmfile/helmfile)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Helmfile
+        env:
+          HELMFILE_VERSION: ${{ steps.aqua-versions.outputs.helmfile }}
+        run: |
+          curl -fsSL -o helmfile.tar.gz "https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf helmfile.tar.gz helmfile
+          sudo install helmfile /usr/local/bin/helmfile
+          helmfile --version
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Validate deployment renders
+        run: task deploy:validate:direct
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Run Pre-commit
+        uses: j178/prek-action@v1
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run Ruff on full tree
+        run: task lint:ruff:lint
+
+      - name: Verify OpenAPI reproducibility
+        run: task openapi:check
+
+      - name: Generate BBC inventory report
+        run: task test:bbc:inventory
+
+      - name: Upload BBC inventory report
+        uses: actions/upload-artifact@v7
+        with:
+          name: bbc-inventory-report
+          path: reports/bbc_inventory_report.md
+          if-no-files-found: error
+
+  python-strict-mypy:
+    name: Python strict opt-in mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run strict opt-in mypy
+        run: task lint:mypy
+
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "25.3.0"
+          cache: npm
+          cache-dependency-path: src/app/frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: cd src/app/frontend && npm ci
+
+      - name: ESLint
+        run: cd src/app/frontend && npm run lint
+
+      - name: TypeScript type checking
+        run: cd src/app/frontend && npm run typecheck
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # SARIF upload needs Code Scanning and workflow-run metadata access.
+      security-events: write
+      actions: read
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Ensure reports dir exists
+        run: mkdir -p reports
+
+      - name: OSV-Scanner filesystem scan
+        id: osv-scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
+        with:
+          scan-args: |-
+            --recursive
+            --experimental-exclude=src/vendor/bbc-tams/examples
+            --format=sarif
+            --output-file=reports/osv-scanner.sarif
+            ./
+
+      - name: Upload OSV-Scanner SARIF to Code Scanning
+        if: always() && vars.ENABLE_CODE_SCANNING_UPLOAD == 'true' && steps.osv-scanner.conclusion != 'skipped'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: reports/osv-scanner.sarif
+          category: osv-scanner
+
+      - name: Archive OSV-Scanner SARIF as workflow artifact
+        if: always() && steps.osv-scanner.conclusion != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: osv-scanner-sarif
+          path: reports/osv-scanner.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Audit Python dependencies (pip-audit)
+        run: |
+          uv run --project src --with pip-audit pip-audit
+
+      - name: Audit frontend dependencies (npm audit)
+        run: |
+          cd src/app/frontend
+          npm audit --audit-level=high --omit=dev

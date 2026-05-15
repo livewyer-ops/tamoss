@@ -1,0 +1,29 @@
+# Kind cluster configuration
+# Ref. https://kind.sigs.k8s.io/docs/user/configuration
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: tams
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 8080
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 8443
+        hostPort: 443
+        protocol: TCP
+      - containerPort: 30432
+        hostPort: 55432
+        protocol: TCP
+      - containerPort: 32000
+        hostPort: 9000
+        protocol: TCP
+      - containerPort: 32001
+        hostPort: 9001
+        protocol: TCP

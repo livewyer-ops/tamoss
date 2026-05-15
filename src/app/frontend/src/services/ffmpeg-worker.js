@@ -1,0 +1,1 @@
+import "@ffmpeg/ffmpeg/worker";

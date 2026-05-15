@@ -1,0 +1,405 @@
+# Chart naming overrides.
+nameOverride: ""
+fullnameOverride: "tams"
+
+# Dynamically generated secrets.
+# When generate is true, the chart creates the Secret with random values
+# (preserved across helm upgrades). Set explicit values to override.
+secrets:
+  apiToken:
+    # Generate a "tams-api-token" Secret with TAMOSS_API_TOKEN.
+    # When enabled, the token is also injected into the API (as TAMOSS_API_TOKEN)
+    # and the UI deployment's server-side /api proxy.
+    generate: true
+    # Explicit value (if empty, a random token is generated).
+    token: ""
+
+auth:
+  # Enforce API authentication in runtime. Health probes remain public.
+  required: true
+  # Accept trusted reverse-proxy authentication headers such as Remote-User
+  # and X-authentik-username. Only enable behind a trusted ingress.
+  trustForwardAuthHeaders: false
+  oauth2:
+    # Validate JWT bearer tokens from an OAuth2/OIDC issuer. Static
+    # TAMOSS_API_TOKEN and Basic auth remain available unless disabled by the
+    # operator at the ingress/policy layer.
+    enabled: false
+    issuer: ""
+    jwksUri: ""
+    # Optional. Leave empty when accepted bearer tokens do not carry an
+    # audience claim that should be enforced by TAMOSS.
+    audience: ""
+    requiredScopes: []
+    algorithms:
+      - RS256
+
+# Backend connection settings loaded from Kubernetes Secrets.
+backends:
+  db:
+    host: postgresql
+    port: "5432"
+    database: tams
+    auth:
+      existingSecret: tams-postgresql-auth
+      secretKeys:
+        username: username
+        password: password
+  s3:
+    endpoint:
+      default:
+        url: http://rustfs-svc:9000
+      public:
+        url: ""
+    auth:
+      existingSecret: tams-rustfs-auth
+      secretKeys:
+        accessKey: RUSTFS_ACCESS_KEY
+        secretKey: RUSTFS_SECRET_KEY
+    region: us-east-1
+    bucket: tamoss
+
+api:
+  enabled: true
+  image:
+    repository: livewyer/tamoss-api
+    # pullPolicy: Always
+    # tag: latest
+  replicaCount: 1
+
+  # env: {}
+
+  # envFrom: {}
+
+  # Additional pod metadata.
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+
+  # Default resource bounds are conservative, suitable for Kind. Production
+  # targets (deploy/targets/remote/values.yaml) are expected to override.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  # Graceful shutdown: preStop sleep delays SIGTERM so the Service endpoint
+  # can be removed before uvicorn starts rejecting requests. Set
+  # preStopSleepSeconds to 0 to disable.
+  terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 10
+
+  # Health probes exposed by the API service.
+  livenessProbe:
+    failureThreshold: 6
+    timeoutSeconds: 5
+    httpGet:
+      path: /healthz
+      port: http
+  readinessProbe:
+    failureThreshold: 3
+    timeoutSeconds: 5
+    httpGet:
+      path: /readyz
+      port: http
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+    timeoutSeconds: 5
+    httpGet:
+      path: /healthz
+      port: http
+
+  pdb:
+    enabled: false
+    # Minimum number/percentage of pods that should remain scheduled
+    minAvailable: ""
+    # Maximum number/percentage of pods that may be made unavailable
+    maxUnavailable: 1
+
+  # HorizontalPodAutoscaler settings.
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80
+
+  # Additional Deployment volumes.
+  volumes: []
+
+  # Additional Deployment volume mounts.
+  volumeMounts: []
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+worker:
+  enabled: false
+  replicaCount: 1
+  env: {}
+  envFrom: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+  # Worker handles flow-delete requests and webhook delivery. Conservative
+  # defaults for Kind; production targets override.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  pdb:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: 1
+  # Allow in-flight delete and webhook work to finish on pod shutdown.
+  terminationGracePeriodSeconds: 60
+  volumeMounts: []
+  volumes: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ui:
+  enabled: true
+  image:
+    repository: livewyer/tamoss-ui
+  # pullPolicy: Always
+  # tag: latest
+
+  env:
+    # TAMOSS_API_URL: /api
+
+  # envFrom: {}
+
+  ports:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+
+  # UI serves pre-built static assets; small footprint is fine.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Graceful shutdown: short drain for static-asset requests in flight.
+  terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 5
+
+  # Health probes exposed by the UI service.
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+    httpGet:
+      path: /healthz
+      port: http
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    runAsGroup: 101
+    runAsNonRoot: true
+    runAsUser: 101
+
+  # Additional Deployment volume mounts.
+  volumeMounts: []
+
+  replicaCount: 1
+
+  # Additional pod metadata.
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  pdb:
+    enabled: false
+    # Minimum number/percentage of pods that should remain scheduled
+    minAvailable: ""
+    # Maximum number/percentage of pods that may be made unavailable
+    maxUnavailable: 1
+
+  # HorizontalPodAutoscaler settings.
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80
+
+  # Additional Deployment volumes.
+  volumes: []
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Optional image pull secrets.
+imagePullSecrets: []
+
+# ServiceAccount used by the API, worker, and UI deployments.
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  # If empty and create is true, the chart fullname is used.
+  name: ""
+
+# Optional Kubernetes NetworkPolicies. Disabled by default because ingress
+# controller namespace labels and database/storage destinations vary between
+# clusters. If enabled, API/UI ingress rules must be supplied explicitly;
+# worker ingress may stay empty because workers do not expose inbound traffic.
+# Override rules in production to enforce the ingress-only API stance documented
+# in SECURITY.md.
+networkPolicy:
+  enabled: false
+  api:
+    ingress: []
+    egress:
+      - {}
+  ui:
+    ingress: []
+    egress:
+      - {}
+  worker:
+    ingress: []
+    egress:
+      - {}
+
+# ClusterIP Services for API and UI.
+service:
+  enabled: true
+  type: ClusterIP
+  api:
+    ports:
+      - port: 8000
+        targetPort: http
+        protocol: TCP
+        name: http
+  ui:
+    ports:
+      - port: 3000
+        targetPort: http
+        protocol: TCP
+        name: http
+
+# Optional Kubernetes Ingress resources.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  tls: []
+  api:
+    host: api.tamoss.example.com
+    paths:
+      - path: /
+        pathType: Prefix
+  ui:
+    web:
+      host: app.tamoss.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+        - path: /api/
+          pathType: Prefix
+
+# Optional Gateway API HTTPRoutes. Requires Gateway API resources and a
+# compatible controller in the cluster.
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRefs:
+    - name: gateway
+      sectionName: http
+      # namespace: default
+  api:
+    hostnames:
+      - api.tamoss.example.com
+    # Baseline filters always applied to every rule regardless of overrides.
+    defaultFilters: []
+    # Additional filters merged on top of defaultFilters (override files set this key).
+    filters: []
+    # List of routing rules for API.
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+        backendRefs:
+          - name: tams-api
+            port: 8000
+            weight: 1
+  ui:
+    hostnames:
+      - app.tamoss.example.com
+    # Baseline filters always applied to every rule regardless of overrides.
+    defaultFilters: []
+    # Additional filters merged on top of defaultFilters (override files set this key).
+    filters: []
+    # List of routing rules for web UI.
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /api
+        backendRefs:
+          - name: tams-ui
+            port: 3000
+            weight: 1
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+        backendRefs:
+          - name: tams-ui
+            port: 3000
+            weight: 1
+
+# Extra objects to deploy (value evaluated as a template)
+extraObjects: []

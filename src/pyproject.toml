@@ -1,0 +1,132 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tamoss"
+version = "1.0.0"
+description = "TAMOSS API implementation for the BBC TAMS API"
+requires-python = ">=3.11,<3.12"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = ["OpenAPI", "Time Addressable Media Open Source Store", "TAMOSS", "BBC TAMS API"]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "boto3>=1.41.3",
+    "mediatimestamp>=5.2.0",
+    "psycopg[binary,pool]>=3.1.0",
+    "requests>=2.33.0",
+    "structlog>=24.1.0",
+    "pyjwt[crypto]>=2.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=3.5.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "httpx>=0.24.0",
+    "polyfactory>=2.14.0",
+    "faker>=20.0.0",
+    "ruff==0.15.5",
+    "bandit[toml]>=1.7.5",
+    "pyyaml>=6.0",
+    "mypy>=1.13.0",
+    "types-requests",
+    "types-PyYAML",
+    "playwright>=1.59.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "app"}
+
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["tamoss*"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+
+[tool.ruff]
+exclude = [
+    ".venv",
+    ".pre-commit-hooks",
+    "scripts",
+    "tests",
+]
+
+[tool.mypy]
+# Base mypy settings for the hand-authored TAMOSS runtime.
+python_version = "3.11"
+ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true
+warn_unused_configs = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_return_any = false
+files = ["app/tamoss"]
+
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    ".venv",
+    "venv",
+]
+skips = [
+    "B101",  # Allow assert statements (common in tests)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+norecursedirs = [".git", ".venv", "venv", "build", "dist"]
+markers = [
+    "bbc: BBC TAMS v8.0 contract or semantic obligation",
+    "e2e: Deployed BBC-facing black-box checks",
+    "needs_db: Requires live PostgreSQL endpoint",
+    "needs_s3: Requires real S3/RustFS endpoint",
+    "slow: Takes >10 seconds to complete",
+    "smoke: Fast high-confidence subset for pre-commit",
+    "regression: Implementation-specific fixture-sensitive tests",
+    "worker: Asynchronous worker processing checks",
+]
+filterwarnings = [
+    "ignore:Unverified HTTPS request.*:urllib3.exceptions.InsecureRequestWarning",
+]
+
+[tool.coverage.run]
+# --cov=src/app/tamoss is passed explicitly from the task to avoid CWD-relative
+# ambiguity between `uv run --project src` and pytest's rootdir.
+omit = [
+    "*/tamoss/__main__.py",
+]
+parallel = false
+branch = false
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.xml]
+output = "reports/coverage.xml"
+
+[tool.coverage.html]
+directory = "reports/coverage-html"
+show_contexts = false

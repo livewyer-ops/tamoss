@@ -1,0 +1,47 @@
+---
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+#
+# Pinned development tools required to build, test, and deploy TAMOSS from
+# a developer workstation. Install aqua (https://aquaproj.github.io/docs/install)
+# and then run `aqua install` from the repo root.
+#
+# Each entry below lists the repo directive, file, or task step that uses the
+# local pin. CI workflows and container builds may pin their own runtimes where
+# those environments need different packaging or base images.
+#
+registries:
+    - type: standard
+      ref: v4.454.0
+
+packages:
+    # Core dev tools
+    - name: go-task/task@v3.46.4 # Taskfile.yaml / .tasks/*.yaml
+    - name: astral-sh/uv@0.9.25 # src/pyproject.toml, uv.lock, every `task test:*`
+    - name: cli/cli@v2.72.0 # gh CLI for PR/issue management from dev machines
+
+    # Kubernetes / deploy tooling
+    - name: kubernetes-sigs/kind@v0.31.0 # .tasks/kind.yaml
+    - name: kubernetes/kubectl@v1.35.0 # .tasks/kind.yaml (`kubectl wait pod ...`)
+    - name: helm/helm@v3.18.6 # .tasks/deploy.yaml, .tasks/kind.yaml
+    - name: helmfile/helmfile@v1.1.2 # .tasks/deploy.yaml
+    - name: grafana/k6@v1.2.3 # tests/k6/* via .tasks/test.yaml
+
+    # Cloud & storage
+    - name: aws/aws-cli@2.32.34 # .tasks/test.yaml k6:seed (S3 bucket seeding via rustfs)
+    - name: google/osv-scanner@v2.3.5 # .tasks/security.yaml security:audit:osv
+
+    # Languages & runtimes
+    - name: nodejs/node@v25.3.0 # frontend local npm scripts
+    # uv manages the Python 3.11 toolchain used by CI and the API container.
+
+    # Linting / formatting / data
+    - name: google/yamlfmt@v0.21.0 # .tasks/lint.yaml (lint:yamlfmt)
+    - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
+    # nightly-slo, and src/scripts/
+
+# Notes: these OS/system tools are still required outside aqua:
+# - Docker or Podman (and docker compose) — container build + compose stack
+# - curl, openssl, git                    — setup and local scripts
+# - ffmpeg                                — ingest helper and k6 media seeding
+# - uuidgen (util-linux)                  — k6 media seeding helper

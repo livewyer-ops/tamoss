@@ -1,0 +1,115 @@
+TAMOSS has been deployed to your cluster.
+
+{{- if .Values.httpRoute.enabled }}
+
+Your application is accessible via Gateway API HTTPRoute:
+
+API Service:
+{{- range .Values.httpRoute.api.hostnames }}
+  - https://{{ . }}
+{{- end }}
+
+{{- if .Values.ui.enabled }}
+UI Service:
+{{- range .Values.httpRoute.ui.hostnames }}
+  - https://{{ . }}
+{{- end }}
+{{- end }}
+
+NOTE: Your HTTPRoute depends on the Gateway configuration.
+Check your gateway with:
+  kubectl get --namespace {{ (first .Values.httpRoute.parentRefs).namespace | default .Release.Namespace }} gateway/{{ (first .Values.httpRoute.parentRefs).name }} -o yaml
+
+{{- else if .Values.ingress.enabled }}
+
+Your application is accessible via Ingress:
+
+API Service:
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.api.host }}
+
+{{- if .Values.ui.enabled }}
+UI Service:
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.ui.web.host }}
+{{- end }}
+
+{{- else if contains "NodePort" .Values.service.type }}
+
+Get the application URLs by running these commands:
+
+API Service:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "tams.fullname" . }}-api)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+
+{{- if .Values.ui.enabled }}
+UI Service:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "tams.fullname" . }}-ui)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- end }}
+
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+      You can watch the status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "tams.fullname" . }}-api'
+
+API Service:
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "tams.fullname" . }}-api --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ (index .Values.service.api.ports 0).port }}
+
+{{- if .Values.ui.enabled }}
+UI Service:
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "tams.fullname" . }}-ui --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ (index .Values.service.ui.ports 0).port }}
+{{- end }}
+
+{{- else if contains "ClusterIP" .Values.service.type }}
+
+To access your application, run these commands:
+
+API Service:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "tams.fullname" . }}-api 8000:{{ (index .Values.service.api.ports 0).port }}
+
+  Then visit the API docs: http://127.0.0.1:8000/docs
+  Or check liveness without credentials: curl -fsS http://127.0.0.1:8000/healthz
+
+{{- if .Values.ui.enabled }}
+
+UI Service:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "tams.fullname" . }}-ui 3000:{{ (index .Values.service.ui.ports 0).port }}
+
+  Then visit: http://127.0.0.1:3000
+{{- end }}
+
+{{- end }}
+
+---
+
+{{- if .Values.auth.required }}
+API authentication is enabled.
+{{- if .Values.secrets.apiToken.generate }}
+Retrieve the generated API token with:
+  export TAMOSS_TOKEN=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ include "tams.fullname" . }}-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}' | base64 --decode)
+
+Use it for direct API calls:
+  curl -H "Authorization: Bearer $TAMOSS_TOKEN" http://127.0.0.1:8000/service
+{{- else }}
+Use the bearer token or ingress-auth policy configured for this installation.
+{{- end }}
+
+{{- end }}
+
+To view the status of your deployment:
+  kubectl get --namespace {{ .Release.Namespace }} deployments -l "app.kubernetes.io/instance={{ .Release.Name }}"
+
+To view your pods:
+  kubectl get --namespace {{ .Release.Namespace }} pods -l "app.kubernetes.io/instance={{ .Release.Name }}"
+
+To view logs:
+  # API logs
+  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/component=api" --tail=100 -f
+
+{{- if .Values.ui.enabled }}
+  # UI logs
+  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/component=ui" --tail=100 -f
+{{- end }}

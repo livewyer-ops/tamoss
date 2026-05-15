@@ -1,0 +1,20 @@
+TAMOSS (Time Addressable Media Open Source Store)
+Copyright 2026 Livewyer Ltd
+
+This product includes or is derived from the following third-party software:
+
+------------------------------------------------------------------------
+BBC Time-addressable Media Store API Specification
+https://github.com/bbc/tams
+------------------------------------------------------------------------
+
+Copyright BBC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+This product implements the BBC TAMS API specification and includes it
+as a git submodule under src/vendor/bbc-tams/.

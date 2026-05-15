@@ -1,0 +1,1 @@
+"""Postgres adapter integration tests."""

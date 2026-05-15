@@ -1,0 +1,133 @@
+# TAMOSS Lite profile.
+#
+# This is the smallest operable TAMOSS deployment profile:
+# API + PostgreSQL + S3-compatible object storage. It keeps the chart
+# dependency graph intact but disables UI, background workers, ingress auth, and
+# Gateway-specific resources.
+#
+# These backend hostnames assume the release name is "tams":
+#
+#   helm install tams ./deploy/charts/tams-stack \
+#     --namespace tams \
+#     --create-namespace \
+#     -f ./deploy/charts/tams-stack/values-lite.yaml \
+#     --set-file platform.dbInit.schemaSql=db/schema.sql \
+#     --set-file platform.dbInit.bootstrapSql=db/bootstrap.sql \
+#
+# Override tams.backends.* if you use a different release name.
+# This file only carries profile overrides; inherited defaults such as
+# credentials and stack-level network policy live in values.yaml.
+
+platform:
+  enabled: true
+  namespaces:
+    app: tams
+    auth: tams
+  dbInit:
+    enabled: true
+    loadFixtures: false
+    name: tams-db-init
+    namespace: tams
+  authentikConfig:
+    enabled: false
+  clusterIssuer:
+    create: false
+  gatewayClass:
+    create: false
+  gateway:
+    create: false
+  middlewares:
+    authentik:
+      create: false
+    cors:
+      create: false
+
+postgresql:
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        database: tams
+        existingSecret: tams-postgresql-auth
+        secretKeys:
+          userPasswordKey: password
+  primary:
+    extraEnvVars:
+      - name: POSTGRESQL_INIT_MAX_TIMEOUT
+        value: "300"
+    initdb:
+      scriptsConfigMap: tams-db-init
+
+rustfs:
+  enabled: true
+  replicaCount: 1
+  secret:
+    existingSecret: tams-rustfs-auth
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  config:
+    rustfs:
+      log_level: warn
+  extraEnv:
+    # Standalone mode is one pod/one PVC; disable parity that requires more drives.
+    - name: RUSTFS_STORAGE_CLASS_STANDARD
+      value: "EC:0"
+    - name: RUSTFS_ERASURE_SET_DRIVE_COUNT
+      value: "1"
+  ingress:
+    enabled: false
+  gatewayApi:
+    enabled: false
+
+tams:
+  enabled: true
+  secrets:
+    apiToken:
+      generate: true
+  auth:
+    required: true
+    trustForwardAuthHeaders: false
+  api:
+    enabled: true
+    replicaCount: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+    env: {}
+  worker:
+    enabled: false
+  ui:
+    enabled: false
+  backends:
+    db:
+      host: tams-postgresql
+      port: "5432"
+      database: tams
+      auth:
+        existingSecret: tams-postgresql-auth
+        secretKeys:
+          username: username
+          password: password
+    s3:
+      endpoint:
+        default:
+          url: http://tams-rustfs-svc:9000
+        public:
+          url: ""
+      auth:
+        existingSecret: tams-rustfs-auth
+        secretKeys:
+          accessKey: RUSTFS_ACCESS_KEY
+          secretKey: RUSTFS_SECRET_KEY
+      region: us-east-1
+      bucket: tamoss
+  ingress:
+    enabled: false
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false

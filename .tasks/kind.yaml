@@ -1,0 +1,131 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  KIND_CONFIG: "deploy/kind.yaml"
+
+tasks:
+  create:
+    silent: true
+    preconditions:
+      - sh: command -v kind
+        msg: "kind binary not found"
+    requires:
+      vars: [KIND_CONFIG, PROJECT_NAME, KUBECONFIG]
+    cmds:
+      - task: :docker:compose:stop
+      - |
+        . .tasks/lib/progress.sh
+        task_step "ensure Kind cluster" \
+          bash -c '
+            set -euo pipefail
+            if kind get clusters | grep -Fxq "{{.PROJECT_NAME}}"; then
+              kind export kubeconfig --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}"
+              exit 0
+            fi
+            kind create cluster --config "{{.KIND_CONFIG}}" --kubeconfig "{{.KUBECONFIG}}"
+          '
+      - task: image
+
+  recreate:
+    silent: true
+    cmds:
+      - task: delete
+        vars:
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: create
+        vars:
+          KIND_CONFIG: "{{.KIND_CONFIG}}"
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
+  delete:
+    silent: true
+    preconditions:
+      - sh: command -v kind
+        msg: "kind binary not found"
+    requires:
+      vars: [PROJECT_NAME, KUBECONFIG]
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "delete Kind cluster" \
+          bash -c 'kind delete cluster --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}" || true'
+
+  image:
+    internal: true
+    silent: true
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+    cmds:
+      - task: image:build
+      - task: image:load
+
+  image:build:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "build TAMOSS API image" \
+          docker build -f src/app/tamoss/Dockerfile -t "{{.API_IMAGE}}" .
+      - |
+        . .tasks/lib/progress.sh
+        task_step "build TAMOSS UI image" \
+          docker build -t "{{.UI_IMAGE}}" src/app/frontend
+
+  image:load:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "load TAMOSS API image into Kind" \
+          kind load docker-image "{{.API_IMAGE}}" --name {{.PROJECT_NAME}}
+      - |
+        . .tasks/lib/progress.sh
+        task_step "load TAMOSS UI image into Kind" \
+          kind load docker-image "{{.UI_IMAGE}}" --name {{.PROJECT_NAME}}
+
+  kubeconfig:
+    internal: true
+    silent: true
+    requires:
+      vars: [PROJECT_NAME, KUBECONFIG]
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "export Kind kubeconfig" \
+          kind export kubeconfig --name {{.PROJECT_NAME}} --kubeconfig {{.KUBECONFIG}}
+
+  e2e:fresh:
+    silent: true
+    cmds:
+      - rm -f {{.KUBECONFIG}}
+      - |
+        . .tasks/lib/progress.sh
+        task_step "delete existing Kind cluster" \
+          bash -c 'kind delete cluster --name "{{.PROJECT_NAME}}" || true'
+      - task: create
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: kubeconfig
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :deploy:kind
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :test:deployed
+        vars:
+          DEPLOY_ENV: kind
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :up:summary
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
+  tests:e2e:
+    silent: true
+    cmds:
+      - task: e2e:fresh

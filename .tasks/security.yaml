@@ -1,0 +1,36 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  audit:
+    desc: Run local security audits (OSV, Python, and frontend dependencies)
+    cmds:
+      - task: audit:osv
+      - task: audit:python
+      - task: audit:frontend
+
+  audit:osv:
+    preconditions:
+      - sh: command -v osv-scanner
+        msg: "osv-scanner is required; run aqua install"
+    cmds:
+      - mkdir -p reports
+      - |
+        osv-scanner \
+          --recursive \
+          --experimental-exclude=src/vendor/bbc-tams/examples \
+          --format=sarif \
+          --output-file=reports/osv-scanner.sarif \
+          ./
+
+  audit:python:
+    cmds:
+      - uv run --project src --with pip-audit pip-audit
+
+  audit:frontend:
+    dir: src/app/frontend
+    preconditions:
+      - sh: command -v npm
+        msg: "npm not found"
+    cmds:
+      - npm audit --audit-level=high --omit=dev

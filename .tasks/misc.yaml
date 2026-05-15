@@ -1,0 +1,9 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  ingest:
+    requires:
+      vars: [VIDEO]
+    cmds:
+      - bash src/scripts/ingest_video.sh "{{.VIDEO}}" '{{default "" .LABEL}}' '{{default "" .DESCRIPTION}}' '{{default "3" .DURATION}}'

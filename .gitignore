@@ -1,0 +1,73 @@
+# Local secrets and environment overlays.
+.env
+.env.*
+!.env.example
+!**/.env.example
+.envrc
+.local/
+garden.yaml
+tests/targets/remote.env
+*.kubeconfig
+.dockerconfigjson
+
+# Generated local reports.
+reports/**
+
+# Helm, kustomize, and deployment tool outputs.
+deploy/charts/**/charts/
+*.helmwave
+helmwave.yml
+**/kustomize/**/.*
+
+# Python caches, virtualenvs, and package/build output.
+__pycache__/
+*.py[cod]
+*$py.class
+.coverage
+.coverage.*
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+.nox/
+.venv/
+venv/
+env/
+.uv-cache/
+build/
+dist/
+htmlcov/
+*.egg-info/
+.cache/
+
+# Node and frontend build output.
+node_modules/
+coverage/
+*.tsbuildinfo
+
+# Local tool state.
+.claude/
+.codex
+.tmp/
+tmp/
+tests/fixtures/media/generated/
+
+# Editor, OS, and merge-tool noise.
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.orig
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/

@@ -1,0 +1,65 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  mypy:
+    aliases: [strict-mypy]
+    silent: true
+    preconditions:
+      - sh: command -v uv
+    msg: "uv binary not found"
+    dir: src
+    cmds:
+      - uv run mypy
+      - >-
+        uv run mypy --strict
+        app/tamoss/api/dependencies.py
+        app/tamoss/api/query_params.py
+        app/tamoss/api/routes/delete_requests.py
+        app/tamoss/api/routes/health.py
+        app/tamoss/api/routes/service.py
+        app/tamoss/api/routes/storage.py
+        app/tamoss/api/routes/webhooks.py
+        app/tamoss/bootstrap.py
+        app/tamoss/domain/pagination.py
+        app/tamoss/domain/tags.py
+        app/tamoss/errors.py
+
+  ruff:fix:
+    silent: true
+    preconditions:
+      - sh: command -v uv
+        msg: "uv binary not found"
+    cmds:
+      - uv run --project src ruff check --config src/pyproject.toml --select I --fix --exclude src/vendor/ src tests
+      - uv run --project src ruff format --config src/pyproject.toml --exclude src/vendor/ src tests
+
+  ruff:lint:
+    silent: true
+    preconditions:
+      - sh: command -v uv
+        msg: "uv binary not found"
+    cmds:
+      - uv run --project src ruff check --config src/pyproject.toml --select I --exclude src/vendor/ src tests
+      - uv run --project src ruff format --config src/pyproject.toml --check --exclude src/vendor/ src tests
+
+  eslint:
+    silent: true
+    preconditions:
+      - sh: command -v npm
+        msg: "npm not found"
+    dir: src/app/frontend
+    cmds:
+      - test -d node_modules || npm ci
+      - npm run format:check
+      - npm run typecheck
+      - npm run lint
+
+  yamlfmt:
+    interactive: true
+    silent: true
+    preconditions:
+      - sh: command -v uv
+        msg: "uv binary not found"
+    cmds:
+      - uv run --project src pre-commit run check-yaml --all-files

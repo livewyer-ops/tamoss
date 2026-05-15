@@ -1,0 +1,16 @@
+{{- $values := (include "tams-platform.values" . | fromYaml) -}}
+{{- if and $values.gateway.create $values.gateway.tlsCertificate.create $values.gateway.listeners.websecure.hostname $values.gateway.listeners.websecure.tlsSecretName $values.clusterIssuer.name }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $values.gateway.listeners.websecure.tlsSecretName }}
+  namespace: {{ $values.gateway.namespace }}
+spec:
+  secretName: {{ $values.gateway.listeners.websecure.tlsSecretName }}
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: {{ $values.clusterIssuer.name }}
+  dnsNames:
+    - {{ $values.gateway.listeners.websecure.hostname | quote }}
+{{- end }}

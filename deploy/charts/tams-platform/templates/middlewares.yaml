@@ -1,0 +1,45 @@
+{{- $values := (include "tams-platform.values" . | fromYaml) -}}
+{{- if $values.middlewares.authentik.create }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $values.middlewares.authentik.name }}
+  namespace: {{ $values.middlewares.authentik.namespace }}
+spec:
+  forwardAuth:
+    address: {{ $values.middlewares.authentik.address | quote }}
+    trustForwardHeader: true
+{{- with $values.middlewares.authentik.maxResponseBodySize }}
+    maxResponseBodySize: {{ . }}
+{{- end }}
+    authResponseHeaders:
+{{ toYaml $values.middlewares.authentik.authResponseHeaders | indent 6 }}
+{{- end }}
+{{- if $values.middlewares.cors.create }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $values.middlewares.cors.name }}
+  namespace: {{ $values.middlewares.cors.namespace }}
+spec:
+  headers:
+    accessControlAllowOriginList:
+{{ toYaml $values.middlewares.cors.accessControlAllowOriginList | indent 6 }}
+{{- with $values.middlewares.cors.accessControlAllowMethods }}
+    accessControlAllowMethods:
+{{ toYaml . | indent 6 }}
+{{- end }}
+{{- with $values.middlewares.cors.accessControlAllowHeaders }}
+    accessControlAllowHeaders:
+{{ toYaml . | indent 6 }}
+{{- end }}
+{{- with $values.middlewares.cors.accessControlExposeHeaders }}
+    accessControlExposeHeaders:
+{{ toYaml . | indent 6 }}
+{{- end }}
+{{- with $values.middlewares.cors.accessControlMaxAge }}
+    accessControlMaxAge: {{ . }}
+{{- end }}
+    addVaryHeader: true
+{{- end }}

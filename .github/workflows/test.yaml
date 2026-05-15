@@ -1,0 +1,216 @@
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bbc-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install the project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run BBC OpenAPI contract tests
+        run: task test:contract:bbc
+
+      - name: Upload BBC contract reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bbc-contract-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: BBC contract summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-*.xml
+
+  bbc-semantics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install the project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run BBC semantic workflow tests
+        run: task test:semantics:bbc
+
+      - name: Upload BBC semantic reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bbc-semantics-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: BBC semantic summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-*.xml
+
+  workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install the project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run worker tests
+        run: task test:workers
+
+      - name: Upload worker reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: worker-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Worker test summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-*.xml
+
+  adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install the project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Start adapter dependencies
+        run: task deps
+
+      - name: Run adapter tests
+        run: task test:adapters
+
+      - name: Stop adapter dependencies
+        if: always()
+        run: COMPOSE_FILE=deploy/compose/docker-compose.yaml docker compose down --volumes
+
+      - name: Upload adapter reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: adapter-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Adapter test summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-*.xml
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.46.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "25.3.0"
+          cache: npm
+          cache-dependency-path: src/app/frontend/package-lock.json
+
+      - name: Run frontend tests
+        run: task test:frontend

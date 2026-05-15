@@ -1,0 +1,647 @@
+profile: remote
+
+releases:
+  tamsStack:
+    enabled: true
+  authentik:
+    enabled: true
+
+clusterServices:
+  certManager:
+    enabled: true
+    version: v1.19.5
+    values:
+      crds:
+        enabled: true
+      config:
+        apiVersion: controller.config.cert-manager.io/v1alpha1
+        kind: ControllerConfiguration
+        enableGatewayAPI: true
+  metricsServer:
+    enabled: false
+    version: 3.13.0
+    values:
+      args:
+        - --kubelet-insecure-tls
+  traefik:
+    enabled: true
+    version: 39.0.8
+    values:
+      deployment:
+        kind: Deployment
+      service:
+        type: LoadBalancer
+      providers:
+        kubernetesGateway:
+          enabled: true
+          nativeLBByDefault: true
+        kubernetesIngress:
+          enabled: true
+          nativeLBByDefault: true
+          allowEmptyServices: true
+          strictPrefixMatching: true
+      ports:
+        web:
+          port: 8000
+          exposedPort: 80
+          hostPort: null
+          http:
+            redirections:
+              entryPoint:
+                to: websecure
+                scheme: https
+        websecure:
+          port: 8443
+          exposedPort: 443
+          hostPort: null
+          http:
+            tls:
+              enabled: true
+          http3:
+            enabled: true
+            advertisedPort: 443
+      gateway:
+        enabled: false
+      gatewayClass:
+        enabled: false
+      logs:
+        access:
+          enabled: true
+
+tamsServices:
+  authentik:
+    enabled: true
+    namespace: authentik
+    version: 2026.2.2
+    values:
+      authentik:
+        log_level: info
+      postgresql:
+        enabled: true
+        primary:
+          resourcesPreset: none
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          networkPolicy:
+            allowExternal: false
+            extraIngress:
+              - from:
+                  - podSelector:
+                      matchLabels:
+                        app.kubernetes.io/instance: authentik
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: server
+                  - podSelector:
+                      matchLabels:
+                        app.kubernetes.io/instance: authentik
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: worker
+                ports:
+                  - protocol: TCP
+                    port: 5432
+      server:
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        route:
+          main:
+            enabled: true
+            hostnames:
+              - auth.tamoss.example.com
+            parentRefs:
+              - name: traefik
+                namespace: traefik
+                kind: Gateway
+                sectionName: websecure
+      worker:
+        replicas: 1
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+      serviceAccount:
+        create: true
+
+credentials:
+  postgresql:
+    existingSecret: ""
+    secretName: tams-postgresql-auth
+    username: tams
+    password: ""
+    database: tams
+    secretKeys:
+      username: username
+      password: password
+      database: database
+  rustfs:
+    existingSecret: ""
+    secretName: tams-rustfs-auth
+    accessKey: ""
+    secretKey: ""
+    secretKeys:
+      accessKey: RUSTFS_ACCESS_KEY
+      secretKey: RUSTFS_SECRET_KEY
+
+platform:
+  enabled: true
+  releaseNamespace: tams
+  namespaces:
+    app: tams
+    auth: authentik
+  dbInit:
+    enabled: true
+    loadFixtures: false
+    name: tams-db-init
+    namespace: tams
+  authentikConfig:
+    enabled: true
+    namespace: authentik
+    secretName: tams-authentik
+    blueprintConfigMapName: tams-authentik-blueprints
+    hosts:
+      auth: https://auth.tamoss.example.com
+      api: https://api.tamoss.example.com
+      ui: https://app.tamoss.example.com
+      cookieDomain: tamoss.example.com
+    oauth:
+      applicationName: TAMS API
+      applicationSlug: tams-api
+      providerName: TAMS API OAuth2
+      clientId: tams-api-client
+      clientName: TAMS API Client
+      scopes:
+        - id: tams-api-admin
+          name: TAMS API admin scope
+          scopeName: tams-api/admin
+          description: TAMS API admin access
+        - id: tams-api-read
+          name: TAMS API read scope
+          scopeName: tams-api/read
+          description: TAMS API read access
+        - id: tams-api-write
+          name: TAMS API write scope
+          scopeName: tams-api/write
+          description: TAMS API write access
+        - id: tams-api-delete
+          name: TAMS API delete scope
+          scopeName: tams-api/delete
+          description: TAMS API delete access
+      accessTokenValidity: hours=8
+    proxy:
+      enabled: true
+      applicationName: TAMOSS UI
+      applicationSlug: tams-ui
+      providerName: TAMOSS UI Forward Auth
+      accessTokenValidity: hours=8
+    outpostService:
+      create: false
+      name: authentik-outpost
+      namespace: tams
+      externalName: authentik-server.authentik.svc.cluster.local
+      port: 80
+      targetPort: 80
+    outpostReferenceGrant:
+      create: true
+      apiVersion: gateway.networking.k8s.io/v1beta1
+      name: tams-authentik-outpost
+      namespace: authentik
+      fromNamespace: tams
+      serviceName: authentik-server
+  clusterIssuer:
+    create: true
+    name: tams-selfsigned-issuer
+  gatewayClass:
+    create: true
+    name: traefik
+    default: false
+  gateway:
+    create: true
+    name: traefik
+    namespace: traefik
+    className: traefik
+    tlsCertificate:
+      create: true
+    listeners:
+      web:
+        port: 8000
+        protocol: HTTP
+      websecure:
+        port: 8443
+        protocol: HTTPS
+        hostname: '*.tamoss.example.com'
+        tlsSecretName: traefik-default-tls
+  middlewares:
+    authentik:
+      create: true
+      name: authentik
+      namespace: tams
+      address: http://authentik-server.authentik.svc.cluster.local/outpost.goauthentik.io/auth/traefik
+      maxResponseBodySize: 65536
+      authResponseHeaders:
+        - X-authentik-username
+        - X-authentik-groups
+        - X-authentik-entitlements
+        - X-authentik-email
+        - X-authentik-name
+        - X-authentik-uid
+        - X-authentik-jwt
+        - X-authentik-meta-jwks
+        - X-authentik-meta-outpost
+        - X-authentik-meta-provider
+        - X-authentik-meta-app
+        - X-authentik-meta-version
+    cors:
+      create: true
+      name: cors
+      namespace: tams
+      accessControlAllowOriginList:
+        - https://app.tamoss.example.com
+      accessControlAllowMethods:
+        - GET
+        - HEAD
+        - OPTIONS
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      accessControlAllowHeaders:
+        - Authorization
+        - Content-Type
+        - Accept
+        - Range
+        - X-Requested-With
+      accessControlExposeHeaders:
+        - X-Request-ID
+        - Location
+        - Link
+        - X-Paging-Limit
+        - X-Paging-NextKey
+        - X-Paging-Timerange
+        - X-Paging-Count
+        - X-Paging-Reverse-Order
+        - Content-Length
+        - Content-Range
+        - Accept-Ranges
+      accessControlMaxAge: 600
+
+postgresql:
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        username: tams
+        database: tams
+        existingSecret: tams-postgresql-auth
+        secretKeys:
+          userPasswordKey: password
+  primary:
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    networkPolicy:
+      allowExternal: false
+      extraIngress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: tams-stack
+                  app.kubernetes.io/name: tams
+                  app.kubernetes.io/component: api
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: tams-stack
+                  app.kubernetes.io/name: tams
+                  app.kubernetes.io/component: worker
+          ports:
+            - protocol: TCP
+              port: 5432
+    extraEnvVars:
+      - name: POSTGRESQL_INIT_MAX_TIMEOUT
+        value: "300"
+    initdb:
+      scriptsConfigMap: tams-db-init
+
+rustfs:
+  enabled: true
+  secret:
+    existingSecret: tams-rustfs-auth
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  config:
+    rustfs:
+      log_level: warn
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  extraEnv:
+    - name: RUSTFS_STORAGE_CLASS_STANDARD
+      value: "EC:0"
+    - name: RUSTFS_ERASURE_SET_DRIVE_COUNT
+      value: "1"
+  service:
+    type: ClusterIP
+  storageclass:
+    name: ""
+  ingress:
+    enabled: false
+  gatewayApi:
+    enabled: false
+  affinity:
+    podAntiAffinity:
+      enabled: false
+
+rustfsGatewayApi:
+  enabled: true
+  existingGateway:
+    name: traefik
+    namespace: traefik
+  hostname: s3.tamoss.example.com
+  servicePort: 9000
+  filters:
+    - type: ExtensionRef
+      extensionRef:
+        group: traefik.io
+        kind: Middleware
+        name: cors
+
+networkPolicy:
+  enabled: true
+  ingressController:
+    namespaceLabels:
+      kubernetes.io/metadata.name: traefik
+    podLabels:
+      app.kubernetes.io/name: traefik
+  authentik:
+    enabled: true
+    namespace: authentik
+    instance: authentik
+
+tams:
+  enabled: true
+  secrets:
+    apiToken:
+      generate: true
+  auth:
+    required: true
+    trustForwardAuthHeaders: false
+    oauth2:
+      enabled: true
+      issuer: https://auth.tamoss.example.com/application/o/tams-api/
+      jwksUri: http://authentik-server.authentik.svc.cluster.local/application/o/tams-api/jwks/
+      audience: ""
+      requiredScopes: []
+      algorithms:
+        - RS256
+  api:
+    enabled: true
+    replicaCount: 2
+    image:
+      tag: ""
+      pullPolicy: IfNotPresent
+    env:
+      TAMOSS_S3_CONNECT_TIMEOUT_SECONDS: "1"
+      TAMOSS_S3_READ_TIMEOUT_SECONDS: "2"
+      TAMOSS_S3_AUTO_CREATE_BUCKET: "1"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 384Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+    livenessProbe:
+      timeoutSeconds: 5
+      failureThreshold: 6
+    readinessProbe:
+      timeoutSeconds: 5
+      failureThreshold: 6
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: true
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: api
+  worker:
+    enabled: true
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 384Mi
+    pdb:
+      enabled: true
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: worker
+  ui:
+    enabled: true
+    replicaCount: 2
+    image:
+      tag: ""
+      pullPolicy: IfNotPresent
+    env:
+      TAMOSS_API_URL: /api
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: true
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: ui
+  backends:
+    db:
+      host: tams-stack-postgresql
+      port: "5432"
+      database: tams
+      auth:
+        existingSecret: tams-postgresql-auth
+        secretKeys:
+          username: username
+          password: password
+    s3:
+      endpoint:
+        default:
+          url: http://tams-stack-rustfs-svc:9000
+        public:
+          url: https://s3.tamoss.example.com
+      auth:
+        existingSecret: tams-rustfs-auth
+        secretKeys:
+          accessKey: RUSTFS_ACCESS_KEY
+          secretKey: RUSTFS_SECRET_KEY
+      region: us-east-1
+      bucket: tamoss
+  ingress:
+    enabled: false
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: traefik
+        namespace: traefik
+        kind: Gateway
+        sectionName: websecure
+    api:
+      hostnames:
+        - api.tamoss.example.com
+      defaultFilters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: cors
+    ui:
+      hostnames:
+        - app.tamoss.example.com
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /outpost.goauthentik.io/
+          backendRefs:
+            - name: authentik-server
+              namespace: authentik
+              port: 80
+              weight: 1
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /api
+          filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: authentik
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: cors
+          backendRefs:
+            - name: tams-ui
+              port: 3000
+              weight: 1
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: authentik
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: cors
+          backendRefs:
+            - name: tams-ui
+              port: 3000
+              weight: 1
+  networkPolicy:
+    enabled: true
+    # These policies constrain inbound traffic. Egress is intentionally left
+    # open in the shared remote target because DNS, database, S3, OIDC, and
+    # webhook destinations are site-specific.
+    api:
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: traefik
+          ports:
+            - protocol: TCP
+              port: 8000
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tams
+                  app.kubernetes.io/instance: tams-stack
+                  app.kubernetes.io/component: ui
+          ports:
+            - protocol: TCP
+              port: 8000
+      egress:
+        - {}
+    ui:
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: traefik
+          ports:
+            - protocol: TCP
+              port: 8080
+      egress:
+        - {}
+    worker:
+      ingress: []
+      egress:
+        - {}

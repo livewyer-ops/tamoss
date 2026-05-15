@@ -1,0 +1,29 @@
+version: "3"
+
+tasks:
+  sync:
+    cmds:
+      - task: :dev:submodules
+      - |
+        uv run --project src python src/scripts/preprocess_openapi.py \
+          src/vendor/bbc-tams/api/TimeAddressableMediaStore.yaml \
+          src/openapi.yaml
+
+  parity:
+    cmds:
+      - task: :dev:submodules
+      - uv run --project src python src/scripts/check_tamoss_openapi_parity.py
+
+  check:
+    desc: Verify the BBC OpenAPI contract is reproducible and TAMOSS has API parity
+    cmds:
+      - |
+        set -euo pipefail
+        before="$(mktemp)"
+        after="$(mktemp)"
+        trap 'rm -f "$before" "$after"' EXIT
+        git diff -- src/openapi.yaml > "$before"
+        task openapi:sync
+        git diff -- src/openapi.yaml > "$after"
+        diff -u "$before" "$after"
+      - task: parity

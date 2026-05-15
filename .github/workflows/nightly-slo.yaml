@@ -1,0 +1,25 @@
+name: Nightly E2E
+
+on:
+  schedule:
+    # 04:30 UTC every day.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+jobs:
+  e2e:
+    uses: ./.github/workflows/reusable-kind-e2e.yaml
+    with:
+      artifact-name: nightly-e2e-reports-${{ github.run_id }}
+      retention-days: 90
+      summary-title: Nightly E2E Results
+      summary-description: Nightly run deploys Kind and executes the deployed BBC-facing pytest E2E suite through ingress. See junit reports in the uploaded artifact.

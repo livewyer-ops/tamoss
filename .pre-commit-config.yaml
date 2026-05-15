@@ -1,0 +1,50 @@
+default_install_hook_types: [pre-commit, pre-push]
+repos:
+  # Python code quality checks
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.5
+    hooks:
+      # Linter
+      - id: ruff
+        args: [--fix]
+        exclude: ^src/vendor/
+      # Formatter
+      - id: ruff-format
+        exclude: ^src/vendor/
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^src/vendor/bbc-tams/
+      - id: end-of-file-fixer
+        exclude: ^src/vendor/
+      - id: check-yaml
+        args: [--unsafe] # Allow custom YAML tags in openapi.yaml
+        exclude: ^deploy/charts/.+/templates/.*\.ya?ml$
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: [-c, src/pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^(tests|scripts|src/scripts|src/vendor|.pre-commit-hooks)/
+  # mypy runs on pre-push and in CI (validate.yaml).
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (project config)
+        entry: bash -c 'cd src && uv run mypy "$@"' --
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+        files: ^src/app/tamoss/

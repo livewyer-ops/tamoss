@@ -1,0 +1,55 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  compose:deps:
+    internal: true
+    silent: true
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+      - sh: docker compose version >/dev/null
+        msg: "docker compose plugin not found"
+    env:
+      COMPOSE_FILE: deploy/compose/docker-compose.yaml
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "start dev dependencies" \
+          docker compose up -d --wait db s3
+      - |
+        . .tasks/lib/progress.sh
+        task_step "bootstrap dev database" \
+          bash -c 'docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-tams}" -d "${POSTGRES_DB:-tams}" < db/bootstrap.sql'
+
+  compose:down:
+    internal: true
+    silent: true
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+      - sh: docker compose version >/dev/null
+        msg: "docker compose plugin not found"
+    env:
+      COMPOSE_FILE: deploy/compose/docker-compose.yaml
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "stop dev dependencies" \
+          docker compose down --volumes
+
+  compose:stop:
+    internal: true
+    silent: true
+    env:
+      COMPOSE_FILE: deploy/compose/docker-compose.yaml
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        task_step "stop dev dependencies" \
+          bash -c '
+            if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+              exit 0
+            fi
+            docker compose stop db s3
+          '

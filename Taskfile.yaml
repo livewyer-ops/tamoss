@@ -1,0 +1,229 @@
+# https://taskfile.dev
+version: "3"
+
+set: [errexit, nounset, pipefail]
+
+vars:
+  PROJECT_NAME: tams
+  KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
+  SECRETS_DIR: ".local"
+  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
+  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
+
+dotenv: [.env]
+
+env:
+  TAMOSS_TEST_DB_URL: '{{default "postgresql://tams:tams@127.0.0.1:55432/tams" .TAMOSS_TEST_DB_URL}}'
+
+includes:
+  openapi: { taskfile: .tasks/openapi.yaml }
+  dev:     { taskfile: .tasks/dev.yaml }
+  deploy:  { taskfile: .tasks/deploy.yaml }
+  docker:  { taskfile: .tasks/docker.yaml }
+  kind:    { taskfile: .tasks/kind.yaml }
+  lint:    { taskfile: .tasks/lint.yaml }
+  misc:    { taskfile: .tasks/misc.yaml }
+  security: { taskfile: .tasks/security.yaml }
+  test:    { taskfile: .tasks/test.yaml }
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task -l
+
+  init:
+    desc: One-time setup — seed .env
+    silent: true
+    cmds:
+      - test -f .env || (cp .env.example .env; echo "Created .env (edit to override defaults).")
+
+  setup:
+    desc: Install Python and frontend dev dependencies (idempotent; do not run while task dev is active)
+    cmds:
+      - task: init
+      - task: dev:setup
+
+  hooks:
+    cmds:
+      - task: dev:git-hooks
+
+  deps:
+    desc: Start local dev dependencies (Postgres + RustFS S3) via docker compose
+    cmds:
+      - task: docker:compose:deps
+
+  up:
+    desc: Build local images, create the Kind cluster, and deploy the full TAMOSS stack
+    silent: true
+    cmds:
+      - task: init
+      - task: kind:create
+        vars:
+          KIND_CONFIG: deploy/kind.yaml
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: deploy:kind
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: up:summary
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
+  up:summary:
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+
+        target_file="tests/targets/kind.env"
+        if [ ! -f "$target_file" ]; then
+          echo "TAMOSS is ready, but $target_file was not found."
+          exit 0
+        fi
+
+        set -a
+        . "$target_file"
+        set +a
+
+        app_url="${TEST_TAMOSS_UI:-https://app.tamoss.localtest.me}"
+        api_url="${TEST_TAMOSS_API:-https://api.tamoss.localtest.me}"
+        api_namespace="${TEST_TAMOSS_NAMESPACE:-tams}"
+        api_username="${TEST_TAMOSS_API_USERNAME:-${TAMOSS_BASIC_AUTH_USERNAME:-tamoss}}"
+        token_secret="${TEST_TAMOSS_TOKEN_SECRET:-tams-api-token}"
+        token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
+        auth_namespace="${TEST_TAMOSS_AUTH_NAMESPACE:-authentik}"
+        username="${TEST_TAMOSS_AUTH_USER:-akadmin}"
+        password_secret="${TEST_TAMOSS_AUTH_PASSWORD_SECRET:-tams-authentik}"
+        password_key="${TEST_TAMOSS_AUTH_PASSWORD_KEY:-AUTHENTIK_BOOTSTRAP_PASSWORD}"
+
+        bearer_token="$(
+          kubectl --kubeconfig "{{.KUBECONFIG}}" \
+            -n "$api_namespace" \
+            get secret "$token_secret" \
+            -o "jsonpath={.data.${token_key}}" \
+          | base64 --decode
+        )"
+
+        password="$(
+          kubectl --kubeconfig "{{.KUBECONFIG}}" \
+            -n "$auth_namespace" \
+            get secret "$password_secret" \
+            -o "jsonpath={.data.${password_key}}" \
+          | base64 --decode
+        )"
+
+        printf '\nTAMOSS is ready\n'
+        printf '  App URL:  %s\n' "$app_url"
+        printf '  Username: %s\n' "$username"
+        printf '  Password: %s\n' "$password"
+        printf '\n'
+        printf '  API URL:  %s/docs\n' "${api_url%/}"
+        printf '  Username: %s\n' "$api_username"
+        printf '  Bearer / Password: %s\n\n' "$bearer_token"
+
+  down:
+    desc: Tear down the local Kind cluster, dev dependencies, and local state
+    interactive: true
+    prompt: "This will delete the Kind cluster, dev dependency containers, and local state. Continue?"
+    cmds:
+      - |
+        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+          COMPOSE_FILE=deploy/compose/docker-compose.yaml docker compose down --volumes || true
+        else
+          echo "Skipping Docker Compose cleanup; docker compose is unavailable"
+        fi
+      - |
+        if command -v kind >/dev/null 2>&1; then
+          kind delete cluster --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}" || true
+        else
+          echo "Skipping Kind cleanup; kind is unavailable"
+        fi
+      - cmd: "rm -rf {{.KUBECONFIG}} {{.SECRETS_DIR}} || true"
+
+  dev:
+    desc: Run the API and frontend dev servers locally in parallel (auto-starts deps)
+    interactive: true
+    deps:
+      - dev:api
+      - dev:frontend
+
+  e2e:
+    desc: Recreate Kind, deploy the stack, and run the full end-to-end gate
+    silent: true
+    cmds:
+      - task: kind:e2e:fresh
+
+  e2e:deployed:
+    desc: Run deployed end-to-end checks against the current target without recreating Kind
+    silent: true
+    cmds:
+      - task: test:deployed
+        vars:
+          DEPLOY_ENV: '{{default "kind" .DEPLOY_ENV}}'
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
+  ingest:
+    desc: Ingest an MP4 video into TAMOSS (VIDEO=path/to/video.mp4)
+    requires:
+      vars: [VIDEO]
+    cmds:
+      - task: misc:ingest
+        vars:
+          VIDEO: "{{.VIDEO}}"
+          LABEL: '{{default "" .LABEL}}'
+          DESCRIPTION: '{{default "" .DESCRIPTION}}'
+          DURATION: '{{default "3" .DURATION}}'
+
+  logs:
+    desc: Show recent concise task logs from .local/logs/task
+    silent: true
+    cmds:
+      - |
+        . .tasks/lib/progress.sh
+        log_dir="$(task_log_dir)"
+        if [ ! -d "$log_dir" ]; then
+          echo "No task logs found at $log_dir"
+          exit 0
+        fi
+        set -- "$log_dir"/*.log
+        if [ ! -e "$1" ]; then
+          echo "No task logs found at $log_dir"
+          exit 0
+        fi
+        count=0
+        for log_file in $(ls -1t "$log_dir"/*.log); do
+          echo "$log_file"
+          count=$((count + 1))
+          [ "$count" -ge 20 ] && break
+        done
+
+  lint:
+    desc: Lint Python and frontend code
+    silent: true
+    cmds:
+      - task: lint:ruff:lint
+      - task: lint:mypy
+      - task: lint:eslint
+
+  check:
+    desc: Local fast confidence gate — lint plus the fast test subset
+    silent: true
+    cmds:
+      - task: lint
+      - task: test
+
+  test:
+    desc: Fast local test subset (application guards, BBC compatibility, frontend)
+    silent: true
+    cmds:
+      - task: test:application
+      - task: test:bbc
+      - task: test:frontend
+
+  test:all:
+    silent: true
+    cmds:
+      - task: test:application
+      - task: test:bbc
+      - task: test:workers
+      - task: test:frontend

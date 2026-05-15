@@ -1,0 +1,3 @@
+[submodule "src/vendor/bbc-tams"]
+	path = src/vendor/bbc-tams
+	url = https://github.com/bbc/tams.git

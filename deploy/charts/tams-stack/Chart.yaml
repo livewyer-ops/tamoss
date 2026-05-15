@@ -1,0 +1,24 @@
+apiVersion: v2
+name: tams-stack
+description: Helm umbrella chart for TAMOSS and its single-namespace services
+type: application
+version: 1.0.0
+appVersion: 1.0.0
+dependencies:
+  - name: tams-platform
+    alias: platform
+    version: 1.0.0
+    repository: file://../tams-platform
+    condition: platform.enabled
+  - name: postgresql
+    version: 18.6.1
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+  - name: rustfs
+    version: 0.0.98
+    repository: https://charts.rustfs.com
+    condition: rustfs.enabled
+  - name: tams
+    version: 1.0.0
+    repository: file://../tams
+    condition: tams.enabled

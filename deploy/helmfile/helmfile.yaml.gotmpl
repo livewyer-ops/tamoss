@@ -1,0 +1,301 @@
+helmDefaults:
+  atomic: true
+  wait: true
+  timeout: 600
+  createNamespace: true
+
+environments:
+  kind:
+    values:
+      - ../targets/kind/values.yaml
+  remote:
+    values:
+      - ../targets/remote/values.yaml
+
+---
+
+{{- $skipClusterServices := false -}}
+{{- if hasKey .Values "deploy" -}}
+{{- $skipClusterServices = ((index .Values.deploy "skipClusterServices") | default false) -}}
+{{- end }}
+{{- $usesDirectStackValues := hasKey .Values "tams" -}}
+{{- $splitStackPostgresql := false -}}
+{{- if not $usesDirectStackValues -}}
+{{- $splitStackPostgresql = .Values.tamsServices.postgresql.enabled -}}
+{{- end }}
+{{- if and $usesDirectStackValues (ne .Environment.Name "remote") -}}
+{{- fail "Top-level tams chart overrides are only supported by the remote Helmfile target. Use the target values schema for this environment." -}}
+{{- end }}
+
+repositories:
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: metrics-server
+    url: https://kubernetes-sigs.github.io/metrics-server
+  - name: traefik
+    url: https://traefik.github.io/charts
+  - name: rustfs
+    url: https://charts.rustfs.com
+  - name: authentik
+    url: https://charts.goauthentik.io
+
+releases:
+{{- if not $skipClusterServices }}
+  - name: cert-manager
+    namespace: cert-manager
+    labels:
+      group: cluster-services
+    installed: {{ .Values.clusterServices.certManager.enabled }}
+    chart: jetstack/cert-manager
+    version: {{ .Values.clusterServices.certManager.version | quote }}
+    values:
+      - {{ toYaml .Values.clusterServices.certManager.values | nindent 8 }}
+
+  - name: metrics-server
+    namespace: kube-system
+    labels:
+      group: cluster-services
+    installed: {{ .Values.clusterServices.metricsServer.enabled }}
+    chart: metrics-server/metrics-server
+    version: {{ .Values.clusterServices.metricsServer.version | quote }}
+    values:
+      - {{ toYaml .Values.clusterServices.metricsServer.values | nindent 8 }}
+
+  - name: traefik
+    namespace: traefik
+    labels:
+      group: cluster-services
+    installed: {{ .Values.clusterServices.traefik.enabled }}
+    chart: traefik/traefik
+    version: {{ .Values.clusterServices.traefik.version | quote }}
+    {{- if .Values.clusterServices.certManager.enabled }}
+    needs:
+      - cert-manager/cert-manager
+    {{- end }}
+    values:
+      - {{ toYaml .Values.clusterServices.traefik.values | nindent 8 }}
+
+{{- end }}
+  - name: tams-platform
+    namespace: {{ .Values.platform.releaseNamespace | quote }}
+    labels:
+      group: tams-platform
+    installed: {{ .Values.platform.enabled }}
+    chart: ../charts/tams-platform
+    {{- if and (not $skipClusterServices) (or .Values.clusterServices.traefik.enabled .Values.clusterServices.certManager.enabled) }}
+    needs:
+      {{- if .Values.clusterServices.traefik.enabled }}
+      - traefik/traefik
+      {{- end }}
+      {{- if .Values.clusterServices.certManager.enabled }}
+      - cert-manager/cert-manager
+      {{- end }}
+    {{- end }}
+    values:
+      - {{ toYaml .Values.platform | nindent 8 }}
+      {{- if not $usesDirectStackValues }}
+      - postgresqlAuth:
+          enabled: {{ .Values.tamsServices.postgresql.enabled }}
+          namespace: {{ .Values.platform.releaseNamespace | quote }}
+          existingSecret: {{ .Values.credentials.postgresql.existingSecret | quote }}
+          secretName: {{ .Values.credentials.postgresql.secretName | quote }}
+          username: {{ .Values.credentials.postgresql.username | quote }}
+          password: {{ .Values.credentials.postgresql.password | quote }}
+          database: {{ .Values.credentials.postgresql.database | quote }}
+          secretKeys:
+{{ toYaml .Values.credentials.postgresql.secretKeys | nindent 12 }}
+      {{- end }}
+      - dbInit:
+          schemaSql: |
+{{ readFile "../../db/schema.sql" | nindent 12 }}
+          bootstrapSql: |
+{{ readFile "../../db/bootstrap.sql" | nindent 12 }}
+          fixturesSql: |
+{{ readFile "../../db/fixtures.sql" | nindent 12 }}
+
+{{- if not $usesDirectStackValues }}
+  - name: tams-postgresql
+    namespace: {{ .Values.tamsServices.postgresql.namespace | quote }}
+    labels:
+      group: tams-services
+    installed: {{ .Values.tamsServices.postgresql.enabled }}
+    chart: oci://registry-1.docker.io/bitnamicharts/postgresql
+    version: {{ .Values.tamsServices.postgresql.version | quote }}
+    needs:
+      - {{ .Values.platform.releaseNamespace }}/tams-platform
+    values:
+      - {{ toYaml .Values.tamsServices.postgresql.values | nindent 8 }}
+      - global:
+          postgresql:
+            auth:
+              username: {{ .Values.credentials.postgresql.username | quote }}
+              password: {{ .Values.credentials.postgresql.password | quote }}
+              database: {{ .Values.credentials.postgresql.database | quote }}
+              existingSecret: {{ default .Values.credentials.postgresql.secretName .Values.credentials.postgresql.existingSecret | quote }}
+              secretKeys:
+                userPasswordKey: {{ .Values.credentials.postgresql.secretKeys.password | quote }}
+{{- end }}
+
+  - name: tams-stack
+    namespace: {{ .Values.platform.releaseNamespace | quote }}
+    labels:
+      group: tams-stack
+    installed: {{ .Values.releases.tamsStack.enabled }}
+    chart: ../charts/tams-stack
+    {{- if or .Values.platform.enabled $splitStackPostgresql (and (not $skipClusterServices) (or .Values.clusterServices.traefik.enabled .Values.clusterServices.certManager.enabled)) }}
+    needs:
+      {{- if .Values.platform.enabled }}
+      - {{ .Values.platform.releaseNamespace }}/tams-platform
+      {{- end }}
+      {{- if $splitStackPostgresql }}
+      - {{ .Values.tamsServices.postgresql.namespace }}/tams-postgresql
+      {{- end }}
+      {{- if .Values.clusterServices.traefik.enabled }}
+      - traefik/traefik
+      {{- end }}
+      {{- if .Values.clusterServices.certManager.enabled }}
+      - cert-manager/cert-manager
+      {{- end }}
+    {{- end }}
+    values:
+      {{- if $usesDirectStackValues }}
+      - ../targets/{{ .Environment.Name }}/values.yaml
+      {{- if and (hasKey .Values "deploy") ((index .Values.deploy "valuesFile") | default "") }}
+      - {{ (index .Values.deploy "valuesFile") | quote }}
+      {{- end }}
+      - platform:
+          enabled: false
+          dbInit:
+            schemaSql: |
+{{ readFile "../../db/schema.sql" | nindent 14 }}
+            bootstrapSql: |
+{{ readFile "../../db/bootstrap.sql" | nindent 14 }}
+            fixturesSql: |
+{{ readFile "../../db/fixtures.sql" | nindent 14 }}
+      {{- else }}
+      - credentials:
+{{ toYaml .Values.credentials | nindent 10 }}
+      - credentials:
+          postgresql:
+            existingSecret: {{ default .Values.credentials.postgresql.secretName .Values.credentials.postgresql.existingSecret | quote }}
+      - platform:
+{{ toYaml .Values.platform | nindent 10 }}
+      - platform:
+          enabled: false
+          dbInit:
+            schemaSql: |
+{{ readFile "../../db/schema.sql" | nindent 14 }}
+            bootstrapSql: |
+{{ readFile "../../db/bootstrap.sql" | nindent 14 }}
+            fixturesSql: |
+{{ readFile "../../db/fixtures.sql" | nindent 14 }}
+      - postgresql:
+          enabled: false
+{{ toYaml .Values.tamsServices.postgresql.values | nindent 10 }}
+      - postgresql:
+          global:
+            postgresql:
+              auth:
+                username: {{ .Values.credentials.postgresql.username | quote }}
+                password: {{ .Values.credentials.postgresql.password | quote }}
+                database: {{ .Values.credentials.postgresql.database | quote }}
+                existingSecret: {{ default .Values.credentials.postgresql.secretName .Values.credentials.postgresql.existingSecret | quote }}
+                secretKeys:
+                  userPasswordKey: {{ .Values.credentials.postgresql.secretKeys.password | quote }}
+      - rustfs:
+          enabled: {{ .Values.tamsServices.rustfs.enabled }}
+{{ toYaml .Values.tamsServices.rustfs.values | nindent 10 }}
+      - rustfsGatewayApi:
+{{ toYaml (default (dict "enabled" false) .Values.tamsServices.rustfs.gatewayApi) | nindent 10 }}
+      - rustfs:
+          secret:
+            existingSecret: {{ default .Values.credentials.rustfs.secretName .Values.credentials.rustfs.existingSecret | quote }}
+      - tams:
+          enabled: {{ .Values.app.enabled }}
+          api:
+{{ toYaml .Values.api | nindent 12 }}
+          worker:
+{{ toYaml .Values.worker | nindent 12 }}
+          ui:
+{{ toYaml .Values.ui | nindent 12 }}
+          backends:
+{{ toYaml .Values.backends | nindent 12 }}
+          {{- if hasKey .Values "auth" }}
+          auth:
+{{ toYaml .Values.auth | nindent 12 }}
+          {{- end }}
+          ingress:
+{{ toYaml .Values.ingress | nindent 12 }}
+          httpRoute:
+{{ toYaml .Values.httpRoute | nindent 12 }}
+      {{- end }}
+      {{- if and (hasKey .Values "deploy") (or ((index .Values.deploy "apiImageTag") | default "") ((index .Values.deploy "uiImageTag") | default "")) }}
+      - tams:
+          {{- if ((index .Values.deploy "apiImageTag") | default "") }}
+          api:
+            image:
+              tag: {{ (index .Values.deploy "apiImageTag") | quote }}
+          {{- end }}
+          {{- if ((index .Values.deploy "uiImageTag") | default "") }}
+          ui:
+            image:
+              tag: {{ (index .Values.deploy "uiImageTag") | quote }}
+          {{- end }}
+      {{- end }}
+      {{- if not $usesDirectStackValues }}
+      - tams:
+          backends:
+            db:
+              auth:
+                existingSecret: {{ default .Values.credentials.postgresql.secretName .Values.credentials.postgresql.existingSecret | quote }}
+                secretKeys:
+                  username: {{ .Values.credentials.postgresql.secretKeys.username | quote }}
+                  password: {{ .Values.credentials.postgresql.secretKeys.password | quote }}
+            s3:
+              auth:
+                existingSecret: {{ default .Values.credentials.rustfs.secretName .Values.credentials.rustfs.existingSecret | quote }}
+                secretKeys:
+                  accessKey: {{ .Values.credentials.rustfs.secretKeys.accessKey | quote }}
+                  secretKey: {{ .Values.credentials.rustfs.secretKeys.secretKey | quote }}
+      {{- end }}
+
+  - name: authentik
+    namespace: {{ .Values.tamsServices.authentik.namespace | quote }}
+    labels:
+      group: tams-services
+    installed: {{ .Values.releases.authentik.enabled }}
+    chart: authentik/authentik
+    version: {{ .Values.tamsServices.authentik.version | quote }}
+    needs:
+      - {{ .Values.platform.releaseNamespace }}/tams-platform
+      {{- if $splitStackPostgresql }}
+      - {{ .Values.tamsServices.postgresql.namespace }}/tams-postgresql
+      {{- end }}
+    values:
+      - {{ toYaml .Values.tamsServices.authentik.values | nindent 8 }}
+      - blueprints:
+          configMaps:
+            - {{ .Values.platform.authentikConfig.blueprintConfigMapName | quote }}
+      - global:
+          envFrom:
+            - secretRef:
+                name: {{ .Values.platform.authentikConfig.secretName | quote }}
+          podAnnotations:
+            checksum/tams-platform-authentik-config: {{ toYaml .Values.platform.authentikConfig | sha256sum | quote }}
+            checksum/tams-platform-authentik-blueprint-template: {{ readFile "../charts/tams-platform/templates/authentik-blueprints.yaml" | sha256sum | quote }}
+      - postgresql:
+          auth:
+            existingSecret: {{ .Values.platform.authentikConfig.secretName | quote }}
+            secretKeys:
+              userPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
+      - authentik:
+          postgresql:
+            password: ""
+      - server:
+          deploymentAnnotations:
+            checksum/tams-platform-authentik-config: {{ toYaml .Values.platform.authentikConfig | sha256sum | quote }}
+            checksum/tams-platform-authentik-blueprint-template: {{ readFile "../charts/tams-platform/templates/authentik-blueprints.yaml" | sha256sum | quote }}
+      - worker:
+          deploymentAnnotations:
+            checksum/tams-platform-authentik-config: {{ toYaml .Values.platform.authentikConfig | sha256sum | quote }}
+            checksum/tams-platform-authentik-blueprint-template: {{ readFile "../charts/tams-platform/templates/authentik-blueprints.yaml" | sha256sum | quote }}
