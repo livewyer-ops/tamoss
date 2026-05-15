@@ -15,7 +15,7 @@ dependencies:
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   - name: rustfs
-    version: 0.0.98
+    version: 0.3.0
     repository: https://charts.rustfs.com
     condition: rustfs.enabled
   - name: tams
