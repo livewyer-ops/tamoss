@@ -1,4 +1,4 @@
-# Kind cluster configuration for local TAMOSS validation.
+# Kind cluster configuration for local multi-server validation.
 # Host port 443 is bound on all local interfaces so browser/API tests work from
 # the host. Treat this as local development exposure; other machines on the same
 # network may be able to reach it while the Kind cluster is running.
@@ -12,3 +12,6 @@ nodes:
         hostPort: 443
         listenAddress: "0.0.0.0"
         protocol: TCP
+  - role: worker
+  - role: worker
+  - role: worker

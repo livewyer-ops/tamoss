@@ -1,7 +1,7 @@
 # Local development dependency stack: Postgres + RustFS S3 only.
 #
-# Full product (API, frontend, auth, edge, Kind lifecycle) runs via Helmfile
-# against Kind — see Taskfile.yaml `up`. This file exists solely so that
+# Full product validation runs through Kind and the operator via Taskfile.yaml
+# `up`. This file exists solely so that
 # `task dev` can run uvicorn + Vite natively against containerised deps.
 #
 # Started via `task deps` (= `task docker:compose:deps`).
@@ -28,7 +28,7 @@ services:
 
   s3:
     container_name: tams-s3
-    image: rustfs/rustfs:1.0.0-alpha.98
+    image: rustfs/rustfs:1.0.0-beta.3
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -40,11 +40,11 @@ services:
 
 configs:
   tams_db_schema:
-    file: ../../db/schema.sql
+    file: ../../src/app/tamoss/db/migrations/assets/schema.sql
   tams_db_bootstrap:
-    file: ../../db/bootstrap.sql
+    file: ../../src/app/tamoss/db/migrations/assets/bootstrap.sql
   tams_db_fixture:
-    file: ../../db/fixtures.sql
+    file: ../../src/app/tamoss/db/migrations/assets/fixtures.sql
 
 volumes:
   db-data:
