@@ -1,6 +1,8 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 # File-level defaults inherited by every task.
 env:
   TAMOSS_TEST_DB_URL: '{{default "postgresql://tams:tams@127.0.0.1:55432/tams" .TAMOSS_TEST_DB_URL}}'
@@ -18,29 +20,37 @@ tasks:
     cmds:
       - task: :dev:submodules
       - mkdir -p reports
-      - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/tamoss-openapi-parity.txt
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_openapi_contract.py -m bbc -ra --junitxml=reports/junit-contract-bbc.xml"
+      - printf 'test py.bbc.contract\n'
+      - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/openapi-parity.txt
+      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_openapi_contract.py -m bbc -ra --junitxml=reports/junit-py-bbc-contract.xml"
 
   semantics:bbc:
     aliases: [semantics]
     silent: true
     cmds:
       - mkdir -p reports
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_service_and_metadata.py {{.BBC_TEST_DIR}}/test_authentication.py {{.BBC_TEST_DIR}}/test_flows_sources_and_segments.py {{.BBC_TEST_DIR}}/test_storage_objects_and_deletion.py {{.BBC_TEST_DIR}}/test_webhooks.py -m bbc -ra --junitxml=reports/junit-semantics-bbc.xml"
+      - printf 'test py.bbc.semantics\n'
+      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_service_and_metadata.py {{.BBC_TEST_DIR}}/test_authentication.py {{.BBC_TEST_DIR}}/test_flows_sources_and_segments.py {{.BBC_TEST_DIR}}/test_storage_objects_and_deletion.py {{.BBC_TEST_DIR}}/test_webhooks.py -m bbc -ra --junitxml=reports/junit-py-bbc-semantics.xml"
 
   bbc:
-    desc: Run all in-process BBC compatibility gates
-    aliases: [compat]
     silent: true
     cmds:
       - task: contract:bbc
       - task: semantics:bbc
 
+  fast:
+    silent: true
+    cmds:
+      - mkdir -p reports
+      - printf 'test py.fast\n'
+      - "{{.PYTEST}} tests/adapters/bbc tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not operator_upgrade and not slow' -ra --junitxml=reports/junit-py-fast.xml"
+
   application:
     silent: true
     cmds:
       - mkdir -p reports
-      - "{{.PYTEST}} tests/application/ -ra --junitxml=reports/junit-application.xml"
+      - printf 'test py.application\n'
+      - "{{.PYTEST}} tests/application/ -ra --junitxml=reports/junit-py-application.xml"
 
   bbc:inventory:
     silent: true
@@ -59,7 +69,7 @@ tasks:
           printf '\n## Collected Tests\n\n```text\n'
           {{.PYTEST_COLLECT}} '{{.BBC_TEST_DIR}}' -m bbc --collect-only -q
           printf '```\n'
-        } > reports/bbc_inventory_report.md
+        } > reports/bbc-inventory.md
 
   # Adapter gates require live external dependencies.
   adapters:
@@ -76,6 +86,7 @@ tasks:
       TAMOSS_TEST_DB_URL: "{{.DB_URL}}"
     cmds:
       - mkdir -p reports
+      - printf 'test py.adapter.postgres\n'
       - |
         uv run --project src python - <<'PY'
         import os
@@ -85,7 +96,7 @@ tasks:
         with psycopg.connect(url, connect_timeout=2):
             pass
         PY
-      - "{{.PYTEST}} tests/adapters/postgres/ -m needs_db -ra --junitxml=reports/junit-adapters-postgres.xml"
+      - "{{.PYTEST}} tests/adapters/postgres/ -m needs_db -ra --junitxml=reports/junit-py-adapter-postgres.xml"
 
   adapters:storage:
     silent: true
@@ -99,6 +110,7 @@ tasks:
       TAMOSS_TEST_S3_SECRET_KEY: "{{.S3_SECRET_KEY}}"
     cmds:
       - mkdir -p reports
+      - printf 'test py.adapter.storage\n'
       - |
         uv run --project src python - <<'PY'
         import os
@@ -115,20 +127,22 @@ tasks:
         )
         client.list_buckets()
         PY
-      - "{{.PYTEST}} tests/adapters/storage/ -m needs_s3 -ra --junitxml=reports/junit-adapters-storage.xml"
+      - "{{.PYTEST}} tests/adapters/storage/ -m needs_s3 -ra --junitxml=reports/junit-py-adapter-storage.xml"
 
   workers:
     silent: true
     cmds:
       - mkdir -p reports
-      - "{{.PYTEST}} tests/workers/ -m worker -ra --junitxml=reports/junit-workers.xml"
+      - printf 'test py.workers\n'
+      - "{{.PYTEST}} tests/workers/ -m worker -ra --junitxml=reports/junit-py-workers.xml"
 
   coverage:
     silent: true
     cmds:
       - mkdir -p reports
       - rm -f .coverage reports/coverage.xml
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/ --cov=src/app/tamoss --cov-append --cov-report= --junitxml=reports/junit-coverage-unit.xml"
+      - printf 'test py.bbc.coverage\n'
+      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/ --cov=src/app/tamoss --cov-append --cov-report= --junitxml=reports/junit-py-bbc-coverage.xml"
       - uv run --project src coverage xml -o reports/coverage.xml
       - uv run --project src coverage html -d reports/coverage-html
       - uv run --project src coverage report
@@ -140,15 +154,62 @@ tasks:
         msg: "npm not found"
     dir: src/app/frontend
     cmds:
+      - mkdir -p ../../../reports
+      - printf 'test frontend.unit\n'
       - test -d node_modules || npm ci
-      - npm run test
+      - npm run test -- --reporter=default --reporter=junit --outputFile=../../../reports/junit-frontend-unit.xml
+
+  media:fixtures:
+    silent: true
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+    cmds:
+      - mkdir -p reports
+      - docker build -f tests/media/Dockerfile -t tamoss-media-test:dev .
+      - |
+        docker run --rm \
+          -e TAMOSS_FFPROBE_BIN=ffprobe \
+          -e UV_CACHE_DIR=/tmp/uv-cache \
+          -e UV_PROJECT_ENVIRONMENT=/tmp/tamoss-media-test-venv \
+          -v "{{.ROOT_DIR}}:/work" \
+          -w /work \
+          tamoss-media-test:dev \
+          sh -lc '{{.PYTEST}} tests/media -ra --junitxml=reports/junit-media-fixtures.xml'
 
   # Deployed gates exercise a running target through its configured ingress.
-  deployed:
+  deployed:setup:
+    internal: true
+    silent: true
+    preconditions:
+      - sh: command -v uv
+        msg: "uv binary not found; run aqua install and add aqua's bin directory to PATH"
+    cmds:
+      - uv sync --project src --locked --group dev
+      - uv run --project src python -m playwright install chromium
+
+  smoke:
+    desc: "Validation: run deployed API/UI smoke and verify operator Chainsaw smoke labels"
     silent: true
     vars:
-      DEPLOY_ENV: '{{.DEPLOY_ENV | default "kind"}}'
-      TARGET_FILE: 'tests/targets/{{.DEPLOY_ENV}}.env'
+      PROFILE: '{{default "local-kind" .PROFILE}}'
+      TARGET_FILE:
+        sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TARGET_FILE}}" | grep -q . && printf "%s\n" "{{.TARGET_FILE}}" || task_profile_field "{{.PROFILE}}" targetEnv'
+    cmds:
+      - task: smoke:deployed
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          TARGET_FILE: "{{.TARGET_FILE}}"
+          KUBECONFIG: '{{default "" (default (env "KUBECONFIG") .KUBECONFIG)}}'
+      - task: :operator:e2e:chainsaw:labels
+
+  smoke:deployed:
+    internal: true
+    silent: true
+    vars:
+      PROFILE: '{{default "local-kind" .PROFILE}}'
+      TARGET_FILE:
+        sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TARGET_FILE}}" | grep -q . && printf "%s\n" "{{.TARGET_FILE}}" || task_profile_field "{{.PROFILE}}" targetEnv'
     env:
       KUBECONFIG: '{{default "" .KUBECONFIG}}'
     preconditions:
@@ -156,5 +217,23 @@ tasks:
         msg: "test target {{.TARGET_FILE}} not found"
     cmds:
       - mkdir -p reports
-      - uv run --project src playwright install chromium
-      - "{{.PYTEST}} tests/e2e/ -m e2e --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-{{.DEPLOY_ENV}}.xml"
+      - printf 'test e2e.smoke.{{.PROFILE}}\n'
+      - task: deployed:setup
+      - "{{.PYTEST}} tests/e2e/ -m 'e2e and smoke' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-smoke-{{.PROFILE}}.xml"
+
+  deployed:
+    silent: true
+    vars:
+      PROFILE: '{{default "local-kind" .PROFILE}}'
+      TARGET_FILE:
+        sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TARGET_FILE}}" | grep -q . && printf "%s\n" "{{.TARGET_FILE}}" || task_profile_field "{{.PROFILE}}" targetEnv'
+    env:
+      KUBECONFIG: '{{default "" .KUBECONFIG}}'
+    preconditions:
+      - sh: test -f {{.TARGET_FILE}}
+        msg: "test target {{.TARGET_FILE}} not found"
+    cmds:
+      - mkdir -p reports
+      - printf 'test e2e.deployed.{{.PROFILE}}\n'
+      - task: deployed:setup
+      - "{{.PYTEST}} tests/e2e/ -m 'e2e and not operator_kind and not operator_upgrade' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-deployed-{{.PROFILE}}.xml"

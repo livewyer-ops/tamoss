@@ -1,9 +1,10 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 tasks:
   audit:
-    desc: Run local security audits (OSV, Python, and frontend dependencies)
     cmds:
       - task: audit:osv
       - task: audit:python

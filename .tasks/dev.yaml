@@ -1,6 +1,8 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 tasks:
   setup:
     internal: true
@@ -35,7 +37,6 @@ tasks:
       - uv sync --project src --upgrade
 
   api:
-    desc: Start FastAPI on :8000 with reload (auto-starts dev deps)
     interactive: true
     dir: src
     deps:
@@ -43,7 +44,11 @@ tasks:
     env:
       TAMOSS_AUTH_REQUIRED: '{{default "1" (env "TAMOSS_AUTH_REQUIRED")}}'
       TAMOSS_API_TOKEN: '{{default "dev_token" (env "TAMOSS_API_TOKEN")}}'
-      DATABASE_URL: '{{default "postgresql://tams:tams@127.0.0.1:55432/tams" (env "DATABASE_URL")}}'
+      POSTGRES_HOST: '{{default "127.0.0.1" (env "POSTGRES_HOST")}}'
+      POSTGRES_PORT: '{{default "55432" (env "POSTGRES_PORT")}}'
+      POSTGRES_DB: '{{default "tams" (env "POSTGRES_DB")}}'
+      POSTGRES_USER: '{{default "tams" (env "POSTGRES_USER")}}'
+      POSTGRES_PASSWORD: '{{default "tams" (env "POSTGRES_PASSWORD")}}'
       TAMOSS_S3_ENDPOINT: '{{default "http://127.0.0.1:9000" (env "TAMOSS_S3_ENDPOINT")}}'
       TAMOSS_S3_ACCESS_KEY: '{{default "rustfsadmin" (env "TAMOSS_S3_ACCESS_KEY")}}'
       TAMOSS_S3_SECRET_KEY: '{{default "rustfsadmin" (env "TAMOSS_S3_SECRET_KEY")}}'
@@ -54,7 +59,6 @@ tasks:
       - uv run uvicorn tamoss.app:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
-    desc: Start frontend dev server (Vite + HMR; proxies /api to dev:api)
     interactive: true
     dir: src/app/frontend
     env:

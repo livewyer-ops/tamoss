@@ -4,11 +4,29 @@ version: "3"
 set: [errexit, nounset, pipefail]
 
 vars:
-  PROJECT_NAME: tams
+  PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
   SECRETS_DIR: ".local"
   API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
   UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
+  LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
+  DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
+  TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
+  PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
+  PROFILE_KIND_CONFIG:
+    sh: '. .tasks/lib/profile.sh; task_profile_kind_config "{{.PROFILE}}"'
+  KIND_CONFIG: '{{default .PROFILE_KIND_CONFIG (default (env "KIND_CONFIG") .KIND_CONFIG)}}'
+  PROFILE_PLATFORM_KUSTOMIZE_DIR:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" platformKustomizeDir'
+  PROFILE_INSTANCE_KUSTOMIZE_DIR:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" instanceKustomizeDir'
+  PROFILE_TAMOSS_NAME:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" tamossName'
+  PROFILE_TARGET_ENV:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" targetEnv'
 
 dotenv: [.env]
 
@@ -18,11 +36,11 @@ env:
 includes:
   openapi: { taskfile: .tasks/openapi.yaml }
   dev:     { taskfile: .tasks/dev.yaml }
-  deploy:  { taskfile: .tasks/deploy.yaml }
   docker:  { taskfile: .tasks/docker.yaml }
   kind:    { taskfile: .tasks/kind.yaml }
   lint:    { taskfile: .tasks/lint.yaml }
   misc:    { taskfile: .tasks/misc.yaml }
+  operator: { taskfile: .tasks/operator.yaml }
   security: { taskfile: .tasks/security.yaml }
   test:    { taskfile: .tasks/test.yaml }
 
@@ -33,13 +51,22 @@ tasks:
       - task -l
 
   init:
-    desc: One-time setup — seed .env
+    desc: "Development: seed .env"
     silent: true
     cmds:
       - test -f .env || (cp .env.example .env; echo "Created .env (edit to override defaults).")
 
+  profile:validate:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/profile.sh
+        task_validate_profile "{{.PROFILE}}"
+
   setup:
-    desc: Install Python and frontend dev dependencies (idempotent; do not run while task dev is active)
+    desc: "Development: install local Python/frontend dependencies only"
     cmds:
       - task: init
       - task: dev:setup
@@ -49,121 +76,193 @@ tasks:
       - task: dev:git-hooks
 
   deps:
-    desc: Start local dev dependencies (Postgres + RustFS S3) via docker compose
     cmds:
       - task: docker:compose:deps
 
-  up:
-    desc: Build local images, create the Kind cluster, and deploy the full TAMOSS stack
+  versions:check:
+    desc: "Validation: check platform and operand version pins"
+    cmds:
+      - task: operator:platform:deps:check
+
+  kind:up:
+    desc: "Local Kind: build images, create or reuse Kind, apply the selected Tamoss instance, and ingest playable demo media"
     silent: true
     cmds:
       - task: init
+      - task: profile:validate
       - task: kind:create
         vars:
-          KIND_CONFIG: deploy/kind.yaml
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: deploy:kind
+          KIND_SUMMARY: "{{.KIND_SUMMARY}}"
+          API_IMAGE: "{{.API_IMAGE}}"
+          UI_IMAGE: "{{.UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+      - |
+        set -euo pipefail
+        . .tasks/lib/kind.sh
+        task_kind_validate_profile_topology "{{.PROFILE}}" "{{.KUBECONFIG}}"
+      - task: operator:platform:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: up:summary
+          PLATFORM_KUSTOMIZE_DIR: "{{.PROFILE_PLATFORM_KUSTOMIZE_DIR}}"
+      - task: operator:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
+          OPERATOR_KUSTOMIZE_DIR: "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}"
+      - task: operator:restart
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: operator:instance:apply
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          TAMOSS_CR: "{{.PROFILE_INSTANCE_KUSTOMIZE_DIR}}"
+      - task: operator:instance:wait
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          TAMOSS_NAME: "{{.PROFILE_TAMOSS_NAME}}"
+      - task: kind:demo:ingest
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
+          DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+      - |
+        if [ "{{.KIND_SUMMARY}}" != "false" ]; then
+          task kind:summary \
+            KUBECONFIG="{{.KUBECONFIG}}" \
+            PROFILE_TARGET_ENV="{{.PROFILE_TARGET_ENV}}"
+        fi
 
-  up:summary:
+  kind:demo:ingest:
+    internal: true
     silent: true
     cmds:
       - |
         set -euo pipefail
+        . .tasks/lib/progress.sh
+        task_step "Demo media: ingest playable media" \
+          .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
 
-        target_file="tests/targets/kind.env"
-        if [ ! -f "$target_file" ]; then
-          echo "TAMOSS is ready, but $target_file was not found."
-          exit 0
-        fi
-
-        set -a
-        . "$target_file"
-        set +a
-
-        app_url="${TEST_TAMOSS_UI:-https://app.tamoss.localtest.me}"
-        api_url="${TEST_TAMOSS_API:-https://api.tamoss.localtest.me}"
-        api_namespace="${TEST_TAMOSS_NAMESPACE:-tams}"
-        api_username="${TEST_TAMOSS_API_USERNAME:-${TAMOSS_BASIC_AUTH_USERNAME:-tamoss}}"
-        token_secret="${TEST_TAMOSS_TOKEN_SECRET:-tams-api-token}"
-        token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
-        auth_namespace="${TEST_TAMOSS_AUTH_NAMESPACE:-authentik}"
-        username="${TEST_TAMOSS_AUTH_USER:-akadmin}"
-        password_secret="${TEST_TAMOSS_AUTH_PASSWORD_SECRET:-tams-authentik}"
-        password_key="${TEST_TAMOSS_AUTH_PASSWORD_KEY:-AUTHENTIK_BOOTSTRAP_PASSWORD}"
-
-        bearer_token="$(
-          kubectl --kubeconfig "{{.KUBECONFIG}}" \
-            -n "$api_namespace" \
-            get secret "$token_secret" \
-            -o "jsonpath={.data.${token_key}}" \
-          | base64 --decode
-        )"
-
-        password="$(
-          kubectl --kubeconfig "{{.KUBECONFIG}}" \
-            -n "$auth_namespace" \
-            get secret "$password_secret" \
-            -o "jsonpath={.data.${password_key}}" \
-          | base64 --decode
-        )"
-
-        printf '\nTAMOSS is ready\n'
-        printf '  App URL:  %s\n' "$app_url"
-        printf '  Username: %s\n' "$username"
-        printf '  Password: %s\n' "$password"
-        printf '\n'
-        printf '  API URL:  %s/docs\n' "${api_url%/}"
-        printf '  Username: %s\n' "$api_username"
-        printf '  Bearer / Password: %s\n\n' "$bearer_token"
-
-  down:
-    desc: Tear down the local Kind cluster, dev dependencies, and local state
-    interactive: true
-    prompt: "This will delete the Kind cluster, dev dependency containers, and local state. Continue?"
+  kind:summary:
+    desc: "Local Kind: print access URLs, app credentials, API docs URL, and API token"
+    silent: true
     cmds:
       - |
-        if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-          COMPOSE_FILE=deploy/compose/docker-compose.yaml docker compose down --volumes || true
-        else
-          echo "Skipping Docker Compose cleanup; docker compose is unavailable"
-        fi
+        set -euo pipefail
+        . .tasks/lib/k8s.sh
+        task_print_kind_summary "{{.PROFILE_TARGET_ENV}}" "{{.KUBECONFIG}}"
+
+  k8s:init:
+    desc: "Kubernetes: create a remote environment Kustomize overlay from templates"
+    silent: true
+    requires:
+      vars: [NAME, PROFILE, DOMAIN]
+    cmds:
       - |
+        set -euo pipefail
+        . .tasks/lib/k8s.sh
+        task_init_k8s_environment "{{.NAME}}" "{{.PROFILE}}" "{{.DOMAIN}}"
+
+  k8s:apply:
+    desc: "Kubernetes: apply platform, operator, and a remote environment overlay"
+    silent: true
+    requires:
+      vars: [ENV, KUBECONFIG]
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/k8s.sh
+        task_apply_k8s_environment "{{.ENV}}" "{{.KUBECONFIG}}"
+
+  k8s:wait:
+    desc: "Kubernetes: wait for a remote environment Tamoss instance to become ready"
+    silent: true
+    requires:
+      vars: [ENV, KUBECONFIG]
+    vars:
+      TIMEOUT: '{{default "15m" .TIMEOUT}}'
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/k8s.sh
+        task_wait_k8s_environment "{{.ENV}}" "{{.KUBECONFIG}}" "{{.TIMEOUT}}"
+
+  k8s:status:
+    desc: "Kubernetes: show remote environment Tamoss status and namespace resources"
+    silent: true
+    requires:
+      vars: [ENV, KUBECONFIG]
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/k8s.sh
+        task_show_k8s_environment_status "{{.ENV}}" "{{.KUBECONFIG}}"
+
+  kind:down:
+    desc: "Local Kind: delete the disposable Kind cluster and local runtime state"
+    interactive: true
+    silent: true
+    prompt: "This will delete the {{.PROJECT_NAME}} Kind cluster and local runtime state. Continue?"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/kind.sh
         if command -v kind >/dev/null 2>&1; then
-          kind delete cluster --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}" || true
+          task_step "Local Kind: delete cluster" \
+            task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
         else
           echo "Skipping Kind cleanup; kind is unavailable"
         fi
-      - cmd: "rm -rf {{.KUBECONFIG}} {{.SECRETS_DIR}} || true"
+      - |
+        set -euo pipefail
+        . .tasks/lib/kind.sh
+        task_step "Local Kind: remove local state" \
+          task_remove_local_kind_state "{{.KUBECONFIG}}" "{{.SECRETS_DIR}}"
 
   dev:
-    desc: Run the API and frontend dev servers locally in parallel (auto-starts deps)
+    desc: "Development: run local API/frontend dev servers with Compose dependencies"
     interactive: true
     deps:
       - dev:api
       - dev:frontend
 
-  e2e:
-    desc: Recreate Kind, deploy the stack, and run the full end-to-end gate
+  kind:e2e:
+    desc: "Local Kind validation: recreate Kind, deploy the selected profile, and run the full end-to-end gate"
     silent: true
     cmds:
       - task: kind:e2e:fresh
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KIND_CONFIG: "{{.KIND_CONFIG}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
+  kind:profiles:e2e:
+    desc: "Local Kind validation: run local-kind, single-server, and multi-server e2e sequentially"
+    silent: true
+    vars:
+      PROFILE_CLUSTER_NAME: '{{default "tamoss-profile-e2e" .PROFILE_CLUSTER_NAME}}'
+      PROFILE_KUBECONFIG: '{{default ".local/profile-e2e.kubeconfig" .PROFILE_KUBECONFIG}}'
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/profile.sh
+        task_run_profile_e2e_sequence "{{.PROFILE_CLUSTER_NAME}}" "{{.PROFILE_KUBECONFIG}}"
 
   e2e:deployed:
-    desc: Run deployed end-to-end checks against the current target without recreating Kind
+    desc: "Validation: run deployed checks against the selected profile target without creating a cluster"
     silent: true
     cmds:
+      - task: profile:validate
       - task: test:deployed
         vars:
-          DEPLOY_ENV: '{{default "kind" .DEPLOY_ENV}}'
+          DEPLOY_ENV: "{{.PROFILE}}"
+          TARGET_FILE: "{{.PROFILE_TARGET_ENV}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
 
   ingest:
-    desc: Ingest an MP4 video into TAMOSS (VIDEO=path/to/video.mp4)
+    desc: "Helper: ingest an arbitrary local media file through the configured TAMOSS API"
     requires:
       vars: [VIDEO]
     cmds:
@@ -175,7 +274,7 @@ tasks:
           DURATION: '{{default "3" .DURATION}}'
 
   logs:
-    desc: Show recent concise task logs from .local/logs/task
+    desc: "Operations: show recent concise task logs from .local/logs/task"
     silent: true
     cmds:
       - |
@@ -198,32 +297,24 @@ tasks:
         done
 
   lint:
-    desc: Lint Python and frontend code
+    desc: "Development: lint Python/frontend/shell; operator Go and manifest gates are separate"
     silent: true
     cmds:
       - task: lint:ruff:lint
       - task: lint:mypy
+      - task: lint:shell
       - task: lint:eslint
 
   check:
-    desc: Local fast confidence gate — lint plus the fast test subset
+    desc: "Development: run lint plus the fast test subset"
     silent: true
     cmds:
       - task: lint
       - task: test
 
   test:
-    desc: Fast local test subset (application guards, BBC compatibility, frontend)
+    desc: "Development: run the fast local test subset"
     silent: true
     cmds:
-      - task: test:application
-      - task: test:bbc
-      - task: test:frontend
-
-  test:all:
-    silent: true
-    cmds:
-      - task: test:application
-      - task: test:bbc
-      - task: test:workers
+      - task: test:fast
       - task: test:frontend

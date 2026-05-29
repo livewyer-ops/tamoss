@@ -1,5 +1,7 @@
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 tasks:
   sync:
     cmds:
@@ -8,6 +10,12 @@ tasks:
         uv run --project src python src/scripts/preprocess_openapi.py \
           src/vendor/bbc-tams/api/TimeAddressableMediaStore.yaml \
           src/openapi.yaml
+      - |
+        uv run --project src python src/scripts/generate_contract_models.py \
+          src/openapi.yaml \
+          src/openapi-contract.yaml \
+          src/app/tamoss/contract/generated/contract_models.py \
+          --public-openapi-json src/app/tamoss/contract/openapi.json
 
   parity:
     cmds:
@@ -15,15 +23,14 @@ tasks:
       - uv run --project src python src/scripts/check_tamoss_openapi_parity.py
 
   check:
-    desc: Verify the BBC OpenAPI contract is reproducible and TAMOSS has API parity
     cmds:
       - |
         set -euo pipefail
         before="$(mktemp)"
         after="$(mktemp)"
         trap 'rm -f "$before" "$after"' EXIT
-        git diff -- src/openapi.yaml > "$before"
+        git diff -- src/openapi.yaml src/openapi-contract.yaml src/app/tamoss/contract/openapi.json src/app/tamoss/contract/generated/contract_models.py > "$before"
         task openapi:sync
-        git diff -- src/openapi.yaml > "$after"
+        git diff -- src/openapi.yaml src/openapi-contract.yaml src/app/tamoss/contract/openapi.json src/app/tamoss/contract/generated/contract_models.py > "$after"
         diff -u "$before" "$after"
       - task: parity

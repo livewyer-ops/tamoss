@@ -1,7 +1,12 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 tasks:
+  # `task lint` covers Python, frontend, and shell-helper gates:
+  # Ruff import/format, mypy, frontend Prettier, TypeScript, ESLint, and bash syntax.
+  # Operator Go and Kubernetes manifest gates live under operator tasks/CI.
   mypy:
     aliases: [strict-mypy]
     silent: true
@@ -12,7 +17,7 @@ tasks:
     cmds:
       - uv run mypy
       - >-
-        uv run mypy --strict
+        uv run mypy --strict --no-warn-unused-configs
         app/tamoss/api/dependencies.py
         app/tamoss/api/query_params.py
         app/tamoss/api/routes/delete_requests.py
@@ -31,8 +36,9 @@ tasks:
       - sh: command -v uv
         msg: "uv binary not found"
     cmds:
-      - uv run --project src ruff check --config src/pyproject.toml --select I --fix --exclude src/vendor/ src tests
-      - uv run --project src ruff format --config src/pyproject.toml --exclude src/vendor/ src tests
+      # Tests are first-class Ruff targets; generated/vendor material stays out.
+      - uv run --project src ruff check --config src/pyproject.toml --fix --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
+      - uv run --project src ruff format --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
 
   ruff:lint:
     silent: true
@@ -40,8 +46,9 @@ tasks:
       - sh: command -v uv
         msg: "uv binary not found"
     cmds:
-      - uv run --project src ruff check --config src/pyproject.toml --select I --exclude src/vendor/ src tests
-      - uv run --project src ruff format --config src/pyproject.toml --check --exclude src/vendor/ src tests
+      # Tests are first-class Ruff targets; generated/vendor material stays out.
+      - uv run --project src ruff check --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
+      - uv run --project src ruff format --config src/pyproject.toml --check --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
 
   eslint:
     silent: true
@@ -54,6 +61,11 @@ tasks:
       - npm run format:check
       - npm run typecheck
       - npm run lint
+
+  shell:
+    silent: true
+    cmds:
+      - bash -n .tasks/lib/*.sh
 
   yamlfmt:
     interactive: true

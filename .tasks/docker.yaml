@@ -1,6 +1,8 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 tasks:
   compose:deps:
     internal: true
@@ -15,12 +17,12 @@ tasks:
     cmds:
       - |
         . .tasks/lib/progress.sh
-        task_step "start dev dependencies" \
+        task_step "Development: start Compose dependencies" \
           docker compose up -d --wait db s3
       - |
         . .tasks/lib/progress.sh
-        task_step "bootstrap dev database" \
-          bash -c 'docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-tams}" -d "${POSTGRES_DB:-tams}" < db/bootstrap.sql'
+        task_step "Development: bootstrap Compose database" \
+          bash -c 'docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-tams}" -d "${POSTGRES_DB:-tams}" < src/app/tamoss/db/migrations/assets/bootstrap.sql'
 
   compose:down:
     internal: true
@@ -35,7 +37,7 @@ tasks:
     cmds:
       - |
         . .tasks/lib/progress.sh
-        task_step "stop dev dependencies" \
+        task_step "Development: stop Compose dependencies" \
           docker compose down --volumes
 
   compose:stop:
@@ -46,7 +48,7 @@ tasks:
     cmds:
       - |
         . .tasks/lib/progress.sh
-        task_step "stop dev dependencies" \
+        task_step "Development: stop Compose dependencies" \
           bash -c '
             if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
               exit 0
