@@ -1,0 +1,15 @@
+name: Setup Task
+description: Install the Task version pinned in aqua.yml.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Task version
+      id: version
+      shell: bash
+      run: echo "task=$(python3 .github/scripts/aqua-version.py go-task/task)" >> "$GITHUB_OUTPUT"
+
+    - name: Install Task
+      uses: go-task/setup-task@v2
+      with:
+        version: ${{ steps.version.outputs.task }}

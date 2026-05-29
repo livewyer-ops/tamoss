@@ -1,0 +1,27 @@
+name: Setup Node
+description: Install the Node.js version pinned in aqua.yml.
+
+inputs:
+  cache:
+    description: Package manager cache mode passed to actions/setup-node.
+    required: false
+    default: ""
+  cache-dependency-path:
+    description: Dependency lockfile path passed to actions/setup-node.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Node.js version
+      id: version
+      shell: bash
+      run: echo "node=$(python3 .github/scripts/aqua-version.py nodejs/node)" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ steps.version.outputs.node }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}

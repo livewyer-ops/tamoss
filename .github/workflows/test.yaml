@@ -14,6 +14,47 @@ permissions:
   actions: read
 
 jobs:
+  python-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Install Task
+        uses: ./.github/actions/setup-task
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install the project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Run fast local Python tests
+        run: task test:fast
+
+      - name: Upload fast Python reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: python-fast-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Fast Python test summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-py-fast.xml
+
   bbc-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -24,9 +65,7 @@ jobs:
           submodules: true
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -67,9 +106,7 @@ jobs:
           submodules: true
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -110,9 +147,7 @@ jobs:
           submodules: true
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -153,9 +188,7 @@ jobs:
           submodules: true
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -201,16 +234,56 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: ./.github/actions/setup-node
         with:
-          node-version: "25.3.0"
           cache: npm
           cache-dependency-path: src/app/frontend/package-lock.json
 
       - name: Run frontend tests
         run: task test:frontend
+
+      - name: Upload frontend reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: frontend-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Frontend test summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-frontend-unit.xml
+
+  media-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Task
+        uses: ./.github/actions/setup-task
+
+      - name: Run media fixture tests
+        run: task test:media:fixtures
+
+      - name: Upload media fixture reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: media-fixture-reports-${{ github.run_id }}
+          path: reports/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Media fixture test summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: reports/junit-media-fixtures.xml
