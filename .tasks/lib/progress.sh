@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Shared progress output for Taskfile commands.
 
 task_debug_enabled() {
@@ -9,6 +10,31 @@ task_debug_enabled() {
 
 task_log_dir() {
   printf '%s\n' "${TASK_LOG_DIR:-.local/logs/task}"
+}
+
+task_color_enabled() {
+  [ -t 1 ] || return 1
+  [ -z "${NO_COLOR:-}" ] || return 1
+  [ "${TERM:-}" != "dumb" ] || return 1
+}
+
+task_green() {
+  if task_color_enabled; then
+    printf '\033[32m%s\033[0m' "$1"
+    return
+  fi
+  printf '%s' "$1"
+}
+
+task_resolve_aqua_binary() {
+  bin="${1:?task_resolve_aqua_binary requires a binary name}"
+  if command -v "$bin" >/dev/null 2>&1; then
+    printf '%s' "$bin"
+  elif command -v aqua >/dev/null 2>&1; then
+    printf 'aqua exec -- %s' "$bin"
+  else
+    return 1
+  fi
 }
 
 task_log_slug() {
@@ -44,7 +70,7 @@ task_step() {
   label="$1"
   shift
 
-  ok_symbol="${TASK_STEP_OK:-✓}"
+  ok_symbol="${TASK_STEP_OK:-$(task_green "✓")}"
   fail_symbol="${TASK_STEP_FAIL:-✗}"
   run_symbol="${TASK_STEP_RUN:-•}"
 
@@ -64,7 +90,7 @@ task_step() {
 
   log_dir="$(task_log_dir)"
   mkdir -p "$log_dir"
-  log_file="$log_dir/$(date +%Y%m%d-%H%M%S)-$(task_log_slug "$label").log"
+  log_file="$(mktemp "$log_dir/$(date +%Y%m%d-%H%M%S)-$(task_log_slug "$label").XXXXXX.log")"
 
   start_time="$(date +%s)"
   printf '%s %s\n' "$run_symbol" "$label"

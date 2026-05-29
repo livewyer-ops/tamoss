@@ -1,0 +1,410 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -n "${BASH_SOURCE:-}" ]; then
+  task_lib_dir="$(cd "$(dirname "${BASH_SOURCE}")" && pwd)"
+else
+  task_lib_dir="$(cd "${TASK_LIB_DIR:-.tasks/lib}" && pwd)"
+fi
+# shellcheck source=.tasks/lib/progress.sh
+. "$task_lib_dir/progress.sh"
+# shellcheck source=.tasks/lib/operator_k8s.sh
+. "$task_lib_dir/operator_k8s.sh"
+# shellcheck source=.tasks/lib/profile.sh
+. "$task_lib_dir/profile.sh"
+
+task_tamoss_field_from_rendered() {
+  local rendered="$1"
+  local field="$2"
+  local query
+
+  case "$field" in
+    profile) query='.spec.profile // ""' ;;
+    namespace) query='.metadata.namespace // ""' ;;
+    name) query='.metadata.name // ""' ;;
+    *)
+      echo "Unsupported rendered Tamoss field: $field" >&2
+      return 2
+      ;;
+  esac
+
+  yq -r "select(.kind == \"Tamoss\") | ${query}" "$rendered" \
+    | sed '/^---$/d; /^$/d' \
+    | sed -n '1p'
+}
+
+task_render_environment() {
+  local environment_dir="$1"
+  local rendered="$2"
+  local missing_message="$3"
+
+  if [ ! -d "$environment_dir" ]; then
+    echo "$missing_message" >&2
+    return 1
+  fi
+  kubectl kustomize "$environment_dir" > "$rendered"
+}
+
+task_k8s_secret_value() {
+  local kubeconfig="$1"
+  local namespace="$2"
+  local secret="$3"
+  local key="$4"
+
+  if [ -z "$secret" ] || [ -z "$key" ]; then
+    return 0
+  fi
+  kubectl --kubeconfig "$kubeconfig" \
+    -n "$namespace" \
+    get secret "$secret" \
+    -o "jsonpath={.data.${key}}" 2>/dev/null \
+    | base64 --decode || true
+}
+
+task_init_k8s_environment() {
+  local name="$1"
+  local profile="$2"
+  local domain="$3"
+  local template_dir="deploy/templates/environment"
+  local environment_dir="deploy/environments/$name"
+
+  case "$name" in
+    *[!a-z0-9-]*|""|-*)
+      echo "NAME must be a non-empty DNS-style name using lowercase letters, numbers, and hyphens." >&2
+      return 2
+      ;;
+  esac
+  case "$profile" in
+    single-server|multi-server) ;;
+    *)
+      echo "PROFILE must be single-server or multi-server for remote Kubernetes environments." >&2
+      return 2
+      ;;
+  esac
+  if [ ! -d "$template_dir" ]; then
+    echo "Environment template directory $template_dir was not found." >&2
+    return 1
+  fi
+  if [ -e "$environment_dir" ]; then
+    echo "Environment $environment_dir already exists; refusing to overwrite it." >&2
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$environment_dir")"
+  cp -R "$template_dir" "$environment_dir"
+  for file in "$environment_dir"/*.yaml; do
+    tmp_file="$(mktemp)"
+    sed \
+      -e "s|__PROFILE__|$profile|g" \
+      -e "s|__DOMAIN__|$domain|g" \
+      "$file" > "$tmp_file"
+    mv "$tmp_file" "$file"
+  done
+
+  printf 'Created %s\n' "$environment_dir"
+  printf 'Edit the YAML files there, then run:\n'
+  printf '  task k8s:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$name"
+}
+
+task_apply_k8s_environment() {
+  local env_name="$1"
+  local kubeconfig="$2"
+  local environment_dir="deploy/environments/$env_name"
+  local rendered profile namespace name platform_dir
+
+  rendered="$(mktemp)"
+  trap 'rm -f "$rendered"' EXIT
+
+  task_render_environment \
+    "$environment_dir" \
+    "$rendered" \
+    "Environment $environment_dir was not found. Create it with task k8s:init."
+
+  profile="$(task_tamoss_field_from_rendered "$rendered" profile)"
+  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
+  name="$(task_tamoss_field_from_rendered "$rendered" name)"
+  namespace="${namespace:-tams}"
+
+  case "$profile" in
+    single-server|multi-server) ;;
+    *)
+      echo "Unable to infer a supported Tamoss spec.profile from $environment_dir." >&2
+      return 1
+      ;;
+  esac
+  if [ -z "$name" ]; then
+    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
+    return 1
+  fi
+  platform_dir="$(task_profile_remote_platform_dir "$profile")"
+
+  task_step "apply $profile platform" \
+    task_apply_operator_platform \
+      "$kubeconfig" \
+      deploy/platform/components/cert-manager \
+      "$platform_dir" \
+      auth \
+      rustfs-system \
+      rustfs-operator
+  task_apply_operator "$kubeconfig" deploy/operator
+  task_wait_operator "$kubeconfig" tamoss-system operator-controller-manager
+  task_step "apply TAMOSS environment $env_name" \
+    kubectl --kubeconfig "$kubeconfig" apply -k "$environment_dir"
+
+  printf 'Applied %s/%s from %s\n' "$namespace" "$name" "$environment_dir"
+}
+
+task_wait_k8s_environment() {
+  local env_name="$1"
+  local kubeconfig="$2"
+  local timeout="$3"
+  local environment_dir="deploy/environments/$env_name"
+  local rendered namespace name
+
+  rendered="$(mktemp)"
+  trap 'rm -f "$rendered"' EXIT
+
+  task_render_environment \
+    "$environment_dir" \
+    "$rendered" \
+    "Environment $environment_dir was not found. Create it with task k8s:init."
+  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
+  name="$(task_tamoss_field_from_rendered "$rendered" name)"
+  namespace="${namespace:-tams}"
+  if [ -z "$name" ]; then
+    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
+    return 1
+  fi
+
+  task_step "wait for Tamoss instance" \
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
+      wait --for=condition=Ready "tamoss/$name" --timeout="$timeout"
+}
+
+task_show_k8s_environment_status() {
+  local env_name="$1"
+  local kubeconfig="$2"
+  local environment_dir="deploy/environments/$env_name"
+  local rendered namespace name
+
+  rendered="$(mktemp)"
+  trap 'rm -f "$rendered"' EXIT
+
+  task_render_environment \
+    "$environment_dir" \
+    "$rendered" \
+    "Environment $environment_dir was not found. Create it with task k8s:init."
+  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
+  name="$(task_tamoss_field_from_rendered "$rendered" name)"
+  namespace="${namespace:-tams}"
+  if [ -z "$name" ]; then
+    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
+    return 1
+  fi
+
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o wide
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods,svc,ingress
+  if kubectl --kubeconfig "$kubeconfig" api-resources --api-group=gateway.networking.k8s.io | grep -q '^httproutes'; then
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" get httproute
+  fi
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get events --sort-by=.lastTimestamp | tail -40
+}
+
+task_condition_summary() {
+  local kubeconfig="$1"
+  local namespace="$2"
+  local label="$3"
+  local resource="$4"
+  local name="$5"
+  local condition="$6"
+  local value
+  local status_reason suffix
+
+  value="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$namespace" \
+      get "$resource" "$name" \
+      -o "jsonpath={range .status.conditions[?(@.type=='$condition')]}{.status}{' '}{.reason}{' - '}{.message}{end}" 2>/dev/null || true
+  )"
+  if [ -z "$value" ]; then
+    printf '  %-32s %s\n' "$label:" "not observed"
+    return
+  fi
+
+  case "$value" in
+    True\ *)
+      status_reason="${value%% - *}"
+      suffix="${value#"$status_reason"}"
+      printf '  %-32s %s%s\n' "$label:" "$(task_green "$status_reason")" "$suffix"
+      ;;
+    *)
+      printf '  %-32s %s\n' "$label:" "$value"
+      ;;
+  esac
+}
+
+task_replica_summary() {
+  local kubeconfig="$1"
+  local namespace="$2"
+  local tamoss_name="$3"
+  local component="$4"
+  local value
+  local available desired display
+
+  value="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$namespace" \
+      get tamoss "$tamoss_name" \
+      -o "jsonpath={.status.replicas.${component}.available}{' / '}{.status.replicas.${component}.desired}" 2>/dev/null || true
+  )"
+  if [ "$value" = " / " ] || [ -z "$value" ]; then
+    value="not enabled"
+  else
+    available="${value%% / *}"
+    desired="${value##* / }"
+    display="$value available"
+    if [[ "$available" =~ ^[0-9]+$ ]] &&
+      [[ "$desired" =~ ^[0-9]+$ ]] &&
+      [ "$desired" -gt 0 ] &&
+      [ "$available" -eq "$desired" ]; then
+      value="$(task_green "$display")"
+    else
+      value="$display"
+    fi
+  fi
+  printf '  %-32s %s\n' "${component} replicas:" "$value"
+}
+
+task_print_kind_summary() {
+  local target_file="$1"
+  local kubeconfig="$2"
+  local app_url api_url auth_url api_namespace tamoss_name token_key
+  local token_resource_name token_secret bearer_token default_storagebackend
+  local s3_url app_username app_password app_password_secret app_password_key app_password_namespace
+
+  if [ ! -f "$target_file" ]; then
+    echo "TAMOSS is ready, but $target_file was not found."
+    return 0
+  fi
+
+  set -a
+  . "$target_file"
+  set +a
+
+  app_url="${TEST_TAMOSS_UI:-https://app.tamoss.localtest.me}"
+  api_url="${TEST_TAMOSS_API:-https://api.tamoss.localtest.me}"
+  auth_url="${TEST_TAMOSS_AUTH:-https://auth.tamoss.localtest.me}"
+  api_namespace="${TEST_TAMOSS_NAMESPACE:-tams}"
+  tamoss_name="${TEST_TAMOSS_CR_NAME:-tamoss-kind}"
+  token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
+  token_resource_name="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$api_namespace" \
+      get tamoss "$tamoss_name" \
+      -o "jsonpath={.spec.fullnameOverride}" 2>/dev/null || true
+  )"
+  token_resource_name="${token_resource_name:-$tamoss_name}"
+  token_secret="${TEST_TAMOSS_TOKEN_SECRET:-${token_resource_name}-api-token}"
+
+  bearer_token="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$api_namespace" \
+      get secret "$token_secret" \
+      -o "jsonpath={.data.${token_key}}" \
+    | base64 --decode
+  )"
+
+  default_storagebackend="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$api_namespace" \
+      get tamoss "$tamoss_name" \
+      -o "jsonpath={.status.resolved.resources.defaultStorageBackend}" 2>/dev/null || true
+  )"
+
+  s3_url="${TEST_TAMOSS_S3:-https://s3.tamoss.localtest.me}"
+  app_username="${TEST_TAMOSS_AUTH_USER:-}"
+  app_password="${TEST_TAMOSS_AUTH_PASSWORD:-}"
+  app_password_secret="${TEST_TAMOSS_AUTH_PASSWORD_SECRET:-}"
+  app_password_key="${TEST_TAMOSS_AUTH_PASSWORD_KEY:-}"
+  app_password_namespace="${TEST_TAMOSS_AUTH_NAMESPACE:-$api_namespace}"
+  if [ -z "$app_password" ] && [ -n "$app_password_secret" ] && [ -n "$app_password_key" ]; then
+    app_password="$(
+      kubectl --kubeconfig "$kubeconfig" \
+        -n "$app_password_namespace" \
+        get secret "$app_password_secret" \
+        -o "jsonpath={.data.${app_password_key}}" 2>/dev/null \
+      | base64 --decode || true
+    )"
+  fi
+  rustfs_secret="${TEST_TAMOSS_RUSTFS_SECRET:-}"
+  if [ -z "$rustfs_secret" ]; then
+    rustfs_secret="$(
+      kubectl --kubeconfig "$kubeconfig" \
+        -n "$api_namespace" \
+        get tamoss "$tamoss_name" \
+        -o "jsonpath={.spec.backends.s3.rustfsOperator.credsSecret.existingSecret}" 2>/dev/null || true
+    )"
+  fi
+  rustfs_secret="${rustfs_secret:-${token_resource_name}-s3-creds}"
+  rustfs_username="${TEST_TAMOSS_RUSTFS_USERNAME:-${TEST_TAMOSS_RUSTFS_ACCESS_KEY:-}}"
+  rustfs_password="${TEST_TAMOSS_RUSTFS_PASSWORD:-${TEST_TAMOSS_RUSTFS_SECRET_KEY:-}}"
+  if [ -z "$rustfs_username" ]; then
+    rustfs_username="$(
+      task_k8s_secret_value \
+        "$kubeconfig" \
+        "$api_namespace" \
+        "$rustfs_secret" \
+        "${TEST_TAMOSS_RUSTFS_USERNAME_KEY:-RUSTFS_ACCESS_KEY}"
+    )"
+  fi
+  if [ -z "$rustfs_username" ]; then
+    rustfs_username="$(
+      task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" accesskey
+    )"
+  fi
+  if [ -z "$rustfs_password" ]; then
+    rustfs_password="$(
+      task_k8s_secret_value \
+        "$kubeconfig" \
+        "$api_namespace" \
+        "$rustfs_secret" \
+        "${TEST_TAMOSS_RUSTFS_PASSWORD_KEY:-RUSTFS_SECRET_KEY}"
+    )"
+  fi
+  if [ -z "$rustfs_password" ]; then
+    rustfs_password="$(
+      task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" secretkey
+    )"
+  fi
+
+  printf '\nTAMOSS is %s\n' "$(task_green "ready")"
+  printf '\nFirst-start lifecycle\n'
+  task_condition_summary "$kubeconfig" "$api_namespace" "Dependencies and backends" tamoss "$tamoss_name" "BackendsReady"
+  if [ -n "$default_storagebackend" ]; then
+    task_condition_summary "$kubeconfig" "$api_namespace" "Default bucket" storagebackend "$default_storagebackend" "BucketReady"
+    task_condition_summary "$kubeconfig" "$api_namespace" "Storage DB registration" storagebackend "$default_storagebackend" "DatabaseReady"
+  else
+    printf '  %-32s %s\n' "Default bucket:" "not managed"
+    printf '  %-32s %s\n' "Storage DB registration:" "not managed"
+  fi
+  task_condition_summary "$kubeconfig" "$api_namespace" "Schema migration" tamoss "$tamoss_name" "SchemaMigrated"
+  task_condition_summary "$kubeconfig" "$api_namespace" "Identity" tamoss "$tamoss_name" "IdentityReady"
+  task_replica_summary "$kubeconfig" "$api_namespace" "$tamoss_name" api
+  task_replica_summary "$kubeconfig" "$api_namespace" "$tamoss_name" ui
+  task_replica_summary "$kubeconfig" "$api_namespace" "$tamoss_name" worker
+  task_condition_summary "$kubeconfig" "$api_namespace" "Routes" tamoss "$tamoss_name" "RoutingReady"
+  printf '\nAccess\n'
+  printf '  App URL:          %s\n' "$app_url"
+  printf '  Auth Admin URL:   %s/if/admin/\n' "${auth_url%/}"
+  if [ -n "$app_username" ] || [ -n "$app_password" ]; then
+    printf '  App/Auth User:    %s\n' "${app_username:-<not configured>}"
+    printf '  App/Auth Pass:    %s\n' "${app_password:-<not available>}"
+  fi
+  printf '\n'
+  printf '  API URL:          %s/docs\n' "${api_url%/}"
+  printf '  API Token:        %s\n' "$bearer_token"
+  printf '\n'
+  printf '  RustFS Admin URL: %s/rustfs/console/\n' "${s3_url%/}"
+  printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
+  printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
+}
