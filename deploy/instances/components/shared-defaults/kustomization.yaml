@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      group: tamoss.livewyer.io
+      version: v1alpha1
+      kind: Tamoss
+    patch: |-
+      - op: add
+        path: /spec/fullnameOverride
+        value: tams

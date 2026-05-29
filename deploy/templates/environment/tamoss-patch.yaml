@@ -1,0 +1,9 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-__PROFILE__
+  namespace: tams
+spec:
+  profile: __PROFILE__
+  publicEndpoint:
+    baseDomain: __DOMAIN__

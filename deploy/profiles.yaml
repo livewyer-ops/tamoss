@@ -1,0 +1,32 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossProfileRegistry
+metadata:
+  name: tamoss-profiles
+# Canonical registry used by .tasks/lib/profile.sh and Taskfile profile
+# validation. Keep profile IDs and paths in sync with docs/concepts/profiles.md.
+profiles:
+  - id: local-kind
+    kindConfig: deploy/kind.yaml
+    platformKustomizeDir: deploy/platform/local-kind
+    remotePlatformKustomizeDir: deploy/platform/local-kind
+    instanceKustomizeDir: deploy/instances/local-kind
+    tamossName: tamoss-kind
+    targetEnv: tests/targets/local-kind.env
+    remoteEnvironment: false
+  - id: single-server
+    kindConfig: deploy/kind.yaml
+    platformKustomizeDir: deploy/platform/single-server-kind
+    remotePlatformKustomizeDir: deploy/platform/single-server
+    instanceKustomizeDir: deploy/instances/single-server-kind
+    tamossName: tamoss-single-server
+    targetEnv: tests/targets/single-server.env
+    remoteEnvironment: true
+  - id: multi-server
+    # Multi-server Kind validation intentionally uses a multi-node cluster.
+    kindConfig: deploy/kind-multi-server.yaml
+    platformKustomizeDir: deploy/platform/multi-server-kind
+    remotePlatformKustomizeDir: deploy/platform/multi-server
+    instanceKustomizeDir: deploy/instances/multi-server-kind
+    tamossName: tamoss-multi-server
+    targetEnv: tests/targets/multi-server.env
+    remoteEnvironment: true
