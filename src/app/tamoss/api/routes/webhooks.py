@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_use_cases
+from tamoss.api.dependencies import get_webhook_use_cases
 from tamoss.api.presenters import head_response, webhook_response, with_page_headers
-from tamoss.api.query_params import validate_query_params
-from tamoss.api.schemas import WebhookPost, WebhookPut
-from tamoss.application.use_cases import TamossUseCases
+from tamoss.api.query_params import tag_filter_parameters, validate_query_params
+from tamoss.application.contexts.webhooks import WebhookUseCases
+from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 from tamoss.domain.tags import parse_tag_filters
+from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Webhooks"])
 
@@ -18,27 +20,30 @@ router = APIRouter(tags=["Webhooks"])
 @router.get(
     "/service/webhooks",
     responses={404: {"description": "Webhooks are not supported."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 @router.head(
     "/service/webhooks",
     responses={404: {"description": "Webhooks are not supported."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 def list_webhooks(
     request: Request,
     response: Response,
-    tag_name: str | None = Query(default=None, alias="tag.{name}"),
-    tag_exists_name: bool | None = Query(default=None, alias="tag_exists.{name}"),
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     validate_query_params(
         request,
         {"page", "limit"},
         allowed_prefixes=("tag.", "tag_exists."),
     )
-    tag_values, tag_exists = parse_tag_filters(request.query_params)
-    webhook_page = use_cases.list_webhooks(
+    try:
+        tag_values, tag_exists = parse_tag_filters(request.query_params)
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
+    webhook_page = webhooks.list_webhooks(
         tag_values=tag_values,
         tag_exists=tag_exists,
         page=page,
@@ -59,10 +64,10 @@ def list_webhooks(
     },
 )
 def post_webhook(
-    webhook: WebhookPost,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    webhook: contract_models.WebhookPost,
+    webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
-    return webhook_response(use_cases.create_webhook(webhook))
+    return webhook_response(webhooks.create_webhook(contract_dump(webhook)))
 
 
 @router.get(
@@ -74,12 +79,12 @@ def post_webhook(
     responses={404: {"description": "The requested Webhook ID is invalid."}},
 )
 def get_webhook(
-    webhookId: UUID,
+    webhook_id: Annotated[UUID, Path(alias="webhookId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    webhook = use_cases.get_webhook(webhookId)
+    webhook = webhooks.get_webhook(webhook_id)
     if head := head_response(request):
         return head
     return webhook_response(webhook)
@@ -95,12 +100,15 @@ def get_webhook(
     },
 )
 def put_webhook(
-    webhookId: UUID,
-    webhook: WebhookPut,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    webhook_id: Annotated[UUID, Path(alias="webhookId")],
+    webhook: contract_models.WebhookPut,
+    webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     return webhook_response(
-        use_cases.put_webhook(webhook_id=webhookId, webhook_put=webhook)
+        webhooks.put_webhook(
+            webhook_id=webhook_id,
+            webhook=contract_dump(webhook),
+        )
     )
 
 
@@ -113,10 +121,10 @@ def put_webhook(
     },
 )
 def delete_webhook(
-    webhookId: UUID,
+    webhook_id: Annotated[UUID, Path(alias="webhookId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_webhook(webhookId)
+    webhooks.delete_webhook(webhook_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
