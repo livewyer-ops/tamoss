@@ -7,6 +7,33 @@ This project follows semantic versioning for public releases.
 ## Unreleased
 
 - Preparing the first public TAMOSS release candidate.
+- Added the TAMOSS Kubernetes operator as the primary Kubernetes deployment
+  path. Local Kubernetes install now creates Kind, applies the operator with
+  kustomize, and applies a `Tamoss` custom resource.
+- Added zero-to-ready Kind support through `task up`, including bundled
+  PostgreSQL and RustFS reconciliation, operator install, CR readiness waiting,
+  and operator-focused E2E gates.
+- Added a chainsaw-based operator e2e suite with Kind entrypoints, CI reporting,
+  and scenario coverage checks.
+- Aligned user-facing documentation and task commands to the operator-only
+  install model and infrastructure deployment
+  profiles.
+- Removed application chart deployment assets from this operator-only branch.
+- Added S3 backend selection with `providedBy=external|bundled|rustfs-operator`.
+  The operator now renders bundled RustFS directly and can coordinate with a
+  pinned RustFS Operator install through `rustfs.com/v1alpha1/Tenant`.
+- Added PostgreSQL backend selection with `providedBy=external|bundled|cnpg`.
+  `providedBy=cnpg` emits a CloudNativePG `Cluster`, waits for CNPG readiness,
+  and consumes CNPG-generated app/superuser Secrets.
+- Added auth provider selection with `providedBy=external|none|authentik-blueprints`.
+  The Authentik path generates stable OAuth2 client credentials, applies a
+  per-instance managed Blueprint through the platform Authentik API, and reports
+  identity readiness through an OIDC discovery probe.
+- The operator CRD now expresses bundled backends with
+  `spec.backends.db.providedBy=bundled` and
+  `spec.backends.s3.providedBy=bundled`.
+- External OAuth2 configuration now lives under `spec.auth.external.oauth2`
+  with `spec.auth.providedBy=external`.
 
 ## 1.0.0-rc.1
 
@@ -14,6 +41,6 @@ This project follows semantic versioning for public releases.
   objects, storage allocation, webhooks, and deletion requests.
 - PostgreSQL persistence, S3-compatible object storage, asynchronous workers,
   and webhook delivery.
-- Helm charts and Kind automation for local and remote Kubernetes deployment.
+- Operator and Kind automation for local and remote Kubernetes deployment.
 - Web UI addon for browsing, operational workflows, preview ingest, and preview
   playback.

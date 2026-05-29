@@ -6,8 +6,8 @@ Local setup, test commands, and PR workflow for TAMOSS.
 
 The fastest path is [aqua](https://aquaproj.github.io/docs/install/) —
 one install step gives you the pinned CLI set for local development
-(Task, uv, kind, kubectl, helm, helmfile, OSV Scanner, node,
-yamlfmt, jq, gh).
+(Task, uv, kind, kubectl, Go,
+kubeconform, OSV Scanner, node, yamlfmt, jq, gh).
 See [aqua.yml](aqua.yml) for the full list.
 
 ```bash
@@ -48,13 +48,39 @@ task dev
 Full local Kubernetes stack (used for integration sign-off):
 
 ```bash
-task up      # create Kind cluster + deploy helmfile
+task up PROFILE=local-kind  # create Kind, apply the operator, apply the Tamoss CR
 task down    # tear it down
 ```
 
 Mental model: **dev = speed, Kind = confidence, remote = release
-validation.** Develop against `task dev`; gate merges against `task up`
-+ `task e2e`; use the remote cluster only for final rollout checks.
+validation.** Develop against `task dev`; gate merges against
+`task up PROFILE=local-kind` plus `task e2e PROFILE=local-kind`; use the remote
+cluster only for final rollout checks.
+
+### Operator development
+
+The Kubernetes operator lives under `operator/` and uses Go with
+controller-runtime tooling. The operator has an independent Go
+module and release cadence from the Python API and Node UI.
+
+Use the root Taskfile wrappers where possible:
+
+```bash
+task operator:build
+task operator:test
+task operator:manifests
+```
+
+Run operator semantics e2e tests with the chainsaw Task entries. Use
+`task operator:e2e:chainsaw` against an existing `KUBECONFIG`,
+`task operator:e2e:chainsaw:up` for a disposable Kind cluster from scratch, and
+`task operator:e2e:chainsaw:focus -- <test-name>` for one case. The test
+layout and contribution workflow are documented in
+[`operator/test/chainsaw/README.md`](operator/test/chainsaw/README.md).
+
+Work in `src/app/` normally does not require Go. Install the aqua toolchain
+before touching the operator so `go`, `kubeconform`, and
+`chainsaw` match CI.
 
 ## Testing
 
@@ -70,7 +96,7 @@ Run the compatibility gates that block merges:
 task test:contract:bbc  # BBC v8.0 OpenAPI/path/status parity
 task test:semantics:bbc # BBC resource lifecycle and workflow semantics
 task test:bbc           # both BBC gates above
-task test:all           # BBC gates, workers, and frontend
+task test               # fast local Python and frontend subset
 ```
 
 Other focused suites:
@@ -88,7 +114,7 @@ End-to-end (Kind + deploy + deployed ingress tests):
 
 ```bash
 task e2e
-task test:deployed DEPLOY_ENV=kind KUBECONFIG=tams.kubeconfig
+task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
 ```
 
 The local `task e2e` path is intentionally broader than the CI Kind workflow:
@@ -118,7 +144,9 @@ requires a real ingress, browser, object store, or worker deployment.
   Runtime implementation lives under `src/app/tamoss/`.
 - **Tests**: maintained TAMOSS BBC parity tests live under
   `tests/adapters/bbc/` and deployed black-box flows under `tests/e2e/`.
-- **Database**: `db/schema.sql`, `db/bootstrap.sql`, and `db/fixtures.sql`.
+- **Database**: canonical SQL assets live under
+  `src/app/tamoss/db/migrations/assets/`; Alembic applies those files at
+  runtime.
 - **Vendored BBC reference**: `src/vendor/bbc-tams/` is shipped
   upstream-as-is. Do not repair its Markdown links, examples, or ADR text in
   this repo; exclude it from local doc/link assertions and update the submodule
@@ -190,6 +218,11 @@ Fixes #89
 - **Features**: open an issue with the `enhancement` label; describe
   the use case and why it would benefit TAMOSS users.
 - **Security**: do not open a public issue — see [SECURITY.md](SECURITY.md).
+
+For operational bugs, include the selected profile, `Tamoss` status conditions,
+provider ownership choices, relevant Events, and redacted log excerpts. Do not
+include Secret values, tokens, passwords, private keys, or complete presigned
+URLs in public issues.
 
 ## Getting help
 

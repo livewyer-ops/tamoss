@@ -4,7 +4,7 @@
 
 Do not report security vulnerabilities through public GitHub issues.
 
-Instead, please report them via one of the following methods:
+Instead, report them privately via one of the following methods:
 
 1. **Email**: Send details to <hello@livewyer.com>
 2. **Private Security Advisory**: Use GitHub's [private vulnerability reporting](https://github.com/livewyer-ops/tamoss/security/advisories/new)
@@ -19,6 +19,11 @@ Please include the following information in your report:
 - **Proof of concept** or exploit code (if possible)
 - **Potential impact** of the vulnerability
 - **Suggested fix** if you have one
+
+Do not include production credentials, bearer tokens, private keys, database
+passwords, S3 access keys, OAuth client secrets, or complete presigned object
+URLs. If a credential is required to demonstrate impact, explain the requirement
+and wait for maintainers to agree on a safe exchange path.
 
 ## Security Considerations
 
@@ -55,9 +60,9 @@ deploying TAMOSS in production:
 
    - Ensure the API pod is reachable **only** through the authenticating
      ingress (NetworkPolicy, private Service, or otherwise).
-   - If you need direct access for a debugging workflow, use
-     `kubectl port-forward` on a developer machine where the port is
-     not shared.
+   - If you need direct access for debugging, keep it temporary and private;
+     do not publish a Service, LoadBalancer, or route that bypasses the
+     authenticating ingress.
    - Do not expose the API directly with
      `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=1` (NodePort, LoadBalancer without
      the ingress in front, or `hostNetwork: true`) unless you strip
@@ -80,6 +85,8 @@ At minimum:
 - Enable server-side encryption, audit logs, lifecycle policy, and backup or
   replication according to the provider's capabilities.
 - Expose browser-facing object URLs only through the intended public endpoint.
+- Configure CORS at the public object-store endpoint so browser uploads are
+  limited to the TAMOSS UI origin and required methods/headers.
 
 ### Presigned URLs
 
@@ -90,6 +97,9 @@ TAMOSS uses S3-compatible presigned URLs for media access. These URLs:
 - Should be treated as temporary credentials
 
 Configure expiration times based on the deployment's access pattern.
+
+Do not paste full presigned URLs into public issues. They can grant temporary
+access to media objects until they expire.
 
 ### Media Content
 

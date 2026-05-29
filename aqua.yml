@@ -23,8 +23,11 @@ packages:
     # Kubernetes / deploy tooling
     - name: kubernetes-sigs/kind@v0.31.0 # .tasks/kind.yaml
     - name: kubernetes/kubectl@v1.35.0 # .tasks/kind.yaml (`kubectl wait pod ...`)
-    - name: helm/helm@v3.18.6 # .tasks/deploy.yaml, .tasks/kind.yaml
-    - name: helmfile/helmfile@v1.1.2 # .tasks/deploy.yaml
+    - name: helm/helm@v3.18.2 # .tasks/operator.yaml Authentik upstream Helm chart
+    - name: kyverno/chainsaw@v0.2.15 # operator/test/chainsaw
+    - name: golang/go@go1.23.2 # operator/go.mod and controller builds
+    - name: yannh/kubeconform@v0.6.7 # generated operator CRD/install manifest linting
+    - name: stackrox/kube-linter@v0.8.3 # operator install manifest and pod security linting
     - name: grafana/k6@v1.2.3 # tests/k6/* via .tasks/test.yaml
 
     # Cloud & storage
@@ -34,9 +37,11 @@ packages:
     # Languages & runtimes
     - name: nodejs/node@v25.3.0 # frontend local npm scripts
     # uv manages the Python 3.11 toolchain used by CI and the API container.
+    # Go is pinned with Kubernetes tooling above because only the operator uses it.
 
     # Linting / formatting / data
     - name: google/yamlfmt@v0.21.0 # .tasks/lint.yaml (lint:yamlfmt)
+    - name: mikefarah/yq@v4.35.1 # .tasks/lib/profile.sh and platform dependency checks
     - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
     # nightly-slo, and src/scripts/
 

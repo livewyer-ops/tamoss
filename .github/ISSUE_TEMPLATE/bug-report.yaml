@@ -35,7 +35,6 @@ body:
         - Docker or Podman:
         - Task:
         - kubectl:
-        - helm:
     validations:
       required: true
   - type: textarea

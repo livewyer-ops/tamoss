@@ -8,22 +8,6 @@ updates:
     directory: "/src/app/frontend"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "helm"
-    directory: "/deploy/charts/tams"
-    schedule:
-      interval: "weekly"
-  - package-ecosystem: "helm"
-    directory: "/deploy/charts/tams-stack"
-    schedule:
-      interval: "weekly"
-  - package-ecosystem: "helm"
-    directory: "/deploy/charts/tams-platform"
-    schedule:
-      interval: "weekly"
-  # Helmfile-managed cluster-service chart versions live in
-  # deploy/targets/{kind,remote}/values.yaml and are not updated by Dependabot's
-  # Helm ecosystem. Review those pins manually when updating deployment
-  # dependencies; see CONTRIBUTING.md.
   - package-ecosystem: "docker"
     directories:
       - "/src/app/tamoss"
