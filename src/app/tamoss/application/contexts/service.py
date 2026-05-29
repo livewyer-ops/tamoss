@@ -1,18 +1,31 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    ServiceInfoUpdate,
-    ServiceMetadata,
-    StorageBackend,
-    UseCaseContext,
-)
+from collections.abc import Mapping
+from typing import Any
+
+from tamoss.contract.payloads import JsonPayload, without_none
+from tamoss.domain.model import ServiceMetadata, StorageBackend
+from tamoss.ports.repositories import ServiceRepository
+from tamoss.settings import Settings
 
 
-class ServiceUseCases(UseCaseContext):
+class ServiceUseCases:
+    repository: ServiceRepository
+    settings: Settings
+
+    def __init__(
+        self,
+        *,
+        repository: ServiceRepository,
+        settings: Settings,
+    ) -> None:
+        self.repository = repository
+        self.settings = settings
+
     def root_paths(self) -> list[str]:
         return ["service", "flows", "sources", "objects", "flow-delete-requests"]
 
-    def service_info(self) -> dict:
+    def service_info(self) -> JsonPayload:
         metadata = self.repository.get_service_metadata()
         info = {
             "type": "urn:x-tams:service.tamoss",
@@ -26,13 +39,13 @@ class ServiceUseCases(UseCaseContext):
             "min_object_timeout": self.settings.min_object_timeout,
             "min_presigned_url_timeout": self.settings.min_presigned_url_timeout,
         }
-        return {key: value for key, value in info.items() if value is not None}
+        return without_none(info)
 
-    def update_service_info(self, update: ServiceInfoUpdate) -> None:
+    def update_service_info(self, update: Mapping[str, Any]) -> None:
         self.repository.save_service_metadata(
             ServiceMetadata(
-                name=update.name or None,
-                description=update.description or None,
+                name=update.get("name") or None,
+                description=update.get("description") or None,
             )
         )
 

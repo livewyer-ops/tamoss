@@ -1,23 +1,41 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    UUID,
-    BadRequest,
-    FlowStoragePost,
-    Forbidden,
-    MediaObjectRecord,
-    ObjectInstance,
-    StorageBackend,
-    UseCaseContext,
-    uuid4,
-)
+from collections.abc import Mapping
+from typing import Any
+from uuid import UUID, uuid4
+
+from tamoss.domain.model import MediaObjectRecord, ObjectInstance, StorageBackend
+from tamoss.errors import BadRequest, Forbidden, NotFound
+from tamoss.ports.object_storage import ObjectStorage
+from tamoss.ports.repositories import FlowLookupRepository, StorageRepository
+from tamoss.settings import Settings
 
 
-class StorageUseCases(UseCaseContext):
+class StorageUseCases:
+    repository: StorageRepository
+    object_storage: ObjectStorage
+    settings: Settings
+    flow_repository: FlowLookupRepository
+
+    def __init__(
+        self,
+        *,
+        repository: StorageRepository,
+        object_storage: ObjectStorage,
+        settings: Settings,
+        flow_repository: FlowLookupRepository,
+    ) -> None:
+        self.repository = repository
+        self.object_storage = object_storage
+        self.settings = settings
+        self.flow_repository = flow_repository
+
     def allocate_flow_storage(
-        self, *, flow_id: UUID, request: FlowStoragePost
-    ) -> list[dict]:
-        flow = self.get_flow(flow_id)
+        self, *, flow_id: UUID, request: Mapping[str, Any]
+    ) -> list[dict[str, object]]:
+        flow = self.flow_repository.get_flow(flow_id)
+        if flow is None:
+            raise NotFound("The requested Flow does not exist.")
         if flow.read_only:
             raise Forbidden(
                 "Forbidden. You do not have permission to modify this Flow. "
@@ -25,27 +43,36 @@ class StorageUseCases(UseCaseContext):
             )
         if not flow.container:
             raise BadRequest("Bad request. The Flow 'container' is not set.")
-        if request.limit is not None and request.object_ids is not None:
+        limit = request.get("limit")
+        object_ids = request.get("object_ids")
+        storage_id = request.get("storage_id")
+        if limit is not None and object_ids is not None:
             raise BadRequest("Specify either limit or object_ids, not both.")
+        if (limit or 1) > self.settings.storage_allocation_max_objects:
+            raise BadRequest("Bad request. Storage allocation limit is too high.")
 
         backend = (
-            self.repository.get_storage_backend(request.storage_id)
-            if request.storage_id
+            self.repository.get_storage_backend(UUID(str(storage_id)))
+            if storage_id
             else self.repository.default_storage_backend()
         )
         if backend is None:
             raise BadRequest("The requested Storage Backend does not exist.")
 
-        requested_object_ids = list(request.object_ids or [])
+        requested_object_ids = [str(object_id) for object_id in object_ids or []]
+        if len(requested_object_ids) > self.settings.storage_allocation_max_objects:
+            raise BadRequest("Bad request. Storage allocation limit is too high.")
         if len(requested_object_ids) != len(set(requested_object_ids)):
             raise BadRequest("One or more supplied object_ids are duplicated.")
+        for object_id in requested_object_ids:
+            self._validate_storage_object_id(object_id)
 
-        allocations: list[dict] = []
+        allocations: list[dict[str, object]] = []
         with self.repository.unit_of_work():
             object_ids = requested_object_ids
-            if request.object_ids is None:
+            if request.get("object_ids") is None:
                 object_ids = []
-                while len(object_ids) < (request.limit or 1):
+                while len(object_ids) < (limit or 1):
                     object_id = str(uuid4())
                     if self._reserve_allocated_object(
                         object_id=object_id,
@@ -62,22 +89,26 @@ class StorageUseCases(UseCaseContext):
                             "One or more supplied object_ids already exist."
                         )
 
-            for object_id in object_ids:
-                allocations.append(
+            allocations.extend(
+                [
                     {
                         "object_id": object_id,
+                        "storage_id": str(backend.id),
                         "put_url": self.object_storage.build_put_request(
                             object_id=object_id,
                             flow_container=flow.container,
                             backend=backend,
                         ),
                     }
-                )
+                    for object_id in object_ids
+                ]
+            )
         return allocations
 
     def _reserve_allocated_object(
         self, *, object_id: str, backend: StorageBackend
     ) -> bool:
+        self._validate_storage_object_id(object_id)
         media_object = MediaObjectRecord(id=object_id)
         media_object.instances.append(
             ObjectInstance(
@@ -88,3 +119,13 @@ class StorageUseCases(UseCaseContext):
             )
         )
         return self.repository.create_object(media_object)
+
+    def _validate_storage_object_id(self, object_id: str) -> None:
+        if (
+            not object_id
+            or len(object_id) > self.settings.storage_object_id_max_length
+            or object_id.startswith("/")
+            or any(ord(character) < 32 for character in object_id)
+            or any(part in {"", ".", ".."} for part in object_id.split("/"))
+        ):
+            raise BadRequest("Bad request. Invalid object_id.")

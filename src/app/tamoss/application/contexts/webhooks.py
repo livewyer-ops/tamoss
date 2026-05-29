@@ -1,31 +1,40 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    DEFAULT_WORKER_ID,
-    DEFAULT_WORKER_LEASE_SECONDS,
-    UUID,
-    BadRequest,
-    FlowRecord,
-    NotFound,
-    Page,
-    SegmentRecord,
-    SourceRecord,
-    UseCaseContext,
+from collections.abc import Mapping
+from datetime import timedelta
+from typing import Any
+from uuid import UUID, uuid4
+
+import requests
+
+from tamoss.application import webhooks as webhooking
+from tamoss.domain.model import (
+    DomainErrorPayload,
     WebhookDeliveryRecord,
-    WebhookPost,
-    WebhookPut,
     WebhookRecord,
-    _clear_worker_claim,
-    _timerange_covering_segments,
-    error_payload,
-    timedelta,
     utc_now,
-    uuid4,
-    webhooking,
 )
+from tamoss.domain.pagination import Page
+from tamoss.errors import BadRequest, NotFound
+from tamoss.ports.repositories import WebhookRepository
+from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings
+
+DEFAULT_WORKER_ID = "tamoss-worker"
 
 
-class WebhookUseCases(UseCaseContext):
+class WebhookUseCases:
+    repository: WebhookRepository
+    settings: Settings
+
+    def __init__(
+        self,
+        *,
+        repository: WebhookRepository,
+        settings: Settings,
+    ) -> None:
+        self.repository = repository
+        self.settings = settings
+
     def list_webhooks(
         self,
         *,
@@ -47,10 +56,13 @@ class WebhookUseCases(UseCaseContext):
             raise NotFound("The requested Webhook ID in the path is invalid.")
         return webhook
 
-    def create_webhook(self, webhook_post: WebhookPost) -> WebhookRecord:
-        data = webhook_post.model_dump(exclude_none=True, mode="json")
+    def create_webhook(self, webhook: Mapping[str, Any]) -> WebhookRecord:
+        data = dict(webhook)
         try:
-            webhooking.validate_webhook_configuration(data)
+            webhooking.validate_webhook_configuration(
+                data,
+                egress_policy=self._webhook_egress_policy(),
+            )
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid webhook payload.") from exc
         status = data.pop("status", None) or "created"
@@ -60,26 +72,29 @@ class WebhookUseCases(UseCaseContext):
             id=uuid4(),
             data=data,
             status=status,
-            tags=dict(webhook_post.tags or {}),
+            tags=dict(webhook.get("tags") or {}),
         )
         self.repository.save_webhook(webhook)
         return webhook
 
     def put_webhook(
-        self, *, webhook_id: UUID, webhook_put: WebhookPut
+        self, *, webhook_id: UUID, webhook: Mapping[str, Any]
     ) -> WebhookRecord:
-        if webhook_put.id != webhook_id:
+        if UUID(str(webhook.get("id"))) != webhook_id:
             raise NotFound("The requested Webhook ID in the path is invalid.")
         existing = self.get_webhook(webhook_id)
-        if existing.status == "error" and webhook_put.status == "disabled":
+        if existing.status == "error" and webhook.get("status") == "disabled":
             raise BadRequest(
                 "Bad request. The Webhook is currently in an error status and "
                 "therefore cannot be updated to disabled."
             )
 
-        data = webhook_put.model_dump(exclude_none=True, mode="json")
+        data = dict(webhook)
         try:
-            webhooking.validate_webhook_configuration(data)
+            webhooking.validate_webhook_configuration(
+                data,
+                egress_policy=self._webhook_egress_policy(),
+            )
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid webhook payload.") from exc
         data.pop("id", None)
@@ -90,7 +105,7 @@ class WebhookUseCases(UseCaseContext):
             id=webhook_id,
             data=data,
             status=status,
-            tags=dict(webhook_put.tags or {}),
+            tags=dict(webhook.get("tags") or {}),
         )
         self.repository.save_webhook(webhook)
         return webhook
@@ -149,17 +164,37 @@ class WebhookUseCases(UseCaseContext):
         delivery.updated = utc_now()
         self.repository.save_webhook_delivery(delivery)
 
+        delivery_webhook = webhooking.webhook_for_delivery(
+            delivery.webhook_snapshot,
+            live_webhook.data,
+        )
+        egress_policy = self._webhook_egress_policy()
+        try:
+            webhooking.validate_webhook_url(
+                delivery_webhook.get("url"),
+                egress_policy=egress_policy,
+            )
+        except ValueError as exc:
+            return self._mark_webhook_delivery_dead(
+                delivery,
+                response_status=None,
+                error_type="WebhookTargetBlocked",
+                error_summary=str(exc),
+            )
+
         try:
             response = webhooking.send_webhook_delivery(
-                webhook=delivery.webhook_snapshot,
+                webhook=delivery_webhook,
                 payload=delivery.payload,
+                timeout_seconds=self.settings.webhook_timeout_seconds,
+                egress_policy=egress_policy,
             )
             if 200 <= response.status_code < 300:
                 delivery.status = "done"
                 delivery.response_status = response.status_code
                 delivery.next_attempt_at = None
                 delivery.error = None
-                _clear_worker_claim(delivery)
+                _clear_webhook_delivery_claim(delivery)
                 delivery.updated = utc_now()
                 self.repository.save_webhook_delivery(delivery)
                 return delivery
@@ -168,7 +203,7 @@ class WebhookUseCases(UseCaseContext):
             error_summary = f"HTTP {response.status_code}: {response.reason}"
             if (
                 response.status_code in webhooking.RETRIABLE_STATUS_CODES
-                and delivery.attempt_count < webhooking.max_attempts()
+                and delivery.attempt_count < self.settings.webhook_max_attempts
             ):
                 return self._mark_webhook_delivery_retry(
                     delivery,
@@ -182,10 +217,17 @@ class WebhookUseCases(UseCaseContext):
                 error_type=error_type,
                 error_summary=error_summary,
             )
-        except Exception as exc:
+        except webhooking.WebhookEgressError as exc:
+            return self._mark_webhook_delivery_dead(
+                delivery,
+                response_status=None,
+                error_type="WebhookTargetBlocked",
+                error_summary=str(exc),
+            )
+        except requests.RequestException as exc:
             error_type = type(exc).__name__
             error_summary = str(exc)
-            if delivery.attempt_count < webhooking.max_attempts():
+            if delivery.attempt_count < self.settings.webhook_max_attempts:
                 return self._mark_webhook_delivery_retry(
                     delivery,
                     response_status=None,
@@ -199,120 +241,11 @@ class WebhookUseCases(UseCaseContext):
                 error_summary=error_summary,
             )
 
-    def _publish_flow_event(self, event_type: str, flow: FlowRecord) -> None:
-        source = self._source_for_flow(flow)
-        self._publish_webhook_event(
-            event_type=event_type,
-            event_factory=lambda _webhook: {"flow": self._flow_payload(flow)},
-            flow=flow,
-            source=source,
+    def _webhook_egress_policy(self) -> webhooking.WebhookEgressPolicy:
+        return webhooking.WebhookEgressPolicy(
+            allow_private_targets=self.settings.webhook_allow_private_targets,
+            allowed_hosts=tuple(self.settings.webhook_allowed_hosts),
         )
-
-    def _publish_flow_deleted(self, flow: FlowRecord) -> None:
-        self._publish_webhook_event(
-            event_type="flows/deleted",
-            event_factory=lambda _webhook: {"flow_id": str(flow.id)},
-            flow=flow,
-            source=self._source_for_flow(flow),
-        )
-
-    def _publish_segments_added(
-        self, flow: FlowRecord, segments: list[SegmentRecord]
-    ) -> None:
-        self._publish_webhook_event(
-            event_type="flows/segments_added",
-            event_factory=lambda webhook: {
-                "flow_id": str(flow.id),
-                "segments": [
-                    self._segment_payload(segment, webhook.data) for segment in segments
-                ],
-            },
-            flow=flow,
-            source=self._source_for_flow(flow),
-        )
-
-    def _publish_segments_deleted(
-        self, flow: FlowRecord, segments: list[SegmentRecord]
-    ) -> None:
-        self._publish_webhook_event(
-            event_type="flows/segments_deleted",
-            event_factory=lambda _webhook: {
-                "flow_id": str(flow.id),
-                "timerange": _timerange_covering_segments(segments),
-            },
-            flow=flow,
-            source=self._source_for_flow(flow),
-        )
-
-    def _publish_source_event(self, event_type: str, source: SourceRecord) -> None:
-        self._publish_webhook_event(
-            event_type=event_type,
-            event_factory=lambda _webhook: {"source": self._source_payload(source)},
-            flow=None,
-            source=source,
-        )
-
-    def _publish_source_deleted(self, source: SourceRecord) -> None:
-        self._publish_webhook_event(
-            event_type="sources/deleted",
-            event_factory=lambda _webhook: {"source_id": str(source.id)},
-            flow=None,
-            source=source,
-        )
-
-    def _publish_webhook_event(
-        self,
-        *,
-        event_type: str,
-        event_factory,
-        flow: FlowRecord | None,
-        source: SourceRecord | None,
-    ) -> list[WebhookDeliveryRecord]:
-        event_timestamp = utc_now()
-        flow_ids = [str(flow.id)] if flow is not None else []
-        source_ids = [str(source.id)] if source is not None else []
-        flow_collected_by_ids = self._flow_collected_by_ids(flow)
-        source_collected_by_ids = self._source_collected_by_ids(source)
-        deliveries: list[WebhookDeliveryRecord] = []
-
-        for webhook in self.repository.list_webhooks():
-            if webhook.status not in {"created", "started"}:
-                continue
-            if not webhooking.webhook_matches(
-                webhook.data,
-                event_type=event_type,
-                flow_ids=flow_ids,
-                source_ids=source_ids,
-                flow_collected_by_ids=flow_collected_by_ids,
-                source_collected_by_ids=source_collected_by_ids,
-            ):
-                continue
-            if webhook.status == "created":
-                webhook.status = "started"
-                self.repository.save_webhook(webhook)
-
-            payload = {
-                "event_timestamp": event_timestamp.isoformat(),
-                "event_type": event_type,
-                "event": event_factory(webhook),
-            }
-            delivery = WebhookDeliveryRecord(
-                id=uuid4(),
-                webhook_id=webhook.id,
-                webhook_snapshot=webhooking.webhook_delivery_snapshot(
-                    webhook.data, status=webhook.status
-                ),
-                event_type=event_type,
-                event_timestamp=event_timestamp,
-                payload=payload,
-                status="pending",
-                created=event_timestamp,
-                updated=event_timestamp,
-                next_attempt_at=event_timestamp,
-            )
-            self.repository.save_webhook_delivery(delivery)
-            deliveries.append(delivery)
-        return deliveries
 
     def _mark_webhook_delivery_retry(
         self,
@@ -324,11 +257,11 @@ class WebhookUseCases(UseCaseContext):
     ) -> WebhookDeliveryRecord:
         delivery.status = "pending"
         delivery.response_status = response_status
-        delivery.error = error_payload(error_type, error_summary)
+        delivery.error = DomainErrorPayload.create(error_type, error_summary)
         delivery.next_attempt_at = utc_now() + timedelta(
             seconds=webhooking.retry_delay(delivery.attempt_count)
         )
-        _clear_worker_claim(delivery)
+        _clear_webhook_delivery_claim(delivery)
         delivery.updated = utc_now()
         self.repository.save_webhook_delivery(delivery)
         return delivery
@@ -342,18 +275,24 @@ class WebhookUseCases(UseCaseContext):
         error_summary: str,
         mark_webhook_error: bool = True,
     ) -> WebhookDeliveryRecord:
-        error = error_payload(error_type, error_summary)
+        domain_error = DomainErrorPayload.create(error_type, error_summary)
         delivery.status = "dead"
         delivery.response_status = response_status
-        delivery.error = error
+        delivery.error = domain_error
         delivery.next_attempt_at = None
-        _clear_worker_claim(delivery)
+        _clear_webhook_delivery_claim(delivery)
         delivery.updated = utc_now()
         self.repository.save_webhook_delivery(delivery)
         if mark_webhook_error:
             webhook = self.repository.get_webhook(delivery.webhook_id)
             if webhook is not None:
                 webhook.status = "error"
-                webhook.data["error"] = error
+                webhook.data["error"] = domain_error.to_json_dict()
                 self.repository.save_webhook(webhook)
         return delivery
+
+
+def _clear_webhook_delivery_claim(delivery: WebhookDeliveryRecord) -> None:
+    delivery.claimed_at = None
+    delivery.claimed_by = None
+    delivery.claim_expires_at = None

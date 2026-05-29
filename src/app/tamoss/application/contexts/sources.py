@@ -1,27 +1,38 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    UUID,
-    Any,
-    BadRequest,
-    FlowRecord,
-    Iterable,
-    NotFound,
-    Page,
-    SourceRecord,
-    SourceRelationships,
-    TagValue,
-    UseCaseContext,
-    _collection_child_id,
-    _collection_role,
-    _flow_collection,
-    _valid_tag_value,
-    utc_now,
-    validation,
+from collections.abc import Iterable
+from typing import Literal
+from uuid import UUID
+
+from tamoss.application import webhooks as webhooking
+from tamoss.application.contexts.flows import validate_content_format_filter
+from tamoss.domain.flow_collections import (
+    collection_child_id,
+    collection_role,
+    flow_collection,
 )
+from tamoss.domain.model import SourceRecord, SourceRelationships, utc_now
+from tamoss.domain.pagination import Page
+from tamoss.domain.tags import TagValue, valid_tag_value
+from tamoss.errors import BadRequest, NotFound
+from tamoss.ports.repositories import SourceRepository, WebhookEventRepository
+
+SourcePropertyName = Literal["label", "description"]
 
 
-class SourceUseCases(UseCaseContext):
+class SourceUseCases:
+    repository: SourceRepository
+    webhook_repository: WebhookEventRepository
+
+    def __init__(
+        self,
+        *,
+        repository: SourceRepository,
+        webhook_repository: WebhookEventRepository,
+    ) -> None:
+        self.repository = repository
+        self.webhook_repository = webhook_repository
+
     def list_sources(
         self,
         *,
@@ -33,7 +44,7 @@ class SourceUseCases(UseCaseContext):
         limit: int | None,
     ) -> Page[SourceRecord]:
         try:
-            validation.validate_content_format_filter(format)
+            validate_content_format_filter(format)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid query options.") from exc
         return self.repository.list_sources_page(
@@ -66,19 +77,19 @@ class SourceUseCases(UseCaseContext):
         for parent_flow in flows_by_id.values():
             if parent_flow.source_id is None:
                 continue
-            collection = _flow_collection(parent_flow)
+            collection = flow_collection(parent_flow)
             if not collection:
                 continue
 
             parent_relationship = relationship_for(parent_flow.source_id)
             for item in collection:
-                child_flow_id = _collection_child_id(item)
+                child_flow_id = collection_child_id(item)
                 if child_flow_id is None:
                     continue
                 child_flow = flows_by_id.get(child_flow_id)
                 if child_flow is None or child_flow.source_id is None:
                     continue
-                role = _collection_role(item)
+                role = collection_role(item)
                 if role is None:
                     continue
 
@@ -92,15 +103,21 @@ class SourceUseCases(UseCaseContext):
 
         return relationships
 
-    def get_source_property(self, source_id: UUID, property_name: str) -> str:
-        source = self.get_source(source_id)
-        value = getattr(source, property_name)
+    def get_source_property(
+        self, source_id: UUID, property_name: SourcePropertyName
+    ) -> str:
+        value = getattr(self.get_source(source_id), property_name)
         if value is None:
             raise NotFound("The requested Source property does not exist.")
+        if not isinstance(value, str):
+            raise BadRequest("Bad request. Invalid Source property value.")
         return value
 
     def set_source_property(
-        self, source_id: UUID, property_name: str, value: str
+        self,
+        source_id: UUID,
+        property_name: SourcePropertyName,
+        value: str,
     ) -> None:
         if not isinstance(value, str):
             raise BadRequest("Bad request. Invalid Source property value.")
@@ -108,14 +125,26 @@ class SourceUseCases(UseCaseContext):
         setattr(source, property_name, value)
         source.metadata_updated = utc_now()
         self.repository.save_source(source)
-        self._publish_source_event("sources/updated", source)
+        webhooking.publish_source_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="sources/updated",
+            source=source,
+        )
 
-    def delete_source_property(self, source_id: UUID, property_name: str) -> None:
+    def delete_source_property(
+        self, source_id: UUID, property_name: SourcePropertyName
+    ) -> None:
         source = self.get_source(source_id)
         setattr(source, property_name, None)
         source.metadata_updated = utc_now()
         self.repository.save_source(source)
-        self._publish_source_event("sources/updated", source)
+        webhooking.publish_source_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="sources/updated",
+            source=source,
+        )
 
     def get_source_tags(self, source_id: UUID) -> dict[str, TagValue]:
         return self.get_source(source_id).tags
@@ -127,40 +156,27 @@ class SourceUseCases(UseCaseContext):
         return source.tags[name]
 
     def set_source_tag(self, source_id: UUID, name: str, value: TagValue) -> None:
-        if not _valid_tag_value(value):
+        if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Source tag value.")
         source = self.get_source(source_id)
         source.tags[name] = value
         source.metadata_updated = utc_now()
         self.repository.save_source(source)
-        self._publish_source_event("sources/updated", source)
+        webhooking.publish_source_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="sources/updated",
+            source=source,
+        )
 
     def delete_source_tag(self, source_id: UUID, name: str) -> None:
         source = self.get_source(source_id)
         source.tags.pop(name, None)
         source.metadata_updated = utc_now()
         self.repository.save_source(source)
-        self._publish_source_event("sources/updated", source)
-
-    def _source_for_flow(self, flow: FlowRecord) -> SourceRecord | None:
-        if flow.source_id is None:
-            return None
-        return self.repository.get_source(flow.source_id)
-
-    def _source_collected_by_ids(self, source: SourceRecord | None) -> list[str]:
-        if source is None:
-            return []
-        relationship = self.source_relationships().get(source.id)
-        if relationship is None:
-            return []
-        return [str(source_id) for source_id in relationship.collected_by]
-
-    def _source_payload(self, source: SourceRecord) -> dict[str, Any]:
-        payload = {
-            "id": str(source.id),
-            "format": source.format,
-            "label": source.label,
-            "description": source.description,
-            "tags": source.tags,
-        }
-        return {key: value for key, value in payload.items() if value is not None}
+        webhooking.publish_source_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="sources/updated",
+            source=source,
+        )

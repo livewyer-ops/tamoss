@@ -1,44 +1,56 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    UUID,
-    Any,
-    BadRequest,
+from collections.abc import Mapping
+from contextlib import suppress
+from typing import Any
+from urllib.parse import urlparse
+from uuid import UUID
+
+from tamoss.application.contexts import deletion_processor, object_copy
+from tamoss.application.contexts.object_get_urls import objects_get_urls
+from tamoss.domain.model import (
     MediaObjectRecord,
-    MediaObjectRegistration,
-    NotFound,
     ObjectInstance,
-    UseCaseContext,
-    _append_uncontrolled_instance,
-    _controlled_get_url_payload,
-    _include_get_url_payload,
-    _is_http_url,
-    _object_instance_matches,
-    _response_get_url_payload,
-    _segment_object_timerange,
-    _uncontrolled_get_url_payload,
-    _union_timerange_strings,
-    cast,
 )
+from tamoss.errors import BadRequest, NotFound
+from tamoss.ports.object_storage import ObjectStorage
+from tamoss.ports.repositories import ObjectCleanupRepository, ObjectRepository
 
 
-class ObjectUseCases(UseCaseContext):
-    def register_object_instance(
-        self, *, object_id: str, registration: MediaObjectRegistration
+class ObjectUseCases:
+    repository: ObjectRepository
+    object_storage: ObjectStorage
+    cleanup_repository: ObjectCleanupRepository
+
+    def __init__(
+        self,
+        *,
+        repository: ObjectRepository,
+        object_storage: ObjectStorage,
+        cleanup_repository: ObjectCleanupRepository,
     ) -> None:
-        media_object = self.get_object(object_id)
-        has_controlled = registration.storage_id is not None
-        has_uncontrolled = (
-            registration.url is not None or registration.label is not None
-        )
+        self.repository = repository
+        self.object_storage = object_storage
+        self.cleanup_repository = cleanup_repository
+
+    def register_object_instance(
+        self, *, object_id: str, registration: Mapping[str, Any]
+    ) -> None:
+        storage_id = registration.get("storage_id")
+        url = registration.get("url")
+        label = registration.get("label")
+        has_controlled = storage_id is not None
+        has_uncontrolled = url is not None or label is not None
         if has_controlled == has_uncontrolled:
             raise BadRequest("Bad request. Invalid request JSON.")
         if has_controlled:
-            raise BadRequest(
-                "Bad request. Controlled Object instance registration is not supported."
-            )
+            self._queue_controlled_object_copy(object_id, UUID(str(storage_id)))
+            return
+        media_object = self.get_object(object_id)
         self._register_uncontrolled_object_instance(
-            media_object, url=registration.url, label=registration.label
+            media_object,
+            url=str(url) if url is not None else None,
+            label=str(label) if label is not None else None,
         )
         self.repository.save_object(media_object)
 
@@ -49,49 +61,109 @@ class ObjectUseCases(UseCaseContext):
             storage_id is not None and label is not None
         ):
             raise BadRequest("Bad request. Invalid query options.")
-        media_object = self.get_object(object_id)
-        matches = [
-            instance
-            for instance in media_object.instances
-            if _object_instance_matches(instance, storage_id=storage_id, label=label)
-        ]
-        controlled_match_backend_ids = {
-            instance.storage_backend.id
-            for instance in matches
-            if instance.controlled and instance.storage_backend is not None
-        }
-        if controlled_match_backend_ids:
+        with self.repository.unit_of_work():
+            media_object = self.repository.get_object(object_id)
+            if media_object is None or not media_object.referenced_by_flows:
+                raise NotFound("The requested Media Object does not exist.")
             matches = [
                 instance
                 for instance in media_object.instances
-                if instance in matches
-                or (
-                    instance.controlled
-                    and instance.storage_backend is not None
-                    and instance.storage_backend.id in controlled_match_backend_ids
+                if _object_instance_matches(
+                    instance, storage_id=storage_id, label=label
                 )
             ]
-        if not matches:
-            raise NotFound("The requested Object instance does not exist.")
-        if len(matches) == len(media_object.instances):
-            raise BadRequest(
-                "Bad request. All instances would be deleted. "
-                "Use Flow Segment deletion instead."
-            )
+            controlled_match_backend_ids = {
+                instance.storage_backend.id
+                for instance in matches
+                if instance.controlled and instance.storage_backend is not None
+            }
+            if controlled_match_backend_ids:
+                matches = [
+                    instance
+                    for instance in media_object.instances
+                    if instance in matches
+                    or (
+                        instance.controlled
+                        and instance.storage_backend is not None
+                        and instance.storage_backend.id in controlled_match_backend_ids
+                    )
+                ]
+            if not matches:
+                raise NotFound("The requested Object instance does not exist.")
+            if len(matches) == len(media_object.instances):
+                raise BadRequest(
+                    "Bad request. All instances would be deleted. "
+                    "Use Flow Segment deletion instead."
+                )
 
-        media_object.instances = [
-            instance for instance in media_object.instances if instance not in matches
-        ]
-        deleted_backend_ids: set[UUID] = set()
-        for instance in matches:
-            if (
+            media_object.instances = [
+                instance
+                for instance in media_object.instances
+                if instance not in matches
+            ]
+            cleanup_object = MediaObjectRecord(id=object_id, instances=matches)
+            deletion_processor.queue_controlled_object_cleanup(
+                repository=self.cleanup_repository,
+                media_object=cleanup_object,
+                delete_request_id=None,
+            )
+            self.repository.save_object(media_object)
+
+    def process_pending_object_copies(
+        self,
+        *,
+        max_copies: int = 50,
+        worker_id: str,
+        lease_seconds: int,
+    ) -> int:
+        copies = self.repository.claim_object_copies(
+            worker_id=worker_id,
+            limit=max_copies,
+            lease_seconds=lease_seconds,
+        )
+        with suppress(object_copy.ObjectCopyFailed):
+            object_copy.process_object_copies(
+                repository=self.repository,
+                object_storage=self.object_storage,
+                copies=copies,
+            )
+        return len(copies)
+
+    def _queue_controlled_object_copy(
+        self, object_id: str, destination_storage_id: UUID
+    ) -> None:
+        with self.repository.unit_of_work():
+            media_object = self.repository.get_object(object_id)
+            if media_object is None or not media_object.referenced_by_flows:
+                raise NotFound("The requested Media Object does not exist.")
+            destination_backend = self.repository.get_storage_backend(
+                destination_storage_id
+            )
+            if destination_backend is None:
+                raise BadRequest("The requested Storage Backend does not exist.")
+            source_instance = next(
+                (
+                    instance
+                    for instance in media_object.instances
+                    if instance.controlled and instance.storage_backend is not None
+                ),
+                None,
+            )
+            if source_instance is None or source_instance.storage_backend is None:
+                raise BadRequest("Bad request. Invalid request JSON.")
+            if any(
                 instance.controlled
                 and instance.storage_backend is not None
-                and instance.storage_backend.id not in deleted_backend_ids
+                and instance.storage_backend.id == destination_storage_id
+                for instance in media_object.instances
             ):
-                self.object_storage.delete(object_id, backend=instance.storage_backend)
-                deleted_backend_ids.add(instance.storage_backend.id)
-        self.repository.save_object(media_object)
+                raise BadRequest("Bad request. Invalid request JSON.")
+            object_copy.queue_controlled_object_copy(
+                repository=self.repository,
+                object_id=object_id,
+                source_storage_backend_id=source_instance.storage_backend.id,
+                destination_storage_backend_id=destination_storage_id,
+            )
 
     def _register_uncontrolled_object_instance(
         self, media_object: MediaObjectRecord, *, url: str | None, label: str | None
@@ -101,12 +173,12 @@ class ObjectUseCases(UseCaseContext):
         reserved_labels = {
             backend.label
             for backend in self.repository.list_storage_backends()
-            if backend.label is not None
+            if backend.label
         }
         if label in reserved_labels:
             raise BadRequest("Bad request. Invalid request JSON.")
         try:
-            _append_uncontrolled_instance(
+            append_uncontrolled_instance(
                 media_object,
                 url=url,
                 label=label,
@@ -130,90 +202,65 @@ class ObjectUseCases(UseCaseContext):
         presigned: bool | None = None,
         verbose_storage: bool = False,
     ) -> list[dict[str, Any]]:
-        get_urls: list[dict[str, Any]] = []
-        seen: set[
-            tuple[
-                str | None,
-                str | None,
-                str | None,
-                bool | None,
-                bool | None,
-            ]
-        ] = set()
-        for instance in media_object.instances:
-            for payload in self._instance_get_urls(
-                object_id=media_object.id,
-                instance=instance,
-                verbose_storage=verbose_storage,
-            ):
-                if not _include_get_url_payload(
-                    payload,
-                    accept_get_urls=accept_get_urls,
-                    accept_storage_ids=accept_storage_ids,
-                    presigned=presigned,
-                ):
-                    continue
-                key = (
-                    cast(str | None, payload.get("label")),
-                    cast(str | None, payload.get("storage_id")),
-                    cast(str | None, payload.get("url")),
-                    cast(bool | None, payload.get("presigned")),
-                    cast(bool | None, payload.get("controlled")),
-                )
-                if key in seen:
-                    continue
-                seen.add(key)
-                get_urls.append(
-                    _response_get_url_payload(
-                        payload,
-                        verbose_storage=verbose_storage,
-                    )
-                )
-        return get_urls
+        return objects_get_urls(
+            [media_object],
+            object_storage=self.object_storage,
+            accept_get_urls=accept_get_urls,
+            accept_storage_ids=accept_storage_ids,
+            presigned=presigned,
+            verbose_storage=verbose_storage,
+        ).get(media_object.id, [])
 
-    def _instance_get_urls(
-        self,
-        *,
-        object_id: str,
-        instance: ObjectInstance,
-        verbose_storage: bool,
-    ) -> list[dict[str, Any]]:
-        if instance.controlled and instance.storage_backend is not None:
-            return [
-                _controlled_get_url_payload(
-                    get_url,
-                    storage_backend=instance.storage_backend,
-                    verbose_storage=verbose_storage,
-                )
-                for get_url in self.object_storage.build_get_urls(
-                    object_id=object_id,
-                    backend=instance.storage_backend,
-                )
-            ]
-        if instance.url is None:
-            return []
-        return [_uncontrolled_get_url_payload(instance)]
 
-    def _object_timerange(self, media_object: MediaObjectRecord) -> str | None:
-        return _union_timerange_strings(
-            _segment_object_timerange(segment)
-            for flow_id in media_object.referenced_by_flows
-            for segment in self.repository.list_segments(flow_id)
-            if segment.object_id == media_object.id
+def _object_instance_matches(
+    instance: ObjectInstance, *, storage_id: UUID | None, label: str | None
+) -> bool:
+    if storage_id is not None and (
+        instance.storage_backend is None or instance.storage_backend.id != storage_id
+    ):
+        return False
+    return not (label is not None and instance.label != label)
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def append_uncontrolled_instance(
+    media_object: MediaObjectRecord, *, url: str, label: str | None, presigned: bool
+) -> None:
+    validate_uncontrolled_instance_append(
+        media_object,
+        url=url,
+        label=label,
+        presigned=presigned,
+    )
+    for instance in media_object.instances:
+        if (
+            not instance.controlled
+            and instance.label == label
+            and instance.url == url
+            and instance.presigned is presigned
+        ):
+            return
+    media_object.instances.append(
+        ObjectInstance(
+            storage_backend=None,
+            url=url,
+            label=label,
+            controlled=False,
+            presigned=presigned,
         )
+    )
 
-    def _delete_controlled_object_content(
-        self, media_object: MediaObjectRecord
-    ) -> None:
-        deleted_backend_ids: set[UUID] = set()
-        for instance in media_object.instances:
-            if (
-                instance.controlled
-                and instance.storage_backend is not None
-                and instance.storage_backend.id not in deleted_backend_ids
-            ):
-                self.object_storage.delete(
-                    media_object.id,
-                    backend=instance.storage_backend,
-                )
-                deleted_backend_ids.add(instance.storage_backend.id)
+
+def validate_uncontrolled_instance_append(
+    media_object: MediaObjectRecord, *, url: str, label: str | None, presigned: bool
+) -> None:
+    for instance in media_object.instances:
+        if instance.controlled or instance.label != label:
+            continue
+        if instance.url == url and instance.presigned is presigned:
+            return
+        raise ValueError("conflicting object instance label")

@@ -1,25 +1,50 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    DEFAULT_WORKER_ID,
-    DEFAULT_WORKER_LEASE_SECONDS,
-    UUID,
-    DeletionRequestRecord,
-    Identity,
-    NotFound,
-    SegmentRecord,
-    UseCaseContext,
-    _clear_worker_claim,
-    _requested_delete_timerange,
-    _segments_matching_delete_filters,
-    _timerange_covering_segments,
-    error_payload,
-    utc_now,
-    uuid4,
+from contextlib import suppress
+from datetime import timedelta
+from uuid import UUID, uuid4
+
+from tamoss.application import webhooks as webhooking
+from tamoss.application.contexts import deletion_processor
+from tamoss.application.contexts.flows import (
+    ensure_flow_writable,
+    unlink_flow_collection_references,
 )
+from tamoss.auth import Identity
+from tamoss.domain.model import (
+    DeletionRequestRecord,
+    FlowRecord,
+    MediaObjectRecord,
+    utc_now,
+)
+from tamoss.domain.segments import segment_delete_filter
+from tamoss.errors import BadRequest, NotFound
+from tamoss.ports.object_storage import ObjectStorage
+from tamoss.ports.repositories import DeletionRepository, WebhookEventRepository
+from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings
+
+DEFAULT_WORKER_ID = "tamoss-worker"
 
 
-class DeletionUseCases(UseCaseContext):
+class DeletionUseCases:
+    repository: DeletionRepository
+    object_storage: ObjectStorage
+    webhook_repository: WebhookEventRepository
+    settings: Settings
+
+    def __init__(
+        self,
+        *,
+        repository: DeletionRepository,
+        object_storage: ObjectStorage,
+        webhook_repository: WebhookEventRepository,
+        settings: Settings,
+    ) -> None:
+        self.repository = repository
+        self.object_storage = object_storage
+        self.webhook_repository = webhook_repository
+        self.settings = settings
+
     def list_delete_requests(self) -> list[DeletionRequestRecord]:
         requests = self.repository.list_delete_requests()
         requests.sort(key=lambda request: str(request.id))
@@ -34,23 +59,34 @@ class DeletionUseCases(UseCaseContext):
     def delete_flow(
         self, *, flow_id: UUID, identity: Identity
     ) -> DeletionRequestRecord | None:
-        flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
-        segments = self.repository.list_segments(flow_id)
-        if not segments:
+        flow = self._get_flow(flow_id)
+        ensure_flow_writable(flow)
+        delete_filter = segment_delete_filter(
+            flow_id=flow_id,
+            timerange=None,
+            object_id=None,
+        )
+        timerange_to_delete = self.repository.segment_delete_timerange(delete_filter)
+        if timerange_to_delete == "()":
             with self.repository.unit_of_work():
-                self._unlink_flow_collection_references(flow)
+                unlink_flow_collection_references(self.repository, flow)
                 self.repository.delete_flow(flow_id)
-                self._publish_flow_deleted(flow)
-                self._delete_orphan_source(flow.source_id)
+                webhooking.publish_flow_deleted(
+                    repository=self.webhook_repository,
+                    resource_repository=self.repository,
+                    flow=flow,
+                )
+                deletion_processor.delete_orphan_source(
+                    repository=self.repository,
+                    webhook_repository=self.webhook_repository,
+                    source_id=flow.source_id,
+                )
             return None
 
-        timerange_to_delete = _timerange_covering_segments(segments)
         return self._record_deletion_request(
             flow_id=flow_id,
             timerange_to_delete=timerange_to_delete,
             delete_flow=True,
-            segments_to_delete=segments,
             identity=identity,
         )
 
@@ -62,31 +98,40 @@ class DeletionUseCases(UseCaseContext):
         object_id: str | None,
         identity: Identity,
     ) -> DeletionRequestRecord | None:
-        flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
-        segments = self.repository.list_segments(flow_id)
-        segments_to_delete = _segments_matching_delete_filters(
-            segments, timerange=timerange, object_id=object_id
-        )
-        if not segments_to_delete:
+        flow = self._get_flow(flow_id)
+        ensure_flow_writable(flow)
+        try:
+            delete_filter = segment_delete_filter(
+                flow_id=flow_id,
+                timerange=timerange,
+                object_id=object_id,
+            )
+        except ValueError as exc:
+            raise BadRequest("Bad request. Invalid query options.") from exc
+        matching_timerange = self.repository.segment_delete_timerange(delete_filter)
+        if matching_timerange == "()":
             return None
         if object_id is not None:
             with self.repository.unit_of_work():
-                self._delete_segments(
-                    flow_id=flow_id, segments_to_delete=segments_to_delete
+                deletion_processor.delete_matching_segments(
+                    repository=self.repository,
+                    webhook_repository=self.webhook_repository,
+                    delete_filter=delete_filter,
+                    delete_request_id=None,
+                    drain=True,
                 )
                 flow.segments_updated = utc_now()
                 self.repository.save_flow(flow)
             return None
 
-        timerange_to_delete = _requested_delete_timerange(
-            segments_to_delete, requested_timerange=timerange
-        )
+        timerange_to_delete = matching_timerange
+        if timerange not in (None, "", "_"):
+            timerange_to_delete = timerange
+        assert timerange_to_delete is not None
         return self._record_deletion_request(
             flow_id=flow_id,
             timerange_to_delete=timerange_to_delete,
             delete_flow=False,
-            segments_to_delete=segments_to_delete,
             identity=identity,
         )
 
@@ -96,7 +141,6 @@ class DeletionUseCases(UseCaseContext):
         flow_id: UUID,
         timerange_to_delete: str,
         delete_flow: bool,
-        segments_to_delete: list[SegmentRecord],
         identity: Identity,
     ) -> DeletionRequestRecord:
         now = utc_now()
@@ -110,7 +154,6 @@ class DeletionUseCases(UseCaseContext):
             updated=now,
             created_by=identity.subject,
             status="created",
-            segments_to_delete=list(segments_to_delete),
         )
         self.repository.save_delete_request(request)
         return request
@@ -129,134 +172,74 @@ class DeletionUseCases(UseCaseContext):
             lease_seconds=lease_seconds,
         )
         for request in requests:
-            self.process_delete_request(request.id)
+            deletion_processor.process_delete_request(
+                repository=self.repository,
+                webhook_repository=self.webhook_repository,
+                object_storage=self.object_storage,
+                request_id=request.id,
+            )
             processed += 1
         return processed
 
-    def process_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None:
-        request = self.repository.get_delete_request(request_id)
-        if request is None:
-            return None
-        if request.status not in {"created", "started", "error"}:
-            return request
-
-        try:
-            with self.repository.unit_of_work():
-                request = self.repository.get_delete_request(request_id)
-                if request is None:
-                    return None
-                if request.status not in {"created", "started", "error"}:
-                    return request
-
-                request.status = "started"
-                request.error = None
-                request.updated = utc_now()
-                self.repository.save_delete_request(request)
-                if request.delete_flow:
-                    self._process_flow_delete_request(request)
-                else:
-                    self._process_segment_delete_request(request)
-                request.timerange_remaining = None
-                request.status = "done"
-                request.error = None
-                _clear_worker_claim(request)
-                request.updated = utc_now()
-                self.repository.save_delete_request(request)
-        except Exception as exc:
-            request = self.repository.get_delete_request(request_id)
-            if request is None:
-                return None
-            request.status = "error"
-            request.error = error_payload(type(exc).__name__, str(exc))
-            _clear_worker_claim(request)
-            request.updated = utc_now()
-            self.repository.save_delete_request(request)
-        return request
-
-    def _process_flow_delete_request(self, request: DeletionRequestRecord) -> None:
-        flow = self.repository.get_flow(request.flow_id)
-        if flow is None:
-            return
-        segments = request.segments_to_delete or self.repository.list_segments(
-            request.flow_id
-        )
-        self._unlink_flow_collection_references(flow)
-        self._delete_segments(
-            flow_id=request.flow_id,
-            segments_to_delete=segments,
-            publish_event=False,
-        )
-        self.repository.delete_flow(request.flow_id)
-        self._publish_flow_deleted(flow)
-        self._delete_orphan_source(flow.source_id)
-
-    def _process_segment_delete_request(self, request: DeletionRequestRecord) -> None:
-        flow = self.repository.get_flow(request.flow_id)
-        if flow is None:
-            return
-        segments_to_delete = request.segments_to_delete
-        if not segments_to_delete:
-            segments = self.repository.list_segments(request.flow_id)
-            segments_to_delete = _segments_matching_delete_filters(
-                segments,
-                timerange=request.timerange_to_delete,
-                object_id=None,
-            )
-        if segments_to_delete:
-            self._delete_segments(
-                flow_id=request.flow_id, segments_to_delete=segments_to_delete
-            )
-            flow.segments_updated = utc_now()
-            self.repository.save_flow(flow)
-
-    def _delete_segments(
+    def process_pending_object_cleanups(
         self,
         *,
-        flow_id: UUID,
-        segments_to_delete: list[SegmentRecord],
-        publish_event: bool = True,
-    ) -> None:
-        if not segments_to_delete:
-            return
+        max_cleanups: int = 50,
+        worker_id: str = DEFAULT_WORKER_ID,
+        lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS,
+    ) -> int:
+        cleanups = self.repository.claim_object_cleanups(
+            worker_id=worker_id,
+            limit=max_cleanups,
+            lease_seconds=lease_seconds,
+        )
+        with suppress(deletion_processor.ObjectCleanupFailed):
+            deletion_processor.process_object_cleanups(
+                repository=self.repository,
+                object_storage=self.object_storage,
+                cleanups=cleanups,
+            )
+        return len(cleanups)
+
+    def queue_stale_allocated_object_cleanups(self, *, max_objects: int = 50) -> int:
+        before = utc_now() - timedelta(
+            seconds=_timestamp_duration_seconds(self.settings.min_object_timeout)
+        )
+        with self.repository.unit_of_work():
+            media_objects = self.repository.list_unreferenced_objects_created_before(
+                before=before,
+                limit=max_objects,
+            )
+            queued = 0
+            for media_object in media_objects:
+                if not _has_controlled_instance(media_object):
+                    continue
+                deletion_processor.queue_controlled_object_cleanup(
+                    repository=self.repository,
+                    media_object=media_object,
+                    delete_request_id=None,
+                )
+                self.repository.delete_object(media_object.id)
+                queued += 1
+        return queued
+
+    def _get_flow(self, flow_id: UUID) -> FlowRecord:
         flow = self.repository.get_flow(flow_id)
-        deleted_segment_ids = {
-            (segment.object_id, segment.timerange) for segment in segments_to_delete
-        }
-        remaining = [
-            segment
-            for segment in self.repository.list_segments(flow_id)
-            if (segment.object_id, segment.timerange) not in deleted_segment_ids
-        ]
-        self.repository.replace_segments(flow_id, remaining)
-        self._refresh_deleted_object_references(flow_id, segments_to_delete)
-        if publish_event and flow is not None:
-            self._publish_segments_deleted(flow, segments_to_delete)
+        if flow is None:
+            raise NotFound("The requested Flow does not exist.")
+        return flow
 
-    def _refresh_deleted_object_references(
-        self, flow_id: UUID, deleted_segments: list[SegmentRecord]
-    ) -> None:
-        for object_id in {segment.object_id for segment in deleted_segments}:
-            media_object = self.repository.get_object(object_id)
-            if media_object is None:
-                continue
-            if not any(
-                segment.object_id == object_id
-                for segment in self.repository.list_segments(flow_id)
-            ):
-                media_object.referenced_by_flows.discard(flow_id)
-            if media_object.referenced_by_flows:
-                media_object.timerange = self._object_timerange(media_object)
-                self.repository.save_object(media_object)
-            else:
-                self._delete_controlled_object_content(media_object)
-                self.repository.delete_object(object_id)
 
-    def _delete_orphan_source(self, source_id: UUID | None) -> None:
-        if source_id is None:
-            return
-        if any(flow.source_id == source_id for flow in self.repository.list_flows()):
-            return
-        source = self.repository.get_source(source_id)
-        self.repository.delete_source(source_id)
-        if source is not None:
-            self._publish_source_deleted(source)
+def _has_controlled_instance(media_object: MediaObjectRecord) -> bool:
+    return any(
+        instance.controlled and instance.storage_backend is not None
+        for instance in media_object.instances
+    )
+
+
+def _timestamp_duration_seconds(value: str) -> float:
+    try:
+        seconds, nanoseconds = value.split(":", 1)
+        return int(seconds) + (int(nanoseconds) / 1_000_000_000)
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid service object timeout.") from exc

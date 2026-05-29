@@ -1,36 +1,181 @@
 from __future__ import annotations
 
-from tamoss.application.contexts._shared import (
-    UUID,
-    Any,
-    BadRequest,
-    FlowCollectionItem,
-    FlowRecord,
-    FlowWrite,
-    Forbidden,
-    Identity,
-    Iterable,
-    MediaObjectRecord,
-    NotFound,
-    Page,
-    SourceRecord,
-    TagValue,
-    TimeRange,
-    UseCaseContext,
-    _collected_by_by_flow_id,
-    _collection_child_id,
-    _flow_collection,
-    _flow_with_collected_by,
-    _parse_query_timerange,
-    _query_timerange,
-    _strip_server_managed_flow_fields,
-    _valid_tag_value,
-    utc_now,
-    validation,
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID, uuid4
+
+from mediatimestamp import TimeRange
+from pydantic import ValidationError
+
+from tamoss.application import webhooks as webhooking
+from tamoss.auth import Identity
+from tamoss.contract.generated import contract_models
+from tamoss.domain.flow_collections import (
+    collected_by_by_flow_id,
+    collection_child_id,
+    flow_collection,
+    flow_with_collected_by,
+)
+from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
+from tamoss.domain.pagination import Page
+from tamoss.domain.segments import timerange_union
+from tamoss.domain.tags import TagValue, valid_tag_value
+from tamoss.domain.timeranges import normalized_timerange_bounds
+from tamoss.errors import BadRequest, Forbidden, NotFound
+from tamoss.ports.repositories import (
+    FlowCollectionRepository,
+    FlowRepository,
+    WebhookEventRepository,
 )
 
+FlowPropertyName = Literal[
+    "label",
+    "description",
+    "avg_bit_rate",
+    "max_bit_rate",
+    "read_only",
+]
+FlowDeletablePropertyName = Literal[
+    "label",
+    "description",
+    "avg_bit_rate",
+    "max_bit_rate",
+]
+_SERVER_MANAGED_FLOW_FIELDS = {
+    "timerange",
+    "collected_by",
+    "created",
+    "metadata_updated",
+    "segments_updated",
+    "created_by",
+    "updated_by",
+}
+VALID_FLOW_FORMATS = {item.value for item in contract_models.ContentFormat}
 
-class FlowUseCases(UseCaseContext):
+
+@dataclass(frozen=True)
+class QueryTimerange:
+    start: int | None = None
+    end: int | None = None
+    is_empty: bool = False
+    is_point: bool = False
+
+
+def parse_query_timerange(timerange: str | None) -> TimeRange | None:
+    if timerange is None or timerange in {"", "_"}:
+        return None
+    try:
+        return TimeRange.from_str(timerange)
+    except Exception as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
+
+
+def query_timerange(timerange: str | None) -> QueryTimerange:
+    requested_range = parse_query_timerange(timerange)
+    if requested_range is None:
+        return QueryTimerange()
+    bounds = normalized_timerange_bounds(requested_range)
+    if bounds.is_empty:
+        return QueryTimerange(is_empty=True)
+
+    return QueryTimerange(
+        start=bounds.start,
+        end=bounds.end,
+        is_point=bounds.is_point,
+    )
+
+
+def strip_server_managed_flow_fields(
+    data: dict[str, Any], *, preserve_metadata_version: bool = False
+) -> None:
+    for field_name in _SERVER_MANAGED_FLOW_FIELDS:
+        data.pop(field_name, None)
+    if not preserve_metadata_version:
+        data.pop("metadata_version", None)
+
+
+def touch_flow_metadata(
+    flow: FlowRecord,
+    *,
+    identity: Identity | None = None,
+    when: datetime | None = None,
+) -> None:
+    timestamp = when or utc_now()
+    flow.metadata_updated = timestamp
+    flow.data["metadata_updated"] = timestamp.isoformat()
+    flow.data["metadata_version"] = str(uuid4())
+    if identity is not None:
+        flow.data["updated_by"] = identity.subject
+
+
+def validate_content_format_filter(value: str | None) -> None:
+    if value is not None and value not in VALID_FLOW_FORMATS:
+        raise ValueError("format must be a supported BBC content format")
+
+
+def validate_flow_payload(payload: dict[str, Any]) -> None:
+    try:
+        flow = contract_models.Flow.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError("flow payload does not match the BBC TAMS contract") from exc
+
+    if isinstance(flow.root, contract_models.FlowVideo):
+        _validate_video_frame_rate(flow.root.essence_parameters)
+
+
+def _validate_video_frame_rate(
+    essence: contract_models.EssenceParameters,
+) -> None:
+    if essence.vfr:
+        if essence.frame_rate is not None:
+            raise ValueError("frame_rate must not be set when vfr is true")
+    elif essence.frame_rate is None:
+        raise ValueError("frame_rate is required when vfr is false or omitted")
+
+
+def ensure_flow_writable(flow: FlowRecord) -> None:
+    if flow.read_only:
+        raise Forbidden(
+            "Forbidden. You do not have permission to modify this Flow. "
+            "It may be marked read-only."
+        )
+
+
+def unlink_flow_collection_references(
+    repository: FlowCollectionRepository,
+    flow: FlowRecord,
+) -> None:
+    for parent in repository.list_flows():
+        if parent.id == flow.id:
+            continue
+        collection = flow_collection(parent)
+        remaining = [
+            dict(item) for item in collection if collection_child_id(item) != flow.id
+        ]
+        if len(remaining) == len(collection):
+            continue
+        if remaining:
+            parent.data["flow_collection"] = remaining
+        else:
+            parent.data.pop("flow_collection", None)
+        repository.save_flow(parent)
+
+
+class FlowUseCases:
+    repository: FlowRepository
+    webhook_repository: WebhookEventRepository
+
+    def __init__(
+        self,
+        *,
+        repository: FlowRepository,
+        webhook_repository: WebhookEventRepository,
+    ) -> None:
+        self.repository = repository
+        self.webhook_repository = webhook_repository
+
     def list_flows(
         self,
         *,
@@ -47,16 +192,16 @@ class FlowUseCases(UseCaseContext):
         limit: int | None,
     ) -> Page[FlowRecord]:
         try:
-            validation.validate_content_format_filter(format)
+            validate_content_format_filter(format)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid query options.") from exc
-        query_timerange = _query_timerange(timerange)
+        requested_timerange = query_timerange(timerange)
         return self.repository.list_flows_page(
             source_id=source_id,
-            timerange_start=query_timerange.start,
-            timerange_end=query_timerange.end,
-            timerange_is_empty=query_timerange.is_empty,
-            timerange_is_point=query_timerange.is_point,
+            timerange_start=requested_timerange.start,
+            timerange_end=requested_timerange.end,
+            timerange_is_empty=requested_timerange.is_empty,
+            timerange_is_point=requested_timerange.is_point,
             format=format,
             codec=codec,
             label=label,
@@ -71,7 +216,7 @@ class FlowUseCases(UseCaseContext):
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
         self.get_flow(flow_id)
         flow_range = self._flow_timerange(flow_id)
-        requested_range = _parse_query_timerange(timerange)
+        requested_range = parse_query_timerange(timerange)
         if requested_range is None:
             return str(flow_range)
         return str(flow_range.intersect_with(requested_range))
@@ -94,101 +239,105 @@ class FlowUseCases(UseCaseContext):
         return flow
 
     def _flow_timerange(self, flow_id: UUID) -> TimeRange:
-        segments = self.repository.list_segments(flow_id)
-        ranges: list[TimeRange] = []
-        for segment in segments:
-            try:
-                parsed = TimeRange.from_str(segment.timerange)
-            except Exception as exc:
-                raise BadRequest(
-                    "Bad request. Invalid stored Segment timerange."
-                ) from exc
-            if parsed.start is not None and parsed.end is not None:
-                ranges.append(parsed)
-        if not ranges:
-            return TimeRange.never()
-        start = min(
-            timerange.start for timerange in ranges if timerange.start is not None
-        )
-        end = max(timerange.end for timerange in ranges if timerange.end is not None)
-        return TimeRange.from_str(f"[{start}_{end})")
-
-    def _flow_timerange_matches(
-        self, flow_id: UUID, requested_range: TimeRange
-    ) -> bool:
-        flow_range = self._flow_timerange(flow_id)
-        if requested_range.is_empty():
-            return flow_range.is_empty()
-        return not flow_range.intersect_with(requested_range).is_empty()
+        try:
+            return TimeRange.from_str(
+                timerange_union(self.repository.list_segments(flow_id))
+            )
+        except ValueError as exc:
+            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
 
     def get_flow_collection(self, flow_id: UUID) -> list[dict]:
         flow = self.get_flow(flow_id)
-        return _flow_collection(flow)
+        return flow_collection(flow)
 
     def set_flow_collection(
         self,
         *,
         flow_id: UUID,
-        collection: list[FlowCollectionItem],
+        collection: list[dict[str, Any]],
         identity: Identity,
     ) -> None:
         flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
+        ensure_flow_writable(flow)
         self._replace_flow_collection(flow, collection)
-        flow.metadata_updated = utc_now()
-        flow.data["metadata_updated"] = flow.metadata_updated.isoformat()
-        flow.data["updated_by"] = identity.subject
+        touch_flow_metadata(flow, identity=identity)
         self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/updated",
+            flow=flow,
+        )
 
     def delete_flow_collection(self, *, flow_id: UUID, identity: Identity) -> None:
         self.set_flow_collection(flow_id=flow_id, collection=[], identity=identity)
 
-    def get_flow_property(self, flow_id: UUID, property_name: str) -> str:
+    def get_flow_property(
+        self, flow_id: UUID, property_name: FlowPropertyName
+    ) -> str | int | bool:
         flow = self.get_flow(flow_id)
+        if property_name == "read_only":
+            return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
             raise NotFound("The requested Flow property does not exist.")
-        return value
-
-    def set_flow_property(self, flow_id: UUID, property_name: str, value: str) -> None:
-        if not isinstance(value, str):
-            raise BadRequest("Bad request. Invalid Flow property value.")
-        flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
-        flow.data[property_name] = value
-        flow.metadata_updated = utc_now()
-        self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
-
-    def delete_flow_property(self, flow_id: UUID, property_name: str) -> None:
-        flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
-        flow.data.pop(property_name, None)
-        flow.metadata_updated = utc_now()
-        self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
-
-    def get_flow_int_property(self, flow_id: UUID, property_name: str) -> int:
-        flow = self.get_flow(flow_id)
-        value = flow.data.get(property_name)
-        if value is None:
-            raise NotFound("The requested Flow property does not exist.")
+        if property_name in {"label", "description"}:
+            if not isinstance(value, str):
+                raise BadRequest("Bad request. Invalid Flow property value.")
+            return value
         if not isinstance(value, int) or isinstance(value, bool):
             raise BadRequest("Bad request. Invalid Flow property value.")
         return value
 
-    def set_flow_int_property(
-        self, flow_id: UUID, property_name: str, value: int
+    def set_flow_property(
+        self,
+        flow_id: UUID,
+        property_name: FlowPropertyName,
+        value: str | int | bool,
+        *,
+        identity: Identity | None = None,
     ) -> None:
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise BadRequest("Bad request. Invalid Flow bit rate.")
         flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
+        if property_name in {"label", "description"}:
+            ensure_flow_writable(flow)
+            if not isinstance(value, str):
+                raise BadRequest("Bad request. Invalid Flow property value.")
+        elif property_name in {"avg_bit_rate", "max_bit_rate"}:
+            ensure_flow_writable(flow)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise BadRequest("Bad request. Invalid Flow bit rate.")
+        else:
+            if not isinstance(value, bool):
+                raise BadRequest("Bad request. Invalid Flow read_only value.")
+            flow.read_only = value
         flow.data[property_name] = value
-        flow.metadata_updated = utc_now()
+        touch_flow_metadata(flow, identity=identity)
         self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/updated",
+            flow=flow,
+        )
+
+    def delete_flow_property(
+        self,
+        flow_id: UUID,
+        property_name: FlowDeletablePropertyName,
+        *,
+        identity: Identity | None = None,
+    ) -> None:
+        flow = self.get_flow(flow_id)
+        ensure_flow_writable(flow)
+        flow.data.pop(property_name, None)
+        touch_flow_metadata(flow, identity=identity)
+        self.repository.save_flow(flow)
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/updated",
+            flow=flow,
+        )
 
     def get_flow_tags(self, flow_id: UUID) -> dict[str, TagValue]:
         return self.get_flow(flow_id).tags
@@ -199,45 +348,51 @@ class FlowUseCases(UseCaseContext):
             raise NotFound("The requested Flow tag does not exist.")
         return flow.tags[name]
 
-    def set_flow_tag(self, flow_id: UUID, name: str, value: TagValue) -> None:
-        if not _valid_tag_value(value):
+    def set_flow_tag(
+        self,
+        flow_id: UUID,
+        name: str,
+        value: TagValue,
+        *,
+        identity: Identity | None = None,
+    ) -> None:
+        if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Flow tag value.")
         flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
+        ensure_flow_writable(flow)
         flow.tags[name] = value
         flow.data["tags"] = flow.tags
-        flow.metadata_updated = utc_now()
+        touch_flow_metadata(flow, identity=identity)
         self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/updated",
+            flow=flow,
+        )
 
-    def delete_flow_tag(self, flow_id: UUID, name: str) -> None:
+    def delete_flow_tag(
+        self,
+        flow_id: UUID,
+        name: str,
+        *,
+        identity: Identity | None = None,
+    ) -> None:
         flow = self.get_flow(flow_id)
-        self._ensure_flow_writable(flow)
+        ensure_flow_writable(flow)
         flow.tags.pop(name, None)
         flow.data["tags"] = flow.tags
-        flow.metadata_updated = utc_now()
+        touch_flow_metadata(flow, identity=identity)
         self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
-
-    def set_flow_read_only(self, flow_id: UUID, read_only: bool) -> None:
-        if not isinstance(read_only, bool):
-            raise BadRequest("Bad request. Invalid Flow read_only value.")
-        flow = self.get_flow(flow_id)
-        flow.read_only = read_only
-        flow.data["read_only"] = read_only
-        flow.metadata_updated = utc_now()
-        self.repository.save_flow(flow)
-        self._publish_flow_event("flows/updated", flow)
-
-    def _ensure_flow_writable(self, flow: FlowRecord) -> None:
-        if flow.read_only:
-            raise Forbidden(
-                "Forbidden. You do not have permission to modify this Flow. "
-                "It may be marked read-only."
-            )
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/updated",
+            flow=flow,
+        )
 
     def _replace_flow_collection(
-        self, flow: FlowRecord, collection: list[FlowCollectionItem] | None
+        self, flow: FlowRecord, collection: list[dict[str, Any]] | None
     ) -> None:
         payload = self._validate_flow_collection(flow, collection or [])
         if payload:
@@ -245,31 +400,13 @@ class FlowUseCases(UseCaseContext):
         else:
             flow.data.pop("flow_collection", None)
 
-    def _unlink_flow_collection_references(self, flow: FlowRecord) -> None:
-        for parent in self.repository.list_flows():
-            if parent.id == flow.id:
-                continue
-            collection = _flow_collection(parent)
-            remaining = [
-                dict(item)
-                for item in collection
-                if _collection_child_id(item) != flow.id
-            ]
-            if len(remaining) == len(collection):
-                continue
-            if remaining:
-                parent.data["flow_collection"] = remaining
-            else:
-                parent.data.pop("flow_collection", None)
-            self.repository.save_flow(parent)
-
     def _validate_flow_collection(
-        self, flow: FlowRecord, collection: list[FlowCollectionItem]
+        self, flow: FlowRecord, collection: list[dict[str, Any]]
     ) -> list[dict]:
         payload: list[dict] = []
         seen: set[UUID] = set()
         for item in collection:
-            child_id = item.id
+            child_id = UUID(str(item["id"]))
             if child_id == flow.id:
                 raise BadRequest("Bad request. Invalid flow collection.")
             if child_id in seen:
@@ -280,15 +417,21 @@ class FlowUseCases(UseCaseContext):
             if child is None:
                 raise BadRequest("Bad request. Invalid flow collection.")
 
-            payload.append(item.model_dump(exclude_none=True, mode="json"))
+            payload.append(dict(item))
         return payload
 
     def put_flow(
-        self, *, flow_id: UUID, flow_write: FlowWrite, identity: Identity
+        self,
+        *,
+        flow_id: UUID,
+        flow: dict[str, Any],
+        supplied_fields: set[str] | None = None,
+        identity: Identity,
     ) -> tuple[FlowRecord, bool]:
-        if flow_write.id != flow_id:
+        if UUID(str(flow.get("id"))) != flow_id:
             raise BadRequest("Bad request. Invalid Flow JSON.")
-        flow_collection_supplied = "flow_collection" in flow_write.model_fields_set
+        supplied_fields = supplied_fields or set(flow)
+        flow_collection_supplied = "flow_collection" in supplied_fields
         existing = self.repository.get_flow(flow_id)
         if existing is not None and existing.read_only:
             raise Forbidden(
@@ -296,29 +439,32 @@ class FlowUseCases(UseCaseContext):
                 "It may be marked read-only."
             )
 
-        data = flow_write.model_dump(by_alias=True, exclude_none=True, mode="json")
-        data.pop("flow_collection", None)
-        _strip_server_managed_flow_fields(data)
-        replacement_tags = dict(flow_write.tags or {})
+        data = dict(flow)
+        tags_supplied = "tags" in data
+        flow_collection = data.pop("flow_collection", None)
+        strip_server_managed_flow_fields(
+            data,
+            preserve_metadata_version=existing is None,
+        )
+        replacement_tags = dict(data.get("tags") or {})
 
         if existing is not None:
             data = self._flow_update_payload(existing, data)
 
         try:
-            validation.validate_flow_payload(data)
+            validate_flow_payload(data)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid Flow JSON.") from exc
 
         source_id = UUID(str(data["source_id"]))
         format_value = data["format"]
-        source: SourceRecord | None = None
         source_was_created = False
         source = self.repository.get_source(source_id)
         if source is None:
             source = SourceRecord(
                 id=source_id,
                 format=format_value,
-                label=data.get("source_label") or data.get("label"),
+                label=data.get("label"),
                 tags=replacement_tags,
             )
             source_was_created = True
@@ -332,25 +478,31 @@ class FlowUseCases(UseCaseContext):
         if existing is None:
             data.setdefault("created_by", identity.subject)
             data.setdefault("created", now.isoformat())
+            data.setdefault("metadata_version", str(uuid4()))
+            data["metadata_updated"] = now.isoformat()
             record = FlowRecord(
                 id=flow_id,
                 data=data,
                 source_id=source_id,
                 format=format_value,
                 container=data.get("container"),
-                read_only=bool(flow_write.read_only),
+                read_only=bool(data.get("read_only")),
                 tags=replacement_tags,
                 created=now,
                 metadata_updated=now,
             )
             created = True
         else:
-            data.setdefault("created", existing.data.get("created"))
+            data.setdefault(
+                "created",
+                existing.data.get("created") or existing.created.isoformat(),
+            )
             data["metadata_updated"] = now.isoformat()
-            data.setdefault("updated_by", identity.subject)
+            data["metadata_version"] = str(uuid4())
+            data["updated_by"] = identity.subject
             stored_data = {**existing.data, **data}
             stored_data.pop("collected_by", None)
-            if flow_write.tags is None:
+            if not tags_supplied:
                 stored_data.pop("tags", None)
             else:
                 stored_data["tags"] = replacement_tags
@@ -360,8 +512,8 @@ class FlowUseCases(UseCaseContext):
                 source_id=source_id,
                 format=format_value,
                 container=data.get("container"),
-                read_only=bool(flow_write.read_only)
-                if flow_write.read_only is not None
+                read_only=bool(data.get("read_only"))
+                if data.get("read_only") is not None
                 else existing.read_only,
                 tags=replacement_tags,
                 created=existing.created,
@@ -371,13 +523,21 @@ class FlowUseCases(UseCaseContext):
             created = False
 
         if flow_collection_supplied:
-            self._replace_flow_collection(record, flow_write.flow_collection)
+            self._replace_flow_collection(record, flow_collection)
 
         self.repository.save_flow(record)
-        if source is not None and source_was_created:
-            self._publish_source_event("sources/created", source)
-        self._publish_flow_event(
-            "flows/created" if created else "flows/updated", record
+        if source_was_created:
+            webhooking.publish_source_event(
+                repository=self.webhook_repository,
+                resource_repository=self.repository,
+                event_type="sources/created",
+                source=source,
+            )
+        webhooking.publish_flow_event(
+            repository=self.webhook_repository,
+            resource_repository=self.repository,
+            event_type="flows/created" if created else "flows/updated",
+            flow=record,
         )
         return record, created
 
@@ -435,25 +595,8 @@ class FlowUseCases(UseCaseContext):
             limit=limit,
         )
 
-    def _flow_collected_by_ids(self, flow: FlowRecord | None) -> list[str]:
-        if flow is None:
-            return []
-        return _collected_by_by_flow_id(self.repository.list_flows()).get(flow.id, [])
-
     def _flow_with_collected_by(self, flow: FlowRecord) -> FlowRecord:
-        return _flow_with_collected_by(flow, self._flow_collected_by_ids(flow))
-
-    def _flow_payload(self, flow: FlowRecord) -> dict[str, Any]:
-        payload = dict(self._flow_with_collected_by(flow).data)
-        payload["id"] = str(flow.id)
-        if flow.source_id is not None:
-            payload["source_id"] = str(flow.source_id)
-        if flow.format is not None:
-            payload["format"] = flow.format
-        if flow.container is not None:
-            payload["container"] = flow.container
-        payload["read_only"] = flow.read_only
-        payload["tags"] = flow.tags
-        if flow.segments_updated is not None:
-            payload["segments_updated"] = flow.segments_updated.isoformat()
-        return {key: value for key, value in payload.items() if value is not None}
+        collected_by_ids = collected_by_by_flow_id(self.repository.list_flows()).get(
+            flow.id, []
+        )
+        return flow_with_collected_by(flow, collected_by_ids)
