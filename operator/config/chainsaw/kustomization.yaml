@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../default
+
+images:
+  - name: livewyer/tamoss-operator
+    newName: livewyer/tamoss-operator
+    newTag: chainsaw
+
+patches:
+  - path: manager_dependency_discovery_patch.yaml
+  - path: manager_authentik_platform_namespaces_patch.yaml
+  - path: manager_image_pull_policy_patch.yaml

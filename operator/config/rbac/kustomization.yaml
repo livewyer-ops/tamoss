@@ -1,0 +1,14 @@
+resources:
+- service_account.yaml
+- role.yaml
+- manager_cluster_resources_role.yaml
+- role_binding.yaml
+- namespaced_role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+- auth_proxy_service.yaml
+- auth_proxy_role.yaml
+- auth_proxy_role_binding.yaml
+- auth_proxy_client_clusterrole.yaml
+- tamoss_editor_role.yaml
+- tamoss_viewer_role.yaml

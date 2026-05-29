@@ -1,0 +1,69 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: controller-manager-alerts
+  namespace: system
+spec:
+  groups:
+    - name: tamoss.operator
+      rules:
+        - alert: TAMOSSReconcileErrors
+          expr: sum by (controller) (rate(tamoss_reconcile_errors_total[5m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS operator reconcile errors
+            description: The {{ $labels.controller }} controller has returned reconcile errors for at least 10 minutes.
+        - alert: TAMOSSResourceDegraded
+          expr: tamoss_resource_condition{condition="Degraded",status="True"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS resource degraded
+            description: '{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} is degraded with reason {{ $labels.reason }}.'
+        - alert: TAMOSSResourceNotReady
+          expr: tamoss_resource_condition{condition="Ready",status!="True"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS resource not ready
+            description: '{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} has Ready={{ $labels.status }} with reason {{ $labels.reason }}.'
+        - alert: TAMOSSProviderNotReady
+          expr: tamoss_provider_ready == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS provider domain not ready
+            description: '{{ $labels.namespace }}/{{ $labels.name }} provider domain {{ $labels.domain }} ({{ $labels.provider }}, {{ $labels.ownership }}) is not ready.'
+        - alert: TAMOSSSchemaMigrationFailureRate
+          expr: sum(rate(tamoss_schema_migrations_total{result="failed"}[5m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS schema migrations are failing
+            description: Schema migration failures have been observed for at least 10 minutes. Inspect Tamoss SchemaMigrated and schemaMigration status before retrying.
+        - alert: TAMOSSSchemaVersionDrift
+          expr: absent(tamoss_operator_schema_version) or count(count by (version) (tamoss_operator_schema_version)) > 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS operator schema version drift
+            description: Operator pods are not exposing a single schema bundle version. Check operator rollout health before upgrading instances.
+        - alert: TAMOSSReconcilePhaseShift
+          expr: sum(increase(tamoss_reconcile_phase_count{phase="degraded"}[15m])) > 3 or (sum(increase(tamoss_reconcile_phase_count{phase="progressing"}[30m])) > 20 and sum(increase(tamoss_reconcile_phase_count{phase="ready"}[30m])) == 0)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: TAMOSS reconcile phases are abnormal
+            description: Reconciles are repeatedly ending degraded or progressing without ready transitions. Inspect Tamoss conditions and recent events.

@@ -1,0 +1,60 @@
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+
+linters-settings:
+  goconst:
+    min-occurrences: 10
+  gocyclo:
+    min-complexity: 40
+  gosec:
+    excludes:
+      - G101
+  lll:
+    line-length: 120
+
+issues:
+  # don't skip warning about doc comments
+  # don't exclude the default set of lint
+  exclude-use-default: false
+  # restore some of the defaults
+  # (fill in the rest as needed)
+  exclude-rules:
+    - path: "api/*"
+      linters:
+        - lll
+    - path: "internal/*"
+      linters:
+        - dupl
+        - lll
+    - path: ".*_test.go"
+      linters:
+        - goconst
+        - gocyclo
+        - gosec
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dupl
+    - errcheck
+    - goconst
+    - gocyclo
+    - gofmt
+    - gofumpt
+    - goimports
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - nolintlint
+    - prealloc
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unused
+    - whitespace
