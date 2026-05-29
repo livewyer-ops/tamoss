@@ -1,33 +1,28 @@
 from __future__ import annotations
 
 import logging
-import os
 import signal
-import socket
+import sys
 import time
+from collections.abc import Callable
 
-from tamoss.application.use_cases import DEFAULT_WORKER_LEASE_SECONDS, TamossUseCases
+from tamoss.application.use_cases import TamossUseCases
 from tamoss.bootstrap import create_use_cases
+from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings, get_settings
+from tamoss.storage_credentials import validate_credentials_file
 
 logger = logging.getLogger("tamoss.worker")
 _shutdown = False
+
+
+class WorkerHealthError(RuntimeError):
+    pass
 
 
 def _handle_signal(signum: int, _frame: object) -> None:
     global _shutdown
     logger.info("received signal %s; shutting down", signum)
     _shutdown = True
-
-
-def _positive_int_env(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default))
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise SystemExit(f"{name} must be a positive integer") from exc
-    if value <= 0:
-        raise SystemExit(f"{name} must be a positive integer")
-    return value
 
 
 def drain_delete_requests(
@@ -37,11 +32,26 @@ def drain_delete_requests(
     worker_id: str | None = None,
     lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS,
 ) -> int:
-    return use_cases.process_pending_delete_requests(
+    resolved_worker_id = worker_id or _default_worker_id()
+    processed = use_cases.deletion.process_pending_delete_requests(
         max_requests=max_requests,
-        worker_id=worker_id or _default_worker_id(),
+        worker_id=resolved_worker_id,
         lease_seconds=lease_seconds,
     )
+    processed += use_cases.objects.process_pending_object_copies(
+        max_copies=max_requests,
+        worker_id=resolved_worker_id,
+        lease_seconds=lease_seconds,
+    )
+    processed += use_cases.deletion.queue_stale_allocated_object_cleanups(
+        max_objects=max_requests,
+    )
+    processed += use_cases.deletion.process_pending_object_cleanups(
+        max_cleanups=max_requests,
+        worker_id=resolved_worker_id,
+        lease_seconds=lease_seconds,
+    )
+    return processed
 
 
 def drain_webhook_deliveries(
@@ -51,7 +61,7 @@ def drain_webhook_deliveries(
     worker_id: str | None = None,
     lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS,
 ) -> int:
-    return use_cases.process_pending_webhook_deliveries(
+    return use_cases.webhooks.process_pending_webhook_deliveries(
         max_deliveries=max_deliveries,
         worker_id=worker_id or _default_worker_id(),
         lease_seconds=lease_seconds,
@@ -67,6 +77,8 @@ def drain_once(
     enable_delete: bool,
     enable_webhook: bool,
 ) -> tuple[int, int]:
+    # Keep one worker process sequential; run more replicas or split loops if queue
+    # isolation becomes necessary.
     delete_processed = 0
     webhook_processed = 0
     if enable_delete:
@@ -87,7 +99,7 @@ def drain_once(
 
 
 def _default_worker_id() -> str:
-    return os.getenv("TAMOSS_WORKER_ID") or f"{socket.gethostname()}:{os.getpid()}"
+    return get_settings().worker_id
 
 
 def _close_use_cases(use_cases: TamossUseCases) -> None:
@@ -96,21 +108,67 @@ def _close_use_cases(use_cases: TamossUseCases) -> None:
         close()
 
 
-def main() -> None:
-    log_level = os.getenv("TAMOSS_LOG_LEVEL") or os.getenv("LOG_LEVEL") or "INFO"
-    logging.basicConfig(level=log_level.upper())
+def _repository_health_check(repository: object) -> Callable[[], None]:
+    check_connection = getattr(repository, "check_connection", None)
+    if not callable(check_connection):
+        raise WorkerHealthError("repository does not expose a health check")
+    return check_connection
+
+
+def check_health(settings: Settings | None = None) -> None:
+    resolved_settings = settings or get_settings()
+    if resolved_settings.storage_backend_credentials_file:
+        try:
+            validate_credentials_file(
+                resolved_settings.storage_backend_credentials_file
+            )
+        except (OSError, ValueError) as exc:
+            raise WorkerHealthError(
+                f"storage backend credentials file is not readable: {exc}"
+            ) from exc
+
+    try:
+        use_cases = create_use_cases(resolved_settings)
+    except Exception as exc:
+        raise WorkerHealthError(f"worker configuration is invalid: {exc}") from exc
+    try:
+        _repository_health_check(use_cases.repository)()
+    except WorkerHealthError:
+        raise
+    except Exception as exc:
+        raise WorkerHealthError(f"database connectivity check failed: {exc}") from exc
+    finally:
+        _close_use_cases(use_cases)
+
+
+def health_main(settings: Settings | None = None) -> int:
+    try:
+        check_health(settings)
+    except WorkerHealthError as exc:
+        print(f"worker health check failed: {exc}", file=sys.stderr)
+        return 1
+    print("worker health check passed")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = [] if argv is None else argv
+    if args == ["health"]:
+        raise SystemExit(health_main())
+    if args:
+        raise SystemExit(f"unsupported worker command: {' '.join(args)}")
+
+    settings = get_settings()
+    logging.basicConfig(level=settings.log_level.upper())
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    poll_interval = _positive_int_env("TAMOSS_WORKER_POLL_INTERVAL_SECONDS", 5)
-    max_requests = _positive_int_env("TAMOSS_WORKER_MAX_REQUESTS", 50)
-    lease_seconds = _positive_int_env(
-        "TAMOSS_WORKER_LEASE_SECONDS",
-        DEFAULT_WORKER_LEASE_SECONDS,
-    )
-    worker_id = _default_worker_id()
-    enable_delete = os.getenv("TAMOSS_WORKER_ENABLE_DELETE", "1") == "1"
-    enable_webhook = os.getenv("TAMOSS_WORKER_ENABLE_WEBHOOK", "1") == "1"
+    poll_interval = settings.worker_poll_interval_seconds
+    max_requests = settings.worker_max_requests
+    lease_seconds = settings.worker_lease_seconds
+    worker_id = settings.worker_id
+    enable_delete = settings.worker_enable_delete
+    enable_webhook = settings.worker_enable_webhook
 
     logger.info(
         "starting TAMOSS worker worker_id=%s poll_interval=%s max_requests=%s "
@@ -122,7 +180,7 @@ def main() -> None:
         enable_delete,
         enable_webhook,
     )
-    use_cases = create_use_cases()
+    use_cases = create_use_cases(settings)
     try:
         while not _shutdown:
             processed = 0
@@ -137,7 +195,9 @@ def main() -> None:
                 )
                 processed = delete_processed + webhook_processed
                 if delete_processed:
-                    logger.info("processed %s delete request(s)", delete_processed)
+                    logger.info(
+                        "processed %s object lifecycle task(s)", delete_processed
+                    )
                 if webhook_processed:
                     logger.info("processed %s webhook delivery(ies)", webhook_processed)
             except Exception:
@@ -149,4 +209,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
