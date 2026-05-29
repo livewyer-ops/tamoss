@@ -162,7 +162,7 @@ export default function ManageChildFlowsDialog({
                       disabled={saving}
                       className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
                     >
-                      Remove
+                      Remove from collection
                     </button>
                   </div>
                 ))}

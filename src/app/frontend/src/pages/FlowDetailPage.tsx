@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
 import { useToast } from "@/hooks/useToast";
-import { parseTimerange } from "@/utils/hls-manifest";
 import { useApiQuery } from "@/hooks/useApiQuery";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -20,15 +19,25 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import StateStrip from "@/components/StateStrip";
 import ApiReferencePanel from "@/components/ApiReferencePanel";
 import SectionHeading from "@/components/SectionHeading";
+import StorageBackendSelector from "@/components/StorageBackendSelector";
+import FlowMetadataPanel from "@/components/flow-detail/FlowMetadataPanel";
+import SegmentTable from "@/components/flow-detail/SegmentTable";
+import {
+  findStorageBackend,
+  storageBackendDisplay,
+} from "@/utils/storageBackends";
 import {
   formatFormat,
   formatCodec,
-  formatDate,
-  formatTimerange,
   formatResolution,
   formatFrameRate,
   formatBitRate,
 } from "@/utils/format";
+import {
+  SEGMENT_PAGE_SIZE,
+  deletionRequestPath,
+  estimateDeleteScope,
+} from "@/pages/flowDetailModel";
 import type {
   DeletionRequest,
   Flow,
@@ -36,19 +45,6 @@ import type {
   FlowCollectionItem,
   StorageAllocation,
 } from "@/types/tams";
-
-const SEGMENT_PAGE_SIZE = "300";
-
-function estimateDeleteScope(flow: Flow, segments: FlowSegment[]): string {
-  if (!segments.length) return "This will remove the flow record only.";
-  if (segments.length === 1)
-    return "This will delete the flow and 1 registered segment.";
-  return `This will delete the flow and ${segments.length} registered segments.`;
-}
-
-function deletionRequestPath(request: DeletionRequest): string {
-  return `/deletions?request=${encodeURIComponent(request.id)}`;
-}
 
 export default function FlowDetailPage() {
   usePageTitle("Flow");
@@ -60,6 +56,7 @@ export default function FlowDetailPage() {
   const [segNextKey, setSegNextKey] = useState<string | undefined>();
   const [segLoadingMore, setSegLoadingMore] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [flowDeleting, setFlowDeleting] = useState(false);
   const [showAddSegments, setShowAddSegments] = useState(false);
   const [showChildFlows, setShowChildFlows] = useState(false);
   const [childFlows, setChildFlows] = useState<FlowCollectionItem[]>([]);
@@ -92,6 +89,8 @@ export default function FlowDetailPage() {
     "lock" | "unlock" | null
   >(null);
   const [storageCount, setStorageCount] = useState(1);
+  const [allocationStorageId, setAllocationStorageId] = useState("");
+  const [segmentStorageId, setSegmentStorageId] = useState("");
   const [storageAllocating, setStorageAllocating] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [allocatedObjects, setAllocatedObjects] = useState<
@@ -105,17 +104,21 @@ export default function FlowDetailPage() {
     refetch,
   } = useApiQuery(() => api.getFlow(flowId!), [api, flowId]);
 
+  const storageBackends = useApiQuery(() => api.getStorageBackends(), [api]);
+
   const segQuery = useApiQuery(async () => {
     const result = await api.getFlowSegments(flowId!, {
       include_object_timerange: true,
+      ...(segmentStorageId ? { accept_storage_ids: segmentStorageId } : {}),
       limit: SEGMENT_PAGE_SIZE,
+      verbose_storage: true,
     });
     setSegments(result.data);
     setSegNextKey(result.nextKey);
     setSelectedSegments(new Set());
     setRemoveConfirm(false);
     return result;
-  }, [api, flowId]);
+  }, [api, flowId, segmentStorageId]);
 
   const collectionQuery = useApiQuery(async () => {
     try {
@@ -142,8 +145,12 @@ export default function FlowDetailPage() {
       childFlows.map(async (c) => {
         try {
           const result = await api.getFlowSegments(c.id, {
+            ...(segmentStorageId
+              ? { accept_storage_ids: segmentStorageId }
+              : {}),
             include_object_timerange: true,
             limit: SEGMENT_PAGE_SIZE,
+            verbose_storage: true,
           });
           return [c.id, result.data, null] as const;
         } catch (err) {
@@ -170,7 +177,7 @@ export default function FlowDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, childFlows]);
+  }, [api, childFlows, segmentStorageId]);
 
   const loadMoreSegments = useCallback(async () => {
     if (!segNextKey || segLoadingMore) return;
@@ -178,15 +185,17 @@ export default function FlowDetailPage() {
     try {
       const result = await api.getFlowSegments(flowId!, {
         include_object_timerange: true,
+        ...(segmentStorageId ? { accept_storage_ids: segmentStorageId } : {}),
         limit: SEGMENT_PAGE_SIZE,
         page: segNextKey,
+        verbose_storage: true,
       });
       setSegments((prev) => [...prev, ...result.data]);
       setSegNextKey(result.nextKey);
     } finally {
       setSegLoadingMore(false);
     }
-  }, [api, flowId, segNextKey, segLoadingMore]);
+  }, [api, flowId, segNextKey, segLoadingMore, segmentStorageId]);
 
   const segmentsSentinelRef = useInfiniteScroll(
     !!segNextKey && !segLoadingMore,
@@ -195,6 +204,7 @@ export default function FlowDetailPage() {
 
   const handleDelete = useCallback(async () => {
     if (!flowId) return;
+    setFlowDeleting(true);
     try {
       const deleteRequest = await api.deleteFlow(flowId);
       if (deleteRequest?.id) {
@@ -207,6 +217,8 @@ export default function FlowDetailPage() {
         kind: "error",
         message: err instanceof Error ? err.message : "Delete failed",
       });
+    } finally {
+      setFlowDeleting(false);
     }
   }, [api, flowId, navigate, pushToast]);
 
@@ -234,7 +246,9 @@ export default function FlowDetailPage() {
     setStorageAllocating(true);
     setStorageError(null);
     try {
-      const result = await api.allocateStorageByCount(flowId, storageCount);
+      const result = await api.allocateStorageByCount(flowId, storageCount, {
+        storageId: allocationStorageId || undefined,
+      });
       setAllocatedObjects(result.media_objects);
     } catch (err) {
       setStorageError(
@@ -243,7 +257,7 @@ export default function FlowDetailPage() {
     } finally {
       setStorageAllocating(false);
     }
-  }, [api, flowId, storageCount]);
+  }, [api, flowId, storageCount, allocationStorageId]);
 
   const openAddSegmentsForChild = useCallback(
     async (childId: string) => {
@@ -265,8 +279,10 @@ export default function FlowDetailPage() {
     async (childId: string) => {
       try {
         const result = await api.getFlowSegments(childId, {
+          ...(segmentStorageId ? { accept_storage_ids: segmentStorageId } : {}),
           include_object_timerange: true,
           limit: SEGMENT_PAGE_SIZE,
+          verbose_storage: true,
         });
         setChildSegmentsMap((prev) => ({ ...prev, [childId]: result.data }));
         setChildSegmentErrors((prev) => {
@@ -290,7 +306,7 @@ export default function FlowDetailPage() {
         });
       }
     },
-    [api, pushToast],
+    [api, pushToast, segmentStorageId],
   );
 
   // Multi-select helpers (main segments)
@@ -396,6 +412,11 @@ export default function FlowDetailPage() {
           href: deletionRequestPath(deleteRequests[0]),
         },
       });
+    } else {
+      pushToast({
+        kind: "success",
+        message: `Deleted ${succeeded.length} segment registration(s).`,
+      });
     }
   }, [api, flowId, segments, selectedSegments, segQuery, refetch, pushToast]);
 
@@ -457,6 +478,11 @@ export default function FlowDetailPage() {
             href: deletionRequestPath(deleteRequests[0]),
           },
         });
+      } else {
+        pushToast({
+          kind: "success",
+          message: `Deleted ${succeeded.length} segment registration(s).`,
+        });
       }
     },
     [
@@ -481,7 +507,11 @@ export default function FlowDetailPage() {
   const ep = flow.essence_parameters;
   const isReadOnly = !!flow.read_only;
   const isMulti = flow.format === "urn:x-nmos:format:multi";
-  const deleteScope = estimateDeleteScope(flow, segments);
+  const deleteScope = estimateDeleteScope(segments, Boolean(segNextKey));
+  const allocationBackend = findStorageBackend(
+    storageBackends.data,
+    allocationStorageId,
+  );
   const readOnlyScope = isReadOnly
     ? "This will unlock the flow and re-enable metadata edits, segment changes, storage allocation, and deletion."
     : "This will lock the flow and prevent metadata edits, segment changes, storage allocation, and deletion until it is made writable again.";
@@ -547,9 +577,10 @@ export default function FlowDetailPage() {
           </button>
           <button
             onClick={() => setDeleteConfirm(true)}
-            className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+            disabled={isReadOnly || flowDeleting}
+            className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Delete
+            {flowDeleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
@@ -590,6 +621,8 @@ export default function FlowDetailPage() {
           </>
         }
         confirmLabel="Confirm Delete"
+        busy={flowDeleting}
+        busyLabel="Deleting..."
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirm(false)}
       />
@@ -627,163 +660,13 @@ export default function FlowDetailPage() {
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="tamoss-panel rounded-2xl p-4 sm:p-6">
-          <SectionHeading title="State & Metadata" />
-
-          <h3 className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-lw-ink-400">
-            Identity
-          </h3>
-          <dl className="mt-2 space-y-3">
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Description</dt>
-              <dd className="mt-1 text-sm text-gray-900">
-                <InlineEditField
-                  value={flow.description || ""}
-                  placeholder="Add description..."
-                  multiline
-                  disabled={isReadOnly}
-                  onSave={async (v) => {
-                    await api.updateFlowDescription(flowId!, v);
-                    refetch();
-                  }}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Source</dt>
-              <dd className="mt-1">
-                <Link
-                  to={`/sources/${flow.source_id}`}
-                  className="text-sm text-tams-600 hover:text-tams-700"
-                >
-                  {flow.source_id}
-                </Link>
-              </dd>
-            </div>
-          </dl>
-
-          <h3 className="mt-6 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-lw-ink-400">
-            Encoding
-          </h3>
-          <dl className="mt-2 space-y-3">
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Codec</dt>
-              <dd className="mt-1 text-sm text-gray-900">
-                <span
-                  className={
-                    flow.codec ? "font-mono text-xs" : "text-gray-400 italic"
-                  }
-                >
-                  {flow.codec || "Not set"}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Container</dt>
-              <dd className="mt-1 text-sm text-gray-900">
-                <span
-                  className={
-                    flow.container
-                      ? "font-mono text-xs"
-                      : "text-gray-400 italic"
-                  }
-                >
-                  {flow.container || "Not set"}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">
-                Average bit rate
-              </dt>
-              <dd className="mt-1 text-sm text-gray-900">
-                <InlineEditField
-                  value={flow.avg_bit_rate ? String(flow.avg_bit_rate) : ""}
-                  placeholder="Set average bit rate"
-                  disabled={isReadOnly}
-                  onSave={async (value) => {
-                    const parsed = Number(value);
-                    if (!Number.isFinite(parsed) || parsed < 0) {
-                      throw new Error("Bit rate must be a positive number");
-                    }
-                    await api.updateFlowAvgBitRate(flowId!, parsed);
-                    refetch();
-                  }}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">
-                Maximum bit rate
-              </dt>
-              <dd className="mt-1 text-sm text-gray-900">
-                <InlineEditField
-                  value={flow.max_bit_rate ? String(flow.max_bit_rate) : ""}
-                  placeholder="Set maximum bit rate"
-                  disabled={isReadOnly}
-                  onSave={async (value) => {
-                    const parsed = Number(value);
-                    if (!Number.isFinite(parsed) || parsed < 0) {
-                      throw new Error("Bit rate must be a positive number");
-                    }
-                    await api.updateFlowMaxBitRate(flowId!, parsed);
-                    refetch();
-                  }}
-                />
-              </dd>
-            </div>
-          </dl>
-
-          <details className="group mt-6">
-            <summary className="flex cursor-pointer list-none items-center justify-between text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-lw-ink-400 [&::-webkit-details-marker]:hidden">
-              <span>Lifecycle</span>
-              <span className="text-lw-ink-400 group-open:hidden">Show</span>
-              <span className="hidden text-lw-ink-400 group-open:inline">
-                Hide
-              </span>
-            </summary>
-            <dl className="mt-2 space-y-3">
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Timerange</dt>
-                <dd className="mt-1 font-mono text-sm text-gray-900">
-                  {formatTimerange(flow.timerange)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">
-                  Generation
-                </dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {flow.generation ?? "N/A"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">
-                  Read-only state
-                </dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {isReadOnly ? "Read-only" : "Writable"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Created</dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {formatDate(flow.created)}
-                </dd>
-              </div>
-              {flow.created_by && (
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">
-                    Created By
-                  </dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {flow.created_by}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </details>
-        </div>
+        <FlowMetadataPanel
+          api={api}
+          flow={flow}
+          flowId={flowId!}
+          isReadOnly={isReadOnly}
+          onRefresh={refetch}
+        />
 
         <div className="space-y-6">
           <TraceRail
@@ -992,17 +875,29 @@ export default function FlowDetailPage() {
 
         {isMulti && (
           <div className="tamoss-panel rounded-2xl p-4 sm:p-6 lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <SectionHeading
                 title={`Flow Collection (${childFlows.length})`}
               />
-              <button
-                onClick={() => setShowChildFlows(true)}
-                disabled={isReadOnly}
-                className="rounded-lg bg-tams-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-tams-700 disabled:opacity-50"
-              >
-                Edit Collection
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <StorageBackendSelector
+                  id="multi-segment-storage-filter"
+                  label="Segment URL backend"
+                  value={segmentStorageId}
+                  onChange={setSegmentStorageId}
+                  backends={storageBackends.data}
+                  includeAllOption
+                  allLabel="All storage backends"
+                  className="min-w-64"
+                />
+                <button
+                  onClick={() => setShowChildFlows(true)}
+                  disabled={isReadOnly}
+                  className="rounded-lg bg-tams-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-tams-700 disabled:opacity-50"
+                >
+                  Edit Collection
+                </button>
+              </div>
             </div>
 
             {collectionQuery.loading && (
@@ -1055,16 +950,17 @@ export default function FlowDetailPage() {
                           {childSelected.size > 0 && (
                             <button
                               onClick={() => setRemoveChildConfirm(child.id)}
-                              disabled={removingChild}
+                              disabled={removingChild || isReadOnly}
                               className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                             >
-                              Remove {childSelected.size} segment
+                              Delete {childSelected.size} segment
                               {childSelected.size !== 1 ? "s" : ""}
                             </button>
                           )}
                           <button
                             onClick={() => openAddSegmentsForChild(child.id)}
-                            className="rounded-md bg-tams-600 px-2 py-1 text-xs font-medium text-white hover:bg-tams-700"
+                            disabled={isReadOnly}
+                            className="rounded-md bg-tams-600 px-2 py-1 text-xs font-medium text-white hover:bg-tams-700 disabled:opacity-50"
                           >
                             Add Segments
                           </button>
@@ -1083,87 +979,20 @@ export default function FlowDetailPage() {
                         </div>
                       )}
                       {!childSegmentError && childSegs.length > 0 && (
-                        <div className="mt-1 overflow-x-auto rounded-lg border border-gray-100">
-                          <table className="min-w-full divide-y divide-gray-100">
-                            <thead>
-                              <tr>
-                                <th className="w-8 px-2 py-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={
-                                      childSelected.size === childSegs.length &&
-                                      childSegs.length > 0
-                                    }
-                                    onChange={() =>
-                                      toggleAllChildSegments(
-                                        child.id,
-                                        childSegs.length,
-                                      )
-                                    }
-                                    className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-                                  />
-                                </th>
-                                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-400">
-                                  Timerange
-                                </th>
-                                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-400">
-                                  Object ID
-                                </th>
-                                <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-400">
-                                  TS Offset
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {childSegs.map((seg, i) => {
-                                const { duration } = parseTimerange(
-                                  seg.timerange,
-                                );
-                                const isSelected = childSelected.has(i);
-                                return (
-                                  <tr
-                                    key={`${child.id}-${seg.object_id}-${i}`}
-                                    className={isSelected ? "bg-tams-50" : ""}
-                                  >
-                                    <td className="w-8 px-2 py-1.5">
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={() =>
-                                          toggleChildSegment(child.id, i)
-                                        }
-                                        className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-                                      />
-                                    </td>
-                                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-700">
-                                      {seg.timerange}
-                                      <span className="ml-1 text-gray-400">
-                                        ({duration.toFixed(0)}s)
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-1.5">
-                                      <div className="flex items-center gap-1">
-                                        <Link
-                                          to={`/objects/${seg.object_id}`}
-                                          className="font-mono text-xs text-tams-600 hover:text-tams-700"
-                                        >
-                                          {seg.object_id.substring(0, 12)}...
-                                        </Link>
-                                        <CopyButton
-                                          text={seg.object_id}
-                                          label="Copy"
-                                        />
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-1.5 font-mono text-xs text-gray-500">
-                                      {seg.ts_offset ?? "N/A"}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                        <SegmentTable
+                          segments={childSegs}
+                          selectedSegments={childSelected}
+                          onToggleSegment={(index) =>
+                            toggleChildSegment(child.id, index)
+                          }
+                          onToggleAll={() =>
+                            toggleAllChildSegments(child.id, childSegs.length)
+                          }
+                          readOnly={isReadOnly}
+                          rowKeyPrefix={`child-${child.id}`}
+                          compact
+                          showDuration
+                        />
                       )}
                     </div>
                   );
@@ -1175,25 +1004,35 @@ export default function FlowDetailPage() {
 
         {!isMulti && (
           <div className="tamoss-panel rounded-2xl p-4 sm:p-6 lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <SectionHeading
                 title={`Segments (${segments.length}${segNextKey ? "+" : ""})`}
               />
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <StorageBackendSelector
+                  id="segment-storage-filter"
+                  label="Segment URL backend"
+                  value={segmentStorageId}
+                  onChange={setSegmentStorageId}
+                  backends={storageBackends.data}
+                  includeAllOption
+                  allLabel="All storage backends"
+                  className="min-w-64"
+                />
                 {selectedSegments.size > 0 && (
                   <button
                     onClick={() => setRemoveConfirm(true)}
-                    disabled={removing}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    disabled={removing || isReadOnly}
+                    className="rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                   >
-                    Remove {selectedSegments.size} segment
+                    Delete {selectedSegments.size} segment
                     {selectedSegments.size !== 1 ? "s" : ""}
                   </button>
                 )}
                 <button
                   onClick={() => setShowAddSegments(true)}
                   disabled={isReadOnly}
-                  className="rounded-lg bg-tams-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-tams-700 disabled:opacity-50"
+                  className="rounded-lg bg-tams-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-tams-700 disabled:opacity-50"
                 >
                   Add Segments
                 </button>
@@ -1216,77 +1055,14 @@ export default function FlowDetailPage() {
 
             {segments.length > 0 && (
               <>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr>
-                        <th className="w-8 px-2 py-3">
-                          <input
-                            type="checkbox"
-                            checked={
-                              selectedSegments.size === segments.length &&
-                              segments.length > 0
-                            }
-                            onChange={toggleAllSegments}
-                            className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-                          />
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
-                          Timerange
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
-                          Object ID
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
-                          TS Offset
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
-                          URLs
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {segments.map((seg, i) => {
-                        const isSelected = selectedSegments.has(i);
-                        return (
-                          <tr
-                            key={`flow-${seg.object_id}-${i}`}
-                            className={isSelected ? "bg-tams-50" : ""}
-                          >
-                            <td className="w-8 px-2 py-3">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSegment(i)}
-                                className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-gray-900">
-                              {seg.timerange}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1">
-                                <Link
-                                  to={`/objects/${seg.object_id}`}
-                                  className="font-mono text-xs text-tams-600 hover:text-tams-700"
-                                >
-                                  {seg.object_id.substring(0, 12)}...
-                                </Link>
-                                <CopyButton text={seg.object_id} label="Copy" />
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                              {seg.ts_offset ?? "N/A"}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-500">
-                              {seg.get_urls?.length ?? 0} URL(s)
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <SegmentTable
+                  segments={segments}
+                  selectedSegments={selectedSegments}
+                  onToggleSegment={toggleSegment}
+                  onToggleAll={toggleAllSegments}
+                  readOnly={isReadOnly}
+                  rowKeyPrefix="flow"
+                />
 
                 {segNextKey && (
                   <div className="mt-4 flex flex-col items-center gap-2">
@@ -1334,6 +1110,17 @@ export default function FlowDetailPage() {
               className="mt-1 w-32 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:bg-gray-50"
             />
           </div>
+          <StorageBackendSelector
+            id="allocation-storage-backend"
+            label="Allocation backend"
+            value={allocationStorageId}
+            onChange={setAllocationStorageId}
+            backends={storageBackends.data}
+            disabled={isReadOnly || storageAllocating}
+            includeAllOption
+            allLabel="Default backend"
+            className="min-w-64"
+          />
           <button
             onClick={handleAllocateStorage}
             disabled={isReadOnly || storageAllocating}
@@ -1356,7 +1143,8 @@ export default function FlowDetailPage() {
               <p className="mt-1">
                 These object IDs and PUT URLs reserve upload targets only. Media
                 is not registered in a flow until segments are created against
-                these object IDs.
+                these object IDs. Allocation used{" "}
+                {storageBackendDisplay(allocationBackend)}.
               </p>
             </div>
             {allocatedObjects.map((entry) => (
@@ -1431,11 +1219,11 @@ export default function FlowDetailPage() {
       <ConfirmAction
         open={removeConfirm}
         variant="danger"
-        title="Remove selected segments?"
-        description={`This removes ${selectedSegments.size} segment registration${selectedSegments.size !== 1 ? "s" : ""} from the flow timeline. Media objects may still remain if referenced by other flows.`}
+        title="Delete selected segments?"
+        description={`This deletes ${selectedSegments.size} segment registration${selectedSegments.size !== 1 ? "s" : ""} from the flow timeline. Media objects may still remain if referenced by other flows.`}
         confirmLabel="Confirm"
         busy={removing}
-        busyLabel="Removing..."
+        busyLabel="Deleting..."
         onConfirm={handleBulkDeleteSegments}
         onCancel={() => setRemoveConfirm(false)}
       />
@@ -1443,16 +1231,16 @@ export default function FlowDetailPage() {
       <ConfirmAction
         open={removeChildConfirm !== null}
         variant="danger"
-        title="Remove selected child-flow segments?"
+        title="Delete selected child-flow segments?"
         description={(() => {
           const size = removeChildConfirm
             ? (selectedChildSegments[removeChildConfirm]?.size ?? 0)
             : 0;
-          return `This removes ${size} segment registration${size !== 1 ? "s" : ""} from the child flow timeline. Media objects may still remain if referenced elsewhere.`;
+          return `This deletes ${size} segment registration${size !== 1 ? "s" : ""} from the child flow timeline. Media objects may still remain if referenced elsewhere.`;
         })()}
         confirmLabel="Confirm"
         busy={removingChild}
-        busyLabel="Removing..."
+        busyLabel="Deleting..."
         onConfirm={() => {
           if (removeChildConfirm) {
             handleBulkDeleteChildSegments(removeChildConfirm);

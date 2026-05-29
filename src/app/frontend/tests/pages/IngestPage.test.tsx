@@ -1,12 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import IngestPage from "@/pages/IngestPage";
+import { renderWithQueryClient } from "../testUtils";
 
 const mocks = vi.hoisted(() => ({
   api: {
     getSources: vi.fn(),
+    getStorageBackends: vi.fn(),
   },
   addFiles: vi.fn(),
   removeFile: vi.fn(),
@@ -51,7 +53,7 @@ vi.mock("@/hooks/useIngestSession", async (importOriginal) => {
 });
 
 function renderPage() {
-  return render(
+  return renderWithQueryClient(
     <MemoryRouter>
       <IngestPage />
     </MemoryRouter>,
@@ -88,6 +90,16 @@ describe("IngestPage", () => {
       ],
       nextKey: undefined,
     });
+    mocks.api.getStorageBackends.mockResolvedValue([
+      {
+        id: "storage-1",
+        label: "RustFS",
+        provider: "tamoss",
+        store_type: "http_object_store",
+        store_product: "s3",
+        default_storage: true,
+      },
+    ]);
     mocks.startIngest.mockResolvedValue(undefined);
   });
 
@@ -105,19 +117,22 @@ describe("IngestPage", () => {
     );
 
     await waitFor(() =>
-      expect(mocks.startIngest).toHaveBeenCalledWith({
-        id: "00000000-0000-4000-8000-000000000123",
-        format: "urn:x-nmos:format:multi",
-        label: "New ingest source",
-        description: undefined,
-      }),
+      expect(mocks.startIngest).toHaveBeenCalledWith(
+        {
+          id: "00000000-0000-4000-8000-000000000123",
+          format: "urn:x-nmos:format:multi",
+          label: "New ingest source",
+          description: undefined,
+        },
+        undefined,
+      ),
     );
     expect(mocks.setSourceId).toHaveBeenCalledWith(
       "00000000-0000-4000-8000-000000000123",
     );
   });
 
-  it("marks only create-source required fields with an asterisk", async () => {
+  it("marks create-source required fields", async () => {
     renderPage();
     await screen.findByRole("option", { name: "Camera A" });
 
@@ -145,7 +160,7 @@ describe("IngestPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start Ingest" }));
 
     await waitFor(() =>
-      expect(mocks.startIngest).toHaveBeenCalledWith("source-1"),
+      expect(mocks.startIngest).toHaveBeenCalledWith("source-1", undefined),
     );
   });
 });

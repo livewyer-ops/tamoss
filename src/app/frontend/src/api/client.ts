@@ -14,17 +14,17 @@ import type {
   PaginatedResourceResponse,
   HttpRequest,
   StorageAllocation,
+  StorageAllocationOptions,
   FlowSegmentWrite,
 } from "@/types/tams";
+import {
+  ApiError,
+  ApiTransport,
+  type PagingParams,
+  type QueryParams,
+} from "@/api/transport";
 
-type QueryScalar = string | number | boolean;
-type QueryParamValue = QueryScalar | readonly QueryScalar[];
-export type QueryParams = Record<string, QueryParamValue | null | undefined>;
-
-type PagingParams = QueryParams & {
-  limit?: string | number;
-  page?: string;
-};
+export { ApiError } from "@/api/transport";
 
 export type SourceListParams = PagingParams;
 
@@ -64,189 +64,7 @@ type PagedObjectParams = ObjectParams &
 
 export type WebhookListParams = PagingParams;
 
-function errorMessageFromText(text: string): string {
-  if (!text.trim()) return "Unknown error";
-  try {
-    const data = JSON.parse(text) as { detail?: unknown };
-    if (typeof data.detail === "string") return data.detail;
-    if (Array.isArray(data.detail)) {
-      return data.detail
-        .map((item) => {
-          if (typeof item === "string") return item;
-          if (
-            item &&
-            typeof item === "object" &&
-            "msg" in item &&
-            typeof item.msg === "string"
-          ) {
-            return item.msg;
-          }
-          return JSON.stringify(item);
-        })
-        .join("; ");
-    }
-  } catch {
-    // Response was plain text.
-  }
-  return text;
-}
-
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-export class TamossApiClient {
-  private baseUrl: string;
-  private token: string;
-
-  constructor(baseUrl: string, token = "") {
-    // Ensure trailing slash so URL() preserves the base path
-    this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-    this.token = token;
-  }
-
-  private buildUrl(path: string, params?: QueryParams): string {
-    const rel = path.startsWith("/") ? path.slice(1) : path;
-    const baseUrl =
-      this.baseUrl.startsWith("http://") || this.baseUrl.startsWith("https://")
-        ? this.baseUrl
-        : new URL(this.baseUrl, window.location.origin).toString();
-    const url = new URL(rel, baseUrl);
-    this.applyQueryParams(url, params);
-    return url.toString();
-  }
-
-  private applyQueryParams(url: URL, params?: QueryParams): void {
-    if (!params) return;
-    for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null) continue;
-      const encodedValue = Array.isArray(value)
-        ? value.map(String).join(",")
-        : String(value);
-      if (encodedValue.length > 0) {
-        url.searchParams.set(key, encodedValue);
-      }
-    }
-  }
-
-  private authHeaders(): Record<string, string> {
-    if (this.token) {
-      return { Authorization: `Bearer ${this.token}` };
-    }
-    return {};
-  }
-
-  private async request<T>(
-    path: string,
-    options: RequestInit = {},
-    params?: QueryParams,
-  ): Promise<T> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.authHeaders(),
-      ...(options.headers as Record<string, string>),
-    };
-
-    const response = await fetch(this.buildUrl(path, params), {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new ApiError(response.status, errorMessageFromText(text));
-    }
-
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    const text = await response.text();
-    if (!text.trim()) {
-      return undefined as T;
-    }
-
-    return JSON.parse(text) as T;
-  }
-
-  private async requestText(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<string> {
-    const headers: Record<string, string> = {
-      ...this.authHeaders(),
-      ...(options.headers as Record<string, string>),
-    };
-
-    const response = await fetch(this.buildUrl(path), {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new ApiError(response.status, errorMessageFromText(text));
-    }
-
-    return response.text();
-  }
-
-  private async requestPaginated<T>(
-    path: string,
-    params?: QueryParams,
-  ): Promise<PaginatedResponse<T>> {
-    const response = await fetch(this.buildUrl(path, params), {
-      headers: {
-        "Content-Type": "application/json",
-        ...this.authHeaders(),
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new ApiError(response.status, errorMessageFromText(text));
-    }
-
-    const data: T[] = await response.json();
-    const nextKey = response.headers.get("X-Paging-NextKey") ?? undefined;
-    const limit = response.headers.get("X-Paging-Limit")
-      ? parseInt(response.headers.get("X-Paging-Limit")!, 10)
-      : undefined;
-
-    return { data, nextKey, limit };
-  }
-
-  private async requestPaginatedResource<T>(
-    path: string,
-    params?: QueryParams,
-  ): Promise<PaginatedResourceResponse<T>> {
-    const response = await fetch(this.buildUrl(path, params), {
-      headers: {
-        "Content-Type": "application/json",
-        ...this.authHeaders(),
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
-      throw new ApiError(response.status, errorMessageFromText(text));
-    }
-
-    const data: T = await response.json();
-    const nextKey = response.headers.get("X-Paging-NextKey") ?? undefined;
-    const limit = response.headers.get("X-Paging-Limit")
-      ? parseInt(response.headers.get("X-Paging-Limit")!, 10)
-      : undefined;
-
-    return { data, nextKey, limit };
-  }
-
+export class TamossApiClient extends ApiTransport {
   async getService(): Promise<ServiceInfo> {
     return this.request<ServiceInfo>("/service");
   }
@@ -500,6 +318,17 @@ export class TamossApiClient {
     return this.request<MediaObject>(`/objects/${objectId}`, {}, params);
   }
 
+  async deleteObjectInstance(
+    objectId: string,
+    params: { storage_id?: string; label?: string },
+  ): Promise<void> {
+    return this.request<void>(
+      `/objects/${encodeURIComponent(objectId)}/instances`,
+      { method: "DELETE" },
+      params,
+    );
+  }
+
   async getWebhooks(
     params?: WebhookListParams,
   ): Promise<PaginatedResponse<WebhookDetail>> {
@@ -544,20 +373,30 @@ export class TamossApiClient {
   async allocateStorage(
     flowId: string,
     objectIds: string[],
+    options: StorageAllocationOptions = {},
   ): Promise<StorageAllocation> {
+    const body = {
+      object_ids: objectIds,
+      ...(options.storageId ? { storage_id: options.storageId } : {}),
+    };
     return this.request<StorageAllocation>(`/flows/${flowId}/storage`, {
       method: "POST",
-      body: JSON.stringify({ object_ids: objectIds }),
+      body: JSON.stringify(body),
     });
   }
 
   async allocateStorageByCount(
     flowId: string,
     limit: number,
+    options: StorageAllocationOptions = {},
   ): Promise<StorageAllocation> {
+    const body = {
+      limit,
+      ...(options.storageId ? { storage_id: options.storageId } : {}),
+    };
     return this.request<StorageAllocation>(`/flows/${flowId}/storage`, {
       method: "POST",
-      body: JSON.stringify({ limit }),
+      body: JSON.stringify(body),
     });
   }
 

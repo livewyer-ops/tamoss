@@ -1,342 +1,25 @@
-import { FormEvent, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
 import { useApiQuery } from "@/hooks/useApiQuery";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useWebhookMutations } from "@/hooks/useWebhookMutations";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorMessage from "@/components/ErrorMessage";
 import EmptyState from "@/components/EmptyState";
 import Badge from "@/components/Badge";
 import CopyButton from "@/components/CopyButton";
-import CopyViewLinkButton from "@/components/CopyViewLinkButton";
 import StateStrip from "@/components/StateStrip";
 import ApiReferencePanel from "@/components/ApiReferencePanel";
 import AsyncLifecycle from "@/components/AsyncLifecycle";
-import type { WebhookDetail, WebhookWritePayload } from "@/types/tams";
-
-const statusVariants = {
-  created: "info",
-  started: "success",
-  disabled: "warning",
-  error: "danger",
-} as const;
-
-const supportedEvents = [
-  "flows/created",
-  "flows/updated",
-  "flows/deleted",
-  "flows/segments_added",
-  "flows/segments_deleted",
-  "sources/created",
-  "sources/updated",
-  "sources/deleted",
-] as const;
-const WEBHOOK_PAGE_SIZE = "50";
-
-function buildWebhookLifecycle(webhook: WebhookDetail) {
-  return [
-    {
-      id: "registered",
-      label: "Webhook registered",
-      description:
-        "The webhook configuration exists in TAMOSS and can be inspected or updated.",
-      state: webhook.id ? "complete" : "pending",
-      timestamp: undefined,
-    },
-    {
-      id: "delivery",
-      label: "Delivery active",
-      description:
-        "The webhook is available to receive matching outbound events from the service.",
-      state:
-        webhook.status === "started"
-          ? "active"
-          : webhook.status === "disabled"
-            ? "pending"
-            : webhook.status === "error"
-              ? "error"
-              : webhook.status === "created"
-                ? "complete"
-                : "pending",
-      timestamp: webhook.error?.time,
-    },
-    {
-      id: "state",
-      label:
-        webhook.status === "disabled"
-          ? "Webhook disabled"
-          : webhook.status === "error"
-            ? "Webhook error"
-            : "Webhook operational state",
-      description:
-        webhook.status === "error"
-          ? (webhook.error?.summary ??
-            "The webhook entered an error state and needs operator attention.")
-          : webhook.status === "disabled"
-            ? "The webhook is currently disabled and will not receive new events."
-            : "The webhook is ready for normal delivery behavior.",
-      state:
-        webhook.status === "error"
-          ? "error"
-          : webhook.status === "disabled"
-            ? "complete"
-            : webhook.status === "started"
-              ? "complete"
-              : webhook.status === "created"
-                ? "active"
-                : "pending",
-      timestamp: webhook.error?.time,
-    },
-  ] as const;
-}
-
-function parseCsv(value: string): string[] | undefined {
-  const parsed = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return parsed.length ? parsed : undefined;
-}
-
-function WebhookForm({
-  initial,
-  submitLabel,
-  busy,
-  onSubmit,
-  onCancel,
-}: {
-  initial?: Partial<WebhookDetail>;
-  submitLabel: string;
-  busy: boolean;
-  onSubmit: (payload: WebhookWritePayload) => Promise<void>;
-  onCancel?: () => void;
-}) {
-  const [url, setUrl] = useState(initial?.url ?? "");
-  const [apiKeyName, setApiKeyName] = useState(initial?.api_key_name ?? "");
-  const [apiKeyValue, setApiKeyValue] = useState("");
-  const [status, setStatus] = useState<WebhookWritePayload["status"]>(
-    initial?.status === "disabled" ? "disabled" : "created",
-  );
-  const [events, setEvents] = useState<string[]>(
-    initial?.events ?? ["flows/created"],
-  );
-  const [flowIds, setFlowIds] = useState((initial?.flow_ids ?? []).join(", "));
-  const [sourceIds, setSourceIds] = useState(
-    (initial?.source_ids ?? []).join(", "),
-  );
-  const [presigned, setPresigned] = useState(Boolean(initial?.presigned));
-  const [verboseStorage, setVerboseStorage] = useState(
-    Boolean(initial?.verbose_storage),
-  );
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const fieldPrefix = `webhook-form-${initial?.id ?? "new"}`;
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitError(null);
-    try {
-      const payload: WebhookWritePayload = {
-        url,
-        api_key_name: apiKeyName || undefined,
-        api_key_value: apiKeyValue || undefined,
-        events,
-        flow_ids: parseCsv(flowIds),
-        source_ids: parseCsv(sourceIds),
-        presigned,
-        verbose_storage: verboseStorage,
-        status,
-      };
-      await onSubmit(payload);
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Unknown error");
-    }
-  }
-
-  return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
-      <div>
-        <label
-          htmlFor={`${fieldPrefix}-url`}
-          className="block text-sm font-medium text-gray-700"
-        >
-          Webhook URL
-        </label>
-        <input
-          id={`${fieldPrefix}-url`}
-          type="url"
-          value={url}
-          onChange={(event) => setUrl(event.target.value)}
-          required
-          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-          placeholder="https://example.com/webhook"
-        />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label
-            htmlFor={`${fieldPrefix}-api-key-name`}
-            className="block text-sm font-medium text-gray-700"
-          >
-            API key header
-          </label>
-          <input
-            id={`${fieldPrefix}-api-key-name`}
-            type="text"
-            value={apiKeyName}
-            onChange={(event) => setApiKeyName(event.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-            placeholder="X-Webhook-Key"
-          />
-        </div>
-        <div>
-          <label
-            htmlFor={`${fieldPrefix}-api-key-value`}
-            className="block text-sm font-medium text-gray-700"
-          >
-            API key value
-          </label>
-          <input
-            id={`${fieldPrefix}-api-key-value`}
-            type="password"
-            value={apiKeyValue}
-            onChange={(event) => setApiKeyValue(event.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-            placeholder={
-              initial?.api_key_name
-                ? "Leave blank to keep current value"
-                : "Shared secret"
-            }
-          />
-        </div>
-      </div>
-
-      <div>
-        <label
-          htmlFor={`${fieldPrefix}-status`}
-          className="block text-sm font-medium text-gray-700"
-        >
-          Status
-        </label>
-        <select
-          id={`${fieldPrefix}-status`}
-          value={status}
-          onChange={(event) =>
-            setStatus(event.target.value as WebhookWritePayload["status"])
-          }
-          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-        >
-          <option value="created">Enabled</option>
-          <option value="disabled">Disabled</option>
-        </select>
-      </div>
-
-      <div>
-        <p className="mb-2 text-sm font-medium text-gray-700">Events</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {supportedEvents.map((eventName) => (
-            <label
-              key={eventName}
-              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
-            >
-              <input
-                type="checkbox"
-                checked={events.includes(eventName)}
-                onChange={(event) => {
-                  if (event.target.checked) {
-                    setEvents((previous) => [...previous, eventName]);
-                    return;
-                  }
-                  setEvents((previous) =>
-                    previous.filter((value) => value !== eventName),
-                  );
-                }}
-                className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-              />
-              <span>{eventName}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Flow filters
-          </label>
-          <input
-            type="text"
-            value={flowIds}
-            onChange={(event) => setFlowIds(event.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-            placeholder="uuid-1, uuid-2"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Source filters
-          </label>
-          <input
-            type="text"
-            value={sourceIds}
-            onChange={(event) => setSourceIds(event.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-            placeholder="uuid-1, uuid-2"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-4">
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={presigned}
-            onChange={(event) => setPresigned(event.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-          />
-          Request presigned URLs
-        </label>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={verboseStorage}
-            onChange={(event) => setVerboseStorage(event.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-tams-600 focus:ring-tams-500"
-          />
-          Include verbose storage metadata
-        </label>
-      </div>
-
-      {submitError && (
-        <ErrorMessage title="Webhook save failed" message={submitError} />
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="submit"
-          disabled={
-            busy ||
-            !url ||
-            events.length === 0 ||
-            (Boolean(apiKeyName) && !apiKeyValue && !initial?.api_key_name)
-          }
-          className="rounded-lg bg-tams-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-tams-700 disabled:opacity-50"
-        >
-          {busy ? "Saving..." : submitLabel}
-        </button>
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-        )}
-      </div>
-    </form>
-  );
-}
+import WebhookForm from "@/components/webhooks/WebhookForm";
+import WebhookToolbar from "@/components/webhooks/WebhookToolbar";
+import {
+  WEBHOOK_PAGE_SIZE,
+  buildWebhookLifecycle,
+  statusVariants,
+} from "@/pages/webhooksModel";
+import type { WebhookDetail } from "@/types/tams";
 
 export default function WebhooksPage() {
   usePageTitle("Webhooks");
@@ -351,6 +34,7 @@ export default function WebhooksPage() {
     setNextKey(result.nextKey);
     return result;
   }, [api]);
+  const storageBackends = useApiQuery(() => api.getStorageBackends(), [api]);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -360,41 +44,54 @@ export default function WebhooksPage() {
   const [statusFilter, setStatusFilter] = useState(
     searchParams.get("status") ?? "",
   );
-  const [busy, setBusy] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [compactMode, setCompactMode] = useState(false);
+  const syncSelectedWebhook = useCallback(
+    (webhookId: string | null) => {
+      setSelectedId(webhookId);
+      const next = new URLSearchParams(searchParams);
+      if (webhookId) next.set("webhook", webhookId);
+      else next.delete("webhook");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+  const handleFilterChange = useCallback(
+    (value: string) => {
+      setFilter(value);
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set("q", value);
+      else next.delete("q");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+  const handleStatusFilterChange = useCallback(
+    (value: string) => {
+      setStatusFilter(value);
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set("status", value);
+      else next.delete("status");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
   const selectedWebhook = useApiQuery(
     () => (selectedId ? api.getWebhook(selectedId) : Promise.resolve(null)),
     [api, selectedId],
   );
-
-  async function handleCreate(payload: WebhookWritePayload) {
-    setBusy(true);
-    try {
-      const created = await api.createWebhook(payload);
+  const handleWebhookCreated = useCallback(
+    (created: WebhookDetail) => {
       setCreating(false);
       syncSelectedWebhook(created.id ?? null);
-      webhooks.refetch();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleUpdate(webhookId: string, payload: WebhookWritePayload) {
-    setBusy(true);
-    try {
-      await api.updateWebhook(webhookId, payload);
-      setEditingId(null);
-      webhooks.refetch();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDelete(webhookId: string) {
-    setBusy(true);
-    try {
-      await api.deleteWebhook(webhookId);
+    },
+    [syncSelectedWebhook],
+  );
+  const handleWebhookUpdated = useCallback(() => {
+    setEditingId(null);
+  }, []);
+  const handleWebhookDeleted = useCallback(
+    (webhookId: string) => {
       if (editingId === webhookId) {
         setEditingId(null);
       }
@@ -404,11 +101,22 @@ export default function WebhooksPage() {
       if (deleteConfirmId === webhookId) {
         setDeleteConfirmId(null);
       }
-      webhooks.refetch();
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    [deleteConfirmId, editingId, selectedId, syncSelectedWebhook],
+  );
+  const {
+    busy,
+    createWebhook: handleCreate,
+    updateWebhook: handleUpdate,
+    deleteWebhook: handleDelete,
+  } = useWebhookMutations({
+    api,
+    refreshWebhooks: webhooks.refetch,
+    refreshWebhookDetail: selectedWebhook.refetch,
+    onCreated: handleWebhookCreated,
+    onUpdated: handleWebhookUpdated,
+    onDeleted: handleWebhookDeleted,
+  });
 
   const loadMore = useCallback(async () => {
     if (!nextKey || loadingMore) return;
@@ -437,14 +145,6 @@ export default function WebhooksPage() {
     return matchesFilter && matchesStatus;
   });
 
-  function syncSelectedWebhook(webhookId: string | null) {
-    setSelectedId(webhookId);
-    const next = new URLSearchParams(searchParams);
-    if (webhookId) next.set("webhook", webhookId);
-    else next.delete("webhook");
-    setSearchParams(next, { replace: true });
-  }
-
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -456,59 +156,17 @@ export default function WebhooksPage() {
             Register and monitor outbound event notifications
           </p>
         </div>
-        <div className="flex gap-2">
-          <input
-            type="search"
-            value={filter}
-            onChange={(event) => {
-              const value = event.target.value;
-              setFilter(value);
-              const next = new URLSearchParams(searchParams);
-              if (value) next.set("q", value);
-              else next.delete("q");
-              setSearchParams(next, { replace: true });
-            }}
-            placeholder="Filter webhooks..."
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusFilter(value);
-              const next = new URLSearchParams(searchParams);
-              if (value) next.set("status", value);
-              else next.delete("status");
-              setSearchParams(next, { replace: true });
-            }}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500"
-          >
-            <option value="">All statuses</option>
-            <option value="created">Created</option>
-            <option value="started">Started</option>
-            <option value="disabled">Disabled</option>
-            <option value="error">Error</option>
-          </select>
-          <button
-            onClick={webhooks.refetch}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Refresh
-          </button>
-          <CopyViewLinkButton />
-          <button
-            onClick={() => setCompactMode((previous) => !previous)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            {compactMode ? "Comfortable rows" : "Compact rows"}
-          </button>
-          <button
-            onClick={() => setCreating((previous) => !previous)}
-            className="rounded-lg bg-tams-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-tams-700"
-          >
-            {creating ? "Close" : "New webhook"}
-          </button>
-        </div>
+        <WebhookToolbar
+          filter={filter}
+          statusFilter={statusFilter}
+          compactMode={compactMode}
+          creating={creating}
+          onFilterChange={handleFilterChange}
+          onStatusFilterChange={handleStatusFilterChange}
+          onRefresh={webhooks.refetch}
+          onToggleCompactMode={() => setCompactMode((previous) => !previous)}
+          onToggleCreating={() => setCreating((previous) => !previous)}
+        />
       </div>
 
       <StateStrip
@@ -552,6 +210,7 @@ export default function WebhooksPage() {
           <WebhookForm
             submitLabel="Create webhook"
             busy={busy}
+            storageBackends={storageBackends.data}
             onSubmit={handleCreate}
             onCancel={() => setCreating(false)}
           />
@@ -603,6 +262,7 @@ export default function WebhooksPage() {
                           initial={webhook}
                           submitLabel="Save changes"
                           busy={busy}
+                          storageBackends={storageBackends.data}
                           onSubmit={(payload) =>
                             handleUpdate(webhook.id ?? "", payload)
                           }
@@ -659,6 +319,10 @@ export default function WebhooksPage() {
                             <p>
                               source filters: {webhook.source_ids?.length ?? 0}
                             </p>
+                            <p>
+                              storage filters:{" "}
+                              {webhook.accept_storage_ids?.length ?? 0}
+                            </p>
                             <p>presigned: {webhook.presigned ? "yes" : "no"}</p>
                           </div>
                           <div className="inline-flex flex-wrap justify-end gap-2 text-right">
@@ -705,13 +369,15 @@ export default function WebhooksPage() {
                               <div className="mt-3 flex gap-2">
                                 <button
                                   onClick={() => handleDelete(webhook.id ?? "")}
-                                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                                  disabled={busy}
+                                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                                 >
-                                  Confirm delete
+                                  {busy ? "Deleting..." : "Confirm delete"}
                                 </button>
                                 <button
                                   onClick={() => setDeleteConfirmId(null)}
-                                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                  disabled={busy}
+                                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                                 >
                                   Cancel
                                 </button>
@@ -791,6 +457,13 @@ export default function WebhooksPage() {
                       Source filters:
                     </span>{" "}
                     {selectedWebhook.data.source_ids?.join(", ") ?? "None"}
+                  </p>
+                  <p>
+                    <span className="font-medium text-gray-900">
+                      Storage filters:
+                    </span>{" "}
+                    {selectedWebhook.data.accept_storage_ids?.join(", ") ??
+                      "None"}
                   </p>
                 </div>
                 {selectedWebhook.data.error && (

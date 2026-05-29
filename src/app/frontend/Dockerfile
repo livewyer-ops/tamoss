@@ -35,7 +35,7 @@ RUN mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.templat
 # Runtime environment variables consumed by the entrypoint.
 ENV TAMOSS_API_URL=/api
 
-USER nginx
+USER 101:101
 
 EXPOSE 8080
 

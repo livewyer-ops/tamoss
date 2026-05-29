@@ -47,6 +47,15 @@ const mocks = vi.hoisted(() => {
     region: "us-east-1",
     default_storage: true,
   };
+  const storageBackend2 = {
+    id: "storage-2",
+    label: "Archive",
+    store_type: "http_object_store",
+    store_product: "s3",
+    provider: "rustfs",
+    region: "eu-west-2",
+    default_storage: false,
+  };
   const service = {
     name: "TAMOSS",
     type: "urn:x-tamoss:service",
@@ -88,6 +97,7 @@ const mocks = vi.hoisted(() => {
       addFlowSegments: vi.fn(),
       setFlowCollection: vi.fn(),
       allocateStorageByCount: vi.fn(),
+      deleteObjectInstance: vi.fn(),
       deleteFlowSegments: vi.fn(),
       createWebhook: vi.fn(),
       updateWebhook: vi.fn(),
@@ -100,6 +110,7 @@ const mocks = vi.hoisted(() => {
       service,
       source,
       storageBackend,
+      storageBackend2,
       segment,
     },
   };
@@ -128,7 +139,10 @@ function primeApiMocks() {
   api.getFlow.mockResolvedValue(fixtures.flow);
   api.getFlowSegments.mockResolvedValue(fixtures.paginated([fixtures.segment]));
   api.getFlowCollection.mockResolvedValue([]);
-  api.getStorageBackends.mockResolvedValue([fixtures.storageBackend]);
+  api.getStorageBackends.mockResolvedValue([
+    fixtures.storageBackend,
+    fixtures.storageBackend2,
+  ]);
   api.getObject.mockResolvedValue({
     data: fixtures.mediaObject,
     nextKey: undefined,
@@ -137,6 +151,8 @@ function primeApiMocks() {
   api.getWebhooks.mockResolvedValue(fixtures.paginated([]));
   api.getDeletionRequests.mockResolvedValue([]);
   api.getDeletionRequest.mockResolvedValue(null);
+  api.allocateStorageByCount.mockResolvedValue({ media_objects: [] });
+  api.deleteObjectInstance.mockResolvedValue(undefined);
 }
 
 function renderRoute(route: string) {
@@ -314,6 +330,59 @@ describe("App routes", () => {
     });
   });
 
+  it("filters object URLs by storage backend", async () => {
+    renderRoute("/objects/object-1.ts");
+
+    await screen.findByRole("heading", { name: "Media Object" });
+    await screen.findAllByRole("option", { name: /Archive/ });
+    fireEvent.change(screen.getByLabelText("Storage backend"), {
+      target: { value: "storage-2" },
+    });
+
+    await waitFor(() => {
+      expect(mocks.api.getObject).toHaveBeenCalledWith(
+        "object-1.ts",
+        expect.objectContaining({
+          accept_storage_ids: "storage-2",
+          verbose_storage: true,
+        }),
+      );
+    });
+  });
+
+  it("allocates flow storage on a selected backend", async () => {
+    renderRoute("/flows/flow-1");
+
+    await screen.findByRole("heading", { name: "Flow Overview" });
+    await screen.findAllByRole("option", { name: /Archive/ });
+    fireEvent.change(screen.getByLabelText("Allocation backend"), {
+      target: { value: "storage-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Allocate storage" }));
+
+    await waitFor(() => {
+      expect(mocks.api.allocateStorageByCount).toHaveBeenCalledWith(
+        "flow-1",
+        1,
+        { storageId: "storage-2" },
+      );
+    });
+  });
+
+  it("disables destructive flow controls for read-only flows", async () => {
+    mocks.api.getFlow.mockResolvedValue({
+      ...mocks.fixtures.flow,
+      read_only: true,
+    });
+
+    renderRoute("/flows/flow-1");
+
+    await screen.findByRole("heading", { name: "Flow Overview" });
+
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add Segments" })).toBeDisabled();
+  });
+
   it("requests bounded candidates when editing a flow collection", async () => {
     mocks.api.getFlow.mockResolvedValue({
       ...mocks.fixtures.flow,
@@ -359,7 +428,7 @@ describe("App routes", () => {
       );
     });
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByLabelText(/Source flow/), {
       target: { value: "copy-flow-1" },
     });
 
@@ -411,7 +480,7 @@ describe("App routes", () => {
     });
   });
 
-  it("surfaces flow collection load failures", async () => {
+  it("shows flow collection load errors", async () => {
     mocks.api.getFlow.mockResolvedValue({
       ...mocks.fixtures.flow,
       format: "urn:x-nmos:format:multi",
@@ -432,7 +501,7 @@ describe("App routes", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces child flow segment load failures", async () => {
+  it("shows child segment load errors", async () => {
     mocks.api.getFlow.mockResolvedValue({
       ...mocks.fixtures.flow,
       format: "urn:x-nmos:format:multi",
@@ -477,6 +546,32 @@ describe("App routes", () => {
 
     expect(await screen.findAllByText("Delete failed")).not.toHaveLength(0);
     expect(screen.queryByText("Unknown error")).not.toBeInTheDocument();
+  });
+
+  it("refreshes selected deletion request detail", async () => {
+    const deletionRequest = {
+      id: "delete-1",
+      flow_id: "flow-1",
+      timerange_to_delete: "[0:0_10:0)",
+      delete_flow: false,
+      status: "created" as const,
+      created: "2026-01-01T00:00:00Z",
+    };
+    mocks.api.getDeletionRequests.mockResolvedValue([deletionRequest]);
+    mocks.api.getDeletionRequest.mockResolvedValue(deletionRequest);
+
+    renderRoute("/deletions?request=delete-1");
+
+    await screen.findByRole("heading", { name: "Deletion Requests" });
+    vi.clearAllMocks();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh deletion requests" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.api.getDeletionRequests).toHaveBeenCalled();
+      expect(mocks.api.getDeletionRequest).toHaveBeenCalledWith("delete-1");
+    });
   });
 
   it("opens the accepted deletion request after background flow deletion", async () => {

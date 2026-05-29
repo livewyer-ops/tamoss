@@ -129,7 +129,10 @@ export default function DeletionsPage() {
           </p>
         </div>
         <button
-          onClick={refetch}
+          onClick={() => {
+            refetch();
+            if (selectedRequestId) selectedRequest.refetch();
+          }}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           aria-label="Refresh deletion requests"
         >

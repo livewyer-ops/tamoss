@@ -23,7 +23,7 @@ export default function CopyButton({ text, label = "Copy" }: CopyButtonProps) {
   return (
     <button
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-lw-ink-500 hover:bg-lw-ink-50 hover:text-lw-ink-700"
       aria-label={`${label} ${text}`}
       title={text}
     >

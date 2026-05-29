@@ -196,6 +196,27 @@ describe("TamossApiClient", () => {
       });
     });
 
+    it("prefers TAMOSS error summaries over detail and raw JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              type: "bad_request",
+              summary: "Invalid Flow Segment JSON.",
+              detail: "Raw backend detail",
+            }),
+          ),
+      });
+
+      const client = createClient();
+      await expect(client.addFlowSegments("flow-1", [])).rejects.toMatchObject({
+        message: "Invalid Flow Segment JSON.",
+        status: 400,
+      });
+    });
+
     it("uses validation detail messages when the backend returns an array", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -530,6 +551,28 @@ describe("TamossApiClient", () => {
     });
   });
 
+  describe("deleteObjectInstance", () => {
+    it("serializes storage instance deletion params", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 204,
+        text: () => Promise.resolve(""),
+      });
+
+      const client = createClient();
+      await client.deleteObjectInstance("object-1.ts", {
+        storage_id: "storage-1",
+      });
+
+      const url = lastCalledUrl();
+      expect(url.pathname).toBe("/objects/object-1.ts/instances");
+      expect(url.searchParams.get("storage_id")).toBe("storage-1");
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+
   describe("allocateStorage", () => {
     it("returns storage allocation request headers", async () => {
       const allocation = {
@@ -554,6 +597,68 @@ describe("TamossApiClient", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ object_ids: ["obj-1"] }),
+        }),
+      );
+    });
+
+    it("sends selected storage backend on allocation requests", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ media_objects: [] }));
+
+      const client = createClient();
+      await client.allocateStorage("flow-1", ["obj-1"], {
+        storageId: "storage-2",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.example.com/flows/flow-1/storage",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            object_ids: ["obj-1"],
+            storage_id: "storage-2",
+          }),
+        }),
+      );
+    });
+
+    it("sends selected storage backend on count allocation requests", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ media_objects: [] }));
+
+      const client = createClient();
+      await client.allocateStorageByCount("flow-1", 2, {
+        storageId: "storage-2",
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.example.com/flows/flow-1/storage",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ limit: 2, storage_id: "storage-2" }),
+        }),
+      );
+    });
+  });
+
+  describe("createWebhook", () => {
+    it("sends storage backend URL preferences", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ id: "webhook-1" }));
+
+      const client = createClient();
+      await client.createWebhook({
+        url: "https://hooks.example.test/tams",
+        events: ["flows/created"],
+        accept_storage_ids: ["storage-1", "storage-2"],
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.example.com/service/webhooks",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            url: "https://hooks.example.test/tams",
+            events: ["flows/created"],
+            accept_storage_ids: ["storage-1", "storage-2"],
+          }),
         }),
       );
     });

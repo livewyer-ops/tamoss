@@ -67,7 +67,7 @@ export default function EditableTagList({
   return (
     <div className="space-y-3">
       {entries.length === 0 && disabled && (
-        <span className="text-sm text-gray-400">No tags</span>
+        <span className="text-sm text-lw-ink-400">No tags</span>
       )}
 
       <div className="flex flex-wrap gap-1.5">
@@ -107,7 +107,7 @@ export default function EditableTagList({
               {!disabled && (
                 <button
                   onClick={() => setConfirmKey(key)}
-                  className="ml-1.5 text-gray-400 hover:text-gray-600"
+                  className="ml-1.5 text-lw-ink-400 hover:text-lw-ink-600"
                   aria-label={`Delete tag ${key}`}
                 >
                   &times;
@@ -126,7 +126,7 @@ export default function EditableTagList({
             onChange={(e) => setNewKey(e.target.value)}
             placeholder="Key"
             disabled={adding}
-            className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:opacity-50"
+            className="w-28 rounded-md border border-lw-ink-200 px-2 py-1 text-xs shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:opacity-50"
           />
           <input
             type="text"
@@ -137,7 +137,7 @@ export default function EditableTagList({
             onKeyDown={(e) => {
               if (e.key === "Enter") handleAdd();
             }}
-            className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:opacity-50"
+            className="w-40 rounded-md border border-lw-ink-200 px-2 py-1 text-xs shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:opacity-50"
           />
           <button
             onClick={handleAdd}

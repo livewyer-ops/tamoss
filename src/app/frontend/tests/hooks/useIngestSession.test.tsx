@@ -6,6 +6,7 @@ const { apiMock, ffmpegServiceMock } = vi.hoisted(() => ({
     addFlowSegments: vi.fn(),
     allocateStorage: vi.fn(),
     createFlow: vi.fn(),
+    deleteObjectInstance: vi.fn(),
     getSource: vi.fn(),
     setFlowCollection: vi.fn(),
     updateSourceDescription: vi.fn(),
@@ -56,11 +57,13 @@ describe("useIngestSession", () => {
       label: "Programme",
     });
     apiMock.createFlow.mockResolvedValue(undefined);
+    apiMock.deleteObjectInstance.mockResolvedValue(undefined);
     apiMock.allocateStorage.mockImplementation(
       (_flowId: string, objectIds: string[]) =>
         Promise.resolve({
           media_objects: objectIds.map((objectId) => ({
             object_id: objectId,
+            storage_id: "storage-1",
             put_url: {
               url: `https://upload.example/${objectId}`,
               headers: { "Content-Type": "video/mp2t" },
@@ -74,10 +77,11 @@ describe("useIngestSession", () => {
     apiMock.updateSourceDescription.mockResolvedValue(undefined);
     apiMock.updateSourceLabel.mockResolvedValue(undefined);
 
-    ffmpegServiceMock.probe.mockResolvedValue({
+    const sourceProbe = {
       audioCodec: "aac",
       channels: 2,
       duration: 6,
+      durationNanoseconds: 6_000_000_000n,
       hasAudio: true,
       hasVideo: true,
       height: 1080,
@@ -85,7 +89,8 @@ describe("useIngestSession", () => {
       sampleRate: 48000,
       videoCodec: "h264",
       width: 1920,
-    });
+    };
+    ffmpegServiceMock.probe.mockResolvedValueOnce(sourceProbe);
     ffmpegServiceMock.segment.mockResolvedValue([
       new Blob(["segment"], { type: "video/mp2t" }),
     ]);
@@ -163,5 +168,104 @@ describe("useIngestSession", () => {
       },
       expect.any(Blob),
     );
+    expect(apiMock.addFlowSegments).toHaveBeenCalledWith(ids.videoFlow, [
+      {
+        object_id: ids.videoObject,
+        timerange: "[0:0_6:0)",
+        object_timerange: "[0:0_6:0)",
+        ts_offset: "0:0",
+        last_duration: "0:40000000",
+      },
+    ]);
+    expect(apiMock.addFlowSegments).toHaveBeenCalledWith(ids.audioFlow, [
+      {
+        object_id: ids.audioObject,
+        timerange: "[0:0_6:0)",
+        object_timerange: "[0:0_6:0)",
+        ts_offset: "0:0",
+      },
+    ]);
+    expect(ffmpegServiceMock.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it("derives segment timing when source duration is unavailable", async () => {
+    stubUuid([ids.file, ids.videoFlow, ids.videoObject, ids.audioObject]);
+    ffmpegServiceMock.probe.mockReset();
+    ffmpegServiceMock.probe.mockResolvedValueOnce({
+      duration: 0,
+      hasAudio: false,
+      hasVideo: true,
+      height: 1080,
+      frameRate: { numerator: 25, denominator: 1 },
+      videoCodec: "h264",
+      width: 1920,
+    });
+    ffmpegServiceMock.segment.mockResolvedValue([
+      new Blob(["segment-1"], { type: "video/mp2t" }),
+      new Blob(["segment-2"], { type: "video/mp2t" }),
+    ]);
+
+    const file = new File(["media"], "clip.mp4", { type: "video/mp4" });
+    const { result } = renderHook(() => useIngestSession());
+
+    act(() => result.current.addFiles([file]));
+    await waitFor(() => expect(result.current.session.files).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.startIngest({
+        id: ids.parentSource,
+        format: "urn:x-nmos:format:video",
+        label: "Programme",
+      });
+    });
+
+    expect(apiMock.addFlowSegments).toHaveBeenCalledWith(ids.videoFlow, [
+      {
+        object_id: ids.videoObject,
+        timerange: "[0:0_6:0)",
+        object_timerange: "[0:0_6:0)",
+        ts_offset: "0:0",
+        last_duration: "0:40000000",
+      },
+      {
+        object_id: ids.audioObject,
+        timerange: "[6:0_12:0)",
+        object_timerange: "[0:0_6:0)",
+        ts_offset: "6:0",
+        last_duration: "0:40000000",
+      },
+    ]);
+    expect(result.current.session.files[0].status).toBe("done");
+  });
+
+  it("records cleanup for allocated objects when ingest fails after allocation", async () => {
+    stubUuid([ids.file, ids.videoSource, ids.videoFlow, ids.videoObject]);
+    ffmpegServiceMock.probe.mockReset();
+    ffmpegServiceMock.probe.mockResolvedValueOnce({
+      duration: 6,
+      durationNanoseconds: 6_000_000_000n,
+      hasAudio: false,
+      hasVideo: true,
+      height: 1080,
+      frameRate: { numerator: 25, denominator: 1 },
+      videoCodec: "h264",
+      width: 1920,
+    });
+    apiMock.uploadRaw.mockRejectedValueOnce(new Error("upload failed"));
+
+    const file = new File(["media"], "clip.mp4", { type: "video/mp4" });
+    const { result } = renderHook(() => useIngestSession());
+
+    act(() => result.current.addFiles([file]));
+    await waitFor(() => expect(result.current.session.files).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.startIngest(ids.parentSource);
+    });
+
+    expect(apiMock.deleteObjectInstance).toHaveBeenCalledWith(ids.videoObject, {
+      storage_id: "storage-1",
+    });
+    expect(result.current.session.files[0].status).toBe("error");
   });
 });

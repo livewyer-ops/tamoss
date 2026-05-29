@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PlaybackPage from "@/pages/PlaybackPage";
 import type { Flow, FlowSegment } from "@/types/tams";
+import { renderWithQueryClient } from "../testUtils";
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     getFlow: vi.fn(),
     getFlowCollection: vi.fn(),
     getFlowSegments: vi.fn(),
+    getStorageBackends: vi.fn(),
   },
   hls: {
     attachMedia: vi.fn(),
@@ -93,7 +95,7 @@ const playableAudioSegment: FlowSegment = {
 };
 
 function renderPlayback(route = "/playback") {
-  return render(
+  return renderWithQueryClient(
     <MemoryRouter initialEntries={[route]}>
       <Routes>
         <Route path="/playback" element={<PlaybackPage />} />
@@ -110,6 +112,7 @@ describe("PlaybackPage", () => {
     mocks.api.getFlow.mockReset();
     mocks.api.getFlowCollection.mockReset();
     mocks.api.getFlowSegments.mockReset();
+    mocks.api.getStorageBackends.mockReset();
     mocks.hls.attachMedia.mockReset();
     mocks.hls.destroy.mockReset();
     mocks.hls.loadSource.mockReset();
@@ -120,9 +123,19 @@ describe("PlaybackPage", () => {
       nextKey: undefined,
     });
     mocks.api.getFlowCollection.mockResolvedValue([]);
+    mocks.api.getStorageBackends.mockResolvedValue([
+      {
+        id: "storage-1",
+        label: "RustFS",
+        provider: "tamoss",
+        store_type: "http_object_store",
+        store_product: "s3",
+        default_storage: true,
+      },
+    ]);
   });
 
-  it("starts as a scoped preview surface when no flow is selected", async () => {
+  it("shows empty preview without selected flow", async () => {
     renderPlayback();
 
     expect(await screen.findByText("Playback Preview")).toBeInTheDocument();
@@ -153,6 +166,7 @@ describe("PlaybackPage", () => {
       include_object_timerange: true,
       limit: "300",
       presigned: "true",
+      verbose_storage: true,
     });
     await waitFor(() => {
       expect(mocks.hls.loadSource).toHaveBeenCalledWith(
@@ -201,21 +215,29 @@ describe("PlaybackPage", () => {
       include_object_timerange: true,
       limit: "300",
       presigned: "true",
+      verbose_storage: true,
     });
     expect(mocks.api.getFlowSegments).toHaveBeenCalledWith(audioFlow.id, {
       include_object_timerange: true,
       limit: "300",
       presigned: "true",
+      verbose_storage: true,
     });
     await waitFor(() => {
-      expect(mocks.hls.loadSource).toHaveBeenCalledWith(
-        expect.stringMatching(/^blob:/),
-      );
-      expect(mocks.hls.attachMedia).toHaveBeenCalled();
+      expect(mocks.hls.loadSource).toHaveBeenCalledTimes(2);
+      expect(mocks.hls.attachMedia).toHaveBeenCalledTimes(2);
     });
+    expect(mocks.hls.loadSource).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(/^blob:/),
+    );
+    expect(mocks.hls.loadSource).toHaveBeenNthCalledWith(
+      2,
+      expect.stringMatching(/^blob:/),
+    );
   });
 
-  it("does not pretend playback is available without segment URLs", async () => {
+  it("shows unavailable state without segment URLs", async () => {
     mocks.api.getFlow.mockResolvedValue(videoFlow);
     mocks.api.getFlowSegments.mockResolvedValue({
       data: [{ object_id: "segment-without-url.ts", timerange: "[0:0_6:0)" }],

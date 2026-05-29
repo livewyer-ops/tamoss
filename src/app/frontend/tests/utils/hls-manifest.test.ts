@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   parseTimerange,
   computeSegmentsDuration,
+  buildMediaPlaylistContent,
   buildHlsManifest,
   buildMultiFlowManifest,
-  buildSingleSegmentManifest,
 } from "@/utils/hls-manifest";
 
 describe("parseTimerange", () => {
@@ -50,6 +50,13 @@ describe("parseTimerange", () => {
     const r = parseTimerange("");
     expect(r).toEqual({ start: 0, end: 0, duration: 0 });
   });
+
+  it("parses instantaneous timeranges", () => {
+    const r = parseTimerange("[5:0]");
+    expect(r.start).toBe(5);
+    expect(r.end).toBe(5);
+    expect(r.duration).toBe(0);
+  });
 });
 
 describe("computeSegmentsDuration", () => {
@@ -80,6 +87,44 @@ describe("computeSegmentsDuration", () => {
     ];
     // Span is 0 → 18 = 18s (includes gap)
     expect(computeSegmentsDuration(segments)).toBe(18);
+  });
+});
+
+describe("buildMediaPlaylistContent", () => {
+  it("does not stretch segment durations to cover gaps", () => {
+    const content = buildMediaPlaylistContent([
+      {
+        object_id: "1",
+        timerange: "[0:0_6:0)",
+        get_urls: [{ url: "http://s3/obj1" }],
+      },
+      {
+        object_id: "2",
+        timerange: "[12:0_18:0)",
+        get_urls: [{ url: "http://s3/obj2" }],
+      },
+    ]);
+
+    expect(content).toContain("#EXT-X-DISCONTINUITY");
+    expect(content?.match(/#EXTINF:6\.000000,/g)).toHaveLength(2);
+    expect(content).not.toContain("#EXTINF:12.000000,");
+  });
+
+  it("marks discontinuity between independently encoded objects", () => {
+    const content = buildMediaPlaylistContent([
+      {
+        object_id: "1",
+        timerange: "[0:0_6:0)",
+        get_urls: [{ url: "http://s3/obj1" }],
+      },
+      {
+        object_id: "2",
+        timerange: "[6:0_12:0)",
+        get_urls: [{ url: "http://s3/obj2" }],
+      },
+    ]);
+
+    expect(content?.split("\n")).toContain("#EXT-X-DISCONTINUITY");
   });
 });
 
@@ -144,8 +189,9 @@ describe("buildMultiFlowManifest", () => {
     ];
     const result = buildMultiFlowManifest(video, []);
     expect(result).not.toBeNull();
-    expect(result!.masterUrl).toMatch(/^blob:/);
-    expect(result!.subUrls).toHaveLength(0);
+    expect(result!.primaryUrl).toMatch(/^blob:/);
+    expect(result!.audioUrl).toBeNull();
+    expect(result!.urls).toHaveLength(1);
   });
 
   it("returns simple manifest for audio-only", () => {
@@ -158,11 +204,12 @@ describe("buildMultiFlowManifest", () => {
     ];
     const result = buildMultiFlowManifest([], audio);
     expect(result).not.toBeNull();
-    expect(result!.masterUrl).toMatch(/^blob:/);
-    expect(result!.subUrls).toHaveLength(0);
+    expect(result!.primaryUrl).toMatch(/^blob:/);
+    expect(result!.audioUrl).toBeNull();
+    expect(result!.urls).toHaveLength(1);
   });
 
-  it("returns master playlist with sub-URLs for video+audio", () => {
+  it("returns separate video and audio URLs for video+audio", () => {
     const video = [
       {
         object_id: "v1",
@@ -179,36 +226,8 @@ describe("buildMultiFlowManifest", () => {
     ];
     const result = buildMultiFlowManifest(video, audio);
     expect(result).not.toBeNull();
-    expect(result!.masterUrl).toMatch(/^blob:/);
-    expect(result!.subUrls).toHaveLength(2);
-  });
-});
-
-describe("buildSingleSegmentManifest", () => {
-  it("returns null for segment without URLs", () => {
-    const seg = { object_id: "1", timerange: "[0:0_6:0)" };
-    expect(buildSingleSegmentManifest(seg)).toBeNull();
-  });
-
-  it("returns a blob URL for a segment with URLs", () => {
-    const seg = {
-      object_id: "1",
-      timerange: "[0:0_6:0)",
-      get_urls: [{ url: "http://s3/obj1?sig=abc" }],
-    };
-    const url = buildSingleSegmentManifest(seg);
-    expect(url).toBeTruthy();
-    expect(url).toMatch(/^blob:/);
-  });
-
-  it("returns a blob URL for segment with non-zero offset", () => {
-    const seg = {
-      object_id: "1",
-      timerange: "[100:0_106:0)",
-      get_urls: [{ url: "http://s3/obj1" }],
-    };
-    const url = buildSingleSegmentManifest(seg);
-    expect(url).toBeTruthy();
-    expect(url).toMatch(/^blob:/);
+    expect(result!.primaryUrl).toMatch(/^blob:/);
+    expect(result!.audioUrl).toMatch(/^blob:/);
+    expect(result!.urls).toEqual([result!.primaryUrl, result!.audioUrl]);
   });
 });

@@ -23,7 +23,7 @@ function resolveTagValue(value: unknown): string {
 
 export default function TagList({ tags }: TagListProps) {
   if (!tags || Object.keys(tags).length === 0) {
-    return <span className="text-sm text-gray-400">No tags</span>;
+    return <span className="text-sm text-lw-ink-400">No tags</span>;
   }
 
   return (

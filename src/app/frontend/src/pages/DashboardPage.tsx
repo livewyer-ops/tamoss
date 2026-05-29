@@ -6,83 +6,15 @@ import ErrorMessage from "@/components/ErrorMessage";
 import Badge from "@/components/Badge";
 import Skeleton from "@/components/Skeleton";
 import StateStrip from "@/components/StateStrip";
+import DashboardAttentionPanel from "@/components/dashboard/DashboardAttentionPanel";
 import { formatDate, formatRelativeTime } from "@/utils/format";
 import { Link } from "react-router-dom";
+import {
+  DASHBOARD_COLLECTION_PAGE_SIZE,
+  buildRecentActivity,
+  getSystemState,
+} from "@/pages/dashboardModel";
 
-const DASHBOARD_COLLECTION_PAGE_SIZE = "50";
-
-function buildRecentActivity({
-  flows,
-  sources,
-  deletions,
-}: {
-  flows: Array<{ id: string; label?: string; created?: string }>;
-  sources: Array<{ id: string; label?: string; created?: string }>;
-  deletions: Array<{
-    id: string;
-    flow_id: string;
-    status: string;
-    created?: string;
-  }>;
-}) {
-  const items = [
-    ...flows.map((flow) => ({
-      key: `flow-${flow.id}`,
-      title: flow.label || flow.id,
-      subtitle: "Flow created",
-      created: flow.created,
-      to: `/flows/${flow.id}`,
-      variant: "info" as const,
-    })),
-    ...sources.map((source) => ({
-      key: `source-${source.id}`,
-      title: source.label || source.id,
-      subtitle: "Source discovered",
-      created: source.created,
-      to: `/sources/${source.id}`,
-      variant: "default" as const,
-    })),
-    ...deletions.map((request) => ({
-      key: `delete-${request.id}`,
-      title: request.flow_id,
-      subtitle: `Delete request ${request.status}`,
-      created: request.created,
-      to: `/deletions?request=${request.id}`,
-      variant:
-        request.status === "error" ? ("danger" as const) : ("warning" as const),
-    })),
-  ];
-
-  return items
-    .sort((left, right) => {
-      const a = left.created ? Date.parse(left.created) : 0;
-      const b = right.created ? Date.parse(right.created) : 0;
-      return b - a;
-    })
-    .slice(0, 8);
-}
-
-function getSystemState({
-  healthError,
-  serviceError,
-  backendError,
-  erroredWebhooks,
-  activeDeletions,
-}: {
-  healthError: boolean;
-  serviceError: boolean;
-  backendError: boolean;
-  erroredWebhooks: number;
-  activeDeletions: number;
-}) {
-  if (healthError || serviceError || backendError) {
-    return { label: "Failing", variant: "danger" as const };
-  }
-  if (erroredWebhooks > 0 || activeDeletions > 0) {
-    return { label: "Degraded", variant: "warning" as const };
-  }
-  return { label: "Healthy", variant: "success" as const };
-}
 export default function DashboardPage() {
   usePageTitle("Dashboard");
   const api = useApi();
@@ -379,42 +311,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <div className="tamoss-panel rounded-2xl p-6">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-lw-ink-900">
-            Needs Attention
-          </h2>
-          <Badge variant={attentionItems.length ? "warning" : "success"}>
-            {attentionItems.length
-              ? `${attentionItems.length} item(s)`
-              : "All clear"}
-          </Badge>
-        </div>
-        {attentionItems.length ? (
-          <div className="space-y-2">
-            {attentionItems.map((item) => (
-              <Link
-                key={item.label}
-                to={item.to}
-                className="flex items-center justify-between rounded-2xl border border-lw-ink-100 bg-white/80 px-4 py-3 hover:bg-lw-ink-50/70"
-              >
-                <div className="flex items-center gap-3">
-                  <Badge variant={item.variant}>{item.variant}</Badge>
-                  <span className="text-sm text-gray-800">{item.label}</span>
-                </div>
-                <span className="text-xs font-medium text-tams-600">
-                  Inspect
-                </span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">
-            No active warnings. Service metadata, storage, webhooks, and
-            deletion queues look healthy.
-          </p>
-        )}
-      </div>
+      <DashboardAttentionPanel items={attentionItems} />
 
       {service.error && (
         <ErrorMessage message={service.error} onRetry={service.refetch} />

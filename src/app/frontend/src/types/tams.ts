@@ -1,21 +1,24 @@
-export interface Source {
-  id: string;
+import type { components } from "@/api/generated/openapi";
+
+type ApiSchemas = components["schemas"];
+type ApiTagMap = Record<string, string | string[]>;
+
+export type SourceCollectionItem = Omit<
+  ApiSchemas["collection-item"],
+  "role"
+> & {
+  role?: string;
+};
+
+export type Source = Omit<
+  ApiSchemas["source"],
+  "format" | "tags" | "source_collection" | "collected_by"
+> & {
   format: string;
-  label?: string;
-  description?: string;
-  tags?: Record<string, string | string[]>;
-  created?: string;
-  updated?: string;
-  created_by?: string;
-  updated_by?: string;
+  tags?: ApiTagMap;
   source_collection?: SourceCollectionItem[];
   collected_by?: string[];
-}
-
-export interface SourceCollectionItem {
-  id: string;
-  role?: string;
-}
+};
 
 export interface FlowEssenceParameters {
   frame_width?: number;
@@ -31,188 +34,61 @@ export interface FlowEssenceParameters {
   vfr?: boolean;
 }
 
-export interface Flow {
-  id: string;
-  source_id: string;
-  label?: string;
-  description?: string;
+export type FlowCollectionItem = Omit<
+  ApiSchemas["flow-collection"][number],
+  "role"
+> & {
+  role?: string;
+};
+
+export type Flow = Omit<
+  ApiSchemas["flow"],
+  | "format"
+  | "tags"
+  | "essence_parameters"
+  | "segment_duration"
+  | "flow_collection"
+  | "collected_by"
+> & {
   format?: string;
-  codec?: string;
-  container?: string;
-  tags?: Record<string, string | string[]>;
-  created?: string;
-  created_by?: string;
-  updated_by?: string;
-  metadata_updated?: string;
-  segments_updated?: string;
-  generation?: number;
-  read_only?: boolean;
-  avg_bit_rate?: number;
-  max_bit_rate?: number;
-  timerange?: string;
+  tags?: ApiTagMap;
   essence_parameters?: FlowEssenceParameters;
   segment_duration?: { numerator: number; denominator: number };
   flow_collection?: FlowCollectionItem[];
   collected_by?: string[];
-  metadata_version?: string;
-}
-
-export interface FlowCollectionItem {
-  id: string;
-  role?: string;
-}
-
-export interface FlowSegment {
-  object_id: string;
-  timerange: string;
-  ts_offset?: string;
-  object_timerange?: string;
-  last_duration?: string;
-  sample_offset?: number;
-  sample_count?: number;
-  key_frame_count?: number;
-  get_urls?: ObjectUrl[];
-}
-
-export type FlowSegmentWrite = Pick<
-  FlowSegment,
-  | "object_id"
-  | "timerange"
-  | "ts_offset"
-  | "object_timerange"
-  | "last_duration"
-  | "sample_offset"
-  | "sample_count"
-  | "key_frame_count"
-> & {
-  get_urls?: Array<{
-    url: string;
-    label: string;
-  }>;
 };
 
-export interface ObjectUrl {
-  url: string;
-  storage_id?: string;
-  presigned?: boolean;
-  label?: string;
-  controlled?: boolean;
-  store_type?: string;
-  provider?: string;
-  region?: string;
-}
+export type FlowSegment = ApiSchemas["flow-segment"];
+export type FlowSegmentWrite = ApiSchemas["flow-segment-post"];
+export type ObjectUrl = NonNullable<
+  ApiSchemas["object-core"]["get_urls"]
+>[number];
+export type MediaObject = ApiSchemas["object"];
+export type StorageBackend = ApiSchemas["storage-backends-list"][number];
+export type ServiceInfo = ApiSchemas["service"];
+export type UpdateServiceInfo = ApiSchemas["service-post"];
+export type DeletionRequest = ApiSchemas["deletion-request"];
+export type WebhookDetail = ApiSchemas["webhook-get"];
+export type WebhookWritePayload = ApiSchemas["webhook-post"];
+export type WebhookEvent = WebhookWritePayload["events"][number];
+export type HttpRequest = ApiSchemas["http-request"];
+type ContractStorageAllocation = ApiSchemas["flow-storage"];
+type ContractStorageMediaObject = NonNullable<
+  ContractStorageAllocation["media_objects"]
+>[number];
+export type StorageAllocation = Omit<
+  ContractStorageAllocation,
+  "media_objects"
+> & {
+  media_objects: Array<
+    ContractStorageMediaObject & {
+      storage_id?: string | null;
+    }
+  >;
+};
 
-export interface MediaObject {
-  id: string;
-  referenced_by_flows?: string[];
-  first_referenced_by_flow?: string;
-  timerange?: string;
-  get_urls?: ObjectUrl[];
-  key_frame_count?: number;
-}
-
-export interface StorageBackend {
-  id?: string;
-  store_type?: string;
-  provider?: string;
-  region?: string;
-  availability_zone?: string;
-  store_product?: string;
-  label?: string;
-  default_storage?: boolean;
-}
-
-export interface EventStreamMechanism {
-  name?: string;
-  docs?: string | null;
-  config?: unknown;
-}
-
-export interface ServiceInfo {
-  type?: string;
-  api_version?: string;
-  name?: string;
-  description?: string;
-  service_version?: string;
-  event_stream_mechanisms?: EventStreamMechanism[];
-  min_object_timeout?: string;
-  min_presigned_url_timeout?: string;
-}
-
-export interface UpdateServiceInfo {
-  name?: string;
-  description?: string;
-}
-
-export interface ErrorStatusMetadata {
-  type?: string;
-  summary?: string;
-  time?: string;
-}
-
-export interface DeletionRequest {
-  id: string;
-  flow_id: string;
-  timerange_to_delete: string;
-  timerange_remaining?: string;
-  delete_flow: boolean;
-  status: "created" | "started" | "done" | "error";
-  created?: string;
-  created_by?: string;
-  updated?: string;
-  expiry?: string;
-  error?: ErrorStatusMetadata;
-}
-
-export type WebhookError = ErrorStatusMetadata;
-
-export interface WebhookDetail {
-  id?: string;
-  url: string;
-  api_key_name?: string;
-  events: string[];
-  flow_ids?: string[];
-  source_ids?: string[];
-  flow_collected_by_ids?: string[];
-  source_collected_by_ids?: string[];
-  accept_get_urls?: string[];
-  accept_storage_ids?: string[];
-  presigned?: boolean;
-  verbose_storage?: boolean;
-  tags?: Record<string, string | string[]>;
-  status?: "created" | "started" | "disabled" | "error";
-  error?: WebhookError;
-}
-
-export interface WebhookWritePayload {
-  url: string;
-  api_key_name?: string;
-  api_key_value?: string;
-  events: string[];
-  flow_ids?: string[];
-  source_ids?: string[];
-  flow_collected_by_ids?: string[];
-  source_collected_by_ids?: string[];
-  accept_get_urls?: string[];
-  accept_storage_ids?: string[];
-  presigned?: boolean;
-  verbose_storage?: boolean;
-  tags?: Record<string, string | string[]>;
-  status?: "created" | "disabled";
-}
-
-export interface StorageAllocation {
-  media_objects: Array<{
-    object_id: string;
-    put_url: HttpRequest;
-  }>;
-}
-
-export interface HttpRequest {
-  url: string;
-  body?: string;
-  "content-type"?: string;
-  headers?: Record<string, string>;
+export interface StorageAllocationOptions {
+  storageId?: string;
 }
 
 export interface PaginatedResponse<T> {
