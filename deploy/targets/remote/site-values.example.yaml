@@ -1,7 +1,0 @@
-# Example DEPLOY_VALUES_FILE overlay for task deploy:remote.
-# This uses the remote Helmfile target values schema.
-tams:
-  api:
-    replicaCount: 1
-  ui:
-    replicaCount: 1

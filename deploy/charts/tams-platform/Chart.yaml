@@ -1,6 +1,0 @@
-apiVersion: v2
-name: tams-platform
-description: Repo-owned Kubernetes resources required to support TAMOSS deployments
-type: application
-version: 1.0.0
-appVersion: 1.0.0
