@@ -1,4 +1,4 @@
-name: Reusable Kind E2E
+name: Kind E2E Run
 
 on:
   workflow_call:
@@ -24,21 +24,38 @@ permissions:
 jobs:
   kind:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Git Checkout
         uses: actions/checkout@v6
         with:
           submodules: true
 
-      - name: Resolve Helmfile version
+      - name: Resolve tool versions
         id: aqua-versions
-        run: echo "helmfile=$(python3 .github/scripts/aqua-version.py helmfile/helmfile)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "kind=$(python3 .github/scripts/aqua-version.py kubernetes-sigs/kind)" >> "$GITHUB_OUTPUT"
+          echo "kubectl=$(python3 .github/scripts/aqua-version.py kubernetes/kubectl)" >> "$GITHUB_OUTPUT"
+          echo "yq=$(python3 .github/scripts/aqua-version.py mikefarah/yq)" >> "$GITHUB_OUTPUT"
 
       - name: Install Task
-        uses: go-task/setup-task@v2
-        with:
-          version: 3.46.4
+        uses: ./.github/actions/setup-task
+
+      - name: Install Kind, kubectl, and yq
+        env:
+          KIND_VERSION: ${{ steps.aqua-versions.outputs.kind }}
+          KUBECTL_VERSION: ${{ steps.aqua-versions.outputs.kubectl }}
+          YQ_VERSION: ${{ steps.aqua-versions.outputs.yq }}
+        run: |
+          curl -fsSL -o kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64"
+          sudo install kind /usr/local/bin/kind
+          curl -fsSL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          sudo install kubectl /usr/local/bin/kubectl
+          curl -fsSL -o yq "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          sudo install yq /usr/local/bin/yq
+          kind version
+          kubectl version --client=true
+          yq --version
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -54,41 +71,8 @@ jobs:
       - name: Install browser runtime
         run: uv run --project src playwright install --with-deps chromium
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v5.0.0
-        with:
-          version: v3.18.6
-
-      - name: Cache helmfile binary
-        id: bincache
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/bin/helmfile
-          key: ${{ runner.os }}-bin-helmfile${{ steps.aqua-versions.outputs.helmfile }}
-
-      - name: Install Helmfile (cache miss)
-        if: steps.bincache.outputs.cache-hit != 'true'
-        env:
-          HELMFILE_VERSION: ${{ steps.aqua-versions.outputs.helmfile }}
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o helmfile.tar.gz "https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz"
-          tar -xzf helmfile.tar.gz helmfile
-          install helmfile "$HOME/.local/bin/helmfile"
-
-      - name: Export binary PATH + verify
-        run: |
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/helmfile" --version
-
-      - name: Create Kind cluster
-        run: task kind:create KUBECONFIG=tams.kubeconfig
-
-      - name: Deploy to Kind
-        run: task deploy:kind KUBECONFIG=tams.kubeconfig
-
-      - name: Run deployed suite
-        run: task test:deployed DEPLOY_ENV=kind KUBECONFIG=tams.kubeconfig
+      - name: Run Kind E2E gate
+        run: task kind:e2e PROFILE=local-kind KUBECONFIG=tams.kubeconfig KIND_SUMMARY=false
 
       - name: Upload test reports
         uses: actions/upload-artifact@v7
@@ -115,3 +99,7 @@ jobs:
         with:
           paths: reports/junit-*.xml
         if: always()
+
+      - name: Delete Kind cluster
+        if: always()
+        run: kind delete cluster --name tams || true

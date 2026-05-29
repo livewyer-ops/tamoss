@@ -16,12 +16,12 @@ permissions:
 
 jobs:
   kind-e2e:
-    uses: ./.github/workflows/reusable-kind-e2e.yaml
+    uses: ./.github/workflows/kind-e2e-run.yaml
     with:
       artifact-name: kind-test-reports-${{ github.run_id }}
       retention-days: 30
       summary-title: Kind E2E Results
-      summary-description: Cluster workflow runs the deployed pytest E2E suite through Kind ingress. See junit reports in the uploaded artifact.
+      summary-description: Cluster workflow recreates Kind, runs deployed pytest E2E through ingress, and validates an in-place operator upgrade. See junit reports in the uploaded artifact.
 
   kind:
     runs-on: ubuntu-latest
