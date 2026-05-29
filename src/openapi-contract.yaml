@@ -95,7 +95,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/service.json
+                $ref: '#/components/schemas/Service'
               example:
                 $ref: vendor/bbc-tams/api/examples/service-get-200.json
     post:
@@ -110,7 +110,7 @@ paths:
             example:
               $ref: vendor/bbc-tams/api/examples/service-post.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/service-post.json
+              $ref: '#/components/schemas/ServicePost'
         required: true
       responses:
         '200':
@@ -146,7 +146,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/storage-backends-list.json
+                $ref: '#/components/schemas/StorageBackendsList'
               example:
                 $ref: vendor/bbc-tams/api/examples/storage-backends-get-200.json
   /service/webhooks:
@@ -175,7 +175,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -261,7 +261,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -312,7 +312,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/webhook-get.json
+                  $ref: '#/components/schemas/WebhookGet'
         '404':
           description: Webhooks are not supported by this API implementation
           x-tamoss-error-payload:
@@ -358,7 +358,7 @@ paths:
             example:
               $ref: vendor/bbc-tams/api/examples/webhook-post.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/webhook-post.json
+              $ref: '#/components/schemas/WebhookPost'
         required: true
       responses:
         '201':
@@ -368,7 +368,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/webhook-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/webhook-get.json
+                $ref: '#/components/schemas/WebhookGet'
         '400':
           description: Bad request. Invalid parameters or unsupported event filtering
             or transformation.
@@ -384,7 +384,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Webhook identifier.
     head:
       summary: Webhook details
@@ -422,7 +422,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/webhook-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/webhook-get.json
+                $ref: '#/components/schemas/WebhookGet'
         '404':
           description: The requested Webhook ID in the path is invalid, or Webhooks
             are not supported by this service implementation
@@ -454,7 +454,7 @@ paths:
             example:
               $ref: vendor/bbc-tams/api/examples/webhook-put.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/webhook-put.json
+              $ref: '#/components/schemas/WebhookPut'
         required: true
       responses:
         '201':
@@ -464,7 +464,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/webhook-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/webhook-get.json
+                $ref: '#/components/schemas/WebhookGet'
         '400':
           description: Bad request. Invalid parameters or unsupported event filtering
             or transformation.
@@ -534,7 +534,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -559,7 +559,7 @@ paths:
         in: query
         description: Filter on Source format.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/content-format.json
+          $ref: '#/components/schemas/ContentFormat'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -620,7 +620,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -645,7 +645,7 @@ paths:
         in: query
         description: Filter on Source format.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/content-format.json
+          $ref: '#/components/schemas/ContentFormat'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -676,7 +676,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/source.json
+                  $ref: '#/components/schemas/Source'
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -687,7 +687,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Source identifier.
     head:
       summary: Source Details
@@ -712,7 +712,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/source.json
+                $ref: '#/components/schemas/Source'
               examples:
                 basic:
                   summary: Source containing elemental video
@@ -732,7 +732,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Source identifier.
     head:
       summary: List Source Tags
@@ -761,7 +761,7 @@ paths:
               example:
                 ingested_by: ingest_service_api
               schema:
-                $ref: vendor/bbc-tams/api/schemas/tags.json
+                $ref: '#/components/schemas/Tags'
         '404':
           description: The requested Source does not exist.
           x-tamoss-error-payload:
@@ -779,7 +779,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Source identifier.
     head:
       summary: Source Tag Value
@@ -868,7 +868,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Source identifier.
     head:
       summary: Source Description
@@ -958,7 +958,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Source identifier.
     head:
       summary: Source Label
@@ -1056,13 +1056,13 @@ paths:
         in: query
         description: Filter on Source identifier.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/uuid.json
+          $ref: '#/components/schemas/Uuid'
       - name: timerange
         in: query
         description: Filter on Flows that overlap the given timerange.
         schema:
           default: _
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       - name: include_timerange
         in: query
         x-tamoss-extension: true
@@ -1075,12 +1075,12 @@ paths:
         in: query
         description: Filter on Flow format.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/content-format.json
+          $ref: '#/components/schemas/ContentFormat'
       - name: codec
         in: query
         description: Filter on Flow codec.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/mime-type.json
+          $ref: '#/components/schemas/MimeType'
       - name: label
         in: query
         description: Filter on Flows that have the given label.
@@ -1104,7 +1104,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -1176,14 +1176,14 @@ paths:
         in: query
         description: Filter on Source identifier.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/uuid.json
+          $ref: '#/components/schemas/Uuid'
       - name: timerange
         in: query
         description: Filter on Flows that overlap the given timerange. An empty timerange
           returns Flows with no content.
         schema:
           default: _
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       - name: include_timerange
         in: query
         x-tamoss-extension: true
@@ -1196,12 +1196,12 @@ paths:
         in: query
         description: Filter on Flow format.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/content-format.json
+          $ref: '#/components/schemas/ContentFormat'
       - name: codec
         in: query
         description: Filter on Flow codec.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/mime-type.json
+          $ref: '#/components/schemas/MimeType'
       - name: label
         in: query
         description: Filter on Flows that have the given label.
@@ -1225,7 +1225,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-tag-list.json
+          $ref: '#/components/schemas/UrlTagList'
         allowReserved: true
         required: false
       - name: tag_exists.{name}
@@ -1285,7 +1285,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/flow.json
+                  $ref: '#/components/schemas/Flow'
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -1296,7 +1296,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Details
@@ -1317,7 +1317,7 @@ paths:
           Segments partially or wholly overlap with the provided timerange.
         schema:
           default: _
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       responses:
         '200':
           $ref: '#/components/responses/trait_resource_info_head_200'
@@ -1346,14 +1346,14 @@ paths:
           Segments partially or wholly overlap with the provided timerange.
         schema:
           default: _
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       responses:
         '200':
           description: ''
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/flow.json
+                $ref: '#/components/schemas/Flow'
               examples:
                 video:
                   summary: Video Flow - H.264 Codec
@@ -1469,7 +1469,7 @@ paths:
                 summary: Multi-essence Flow
                 externalValue: vendor/bbc-tams/api/examples/flow-put-multi.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/flow.json
+              $ref: '#/components/schemas/Flow'
         required: true
       responses:
         '201':
@@ -1479,7 +1479,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/flow-put-201.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/flow.json
+                $ref: '#/components/schemas/Flow'
         '204':
           description: No content. The Flow has been updated.
         '400':
@@ -1519,7 +1519,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/deletion-request.json
+                $ref: '#/components/schemas/DeletionRequest'
               example:
                 $ref: vendor/bbc-tams/api/examples/deletion-request-get-200.json
         '204':
@@ -1542,7 +1542,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: List Flow Tags
@@ -1571,7 +1571,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/flow-tags-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/tags.json
+                $ref: '#/components/schemas/Tags'
         '404':
           description: The requested Flow does not exist.
           x-tamoss-error-payload:
@@ -1589,7 +1589,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Tag Value
@@ -1679,7 +1679,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Description
@@ -1771,7 +1771,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Label
@@ -1865,7 +1865,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Read-Only
@@ -1939,7 +1939,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Collection
@@ -1967,7 +1967,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/flow-collection-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/flow-collection.json
+                $ref: '#/components/schemas/FlowCollection'
         '404':
           description: The requested Flow does not exist.
           x-tamoss-error-payload:
@@ -1998,7 +1998,7 @@ paths:
             example:
               $ref: vendor/bbc-tams/api/examples/flow-collection-put.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/flow-collection.json
+              $ref: '#/components/schemas/FlowCollection'
         required: true
       responses:
         '204':
@@ -2040,7 +2040,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Maximum Bit Rate
@@ -2142,7 +2142,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: Flow Average Bit Rate
@@ -2244,7 +2244,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     head:
       summary: List Flow Segments
@@ -2263,7 +2263,7 @@ paths:
         description: Return only the results that partially or wholly overlap the
           timerange specified.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       - name: reverse_order
         in: query
         description: Return Segments in reverse time order.
@@ -2302,7 +2302,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-label-list.json
+          $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Flow Segment `get_urls`
@@ -2322,7 +2322,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/uuid-list.json
+          $ref: '#/components/schemas/UuidList'
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
@@ -2374,7 +2374,7 @@ paths:
             X-Paging-Timerange:
               description: Identifies the timerange for the returned data set.
               schema:
-                $ref: vendor/bbc-tams/api/schemas/timerange.json
+                $ref: '#/components/schemas/Timerange'
             X-Paging-Count:
               description: The number of items in the returned data set.
               schema:
@@ -2469,7 +2469,7 @@ paths:
         description: Return only the results that partially or wholly overlap the
           timerange specified.
         schema:
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       - name: reverse_order
         in: query
         description: Return Segments in reverse time order.
@@ -2508,7 +2508,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-label-list.json
+          $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Flow Segment `get_urls`
@@ -2528,7 +2528,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/uuid-list.json
+          $ref: '#/components/schemas/UuidList'
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
@@ -2580,7 +2580,7 @@ paths:
             X-Paging-Timerange:
               description: Identifies the timerange for the returned data set.
               schema:
-                $ref: vendor/bbc-tams/api/schemas/timerange.json
+                $ref: '#/components/schemas/Timerange'
             X-Paging-Count:
               description: The number of items in the returned data set.
               schema:
@@ -2599,7 +2599,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/flow-segment.json
+                  $ref: '#/components/schemas/FlowSegment'
               examples:
                 basic:
                   summary: Basic Example
@@ -2689,10 +2689,10 @@ paths:
               $ref: vendor/bbc-tams/api/examples/flow-segment-post.json
             schema:
               oneOf:
-              - $ref: vendor/bbc-tams/api/schemas/flow-segment-post.json
+              - $ref: '#/components/schemas/FlowSegmentPost'
               - type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/flow-segment-post.json
+                  $ref: '#/components/schemas/FlowSegmentPost'
         required: true
       responses:
         '200':
@@ -2701,7 +2701,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/flow-segment-bulk-failure.json
+                $ref: '#/components/schemas/FlowSegmentBulkFailure'
               example:
                 $ref: vendor/bbc-tams/api/examples/flow-segment-partial-failure.json
         '201':
@@ -2737,7 +2737,7 @@ paths:
           given timerange.
         schema:
           default: _
-          $ref: vendor/bbc-tams/api/schemas/timerange.json
+          $ref: '#/components/schemas/Timerange'
       - name: object_id
         in: query
         description: Filter on Object identifier.
@@ -2755,7 +2755,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/deletion-request.json
+                $ref: '#/components/schemas/DeletionRequest'
               example:
                 $ref: vendor/bbc-tams/api/examples/deletion-request-get-200.json
         '204':
@@ -2781,7 +2781,7 @@ paths:
       in: path
       required: true
       schema:
-        $ref: vendor/bbc-tams/api/schemas/uuid.json
+        $ref: '#/components/schemas/Uuid'
       description: The Flow identifier.
     post:
       summary: Allocate Initial Flow Storage
@@ -2846,14 +2846,14 @@ paths:
                 summary: object_ids
                 externalValue: vendor/bbc-tams/api/examples/flow-storage-post-object_ids.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/flow-storage-post.json
+              $ref: '#/components/schemas/FlowStoragePost'
       responses:
         '201':
           description: Storage locations for writing Media Objects.
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/flow-storage.json
+                $ref: '#/components/schemas/FlowStorage'
               examples:
                 mpegts:
                   summary: MPEG-TS container Flow
@@ -2927,7 +2927,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-label-list.json
+          $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Media Object `get_urls`
@@ -3082,7 +3082,7 @@ paths:
 
           '
         schema:
-          $ref: vendor/bbc-tams/api/schemas/url-label-list.json
+          $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Media Object `get_urls`
@@ -3173,7 +3173,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/objects-get-200.json
               schema:
-                $ref: vendor/bbc-tams/api/schemas/object.json
+                $ref: '#/components/schemas/Object'
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -3237,7 +3237,7 @@ paths:
                 summary: Registering a uncontrolled instance
                 externalValue: vendor/bbc-tams/api/examples/objects-instances-uncontrolled-post.json
             schema:
-              $ref: vendor/bbc-tams/api/schemas/objects-instances-post.json
+              $ref: '#/components/schemas/ObjectsInstancesPost'
         required: true
       responses:
         '201':
@@ -3347,7 +3347,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: vendor/bbc-tams/api/schemas/deletion-request.json
+                  $ref: '#/components/schemas/DeletionRequest'
               example:
                 $ref: vendor/bbc-tams/api/examples/deletion-requests-get-200.json
   /flow-delete-requests/{request-id}:
@@ -3389,7 +3389,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: vendor/bbc-tams/api/schemas/deletion-request.json
+                $ref: '#/components/schemas/DeletionRequest'
               example:
                 $ref: vendor/bbc-tams/api/examples/deletion-request-get-200.json
         '404':
@@ -3426,7 +3426,7 @@ webhooks:
                   - flow
                   properties:
                     flow:
-                      $ref: vendor/bbc-tams/api/schemas/flow.json
+                      $ref: '#/components/schemas/Flow'
   flows/updated:
     post:
       security:
@@ -3456,7 +3456,7 @@ webhooks:
                   - flow
                   properties:
                     flow:
-                      $ref: vendor/bbc-tams/api/schemas/flow.json
+                      $ref: '#/components/schemas/Flow'
   flows/deleted:
     post:
       security:
@@ -3486,7 +3486,7 @@ webhooks:
                   - flow_id
                   properties:
                     flow_id:
-                      $ref: vendor/bbc-tams/api/schemas/uuid.json
+                      $ref: '#/components/schemas/Uuid'
   flows/segments_added:
     post:
       security:
@@ -3519,11 +3519,11 @@ webhooks:
                   - segments
                   properties:
                     flow_id:
-                      $ref: vendor/bbc-tams/api/schemas/uuid.json
+                      $ref: '#/components/schemas/Uuid'
                     segments:
                       type: array
                       items:
-                        $ref: vendor/bbc-tams/api/schemas/flow-segment.json
+                        $ref: '#/components/schemas/FlowSegment'
   flows/segments_deleted:
     post:
       security:
@@ -3556,13 +3556,13 @@ webhooks:
                   - timerange
                   properties:
                     flow_id:
-                      $ref: vendor/bbc-tams/api/schemas/uuid.json
+                      $ref: '#/components/schemas/Uuid'
                     timerange:
                       description: The timerange of Segments that have been deleted.
                         The timerange MUST intersect with a Segment which has been
                         deleted at both start and end (e.g. it cannot start or end
                         in empty space).
-                      $ref: vendor/bbc-tams/api/schemas/timerange.json
+                      $ref: '#/components/schemas/Timerange'
   sources/created:
     post:
       security:
@@ -3592,7 +3592,7 @@ webhooks:
                   - source
                   properties:
                     source:
-                      $ref: vendor/bbc-tams/api/schemas/source.json
+                      $ref: '#/components/schemas/Source'
   sources/updated:
     post:
       security:
@@ -3622,7 +3622,7 @@ webhooks:
                   - source
                   properties:
                     source:
-                      $ref: vendor/bbc-tams/api/schemas/source.json
+                      $ref: '#/components/schemas/Source'
   sources/deleted:
     post:
       security:
@@ -3651,7 +3651,7 @@ webhooks:
                   - source_id
                   properties:
                     source_id:
-                      $ref: vendor/bbc-tams/api/schemas/uuid.json
+                      $ref: '#/components/schemas/Uuid'
 components:
   responses:
     trait_resource_listing_head_200:
@@ -3744,6 +3744,1628 @@ components:
       - summary
       - time
       type: object
+    EventStreamCommon:
+      title: Event Stream Mechanism
+      description: Describes an event stream mechanism available in this service instance
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          description: Name of this type of event stream mechanism. Must be unique.
+            Any name defined in this specification is reserved
+          type: string
+        docs:
+          description: Location (e.g. a URL) at which documentation for this event
+            stream mechanism may be found
+          type: string
+        config:
+          type: object
+          description: Configuration options required to make use of this mechanism
+    Timestamp:
+      title: Timestamp
+      description: 'A signed nanosecond resolution timestamp represented as "{sign?}{seconds}:{nanoseconds}".
+        The intended
+
+        interpretation of the value is assumed to be defined elsewhere.
+
+
+        E.g.
+
+        * "1:40000000" is the timestamp of the 27th video frame for 25 Hz video with
+        origin at "0:0".
+
+        * "1694429247:40000000" is the TAI timestamp for a video frame at 2023-09-11T10:46:50.04Z
+        UTC.
+
+
+        Details of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md)
+        application note.
+
+        '
+      type: string
+      pattern: ^-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8})$
+    Service:
+      title: Service
+      description: Provides information about the service instance
+      type: object
+      required:
+      - type
+      - api_version
+      - min_object_timeout
+      properties:
+        name:
+          description: The service instance name. This should be a very short, human-readable
+            name that may be displayed in listings of Service instances.
+          type: string
+        description:
+          description: The service instance description. This should be a human-readable
+            description that may be showed in detailed views of Service instances.
+            The description should be longer and more detailed than `name`.
+          type: string
+        type:
+          description: The type identifier for the service instance. The value must
+            start with 'urn:x-tams:service'
+          type: string
+        api_version:
+          description: The version of the TAMS API specification this service instance
+            implements
+          type: string
+          pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)$
+        service_version:
+          description: 'The version of software providing this service. Note: Different
+            implementations and software houses may use different conventions for
+            their version identification. As such, this field is intentionally permissive
+            and intended to be informative only. Client implementations should avoid
+            using this field to determine compatibility.'
+          type: string
+        event_stream_mechanisms:
+          description: List the types of event stream that this service implementation
+            supports
+          type: array
+          items:
+            $ref: '#/components/schemas/EventStreamCommon'
+        min_object_timeout:
+          description: The minimum timeframe within which a Media Object created by
+            this service must be registered against a Flow segment before it is garbage
+            collected. Services SHOULD allow a small grace period beyond the advertised
+            value to account for latency in assigning the Objects and returning them
+            to the Client. This timeout MUST be `300:0` (i.e. 5 minutes) or greater.
+            Clients MUST be capable of reaching this minimum performance level. Clients
+            SHOULD adapt to this value by balancing how many object URLs to request
+            per page against how fast they will be used. Services MAY allow this value
+            to be configured at deploy-time. Format as described by the [Timestamp](#/schemas/timestamp)
+            type. For more infomation, see the documentation of the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage)
+            endpoint.
+          $ref: '#/components/schemas/Timestamp'
+        min_presigned_url_timeout:
+          description: The minimum timeframe within which pre-signed URLs generated
+            by this Service are valid for (both for writing and reading content).
+            This attribute MUST be set on implementations that support pre-signed
+            URLs. Services SHOULD allow a small grace period beyond the advertised
+            value to account for latency in generating pre-signed URLs and returning
+            them to the Client. This timeout MUST be `30:0` (i.e. 30 second) or greater.
+            The value of this parameter MUST be equal or less than `min_object_timeout`
+            to avoid Objects being garbage collected while their pre-signed PUT URLs
+            are still valid. Clients MUST be capable of reaching this minimum performance
+            level. Clients SHOULD adapt to this value, by taking care to request URLs
+            that will be used in a timely manner. Services MAY allow this value to
+            be configured at deploy-time. Format as described by the [Timestamp](#/schemas/timestamp)
+            type.
+          $ref: '#/components/schemas/Timestamp'
+    ServicePost:
+      title: Update Service Info
+      description: Post update to the service info
+      type: object
+      properties:
+        name:
+          description: The service instance name
+          type: string
+        description:
+          description: The service instance description
+          type: string
+    StorageBackend:
+      title: Storage Backend
+      description: Provides technical, and logic metadata about a storage backend
+      type: object
+      properties:
+        store_type:
+          description: The generic Storage Backend type. Used to identify the required
+            workflow for reading and writing media. Any `store_product` should be
+            compatible, as much is required for basic interoperability between TAMS
+            implementations, with their associated generic `store_type`.
+          type: string
+          enum:
+          - http_object_store
+        provider:
+          description: The cloud (or other) provider of the Storage Backend
+          type: string
+        region:
+          description: The region in the cloud this Storage Backend resides
+          type: string
+        availability_zone:
+          description: The availability zone in the cloud region this Storage Backend
+            resides. Note that many cloud providers randomize availability zone identifiers
+            such that they are consistent within a cloud account, but not necessarily
+            between accounts. Caution should be exercised when using this parameter.
+          type: string
+        store_product:
+          description: The storage product name.
+          type: string
+    Uuid:
+      title: UUID
+      description: A Universally Unique Identifier (UUID) as defined in [RFC9562](https://www.rfc-editor.org/rfc/rfc9562)
+      type: string
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+    StorageBackendsList:
+      title: Storage Backends List
+      description: Information about the storage backends available on this service
+        instance.
+      type: array
+      items:
+        allOf:
+        - $ref: '#/components/schemas/StorageBackend'
+        - required:
+          - store_type
+          - provider
+          - store_product
+          - id
+        - type: object
+          properties:
+            id:
+              description: Storage backend identifier
+              $ref: '#/components/schemas/Uuid'
+            label:
+              description: Freeform string label for a storage backend.
+              type: string
+            default_storage:
+              description: If set to `true`, this is the default storage backend.
+                The default storage backend will be used if the client does not specify
+                a storage backend id when requesting the allocation of storage. If
+                this parameter is not set, assume `false`. Service instances may either
+                set one storage backend as default, or none - indicating that clients
+                must always specify a storage backend.
+              type: boolean
+      additionalProperties: false
+    UrlTagList:
+      title: Query String Tag value list
+      description: A list of tag values, formatted for use in query string parameters
+      type: string
+      pattern: ^([^,]+(,[^,]+)*)?$
+    Tags:
+      title: Tags
+      description: Key is a freeform string. Value is a freeform string, or an array
+        of freeform strings.
+      type: object
+      additionalProperties:
+        anyOf:
+        - type: string
+        - type: array
+          items:
+            type: string
+    Webhook:
+      title: Register Webhook
+      description: Register to receive updates via webhook
+      type: object
+      required:
+      - url
+      - events
+      properties:
+        url:
+          description: The URL to which the service instance should make HTTP POST
+            requests with event data
+          type: string
+        api_key_name:
+          description: The HTTP header name that is added to the event POST
+          type: string
+        events:
+          description: List of event types to receive
+          type: array
+          items:
+            type: string
+            enum:
+            - flows/created
+            - flows/updated
+            - flows/deleted
+            - flows/segments_added
+            - flows/segments_deleted
+            - sources/created
+            - sources/updated
+            - sources/deleted
+        flow_ids:
+          description: Limit Flow and Flow Segment events to Flows in the given list
+            of Flow IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        source_ids:
+          description: Limit Flow, Flow Segment and Source events to Sources in the
+            given list of Source IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        flow_collected_by_ids:
+          description: Limit Flow and Flow Segment events to those with Flow that
+            is collected by a Flow Collection in the given list of Flow Collection
+            IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        source_collected_by_ids:
+          description: Limit Flow, Flow Segment and Source events to those with Source
+            that is collected by a Source Collection in the given list of Source Collection
+            IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        accept_get_urls:
+          description: List of labels of URLs to include in the `get_urls` property
+            in `flows/segments_added` events. Where multiple `get_urls` filter query
+            parameters are provided, the included `get_urls` will match all filters.
+            This option is the same as the `accept_get_urls` query parameter for the
+            [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API
+            endpoint, except that the labels are represented using a JSON array rather
+            than a (comma separated list) string.
+          type: array
+          items:
+            type: string
+        accept_storage_ids:
+          description: List of labels of `storage_id`s to include in the `get_urls`
+            property in `flows/segments_added` events. Where multiple `get_urls` filter
+            query parameters are provided, the included `get_urls` will match all
+            filters. This option is the same as the `accept_storage_ids` query parameter
+            for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint, except that the IDs are represented using a JSON array rather
+            than a (comma separated list) string.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        presigned:
+          description: Whether to include presigned/non-presigned URLs in the `get_urls`
+            property in `flows/segments_added` events. Where multiple `get_urls` filter
+            query parameters are provided, the included `get_urls` will match all
+            filters. This option is the same as the `presigned` query parameter for
+            the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint.
+          type: boolean
+        verbose_storage:
+          description: Whether to include storage metadata in the `get_urls` property
+            in `flows/segments_added` events. This option is the same as the `verbose_storage`
+            query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint.
+          type: boolean
+        tags:
+          $ref: '#/components/schemas/Tags'
+    WebhookWithId:
+      title: Webhook Details
+      description: Details of an existing registered webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/Webhook'
+      - type: object
+        required:
+        - id
+        properties:
+          id:
+            description: Webhook identifier
+            $ref: '#/components/schemas/Uuid'
+    Error:
+      title: Error status metadata
+      description: Provides more information for an error status.
+      type: object
+      required:
+      - type
+      - summary
+      - time
+      properties:
+        type:
+          description: The error type name.
+          type: string
+        summary:
+          description: Summary description of the error and causes.
+          type: string
+        traceback:
+          description: Stack trace leading to error (as a list of strings)
+          type: array
+          items:
+            type: string
+        time:
+          description: Time at which the error ocurred, to aid in log correlation
+          type: string
+          format: date-time
+    WebhookGet:
+      title: Webhook Detail
+      description: Describes a Webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/WebhookWithId'
+      - type: object
+        required:
+        - status
+        properties:
+          error:
+            description: Provides more information for the error status, as described
+              by the [Error](#/schemas/error) type
+            $ref: '#/components/schemas/Error'
+          status:
+            description: Status of the Webhook. `created` indicates the webhook has
+              been successfully registered but is yet to begin sending events or,
+              depending on the service implementation, the worker responsible for
+              sending the events has yet to start. `started` indicates the webhook
+              is active and sending events. `disabled` indicates the webhook has been
+              disabled by a client and is not currently sending events. `error` indicates
+              an error condition has been encountered and the webhook has been disabled
+              by the service instance. More information about the error condition
+              will be indicated by the service instance in the `error` parameter.
+              Service implementations SHOULD implement appropriate retries and only
+              enter the `error` state when absolutely necesary. A webhook in the `error`
+              or `disabled` state may be re-enabled by a client by setting the status
+              to `created`. A webhook in the `created` or `started` state may be disabled
+              by a client by setting the status to `disabled`. Attempting to transition
+              an `error` status to `disabled` SHOULD be rejected.
+            type: string
+            enum:
+            - created
+            - started
+            - disabled
+            - error
+    WebhookPost:
+      title: Register Webhook
+      description: Register to receive updates via webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/Webhook'
+      - type: object
+        properties:
+          api_key_value:
+            description: The value that the HTTP header 'api_key_name' will be set
+              to
+            type: string
+          status:
+            description: Status of the Webhook. `created` will register the webhook
+              in the created state and the service instance will attempt to start
+              sending events. `disabled` will register the webhook in a disabled state
+              and will not send events. Assumed to be `created` if not set.
+            type: string
+            enum:
+            - created
+            - disabled
+    WebhookPut:
+      title: Modify Webhook
+      description: Modify existing webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/WebhookWithId'
+      - type: object
+        required:
+        - status
+        properties:
+          api_key_value:
+            description: The value that the HTTP header 'api_key_name' will be set
+              to
+            type: string
+          status:
+            description: Status of the Webhook. `created` indicates the webhook has
+              been successfully registered but is yet to begin sending events or,
+              depending on the service implementation, the worker responsible for
+              sending the events has yet to start. `started` indicates the webhook
+              is active and sending events. `disabled` indicates the webhook has been
+              disabled by a client and is not currently sending events. `error` indicates
+              an error condition has been encountered and the webhook has been disabled
+              by the service instance. More information about the error condition
+              will be indicated by the service instance in the `error` parameter.
+              Service implementations SHOULD implement appropriate retries and only
+              enter the `error` state when absolutely necesary. A webhook in the `error`
+              or `disabled` state may be re-enabled by a client by setting the status
+              to `created`. A webhook in the `created` or `started` state may be disabled
+              by a client by setting the status to `disabled`. Attempting to transition
+              an `error` status to `disabled` SHOULD be rejected.
+            type: string
+            enum:
+            - created
+            - disabled
+    ContentFormat:
+      title: Content Format
+      description: Identifies the content format for a Flow or Source using a URN
+        string
+      type: string
+      format: uri
+      enum:
+      - urn:x-nmos:format:video
+      - urn:x-tam:format:image
+      - urn:x-nmos:format:audio
+      - urn:x-nmos:format:data
+      - urn:x-nmos:format:multi
+    CollectionItem:
+      title: Collection Item
+      description: Describes how an entity (Source or Flow) is collected into another
+        entity of the same type
+      type: object
+      required:
+      - id
+      - role
+      properties:
+        id:
+          description: Source or Flow Identifier of the member of this collection.
+            Sources MUST only collect Sources, and Flows MUST only collect Flows.
+            Must already be registered in this service instance
+          $ref: '#/components/schemas/Uuid'
+        role:
+          description: A human-readable role of the element in this collection (e.g.
+            'R' to denote a right audio channel in a collection of mono audio Sources)
+          type: string
+    Source:
+      title: Source
+      description: 'Describes a Source: an abstract representation of a piece of media
+        as defined in <https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.2._Explanation_-_Source.html>
+
+
+        Sources may be elemental (and represented directly by a Flow), or may represent
+        a collection of other Sources, e.g. a Source collecting video and audio together.'
+      type: object
+      required:
+      - id
+      - format
+      properties:
+        id:
+          description: Source identifier
+          $ref: '#/components/schemas/Uuid'
+        format:
+          description: The primary content type URN for the Source.
+          $ref: '#/components/schemas/ContentFormat'
+        label:
+          description: Freeform string label for the Source. This should be a very
+            short, human-readable label that may be displayed in listings of Sources.
+          type: string
+        description:
+          description: Freeform text describing the Source. This should be a human-readable
+            description that may be showed in detailed views of Sources. The description
+            should be longer and more detailed than `label`.
+          type: string
+        created_by:
+          description: A string identifier for the entity that created the Source.
+            Service implementations SHOULD set suitable default values for `created_by`
+            based on the principal accessing the systems.
+          type: string
+        updated_by:
+          description: A string identifier for the entity that updated the Source
+            metadata most recently. Service implementations SHOULD set suitable default
+            values for `updated_by` based on the principal accessing the system.
+          type: string
+        created:
+          description: The date-time the Source was created in a given context, e.g.
+            in the service instance. Service implementations SHOULD ignore this if
+            given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        updated:
+          description: The date-time the Source metadata was last updated in a given
+            context, e.g. in the service instance. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        tags:
+          $ref: '#/components/schemas/Tags'
+        source_collection:
+          description: List of Sources that are collected together by this Source.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally.
+            Source collections can be inferred from Flow collection definitions.
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionItem'
+        collected_by:
+          description: Sources that reference this Source to include it in a collection.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally.
+            Source collections can be inferred from Flow collection definitions.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+    Timerange:
+      title: TimeRange
+      description: "A timerange of timestamps. It is represented using one or two\
+        \ timestamps with inclusivity and exclusivity markers.\n\nE.g.\n* `[0:0_10:0)`\
+        \ represents 10 seconds of media starting at timestamp `0:0` and ending before\
+        \ `10:0`.\n* `(5:0_` represents a timerange starting after `5:0` and to eternity.\n\
+        * `_` without timestamps or inclusivity markers represents \"eternity\" (i.e.\
+        \ the entire timeline).\n* `()` without timestamps represents \"never\" (i.e.\
+        \ a range of zero length in no particular position).\n* `[1694429247:0_1694429248:0)`\
+        \ is a 1 second TAI timerange starting at 2023-09-11T10:46:50.0Z UTC.\n* `[1694429247:0]`\
+        \ is an instantaneous TAI timerange at 2023-09-11T10:46:50.0Z UTC.\n  This\
+        \ is equivalent to `[1694429247:0_1694429247:0]`.\n  The short syntax is preferred\
+        \ due to ease of identification as instantaneous.\n  Instantaneous TimeRanges\
+        \ cannot use exclusive markers (i.e. `(` or `)`).\n* A `[` or `]` indicates\
+        \ that bound is inclusive, and a `(` or `)` indicates that bound is exclusive.\n\
+        \nDetails of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md)\
+        \ application note.\n"
+      type: string
+      pattern: ^(\[|\()?(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?(_(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?)?(\]|\))?$
+    MimeType:
+      title: MIME Type
+      description: A Mime Type without parameters as defined in [RFC2045](https://www.rfc-editor.org/rfc/rfc2045#section-5.1)
+        and [RFC7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1)
+      type: string
+      pattern: ^(application|audio|font|example|image|message|model|multipart|text|video|x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/([0-9A-Za-z!#$%&'*+.^_`|~-]+)$
+    ContainerMapping:
+      title: Container Mapping
+      description: Defines the location of Flow essence data in a container track
+      type: object
+      properties:
+        track_index:
+          description: A zero-based and sequential track index in the container. This
+            assumes a reliable ordering of tracks
+          type: integer
+          minimum: 0
+        format_track_index:
+          description: A zero-based and sequential track index in the container for
+            a particular Flow format. A container with a video and 2 audio tracks
+            would have a format_track_index 0 for the video Flow and format_track_index
+            0 and 1 for the audio Flows. This assumes a reliable ordering of tracks
+            for each Flow format
+          type: integer
+          minimum: 0
+        audio_track:
+          description: Mapping for channels in audio tracks to the Flow channels
+          type: object
+          properties:
+            channel_numbers:
+              description: Array of (zero-based) container channel numbers in Flow
+                order
+              type: array
+              minItems: 1
+              items:
+                type: integer
+                minimum: 0
+            channel_range:
+              description: Inclusive range of (zero-based) container channel numbers
+              type: string
+              pattern: ^[0-9]+_[0-9]+$
+        mp2ts_container:
+          description: Mapping to MPEG-2 Transport Stream containers, ISO/IEC 13818-1
+            or ITU-T Recommendation H.222.0
+          type: object
+          properties:
+            pid:
+              description: The packet ID for the elementary stream packets
+              type: integer
+        mxf_container:
+          description: Mapping to Material Exchange Format containers, SMPTE ST 377-1
+          type: object
+          properties:
+            package_uid:
+              description: The package UID. Either a SMPTE UMID URN or UUID URN
+              type: string
+              pattern: ^urn:smpte:umid:[0-9a-fA-F]{8}(.[0-9a-fA-F]{8}){7}$|^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+            track_id:
+              description: The track ID in the package
+              type: integer
+        isobmff_container:
+          description: Mapping to ISO Base Media File Format (e.g. MP4 and MOV) containers,
+            ISO/IEC 14496-12
+          type: object
+          properties:
+            track_id:
+              description: The track ID
+              type: integer
+    FlowCollection:
+      title: Flow Collection
+      description: Describes how Flows are collected into another Flow
+      type: array
+      items:
+        type: object
+        title: Flow Collection Item
+        allOf:
+        - $ref: '#/components/schemas/CollectionItem'
+        - type: object
+          properties:
+            container_mapping:
+              description: Describes the mapping of the Flow essence from this Flow
+                collection's container
+              $ref: '#/components/schemas/ContainerMapping'
+    FlowCore:
+      title: Flow Core
+      description: Describes a Flow (common properties to all Flows, imported by type-specific
+        specifications)
+      type: object
+      required:
+      - id
+      - source_id
+      properties:
+        id:
+          description: Flow identifier
+          $ref: '#/components/schemas/Uuid'
+        source_id:
+          description: Source identifier
+          $ref: '#/components/schemas/Uuid'
+        label:
+          description: Freeform string label for the Flow. This should be a very short,
+            human-readable label that may be displayed in listings of Flows.
+          type: string
+        description:
+          description: Freeform text describing the Flow. This should be a human-readable
+            description that may be showed in detailed views of Flows. The description
+            should be longer and more detailed than `label`.
+          type: string
+        created_by:
+          description: A string identifier for the entity that created the Flow. Service
+            implementations SHOULD set suitable default values for `created_by` based
+            on the principal accessing the system, and MAY permit clients to edit
+            the value, subject to suitable permissions-based limitations.
+          type: string
+        updated_by:
+          description: A string identifier for the entity that updated the Flow metadata
+            most recently. Service implementations SHOULD set suitable default values
+            for `updated_by` based on the principal accessing the system, and MAY
+            permit clients to edit the value, subject to suitable permissions-based
+            limitations.
+          type: string
+        tags:
+          description: 'Key value is a freeform string. WARNING: When updating a Flow
+            with `tags` set, `tags` will be replaced with the provided dictionary.
+            `tags` WILL NOT be merged with the provided values. When `tags` is not
+            set in the request, `tags` will be unset (i.e. set to `{}`). To update
+            individual tags, clients should use the [Create or Update Flow Tag](#/operations/PUT_flows-flowId-tags-name)
+            endpoint.'
+          $ref: '#/components/schemas/Tags'
+        metadata_version:
+          description: A change to the Flow metadata, not including metadata_version,
+            metadata_updated, segments_updated, or Segments, results in a new version.
+            If the metadata_version for Flow instances is identical then the metadata
+            is identical. Service implementations SHOULD set suitable default values
+            for `metadata_version` whenever Flow metadata is changed and `metadata_version`
+            is either not set by the client, or set to it's existing value. Service
+            implementations MAY permit clients to edit the value, subject to suitable
+            permissions-based limitations. Where media is transfered between TAMS
+            service instances without changing the Flow metadata, clients SHOULD maintain
+            the `metadata_version`. To support this, service implementations SHOULD
+            always accept the setting of `metadata_version` by the client on initial
+            Flow creation. Service implementations SHOULD update this field where
+            metadata is updated via child endpoints. Note that this specification
+            places no requirements on incremental versioning. Service implementations
+            may, for example, choose to use hashes or date-time version identifiers.
+          type: string
+        generation:
+          description: An indication of how many lossy encodings the Flow content
+            has been through. This parameter provides a hint to clients as to which
+            is the "highest qualty" Flow available to them. A Flow with a higher generation
+            may contain less of the original information than a Flow with a lower
+            generation. Where a Flow is captured straight from the orginating device
+            (e.g. camera/microphone) in its highest quality, and there is no possibility
+            of the content becoming available in a higher quality (e.g. via capture
+            from ST2110 or SDI), it SHOULD have a `generation` of `0`. Where the originating
+            device outputs multiple qualities of the Source, `generation` should represent
+            the encoding processes each has been through as accurately as possible.
+          type: integer
+          minimum: 0
+        created:
+          description: The date-time the Flow was created in a given context, e.g.
+            in the service instance. Service implementations SHOULD ignore this if
+            given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        metadata_updated:
+          description: The date-time the Flow metadata was updated in a given context,
+            e.g. in the service instance. Service implementations SHOULD ignore this
+            if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        segments_updated:
+          description: The date-time the Flow Segments were updated in a given context,
+            e.g. in the service instance. Service implementations SHOULD ignore this
+            if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        read_only:
+          description: If set to 'true', service implementations SHOULD reject client
+            requests to update Flow metadata (other than the read_only property),
+            and Flow Segments. Service implementations should also reject requests
+            to the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage)
+            endpoint for the Flow, and requests to delete the Flow.
+          type: boolean
+        codec:
+          description: A MIME type identification of the (lossy or lossless) coding
+            used for the Flow content. Note that the `type` component of the container
+            MIME type (i.e. the component before the `/`) may be different to the
+            `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac`
+            coded content may be wrapped in a `video/mp2t` container. Mime types from
+            the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml)
+            should be preferred. Where multiple MIME types are possible, the most
+            common should be preferred. Where this is insufficient, the maintainers
+            of the TAMS repository may create an application note advising which MIME
+            type to use.
+          $ref: '#/components/schemas/MimeType'
+        container:
+          description: The container MIME type for Flow Segments. Note that the `type`
+            component of the container MIME type (i.e. the component before the `/`)
+            may be different to the `type` component of the codec MIME type. e.g.
+            An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t`
+            container. Where multiple types exist for a subtype (e.g. `video/mp4`,
+            `audio/mp4`, `application/mp4`), the closest MIME type to the Flow `format`
+            should be used (e.g. `audio/mp4` for a Flow `format` of `urn:x-nmos:format:audio`).
+            Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml)
+            should be preferred. Where multiple MIME types are possible, the most
+            common should be preferred. Where this is insufficient, the maintainers
+            of the TAMS repository may create an application note advising which MIME
+            type to use. Where the Flow does not reference any Media Object(s) directly
+            (e.g. an empty Multi Flow that serves only to collect related mono-essence
+            Flows that do reference Media Objects), this property MUST NOT be set.
+          $ref: '#/components/schemas/MimeType'
+        avg_bit_rate:
+          description: The average bit rate of the Flow Segments in 1000 bits/second.
+            A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
+            AppNote.
+          type: integer
+          minimum: 0
+        max_bit_rate:
+          description: The maximum bit rate of the Flow Segments in 1000 bits/second.
+            A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
+            AppNote.
+          type: integer
+          minimum: 0
+        segment_duration:
+          description: The target Flow Segment duration in seconds. The duration for
+            each Segment may vary around this target value. See also the [Setting
+            Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
+            AppNote for how this property can be used to calculate buffer sizes.
+          type: object
+          required:
+          - numerator
+          properties:
+            numerator:
+              description: numerator
+              type: integer
+              exclusiveMinimum: 0
+            denominator:
+              description: denominator
+              type: integer
+              default: 1
+              exclusiveMinimum: 0
+        timerange:
+          description: The timerange of samples available in the Flow, as described
+            by the [TimeRange](#/schemas/timerange) type. Service implementations
+            MUST ignore this if given in a PUT request, and instead manage it internally.
+          $ref: '#/components/schemas/Timerange'
+        flow_collection:
+          description: List of Flows that are collected together by this Flow.
+          $ref: '#/components/schemas/FlowCollection'
+        collected_by:
+          type: array
+          description: Flows that reference this Flow to include it in a collection.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally
+          items:
+            $ref: '#/components/schemas/Uuid'
+        container_mapping:
+          description: Describes the mapping of the Flow essence from the this Flow's
+            container
+          $ref: '#/components/schemas/ContainerMapping'
+    FlowVideo:
+      title: Video Flow
+      description: Describes a video Flow
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/FlowCore'
+      - type: object
+        required:
+        - format
+        - essence_parameters
+        - codec
+        properties:
+          format:
+            description: The primary content type URN for the Flow.
+            type: string
+            enum:
+            - urn:x-nmos:format:video
+          essence_parameters:
+            title: Video Flow Essence Parameters
+            description: Describes the parameters of the essence inside this video
+              Flow
+            type: object
+            required:
+            - frame_width
+            - frame_height
+            unevaluatedProperties: false
+            properties:
+              frame_width:
+                description: The width of the picture in pixels.
+                type: integer
+                exclusiveMinimum: 0
+              frame_height:
+                description: The height of the picture in pixels.
+                type: integer
+                exclusiveMinimum: 0
+              bit_depth:
+                description: The number of significant bits used to represent the
+                  video component sample. If codec is `video/raw`, bit_depth must
+                  be set.
+                type: integer
+                exclusiveMinimum: 0
+              interlace_mode:
+                description: Interlaced video mode for frames in this Flow
+                type: string
+                enum:
+                - progressive
+                - interlaced_tff
+                - interlaced_bff
+                - interlaced_psf
+              colorspace:
+                description: Colorspace used for the video
+                type: string
+                enum:
+                - BT601
+                - BT709
+                - BT2020
+                - BT2100
+              transfer_characteristic:
+                description: Transfer characteristic
+                type: string
+                enum:
+                - SDR
+                - HLG
+                - PQ
+              aspect_ratio:
+                description: The display aspect ratio. i.e. display_width / display_height
+                type: object
+                required:
+                - numerator
+                - denominator
+                properties:
+                  numerator:
+                    description: numerator
+                    type: integer
+                    exclusiveMinimum: 0
+                  denominator:
+                    description: denominator
+                    type: integer
+                    exclusiveMinimum: 0
+              pixel_aspect_ratio:
+                description: The pixel aspect ratio. This is usually 1:1 (i.e. square
+                  pixels) for modern video. Some, usually older, video formats use
+                  non-square pixels e.g. some Standard Definition video. This is where
+                  that may be indicated.
+                type: object
+                required:
+                - numerator
+                - denominator
+                properties:
+                  numerator:
+                    description: numerator
+                    type: integer
+                    exclusiveMinimum: 0
+                  denominator:
+                    description: denominator
+                    type: integer
+                    exclusiveMinimum: 0
+              component_type:
+                description: Picture component representation.
+                type: string
+                enum:
+                - YCbCr
+                - RGB
+              horiz_chroma_subs:
+                description: Horizontal chroma component sub-sampling. When unc_type
+                  is set to a YUV type, horiz_chroma_subs must be set.
+                type: integer
+                exclusiveMinimum: 0
+              vert_chroma_subs:
+                description: Vertical chroma component sub-sampling. When unc_type
+                  is set to a YUV type, vert_chroma_subs must be set.
+                type: integer
+                exclusiveMinimum: 0
+              unc_parameters:
+                title: Uncompressed Video Parameters
+                type: object
+                required:
+                - unc_type
+                properties:
+                  unc_type:
+                    description: Uncompressed picture packing type. If codec is `video/raw`,
+                      unc_type must be set.
+                    type: string
+                    enum:
+                    - planar
+                    - YUYV
+                    - UYVY
+                    - AYUV
+                    - v210
+                    - v216
+                    - RGB
+                    - RGBx
+                    - xRGB
+                    - BGRx
+                    - xBGR
+                    - RGBA
+                    - ARGB
+                    - BGRA
+                    - ABGR
+                    - alpha
+              avc_parameters:
+                title: AVC Codec Parameters
+                type: object
+                required:
+                - profile
+                - level
+                - flags
+                properties:
+                  profile:
+                    description: AVC / H.264 profile byte. For more information on
+                      the use of this property in codec strings, see https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#using_the_codecs_parameter
+                    type: integer
+                  level:
+                    description: AVC / H.264 level byte. For more information on the
+                      use of this property in codec strings, see https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#using_the_codecs_parameter
+                    type: integer
+                  flags:
+                    description: AVC / H.264 flags byte. For more information on the
+                      use of this property in codec strings, see https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#using_the_codecs_parameter
+                    type: integer
+              frame_rate:
+                title: Fixed Frame Rate
+                description: The fixed number of frames per second. MUST be set if
+                  `vfr` is `false` or omitted. MUST NOT be set if `vfr` is `true`.
+                type: object
+                required:
+                - numerator
+                properties:
+                  numerator:
+                    description: numerator
+                    type: integer
+                    exclusiveMinimum: 0
+                  denominator:
+                    description: denominator
+                    type: integer
+                    default: 1
+                    exclusiveMinimum: 0
+              vfr:
+                description: If `true`, the frame rate of the Flow is variable and
+                  `frame_rate` MUST NOT be set. If `false` or omitted, the frame rate
+                  of the Flow is fixed and `frame_rate` MUST be set.
+                type: boolean
+                default: false
+            if:
+              properties:
+                vfr:
+                  enum:
+                  - false
+                  - null
+            then:
+              required:
+              - frame_rate
+            else:
+              not:
+                required:
+                - frame_rate
+    FlowAudio:
+      title: Audio Flow
+      description: Describes an audio Flow
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/FlowCore'
+      - type: object
+        required:
+        - format
+        - essence_parameters
+        - codec
+        properties:
+          format:
+            description: The primary content type URN for the Flow.
+            type: string
+            enum:
+            - urn:x-nmos:format:audio
+          essence_parameters:
+            title: Audio Flow Essence Parameters
+            description: Describes the parameters of the essence inside this audio
+              Flow
+            type: object
+            required:
+            - sample_rate
+            - channels
+            additionalProperties: false
+            properties:
+              sample_rate:
+                description: The fixed number of samples per second.
+                type: integer
+                exclusiveMinimum: 0
+              channels:
+                description: The channel count.
+                type: integer
+                exclusiveMinimum: 0
+              bit_depth:
+                description: The number of significant bits used to represent the
+                  audio sample. The minumum number of bytes then equals `round_up(bit_depth
+                  / 8)`. If codec is `audio/x-raw-int` bit_depth must be set. If codec
+                  is `audio/x-raw-float` bit_depth must be set to 32 or 64
+                type: integer
+                exclusiveMinimum: 0
+              codec_parameters:
+                title: Audio Codec Parameters
+                type: object
+                required: []
+                properties:
+                  coded_frame_size:
+                    description: The fixed number of samples per coded audio frame.
+                    type: integer
+                  mp4_oti:
+                    description: The MPEG-4 Object Type Identification. For more information
+                      on the use of this property in codec strings, see https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#mpeg-4_audio
+                    type: integer
+              unc_parameters:
+                title: Uncompressed Audio Parameters
+                type: object
+                required:
+                - unc_type
+                properties:
+                  unc_type:
+                    description: The uncompressed audio multi-channel representation
+                      type. If codec is `audio/x-raw-int` or `audio/x-raw-float`,
+                      unc_type must be set.
+                    type: string
+                    enum:
+                    - interleaved
+                    - planar
+                    - pairs
+    FlowImage:
+      title: Image Flow
+      description: Describes a still image Flow, for use by thumbnail tracks etc
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/FlowCore'
+      - type: object
+        required:
+        - format
+        - essence_parameters
+        - codec
+        properties:
+          format:
+            description: The primary content type URN for the Flow.
+            type: string
+            enum:
+            - urn:x-tam:format:image
+          essence_parameters:
+            title: Image Flow Essence Parameters
+            description: Describes the parameters of the essence inside this image
+              Flow
+            type: object
+            required:
+            - frame_width
+            - frame_height
+            additionalProperties: false
+            properties:
+              frame_width:
+                description: The width of the picture in pixels.
+                type: integer
+                exclusiveMinimum: 0
+              frame_height:
+                description: The height of the picture in pixels.
+                type: integer
+                exclusiveMinimum: 0
+              aspect_ratio:
+                description: The display aspect ratio. i.e. display_width / display_height
+                type: object
+                required:
+                - numerator
+                - denominator
+                properties:
+                  numerator:
+                    description: numerator
+                    type: integer
+                    exclusiveMinimum: 0
+                  denominator:
+                    description: denominator
+                    type: integer
+                    exclusiveMinimum: 0
+    FlowData:
+      title: Data Flow
+      description: Describes a data Flow
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/FlowCore'
+      - type: object
+        required:
+        - format
+        - essence_parameters
+        - codec
+        properties:
+          format:
+            description: The primary content type URN for the Flow.
+            type: string
+            enum:
+            - urn:x-nmos:format:data
+          essence_parameters:
+            title: Data Flow Essence Parameters
+            description: Describes the parameters of the essence inside this data
+              Flow
+            type: object
+            additionalProperties: false
+            properties:
+              data_type:
+                description: The type of information encoded in the Flow, identified
+                  using a URN. e.g. The data_type may be urn:x-tams:data:bounding-box,
+                  and the codec `application/json`.
+                type: string
+    FlowMulti:
+      title: Multi-essence Flow
+      description: Describes a multi-essence Flow
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/FlowCore'
+      - type: object
+        required:
+        - format
+        properties:
+          format:
+            description: The primary content type URN for the Flow.
+            type: string
+            enum:
+            - urn:x-nmos:format:multi
+    Flow:
+      title: Flow
+      description: Describes a Flow
+      type: object
+      oneOf:
+      - $ref: '#/components/schemas/FlowVideo'
+      - $ref: '#/components/schemas/FlowAudio'
+      - $ref: '#/components/schemas/FlowImage'
+      - $ref: '#/components/schemas/FlowData'
+      - $ref: '#/components/schemas/FlowMulti'
+    DeletionRequest:
+      title: Deletion Request
+      description: Describes an ongoing deletion request
+      type: object
+      required:
+      - id
+      - flow_id
+      - timerange_to_delete
+      - delete_flow
+      - status
+      properties:
+        id:
+          description: Deletion Request ID
+          $ref: '#/components/schemas/Uuid'
+        flow_id:
+          description: ID of the Flow to which the deletion request relates
+          $ref: '#/components/schemas/Uuid'
+        timerange_to_delete:
+          description: The timerange of Flow Segments to be deleted in this request,
+            as described by the [TimeRange](#/schemas/timerange) type
+          $ref: '#/components/schemas/Timerange'
+        timerange_remaining:
+          description: The timerange of Flow Segments not yet deleted by this request,
+            as described by the [TimeRange](#/schemas/timerange) type
+          $ref: '#/components/schemas/Timerange'
+        delete_flow:
+          description: Whether the Flow should be deleted once the timerange has been
+          type: boolean
+        created:
+          description: Date/Time when this deletion request was created
+          type: string
+          format: date-time
+        created_by:
+          description: A string identifier for the entity that created the deletion
+            request. Service implementations SHOULD set suitable default values for
+            `created_by` based on the principal accessing the system.
+          type: string
+        updated:
+          description: Date/Time when this deletion request was updated
+          type: string
+          format: date-time
+        expiry:
+          description: Date/Time when this deletion request will be deleted
+          type: string
+          format: date-time
+        status:
+          description: Status of the delete request
+          type: string
+          enum:
+          - created
+          - started
+          - done
+          - error
+        error:
+          description: Provides more information for the error status, as described
+            by the [Error](#/schemas/error) type
+          $ref: '#/components/schemas/Error'
+    UrlLabelList:
+      title: Query String GET URL Label list
+      description: A list of Media Object GET URL Labels, formatted for use in query
+        string parameters
+      type: string
+      pattern: ^([^,]+(,[^,]+)*)?$
+    UuidList:
+      title: Query String UUID list
+      description: A list of Universally Unique Identifiers (UUIDs) as defined in
+        [RFC9562](https://www.rfc-editor.org/rfc/rfc9562), formatted for use in query
+        string parameters
+      type: string
+      pattern: ^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(,[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*$
+    ObjectCore:
+      type: object
+      description: Provides the location and metadata of the media files corresponding
+        to a Media Object.
+      title: Object
+      properties:
+        get_urls:
+          description: A list of URLs to which a GET request can be made to directly
+            retrieve the contents of the Media Object. This is required by the `http_object_store`
+            Storage Backend type, which is the only one currently described. Clients
+            may choose any URL in the list and treat the content returned as identical,
+            however servers may sort the list such that the preferred URL is first.
+            Storage Backend metadata for controlled URLs should be populated by the
+            TAMS instance based on the Storage Backend the Meda Object instance resides
+            in.
+          type: array
+          items:
+            type: object
+            unevaluatedProperties: false
+            allOf:
+            - $ref: '#/components/schemas/StorageBackend'
+            - type: object
+              required:
+              - url
+              properties:
+                storage_id:
+                  description: Storage Backend identifier
+                  $ref: '#/components/schemas/Uuid'
+                url:
+                  description: A URL to which a GET request can be made to directly
+                    retrieve the contents of the media object. Clients should include
+                    credentials if the provide URL is on the same origin as the API
+                    endpoint
+                  type: string
+                presigned:
+                  description: If `true`, this URL is pre-signed. If this parameter
+                    is unset, the URL is NOT pre-signed. The presigned URL SHALL remain
+                    valid for the timeframe advertised in [`min_presigned_url_timeout`
+                    at the `/service`](#/operations/GET_service) endpoint, which is
+                    subject to a specified minimum (see service endpoint schema).
+                  type: boolean
+                label:
+                  description: Label identifying this URL. If the URL is controlled
+                    by the service instance, this is the Storage Backend's label.
+                    If the URL is uncontrolled, this is the label provided when a
+                    client registered the URL. If the 'label' is not set then this
+                    URL can't be filtered for using the 'accept_get_urls' API query
+                    parameter.
+                  type: string
+                controlled:
+                  description: If `true`, this URL is on a Storage Backend controlled
+                    by this service instance. If `false`, this URL is uncontrolled
+                    and does not have it's lifecycle managed by this instance. If
+                    this parameter is unset, assume `true`.
+                  type: boolean
+        key_frame_count:
+          description: The number of key frames in the Media Object. This should be
+            set greater than zero when the Media Object contains key frames that serve
+            as a stream access point
+          type: integer
+    FlowSegment:
+      type: object
+      description: Provides the location and metadata of the media files corresponding
+        to timerange segments of a Flow.
+      title: Flow Segment
+      allOf:
+      - type: object
+        required:
+        - object_id
+        - timerange
+        properties:
+          object_id:
+            description: The object store identifier for the Media Object.
+            type: string
+          ts_offset:
+            description: The timestamp offset between the sample timestamps stored
+              in the media file and the corresponding timestamp in the Segment, ie.
+              ts_offset = segment ts - media object ts. Assumed to be 0:0 if not set.
+              Format as described by the [Timestamp](#/schemas/timestamp) type
+            $ref: '#/components/schemas/Timestamp'
+          timerange:
+            description: The timerange for the samples contained in the Segment. The
+              timerange start is always inclusive. If samples have a duration then
+              the timerange end is exclusive and covers at least the duration of the
+              last sample. The exclusive timerange end will typically be set to the
+              timestamp of the next sample. If the samples don't have a duration then
+              the timerange end is inclusive. Format is described by the [TimeRange](#/schemas/timerange)
+              type. Note that where temporal re-ordering is used, the timerange and
+              samples refers to the presentation timeline.
+            $ref: '#/components/schemas/Timerange'
+          last_duration:
+            description: The difference between the exclusive end of the `timerange`
+              and the last sample timestamp. Format as described by the [Timestamp](#/schemas/timestamp)
+              type, but cannot be negative
+            $ref: '#/components/schemas/Timestamp'
+          object_timerange:
+            description: The timerange covering the sample timestamps embedded in
+              or derived from the Media Object itself, on the Media Object's timeline.
+            $ref: '#/components/schemas/Timerange'
+          sample_offset:
+            description: 'The start of the Segment represented as a count of samples
+              from the start of the Media Object. Note that a sample is a video frame
+              or audio sample. A (coded) audio frame has multiple audio samples. Assumed
+              to be 0 if not set. DEPRECATED: Use object_timerange instead - see AppNote
+              0036. Service implementations SHOULD continue to store and return it
+              if set.'
+            type: integer
+            deprecated: true
+          sample_count:
+            description: 'The count of samples in the Segment (which may be fewer
+              than in the Media Object). The count could be less than expected given
+              the Segment duration and rate if there are gaps. If not set, every sample
+              from sample_offset onwards is used. Note that a sample is a video frame
+              or audio sample. A (coded) audio frame has multiple audio samples. DEPRECATED:
+              Use object_timerange instead - see AppNote 0036. Service implementations
+              SHOULD continue to store and return it if set.'
+            type: integer
+            deprecated: true
+      - $ref: '#/components/schemas/ObjectCore'
+    FlowSegmentPost:
+      title: Flow Segment Post
+      description: Provides the location and metadata of the media files corresponding
+        to timerange Segments of a Flow.
+      type: object
+      required:
+      - object_id
+      - timerange
+      properties:
+        object_id:
+          description: The Object identifier for the Media Object.
+          type: string
+        ts_offset:
+          description: The timestamp offset between the sample timestamps stored in,
+            or inferred from, the media file and the corresponding timestamp in the
+            Segment, ie. ts_offset = segment ts - media object ts. Assumed to be 0:0
+            if not set. Format as described by the [Timestamp](#/schemas/timestamp)
+            type
+          $ref: '#/components/schemas/Timestamp'
+        timerange:
+          description: The timerange for the samples contained in the Segment. The
+            timerange start is always inclusive. If samples have a duration then the
+            timerange end is exclusive and covers at least the duration of the last
+            sample. The exclusive timerange end will typically be set to the timestamp
+            of the next sample. If the samples don't have a duration then the timerange
+            end is inclusive. Format is described by the [TimeRange](#/schemas/timerange)
+            type. Note that where temporal re-ordering is used, the timerange and
+            samples refers to the presentation timeline.
+          $ref: '#/components/schemas/Timerange'
+        object_timerange:
+          description: The timerange covering the sample timestamps embedded in or
+            derived from the Media Object itself, on the Media Object's timeline.
+            If not given at first registration of an Object, defaults to `timerange
+            - ts_offset` on the assumption that the Flow Segment uses the entire Media
+            Object. Clients should not set this when Media Objects are re-used. Service
+            implementations should reject requests where `object_timerange` is set
+            to a value that conflicts with the existing Media Object metadata.
+          $ref: '#/components/schemas/Timerange'
+        last_duration:
+          description: The difference between the exclusive end of the `timerange`
+            and the last sample timestamp. Format as described by the [Timestamp](#/schemas/timestamp)
+            type, but cannot be negative
+          $ref: '#/components/schemas/Timestamp'
+        sample_offset:
+          description: 'The start of the Segment represented as a count of samples
+            from the start of the Object. Note that a sample is a video frame or audio
+            sample. A (coded) audio frame has multiple audio samples. Assumed to be
+            0 if not set. Must be set if the Flow Segment doesn''t start at the beginning
+            of the Media Object. DEPRECATED: Use object_timerange instead - see AppNote
+            0036. Service implementations SHOULD continue to store and return it if
+            set.'
+          type: integer
+          deprecated: true
+        sample_count:
+          description: 'The count of samples in the Segment (which may be fewer than
+            in the Object). The count could be less than expected given the Segment
+            duration and rate if there are gaps. If not set, every sample from sample_offset
+            onwards is used. Must be set if the Flow Segment doesn''t use the entire
+            Media Object. Note that a sample is a video frame or audio sample. A (coded)
+            audio frame has multiple audio samples. DEPRECATED: Use object_timerange
+            instead - see AppNote 0036. Service implementations SHOULD continue to
+            store and return it if set.'
+          type: integer
+          deprecated: true
+        get_urls:
+          description: A list of URLs to which a GET request can be made to directly
+            retrieve the contents of the Media Object. This is required by the `http_object_store`
+            Storage Backend type, which is the only one currently described. Clients
+            may choose any URL in the list and treat them as identical, however service
+            instances may sort the list such that the preferred URL is first. `get_urls`
+            should only be used to add uncontrolled URLs. URLs for the provided object_id
+            controlled by the service instance will be populated automatically by
+            the service instance.
+          type: array
+          items:
+            type: object
+            required:
+            - url
+            - label
+            properties:
+              url:
+                description: A URL to which a GET request can be made to directly
+                  retrieve the contents of the Media Object. Clients should include
+                  credentials if the provide URL is on the same origin as the API
+                  endpoint
+                type: string
+              label:
+                description: Label identifying this URL. Service implementations should
+                  reject any requests using labels that are already associated with
+                  Storage Backends. Service implementations should reject any requests
+                  containing multiple `get_urls` with the same `label`.
+                type: string
+        key_frame_count:
+          description: The number of key frames in the Media Object. This should be
+            set greater than zero when the Media Object contains key frames that serve
+            as a stream access point
+          type: integer
+    FlowSegmentBulkFailure:
+      title: Failed Segments
+      description: List of Segments that have failed to register
+      type: object
+      required:
+      - failed_segments
+      properties:
+        failed_segments:
+          description: The list of Segments which have failed to register with the
+            service instance
+          type: array
+          items:
+            description: Failed Segment details
+            type: object
+            required:
+            - object_id
+            properties:
+              object_id:
+                description: The Object ID of the Segment which has failed to register
+                  with the service instance
+                type: string
+              timerange:
+                description: The timerange of Segment that has failed, as described
+                  by the [TimeRange](#/schemas/timerange) type
+                $ref: '#/components/schemas/Timerange'
+              error:
+                description: Provides more information for the error status, as described
+                  by the [Error](#/schemas/error) type
+                $ref: '#/components/schemas/Error'
+    FlowStoragePost:
+      title: Flow Storage Post
+      description: Post data for the Flow storage endpoint
+      type: object
+      properties:
+        limit:
+          description: Limit the number of Media Objects in each response page. Service
+            implementations may specify their own default and maximum for the limit
+          type: integer
+        object_ids:
+          description: Array of object_ids to use. The supplied object_ids must be
+            new and not already in use in this TAMS service instance. A 400 response
+            will be returned if any supplied object_id already exists.
+          type: array
+          items:
+            type: string
+        storage_id:
+          description: The Storage Backend to allocate storage in. A Storage Backend
+            identifier as advertised at the [/service/storage-backends](#/operations/GET_storage-backends)
+            endpoint. If not set the default, as advertised at the [/service/storage-backends](#/operations/GET_storage-backends)
+            endpoint, will be used if available. An invalid Storage Backend identifier
+            will result in a 400 error.
+          $ref: '#/components/schemas/Uuid'
+      not:
+        allOf:
+        - required:
+          - limit
+        - required:
+          - object_ids
+    HttpRequest:
+      title: HTTP Request
+      description: Gives information on a particular http request a client should
+        perform
+      type: object
+      required:
+      - url
+      properties:
+        url:
+          description: The URL to make the request to. Where this URL is pre-signed,
+            it SHALL remain valid for the timeframe advertised in [`min_presigned_url_timeout`
+            at the `/service`](#/operations/GET_service) endpoint, which is subject
+            to a specified minimum (see service endpoint schema).
+          type: string
+        body:
+          description: The text of the body which needs to be included in the request
+          type: string
+        content-type:
+          description: The content type which must be used
+          type: string
+        headers:
+          description: Additional headers that should be included
+          type: object
+          additionalProperties:
+            type: string
+      additionalProperties: true
+    FlowStorage:
+      type: object
+      title: Media Bucket Object Store
+      description: Gives information on storage for Media Objects. This schema is
+        for the `http_object_store` Storage Backend type which provides URLs for storing
+        Media Objects in object store buckets, and is the only Storage Backend type
+        currently implemented.
+      properties:
+        media_objects:
+          type: array
+          description: List of information for identifying and uploading Media Objects
+          items:
+            type: object
+            description: Information for a Media Object
+            required:
+            - object_id
+            - put_url
+            properties:
+              object_id:
+                description: The object store identifier for the Media Object.
+                type: string
+              put_url:
+                $ref: '#/components/schemas/HttpRequest'
+      additionalProperties: false
+    Object:
+      title: Object
+      unevaluatedProperties: false
+      allOf:
+      - type: object
+        required:
+        - id
+        - referenced_by_flows
+        - timerange
+        properties:
+          id:
+            description: The Media Object identifier.
+            type: string
+          referenced_by_flows:
+            type: array
+            description: List of Flows that reference this Media Object via Flow Segments
+              in this store instance.
+            items:
+              $ref: '#/components/schemas/Uuid'
+          first_referenced_by_flow:
+            description: The first Flow that had a Flow Segment reference the Media
+              Object in this store instance. This Flow is also present in 'referenced_by_flows'
+              if it is still referenced by the Flow. This property is optional and
+              may in some implementations become unset if the Flow no longer references
+              the media object, e.g. because it was deleted.
+            $ref: '#/components/schemas/Uuid'
+          timerange:
+            description: The timerange covering the sample timestamps embedded in
+              or derived from the Media Object itself, on the Media Object's timeline.
+            $ref: '#/components/schemas/Timerange'
+      - $ref: '#/components/schemas/ObjectCore'
+    ObjectsInstancesPost:
+      type: object
+      description: Register a Media Object instance in the store.
+      title: Media object registration
+      oneOf:
+      - description: Request the duplication of a Media Object instance to a new Storage
+          Backend, via it's `storage_id`.
+        title: Controlled instance
+        type: object
+        required:
+        - storage_id
+        properties:
+          storage_id:
+            description: Storage backend identifier
+            $ref: '#/components/schemas/Uuid'
+      - description: Register an uncontrolled Media Object instance via its `url`.
+        title: Uncontrolled instance
+        type: object
+        required:
+        - url
+        - label
+        properties:
+          url:
+            description: A URL to which a GET request can be made to directly retrieve
+              the contents of the media object. Clients should include credentials
+              if the provide URL is on the same origin as the API endpoint
+            type: string
+          label:
+            description: Label identifying this Media Object instance. Service implementations
+              should reject any requests using labels that are already associated
+              with Storage Backends.
+            type: string
 tags:
 - name: Service
   description: The service root and documentation about the service itself

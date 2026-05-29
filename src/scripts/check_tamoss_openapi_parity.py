@@ -95,7 +95,37 @@ def load_candidate_openapi(path: Path | None) -> dict[str, Any]:
 class _OpenApiOnlyRepository:
     """Repository adapter used only while building the runtime OpenAPI schema."""
 
-    pass
+    @property
+    def service_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def webhook_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def deletion_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def source_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def flow_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def storage_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def segment_repository(self) -> _OpenApiOnlyRepository:
+        return self
+
+    @property
+    def object_repository(self) -> _OpenApiOnlyRepository:
+        return self
 
 
 class _OpenApiOnlyObjectStorage:

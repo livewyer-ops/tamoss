@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import json
+import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +21,18 @@ except ImportError:
     )
     sys.exit(1)
 
-from tamoss.openapi_extensions import apply_tamoss_extensions
+try:
+    from openapi_extensions import apply_tamoss_contract_extensions
+except ModuleNotFoundError:
+    extension_path = Path(__file__).with_name("openapi_extensions.py")
+    spec = importlib.util.spec_from_file_location("openapi_extensions", extension_path)
+    if spec is None or spec.loader is None:
+        raise
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    apply_tamoss_contract_extensions = module.apply_tamoss_contract_extensions
 
+BBC_SCHEMA_REF_PREFIX = "vendor/bbc-tams/api/schemas/"
 PUBLIC_CONTRACT_TEXT_REPLACEMENTS = {
     "comma-seperated": "comma-separated",
     "representes": "represents",
@@ -28,8 +42,13 @@ PUBLIC_CONTRACT_TEXT_REPLACEMENTS = {
         "List deletion requests currently being worked on, "
         "for monitoring in development."
     ): ("List ongoing flow deletion requests."),
-    "description: Webhook identifier": (
-        "description: A Universally Unique Identifier (UUID) as defined in RFC9562"
+}
+DESCRIPTION_REPLACEMENTS = {
+    "Webhook identifier": (
+        "A Universally Unique Identifier (UUID) as defined in RFC9562"
+    ),
+    "ID of the Flow to which the deletion request relates": (
+        "ID of the deletion request"
     ),
 }
 
@@ -43,7 +62,9 @@ def preprocess_openapi(input_path: Path, output_path: Path) -> None:
         raise ValueError(f"OpenAPI document must be a mapping: {input_path}")
 
     remove_url_token_auth(spec)
-    apply_tamoss_extensions(spec)
+    apply_tamoss_contract_extensions(spec)
+    rewrite_external_refs_for_public_contract(spec)
+    apply_public_contract_text_corrections(spec)
 
     raw = yaml.dump(
         spec,
@@ -51,10 +72,16 @@ def preprocess_openapi(input_path: Path, output_path: Path) -> None:
         sort_keys=False,
         allow_unicode=True,
     )
-    raw = rewrite_external_refs_for_public_contract(raw)
-    raw = apply_public_contract_text_corrections(raw)
     output_path.write_text(raw, encoding="utf-8")
     print("Preprocessing complete\n")
+
+
+def build_model_contract_spec(
+    processed_spec: dict[str, Any], *, schema_root: Path
+) -> dict[str, Any]:
+    """Embed external BBC schemas for Pydantic contract generation."""
+    embed_external_schema_refs_for_contract(processed_spec, schema_root=schema_root)
+    return processed_spec
 
 
 def remove_url_token_auth(spec: dict[str, Any]) -> None:
@@ -73,33 +100,106 @@ def remove_url_token_auth(spec: dict[str, Any]) -> None:
             schemes.pop("url_token_auth", None)
 
 
-def rewrite_external_refs_for_public_contract(raw: str) -> str:
-    replacements = {
-        "$ref: examples/": "$ref: vendor/bbc-tams/api/examples/",
-        "$ref: 'examples/": "$ref: 'vendor/bbc-tams/api/examples/",
-        '$ref: "examples/': '$ref: "vendor/bbc-tams/api/examples/',
-        "$ref: schemas/": "$ref: vendor/bbc-tams/api/schemas/",
-        "$ref: 'schemas/": "$ref: 'vendor/bbc-tams/api/schemas/",
-        '$ref: "schemas/': '$ref: "vendor/bbc-tams/api/schemas/',
-        "externalValue: examples/": "externalValue: vendor/bbc-tams/api/examples/",
-        "externalValue: 'examples/": "externalValue: 'vendor/bbc-tams/api/examples/",
-        'externalValue: "examples/': 'externalValue: "vendor/bbc-tams/api/examples/',
-    }
-    for old, new in replacements.items():
-        raw = raw.replace(old, new)
-    return raw
+def rewrite_external_refs_for_public_contract(spec: dict[str, Any]) -> None:
+    for parent, key, value in _walk_openapi_values(spec):
+        if not isinstance(value, str):
+            continue
+        if key == "$ref":
+            parent[key] = _rewrite_ref_value(value)
+        elif key == "externalValue":
+            parent[key] = _rewrite_external_value(value)
 
 
-def apply_public_contract_text_corrections(raw: str) -> str:
-    for old, new in PUBLIC_CONTRACT_TEXT_REPLACEMENTS.items():
-        raw = raw.replace(old, new)
+def embed_external_schema_refs_for_contract(
+    spec: dict[str, Any], *, schema_root: Path
+) -> None:
+    components = spec.setdefault("components", {}).setdefault("schemas", {})
+    loading: set[str] = set()
 
-    raw = raw.replace(
-        "        id:\n"
-        "          description: ID of the Flow to which the deletion request relates\n",
-        "        id:\n          description: ID of the deletion request\n",
+    def rewrite_schema_refs(node: Any) -> None:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                node["$ref"] = load_schema_ref(ref)
+            for value in node.values():
+                rewrite_schema_refs(value)
+            return
+        if isinstance(node, list):
+            for item in node:
+                rewrite_schema_refs(item)
+
+    def load_schema_ref(ref: str) -> str:
+        schema_file = _schema_file_from_ref(ref)
+        if schema_file is None:
+            return ref
+        component_name = _schema_component_name(schema_file)
+        if component_name not in components and component_name not in loading:
+            schema_path = schema_root / schema_file
+            if not schema_path.exists():
+                raise ValueError(f"Referenced schema file not found: {schema_path}")
+            loading.add(component_name)
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            rewrite_schema_refs(schema)
+            components[component_name] = schema
+            loading.remove(component_name)
+        return f"#/components/schemas/{component_name}"
+
+    rewrite_schema_refs(spec)
+
+
+def apply_public_contract_text_corrections(spec: dict[str, Any]) -> None:
+    for parent, key, value in _walk_openapi_values(spec):
+        if not isinstance(value, str):
+            continue
+        if key == "description" and value in DESCRIPTION_REPLACEMENTS:
+            parent[key] = DESCRIPTION_REPLACEMENTS[value]
+            continue
+        corrected = value
+        for old, new in PUBLIC_CONTRACT_TEXT_REPLACEMENTS.items():
+            corrected = corrected.replace(old, new)
+        parent[key] = corrected
+
+
+def _rewrite_ref_value(value: str) -> str:
+    if value.startswith("examples/"):
+        return f"vendor/bbc-tams/api/{value}"
+    if value.startswith("schemas/"):
+        return f"vendor/bbc-tams/api/{value}"
+    return value
+
+
+def _rewrite_external_value(value: str) -> str:
+    if value.startswith("examples/"):
+        return f"vendor/bbc-tams/api/{value}"
+    return value
+
+
+def _schema_file_from_ref(ref: str) -> str | None:
+    if ref.startswith(BBC_SCHEMA_REF_PREFIX):
+        return Path(ref).name
+    if re.fullmatch(r"[^/#]+\.json", ref):
+        return ref
+    return None
+
+
+def _schema_component_name(schema_file: str) -> str:
+    stem = Path(schema_file).stem
+    return "".join(
+        part.capitalize() for part in re.split(r"[^A-Za-z0-9]+", stem) if part
     )
-    return raw
+
+
+def _walk_openapi_values(
+    node: Any,
+) -> Iterator[tuple[dict[str, Any] | list[Any], str | int, Any]]:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            yield node, key, value
+            yield from _walk_openapi_values(value)
+    elif isinstance(node, list):
+        for index, value in enumerate(list(node)):
+            yield node, index, value
+            yield from _walk_openapi_values(value)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
