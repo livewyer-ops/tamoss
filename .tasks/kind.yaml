@@ -1,8 +1,20 @@
 # https://taskfile.dev
 version: "3"
 
+set: [errexit, nounset, pipefail]
+
 vars:
-  KIND_CONFIG: "deploy/kind.yaml"
+  PROFILE: '{{default "local-kind" .PROFILE}}'
+  VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
+  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
+  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
+  PROFILE_TARGET_ENV:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" targetEnv'
+  PROFILE_TAMOSS_NAME:
+    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" tamossName'
 
 tasks:
   create:
@@ -15,30 +27,15 @@ tasks:
     cmds:
       - task: :docker:compose:stop
       - |
-        . .tasks/lib/progress.sh
-        task_step "ensure Kind cluster" \
-          bash -c '
-            set -euo pipefail
-            if kind get clusters | grep -Fxq "{{.PROJECT_NAME}}"; then
-              kind export kubeconfig --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}"
-              exit 0
-            fi
-            kind create cluster --config "{{.KIND_CONFIG}}" --kubeconfig "{{.KUBECONFIG}}"
-          '
+        . .tasks/lib/kind.sh
+        task_step "Local Kind: ensure cluster" \
+          task_kind_ensure_cluster "{{.PROJECT_NAME}}" "{{.KIND_CONFIG}}" "{{.KUBECONFIG}}"
       - task: image
-
-  recreate:
-    silent: true
-    cmds:
-      - task: delete
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
-          KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: create
-        vars:
-          KIND_CONFIG: "{{.KIND_CONFIG}}"
-          PROJECT_NAME: "{{.PROJECT_NAME}}"
-          KUBECONFIG: "{{.KUBECONFIG}}"
+          API_IMAGE: "{{.API_IMAGE}}"
+          UI_IMAGE: "{{.UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
 
   delete:
     silent: true
@@ -49,9 +46,9 @@ tasks:
       vars: [PROJECT_NAME, KUBECONFIG]
     cmds:
       - |
-        . .tasks/lib/progress.sh
-        task_step "delete Kind cluster" \
-          bash -c 'kind delete cluster --name "{{.PROJECT_NAME}}" --kubeconfig "{{.KUBECONFIG}}" || true'
+        . .tasks/lib/kind.sh
+        task_step "Local Kind: delete cluster" \
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
 
   image:
     internal: true
@@ -61,71 +58,113 @@ tasks:
         msg: "docker binary not found"
     cmds:
       - task: image:build
+        vars:
+          API_IMAGE: "{{.API_IMAGE}}"
+          UI_IMAGE: "{{.UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - task: image:load
+        vars:
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          API_IMAGE: "{{.API_IMAGE}}"
+          UI_IMAGE: "{{.UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
 
   image:build:
     internal: true
     silent: true
     cmds:
       - |
-        . .tasks/lib/progress.sh
-        task_step "build TAMOSS API image" \
-          docker build -f src/app/tamoss/Dockerfile -t "{{.API_IMAGE}}" .
-      - |
-        . .tasks/lib/progress.sh
-        task_step "build TAMOSS UI image" \
-          docker build -t "{{.UI_IMAGE}}" src/app/frontend
+        . .tasks/lib/kind.sh
+        task_kind_build_image "TAMOSS API" "{{.API_IMAGE}}" "src/app/tamoss/Dockerfile" "."
+        task_kind_build_image "TAMOSS UI" "{{.UI_IMAGE}}" "" "src/app/frontend"
+      - task: :operator:image:build
+        vars:
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          VERSION: "{{.VERSION}}"
+          STEP_LABEL: "Local Kind: build TAMOSS operator image"
 
   image:load:
     internal: true
     silent: true
     cmds:
       - |
-        . .tasks/lib/progress.sh
-        task_step "load TAMOSS API image into Kind" \
-          kind load docker-image "{{.API_IMAGE}}" --name {{.PROJECT_NAME}}
-      - |
-        . .tasks/lib/progress.sh
-        task_step "load TAMOSS UI image into Kind" \
-          kind load docker-image "{{.UI_IMAGE}}" --name {{.PROJECT_NAME}}
-
-  kubeconfig:
-    internal: true
-    silent: true
-    requires:
-      vars: [PROJECT_NAME, KUBECONFIG]
-    cmds:
-      - |
-        . .tasks/lib/progress.sh
-        task_step "export Kind kubeconfig" \
-          kind export kubeconfig --name {{.PROJECT_NAME}} --kubeconfig {{.KUBECONFIG}}
+        . .tasks/lib/kind.sh
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS API" "{{.API_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS UI" "{{.UI_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
 
   e2e:fresh:
     silent: true
     cmds:
       - rm -f {{.KUBECONFIG}}
       - |
+        . .tasks/lib/kind.sh
+        task_step "Local Kind: delete existing cluster" \
+          task_kind_delete_cluster "{{.PROJECT_NAME}}"
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_upgrade.sh
+        task_operator_upgrade_prepare_previous
+      - task: :kind:create
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KIND_CONFIG: "{{.KIND_CONFIG}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          API_IMAGE: "{{.API_IMAGE}}"
+          UI_IMAGE: "{{.UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+      - |
+        set -euo pipefail
+        . .tasks/lib/kind.sh
+        task_kind_validate_profile_topology "{{.PROFILE}}" "{{.KUBECONFIG}}"
+      - |
+        set -euo pipefail
+        . .tasks/lib/kind.sh
+        . .tasks/lib/operator_upgrade.sh
+        task_step "Local Kind: load previous TAMOSS operator image" \
+          kind load docker-image "$(task_operator_upgrade_previous_image)" --name "{{.PROJECT_NAME}}"
+      - task: :operator:platform:apply
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - |
+        set -euo pipefail
         . .tasks/lib/progress.sh
-        task_step "delete existing Kind cluster" \
-          bash -c 'kind delete cluster --name "{{.PROJECT_NAME}}" || true'
-      - task: create
+        . .tasks/lib/operator_upgrade.sh
+        task_step "Operator upgrade: install previous operator" \
+          task_operator_upgrade_apply_operator \
+            "{{.KUBECONFIG}}" \
+            "$(task_operator_upgrade_previous_config_dir)" \
+            "$(task_operator_upgrade_previous_image)"
+      - task: :operator:instance:apply
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :operator:instance:wait
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: kubeconfig
+          PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
+          DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+      - task: :e2e:deployed
         vars:
+          PROFILE: "{{.PROFILE}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: :deploy:kind
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: :test:deployed
-        vars:
-          DEPLOY_ENV: kind
-          KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: :up:summary
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-
-  tests:e2e:
-    silent: true
-    cmds:
-      - task: e2e:fresh
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_upgrade.sh
+        task_operator_upgrade_validate_existing_cluster \
+          "{{.KUBECONFIG}}" \
+          "{{.OPERATOR_IMAGE}}" \
+          "tams" \
+          "{{.PROFILE_TAMOSS_NAME}}"
+      - |
+        set -euo pipefail
+        if [ "{{.KIND_SUMMARY}}" != "false" ]; then
+          . .tasks/lib/k8s.sh
+          task_print_kind_summary "{{.PROFILE_TARGET_ENV}}" "{{.KUBECONFIG}}"
+        fi

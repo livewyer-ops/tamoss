@@ -1,0 +1,556 @@
+version: "3"
+
+set: [errexit, nounset, pipefail]
+
+vars:
+  PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
+  VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
+  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
+  PLATFORM_KUSTOMIZE_DIR:
+    sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.PLATFORM_KUSTOMIZE_DIR}}" | grep -q . && printf "%s\n" "{{.PLATFORM_KUSTOMIZE_DIR}}" || task_profile_field "{{.PROFILE}}" platformKustomizeDir'
+  PLATFORM_DEPENDENCIES_FILE: '{{default "deploy/platform/dependencies.yaml" .PLATFORM_DEPENDENCIES_FILE}}'
+  CERT_MANAGER_KUSTOMIZE_DIR: '{{default "deploy/platform/components/cert-manager" .CERT_MANAGER_KUSTOMIZE_DIR}}'
+  AUTHENTIK_CHART_REPO: '{{default "https://charts.goauthentik.io" .AUTHENTIK_CHART_REPO}}'
+  AUTHENTIK_NAMESPACE: '{{default "auth" .AUTHENTIK_NAMESPACE}}'
+  AUTHENTIK_RELEASE: '{{default "authentik" .AUTHENTIK_RELEASE}}'
+  AUTHENTIK_VALUES_FILE: '{{default "deploy/platform/components/authentik/kind/values.yaml" .AUTHENTIK_VALUES_FILE}}'
+  RUSTFS_OPERATOR_DIR: '{{default ".local/rustfs-operator" .RUSTFS_OPERATOR_DIR}}'
+  RUSTFS_OPERATOR_NAMESPACE: '{{default "rustfs-system" .RUSTFS_OPERATOR_NAMESPACE}}'
+  RUSTFS_OPERATOR_RELEASE: '{{default "rustfs-operator" .RUSTFS_OPERATOR_RELEASE}}'
+  OPERATOR_NAMESPACE: '{{default "tamoss-system" .OPERATOR_NAMESPACE}}'
+  OPERATOR_DEPLOYMENT: '{{default "operator-controller-manager" .OPERATOR_DEPLOYMENT}}'
+  TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
+  TAMOSS_NAME:
+    sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TAMOSS_NAME}}" | grep -q . && printf "%s\n" "{{.TAMOSS_NAME}}" || task_profile_field "{{.PROFILE}}" tamossName'
+  TAMOSS_CR:
+    sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TAMOSS_CR}}" | grep -q . && printf "%s\n" "{{.TAMOSS_CR}}" || task_profile_field "{{.PROFILE}}" instanceKustomizeDir'
+  CHAINSAW_SMOKE_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector smoke'
+  CHAINSAW_CI_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector ci'
+  CHAINSAW_NIGHTLY_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector nightly'
+  CHAINSAW_RELEASE_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector release'
+  CHAINSAW_DEPLOYED_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector deployed'
+
+tasks:
+  build:
+    dir: operator
+    cmds:
+      - make build
+
+  image:build:
+    silent: true
+    vars:
+      OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+      STEP_LABEL: '{{default "Operator: build image" .STEP_LABEL}}'
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/progress.sh
+        task_step "{{.STEP_LABEL}}" \
+          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" SCHEMA_VERSION="{{.VERSION}}"
+
+  test:
+    silent: true
+    dir: operator
+    cmds:
+      - printf 'test operator.go\n'
+      - make test
+
+  manifests:
+    dir: operator
+    cmds:
+      - make manifests
+
+  kind-e2e:
+    env:
+      TAMOSS_OPERATOR_KIND_E2E: "1"
+    cmds:
+      - mkdir -p reports
+      - printf 'test e2e.operator.kind\n'
+      - uv run --project src pytest -c src/pyproject.toml tests/e2e/test_operator_kind_install.py -m operator_kind -ra --junitxml=reports/junit-e2e-operator-kind.xml
+
+  e2e:chainsaw:
+    desc: "Operations: run the full Chainsaw e2e suite (all Kind-target tiers) against the current cluster"
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    vars:
+      CHAINSAW_BIN: '{{default "chainsaw" .CHAINSAW_BIN}}'
+      CHAINSAW_TESTS: '{{default "operator/test/chainsaw" .CHAINSAW_TESTS}}'
+      REPORT_PATH: '{{default "reports" .REPORT_PATH}}'
+      CHAINSAW_PARALLEL: '{{default "1" .CHAINSAW_PARALLEL}}'
+      CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
+      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=kind" .CHAINSAW_SELECTOR}}'
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/progress.sh
+        mkdir -p "{{.REPORT_PATH}}"
+        printf 'test operator.chainsaw\n'
+        CHAINSAW_CMD="$(task_resolve_aqua_binary "{{.CHAINSAW_BIN}}")"
+        CHAINSAW_EXTRA_ARGS="{{.CHAINSAW_EXTRA_ARGS}}"
+        if [ "${CHAINSAW_SKIP_DELETE:-false}" = "true" ]; then
+          CHAINSAW_EXTRA_ARGS="${CHAINSAW_EXTRA_ARGS:-} --skip-delete"
+        fi
+
+        set -- test "{{.CHAINSAW_TESTS}}" \
+          --config operator/test/chainsaw/configuration.yaml \
+          --report-name junit-operator-chainsaw \
+          --report-format JUNIT-TEST \
+          --report-path "{{.REPORT_PATH}}" \
+          --parallel "{{.CHAINSAW_PARALLEL}}"
+        if [ -n "{{.CHAINSAW_SELECTOR}}" ]; then
+          set -- "$@" --selector "{{.CHAINSAW_SELECTOR}}"
+        fi
+
+        KUBECONFIG="{{.KUBECONFIG}}" ${CHAINSAW_CMD} "$@" \
+          ${CHAINSAW_EXTRA_ARGS:-} \
+          {{.CLI_ARGS}}
+
+  e2e:chainsaw:labels:
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/profile.sh
+        printf 'test operator.chainsaw.labels\n'
+        CHAINSAW_ALLOWED_PROFILES="$(task_profiles_list)" \
+          python3 .tasks/lib/chainsaw_labels.py validate operator/test/chainsaw
+
+  e2e:chainsaw:render:
+    silent: true
+    vars:
+      CHAINSAW_BIN: '{{default "chainsaw" .CHAINSAW_BIN}}'
+      CHAINSAW_TESTS: '{{default "operator/test/chainsaw" .CHAINSAW_TESTS}}'
+      REPORT_PATH: '{{default "reports" .REPORT_PATH}}'
+      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=render" .CHAINSAW_SELECTOR}}'
+    cmds:
+      - task: e2e:chainsaw:labels
+      - |
+        set -euo pipefail
+        . .tasks/lib/progress.sh
+        mkdir -p "{{.REPORT_PATH}}"
+        printf 'test operator.chainsaw.render\n'
+        CHAINSAW_CMD="$(task_resolve_aqua_binary "{{.CHAINSAW_BIN}}")"
+        set -- test "{{.CHAINSAW_TESTS}}" \
+          --config operator/test/chainsaw/configuration.yaml \
+          --report-name junit-operator-chainsaw-render \
+          --report-format JUNIT-TEST \
+          --report-path "{{.REPORT_PATH}}" \
+          --no-cluster \
+          --selector "{{.CHAINSAW_SELECTOR}}"
+        ${CHAINSAW_CMD} "$@" {{.CLI_ARGS}}
+
+  e2e:chainsaw:smoke:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_SMOKE_SELECTOR}}"
+
+  e2e:chainsaw:ci:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_CI_SELECTOR}}"
+
+  e2e:chainsaw:nightly:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_NIGHTLY_SELECTOR}}"
+
+  e2e:chainsaw:release:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_RELEASE_SELECTOR}}"
+
+  e2e:chainsaw:deployed:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_DEPLOYED_SELECTOR}}"
+
+  e2e:chainsaw:focus:
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    vars:
+      SELECTOR: '{{default "" .SELECTOR}}'
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -n "{{.SELECTOR}}" ]; then
+          task operator:e2e:chainsaw KUBECONFIG="{{.KUBECONFIG}}" CHAINSAW_SELECTOR="{{.SELECTOR}}"
+          exit 0
+        fi
+        focus="{{.CLI_ARGS}}"
+        if [ -z "$focus" ]; then
+          echo "usage: task operator:e2e:chainsaw:focus SELECTOR='<label-selector>'" >&2
+          echo "   or: task operator:e2e:chainsaw:focus -- <test-name-or-regex>" >&2
+          exit 2
+        fi
+        target="$(find operator/test/chainsaw -mindepth 2 -maxdepth 2 -type d -name "$focus" | sort | head -n 1)"
+        if [ -n "$target" ]; then
+          task operator:e2e:chainsaw KUBECONFIG="{{.KUBECONFIG}}" CHAINSAW_TESTS="$target"
+        else
+          task operator:e2e:chainsaw KUBECONFIG="{{.KUBECONFIG}}" CHAINSAW_EXTRA_ARGS="--include-test-regex=$focus"
+        fi
+
+  e2e:chainsaw:up:
+    silent: true
+    vars:
+      CHAINSAW_CLUSTER_NAME: '{{default "tamoss-chainsaw" .CHAINSAW_CLUSTER_NAME}}'
+      KUBECONFIG: '{{default ".local/chainsaw.kubeconfig" .KUBECONFIG}}'
+      OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:chainsaw" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+      API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
+      CHAINSAW_SELECTOR: '{{default "" .CHAINSAW_SELECTOR}}'
+      CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
+      CHAINSAW_TASK_ARGS: '{{default "" .CHAINSAW_TASK_ARGS}}'
+      CHAINSAW_KEEP_CLUSTER: '{{default "" .CHAINSAW_KEEP_CLUSTER}}'
+      CHAINSAW_INSTALL_RUSTFS_OPERATOR: '{{default "" .CHAINSAW_INSTALL_RUSTFS_OPERATOR}}'
+      CHAINSAW_INSTALL_CNPG_OPERATOR: '{{default "" .CHAINSAW_INSTALL_CNPG_OPERATOR}}'
+      CHAINSAW_INSTALL_AUTHENTIK_FIXTURE: '{{default "" .CHAINSAW_INSTALL_AUTHENTIK_FIXTURE}}'
+    env:
+      CHAINSAW_CLUSTER_NAME: "{{.CHAINSAW_CLUSTER_NAME}}"
+      KUBECONFIG: "{{.KUBECONFIG}}"
+      OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+      API_IMAGE: "{{.API_IMAGE}}"
+      VERSION: "{{.VERSION}}"
+      CHAINSAW_SELECTOR: "{{.CHAINSAW_SELECTOR}}"
+      CHAINSAW_EXTRA_ARGS: "{{.CHAINSAW_EXTRA_ARGS}}"
+      CHAINSAW_TASK_ARGS: "{{.CHAINSAW_TASK_ARGS}}"
+      CHAINSAW_KEEP_CLUSTER: "{{.CHAINSAW_KEEP_CLUSTER}}"
+      CHAINSAW_INSTALL_RUSTFS_OPERATOR: "{{.CHAINSAW_INSTALL_RUSTFS_OPERATOR}}"
+      CHAINSAW_INSTALL_CNPG_OPERATOR: "{{.CHAINSAW_INSTALL_CNPG_OPERATOR}}"
+      CHAINSAW_INSTALL_AUTHENTIK_FIXTURE: "{{.CHAINSAW_INSTALL_AUTHENTIK_FIXTURE}}"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_chainsaw.sh
+        task_operator_chainsaw_up
+
+  e2e:chainsaw:ci:up:
+    silent: true
+    cmds:
+      - task: e2e:chainsaw:up
+        vars:
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_CI_SELECTOR}}"
+
+  install-manifest:
+    silent: true
+    dir: operator
+    cmds:
+      - make manifests kustomize
+      - mkdir -p ../deploy/operator
+      - bin/kustomize-v5.3.0 build config/default > ../deploy/operator/install.yaml
+
+  security-lint:
+    silent: true
+    dir: operator
+    cmds:
+      - task: install-manifest
+      - mkdir -p dist
+      - awk 'FNR == 1 && NR > 1 { print "---" } { print }' config/rbac/service_account.yaml config/manager/manager.yaml > dist/operator-pod-spec.yaml
+      - |
+        set -euo pipefail
+        . ../.tasks/lib/progress.sh
+        kube_linter="$(task_resolve_aqua_binary kube-linter)" \
+          || { echo "kube-linter is required; install it with aqua install" >&2; exit 1; }
+        ${kube_linter} lint ../deploy/operator/install.yaml dist/operator-pod-spec.yaml --with-color=false
+
+  apply:
+    desc: Apply the TAMOSS operator kustomize install
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_apply_operator "{{.KUBECONFIG}}" "{{.OPERATOR_KUSTOMIZE_DIR}}"
+      - task: wait
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          OPERATOR_NAMESPACE: "{{.OPERATOR_NAMESPACE}}"
+          OPERATOR_DEPLOYMENT: "{{.OPERATOR_DEPLOYMENT}}"
+
+  platform:apply:
+    desc: Apply platform bootstrap services for a TAMOSS profile
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -d "{{.CERT_MANAGER_KUSTOMIZE_DIR}}"
+        msg: "cert-manager kustomize dir {{.CERT_MANAGER_KUSTOMIZE_DIR}} not found"
+      - sh: test -d "{{.PLATFORM_KUSTOMIZE_DIR}}"
+        msg: "platform kustomize dir {{.PLATFORM_KUSTOMIZE_DIR}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_apply_operator_platform \
+          "{{.KUBECONFIG}}" \
+          "{{.CERT_MANAGER_KUSTOMIZE_DIR}}" \
+          "{{.PLATFORM_KUSTOMIZE_DIR}}" \
+          "{{.AUTHENTIK_NAMESPACE}}" \
+          "{{.RUSTFS_OPERATOR_NAMESPACE}}" \
+          "{{.RUSTFS_OPERATOR_RELEASE}}"
+
+  platform:vendor:
+    silent: true
+    preconditions:
+      - sh: command -v curl
+        msg: "curl required"
+      - sh: command -v helm
+        msg: "helm required"
+      - sh: command -v git
+        msg: "git required"
+      - sh: command -v yq
+        msg: "yq required"
+      - sh: test -f "{{.PLATFORM_DEPENDENCIES_FILE}}"
+        msg: "platform dependency record {{.PLATFORM_DEPENDENCIES_FILE}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_vendor.sh
+        task_vendor_platform_manifests \
+          "{{.PLATFORM_DEPENDENCIES_FILE}}" \
+          "{{.AUTHENTIK_RELEASE}}" \
+          "{{.AUTHENTIK_CHART_REPO}}" \
+          "{{.AUTHENTIK_NAMESPACE}}" \
+          "{{.AUTHENTIK_VALUES_FILE}}" \
+          "{{.RUSTFS_OPERATOR_DIR}}" \
+          "{{.RUSTFS_OPERATOR_RELEASE}}" \
+          "{{.RUSTFS_OPERATOR_NAMESPACE}}"
+
+  platform:deps:check:
+    silent: true
+    preconditions:
+      - sh: command -v yq
+        msg: "yq required"
+      - sh: command -v rg
+        msg: "rg required"
+      - sh: test -f "{{.PLATFORM_DEPENDENCIES_FILE}}"
+        msg: "platform dependency record {{.PLATFORM_DEPENDENCIES_FILE}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_vendor.sh
+        task_step "check platform dependency pins" \
+          task_check_platform_dependency_pins "{{.PLATFORM_DEPENDENCIES_FILE}}"
+
+  template:
+    silent: true
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_render_operator_kustomize "{{.OPERATOR_KUSTOMIZE_DIR}}"
+
+  monitoring:template:
+    silent: true
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -d operator/config/prometheus
+        msg: "operator/config/prometheus not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_render_operator_monitoring
+
+  monitoring:check:
+    silent: true
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: command -v rg
+        msg: "rg required"
+    cmds:
+      - |
+        set -euo pipefail
+        base_rendered="$(mktemp)"
+        monitoring_rendered="$(mktemp)"
+        trap 'rm -f "$base_rendered" "$monitoring_rendered"' EXIT
+
+        task operator:template > "$base_rendered"
+        task operator:monitoring:template > "$monitoring_rendered"
+
+        if rg -q "monitoring.coreos.com" "$base_rendered" deploy/operator/install.yaml; then
+          echo "base operator install must not contain monitoring.coreos.com resources" >&2
+          exit 1
+        fi
+        rg -q '^#- \.\./prometheus$' operator/config/default/kustomization.yaml
+        rg -q '^kind: ServiceMonitor$' "$monitoring_rendered"
+        rg -q '^kind: PrometheusRule$' "$monitoring_rendered"
+        rg -Fq 'tamoss_schema_migrations_total{result="failed"}' "$monitoring_rendered"
+        rg -Fq 'tamoss_reconcile_phase_count' "$monitoring_rendered"
+        rg -Fq 'tamoss_operator_schema_version' "$monitoring_rendered"
+
+  support-bundle:
+    desc: "Operations: collect a redacted TAMOSS operator support bundle"
+    silent: true
+    vars:
+      TAMOSS_NAMESPACE: '{{default "tams" (default (env "TAMOSS_NAMESPACE") .TAMOSS_NAMESPACE)}}'
+      TAMOSS_NAME: '{{default "" (default (env "TAMOSS_NAME") .TAMOSS_NAME)}}'
+      OPERATOR_NAMESPACE: '{{default "tamoss-system" (default (env "OPERATOR_NAMESPACE") .OPERATOR_NAMESPACE)}}'
+      SUPPORT_BUNDLE_DIR: '{{default ".local/support-bundles" (default (env "SUPPORT_BUNDLE_DIR") .SUPPORT_BUNDLE_DIR)}}'
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: command -v python3
+        msg: "python3 required"
+      - sh: test -f scripts/support_bundle.py
+        msg: "scripts/support_bundle.py not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/progress.sh
+        task_step "collect TAMOSS support bundle" \
+          python3 scripts/support_bundle.py \
+            --kubeconfig "{{.KUBECONFIG}}" \
+            --namespace "{{.TAMOSS_NAMESPACE}}" \
+            --name "{{.TAMOSS_NAME}}" \
+            --operator-namespace "{{.OPERATOR_NAMESPACE}}" \
+            --output-root "{{.SUPPORT_BUNDLE_DIR}}"
+
+  wait:
+    desc: Wait for the TAMOSS operator CRD and Deployment
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_wait_operator "{{.KUBECONFIG}}" "{{.OPERATOR_NAMESPACE}}" "{{.OPERATOR_DEPLOYMENT}}"
+
+  restart:
+    desc: Restart the TAMOSS operator deployment
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_restart_operator "{{.KUBECONFIG}}" "{{.OPERATOR_NAMESPACE}}" "{{.OPERATOR_DEPLOYMENT}}"
+
+  uninstall:
+    desc: Delete the TAMOSS operator kustomize install
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_uninstall_operator "{{.KUBECONFIG}}" "{{.OPERATOR_KUSTOMIZE_DIR}}"
+
+  instance:apply:
+    desc: Apply the target Tamoss custom resource
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: test -e "{{.TAMOSS_CR}}"
+        msg: "Tamoss CR {{.TAMOSS_CR}} not found"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_apply_tamoss_instance "{{.KUBECONFIG}}" "{{.TAMOSS_CR}}"
+
+  instance:wait:
+    desc: Wait for the target Tamoss sample instance to report Ready=True
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    vars:
+      TIMEOUT: '{{default "15m" .TIMEOUT}}'
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_wait_tamoss_instance "{{.KUBECONFIG}}" "{{.TAMOSS_NAMESPACE}}" "{{.TAMOSS_NAME}}" "{{.TIMEOUT}}"
+
+  instance:delete:
+    desc: Delete the target Tamoss custom resource
+    internal: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+    cmds:
+      - |
+        set -euo pipefail
+        . .tasks/lib/operator_k8s.sh
+        task_delete_tamoss_instance "{{.KUBECONFIG}}" "{{.TAMOSS_CR}}" "{{.TAMOSS_NAMESPACE}}" "{{.TAMOSS_NAME}}"
