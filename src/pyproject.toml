@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
+    "alembic>=1.17.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.0.0",
@@ -23,9 +24,12 @@ dependencies = [
     "mediatimestamp>=5.2.0",
     "psycopg[binary,pool]>=3.1.0",
     "requests>=2.33.0",
-    "structlog>=24.1.0",
     "pyjwt[crypto]>=2.10.0",
+    "pydantic-settings>=2.7.0",
 ]
+
+[project.scripts]
+tamoss-db = "tamoss.db.cli:main"
 
 [dependency-groups]
 dev = [
@@ -43,6 +47,7 @@ dev = [
     "types-requests",
     "types-PyYAML",
     "playwright>=1.59.0",
+    "datamodel-code-generator[ruff]>=0.58.0",
 ]
 
 [tool.setuptools]
@@ -52,15 +57,77 @@ package-dir = {"" = "app"}
 where = ["app"]
 include = ["tamoss*"]
 
+[tool.setuptools.package-data]
+"tamoss.db.migrations" = ["script.py.mako", "assets/*.sql"]
+"tamoss.contract" = ["openapi.json"]
+
 [tool.ruff.lint]
-select = ["E", "F"]
+select = [
+    "E",
+    "F",
+    "B",
+    "C4",
+    "I",
+    "SIM",
+    "RET",
+    "UP",
+    "RUF",
+    "ARG",
+    "PERF",
+    "TRY",
+    "PLC",
+    "PLE",
+    "PLW",
+]
+ignore = [
+    "TRY003",  # Domain/API errors intentionally carry BBC-facing messages.
+    "TRY004",  # Validation functions normalize external payload errors to ValueError.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Keep app/... and src/app/... pairs together: Ruff is invoked from both the
+# package project and repository roots, so paths are reported in both forms.
+"app/tamoss/api/routes/*.py" = [
+    "B008",  # FastAPI dependency and body declarations live in defaults by design.
+]
+"src/app/tamoss/api/routes/*.py" = [
+    "B008",  # FastAPI dependency and body declarations live in defaults by design.
+]
+"app/tamoss/app.py" = [
+    "TRY400",  # Failed default-app startup logs a captured exception outside except scope.
+]
+"src/app/tamoss/app.py" = [
+    "TRY400",  # Failed default-app startup logs a captured exception outside except scope.
+]
+"app/tamoss/worker.py" = [
+    "PLW0603",  # Signal handlers coordinate the simple process shutdown flag.
+]
+"src/app/tamoss/worker.py" = [
+    "PLW0603",  # Signal handlers coordinate the simple process shutdown flag.
+]
+"tests/**/*.py" = [
+    "ARG001",  # Test callbacks keep production-compatible signatures.
+    "ARG002",  # Test doubles keep protocol-compatible method signatures.
+    "ARG005",  # Monkeypatched lambdas often accept unused passthrough arguments.
+]
+"scripts/check_tamoss_openapi_parity.py" = [
+    "PLC0415",  # Optional Playwright imports stay inside the browser check.
+    "PERF401",  # Kept imperative for readable parity-diff construction.
+    "PLW2901",  # JSON pointer unescape rewrites loop parts deliberately.
+]
+"src/scripts/check_tamoss_openapi_parity.py" = [
+    "PLC0415",  # Optional runtime imports stay inside the parity check.
+    "PERF401",  # Kept imperative for readable parity-diff construction.
+    "PLW2901",  # JSON pointer unescape rewrites loop parts deliberately.
+]
 
 [tool.ruff]
+# Runtime code and tests are linted/formatted by `.tasks/lint.yaml`.
+# Generated/vendor material remains excluded at the task boundary.
 exclude = [
     ".venv",
     ".pre-commit-hooks",
-    "scripts",
-    "tests",
+    "app/tamoss/contract/generated",
 ]
 
 [tool.mypy]
@@ -70,10 +137,28 @@ ignore_missing_imports = true
 explicit_package_bases = true
 namespace_packages = true
 warn_unused_configs = true
-check_untyped_defs = false
+check_untyped_defs = true
 disallow_untyped_defs = false
 warn_return_any = false
 files = ["app/tamoss"]
+
+[[tool.mypy.overrides]]
+module = [
+    "app.tamoss.api.presenters",
+    "app.tamoss.application.contexts.object_copy",
+    "app.tamoss.application.contexts.object_get_urls",
+    "app.tamoss.application.contexts.objects",
+    "app.tamoss.application.contexts.service",
+    "app.tamoss.application.contexts.sources",
+    "app.tamoss.application.contexts.storage",
+    "app.tamoss.application.contexts.webhooks",
+    "app.tamoss.application.webhooks",
+    "app.tamoss.contract.payloads",
+    "app.tamoss.ports.object_storage",
+    "app.tamoss.ports.repositories",
+]
+disallow_untyped_defs = true
+disallow_any_generics = true
 
 [tool.bandit]
 exclude_dirs = [
@@ -95,10 +180,13 @@ markers = [
     "bbc: BBC TAMS v8.0 contract or semantic obligation",
     "e2e: Deployed BBC-facing black-box checks",
     "needs_db: Requires live PostgreSQL endpoint",
+    "needs_media: Requires local media tooling or containerized media fixture checks",
     "needs_s3: Requires real S3/RustFS endpoint",
+    "operator_kind: Opt-in zero-to-ready Kind install through the operator",
+    "operator_upgrade: In-place Kind operator upgrade test",
+    "smoke: Fast deployed product and operator confidence checks",
     "slow: Takes >10 seconds to complete",
-    "smoke: Fast high-confidence subset for pre-commit",
-    "regression: Implementation-specific fixture-sensitive tests",
+    "architecture: Static architecture and repository shape checks",
     "worker: Asynchronous worker processing checks",
 ]
 filterwarnings = [

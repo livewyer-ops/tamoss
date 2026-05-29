@@ -13,7 +13,7 @@ from fastapi import Request
 from jwt import InvalidTokenError, PyJWKClientError
 
 from tamoss.errors import Unauthorized
-from tamoss.settings import Settings
+from tamoss.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 _JWKS_CLIENTS: dict[str, jwt.PyJWKClient] = {}
@@ -55,19 +55,22 @@ def identify_request(request: Request) -> Identity:
 
     settings = getattr(request.app.state, "tamoss_settings", None)
     if not isinstance(settings, Settings):
-        settings = Settings()
+        settings = get_settings()
     return authenticate_request(request, settings)
 
 
-def unauthorized_headers() -> dict[str, str]:
-    return {"WWW-Authenticate": "Bearer, Basic"}
+def unauthorized_headers(settings: Settings) -> dict[str, str]:
+    methods = ["Bearer"]
+    if settings.basic_auth_password or settings.basic_auth_password_file:
+        methods.append("Basic")
+    return {"WWW-Authenticate": ", ".join(methods)}
 
 
 def _authenticate_with_configured_methods(
     request: Request, settings: Settings
 ) -> Identity | None:
     if settings.trust_forward_auth_headers:
-        identity = _forward_auth_identity(request)
+        identity = _forward_auth_identity(request, settings)
         if identity is not None:
             return identity
 
@@ -89,7 +92,12 @@ def _authenticate_with_configured_methods(
     return None
 
 
-def _forward_auth_identity(request: Request) -> Identity | None:
+def _forward_auth_identity(request: Request, settings: Settings) -> Identity | None:
+    expected_proof = settings.forward_auth_shared_secret_value()
+    supplied_proof = request.headers.get("x-tamoss-forward-auth-secret", "")
+    if not expected_proof or not _constant_time_equal(supplied_proof, expected_proof):
+        return None
+
     for header_name in ("remote-user", "x-authentik-username"):
         subject = request.headers.get(header_name)
         if subject:
@@ -116,7 +124,8 @@ def _bearer_identity(token: str, settings: Settings) -> Identity | None:
 
 
 def _basic_identity(credentials: str, settings: Settings) -> Identity | None:
-    if not settings.basic_auth_password:
+    expected_password = settings.basic_auth_password_value()
+    if not expected_password:
         return None
     try:
         decoded = base64.b64decode(credentials, validate=True).decode("utf-8")
@@ -128,7 +137,7 @@ def _basic_identity(credentials: str, settings: Settings) -> Identity | None:
         return None
 
     if _constant_time_equal(username, settings.basic_auth_username) and (
-        _constant_time_equal(password, settings.basic_auth_password)
+        _constant_time_equal(password, expected_password)
     ):
         return Identity(subject=username, method="basic")
     return None
@@ -218,9 +227,8 @@ def _claim_subject(claims: dict[str, Any]) -> str:
 
 
 def _configured_token_matches(candidate: str, settings: Settings) -> bool:
-    return bool(settings.api_token) and _constant_time_equal(
-        candidate, settings.api_token
-    )
+    expected = settings.api_token_value()
+    return bool(expected) and _constant_time_equal(candidate, expected)
 
 
 def _constant_time_equal(candidate: str, expected: str) -> bool:
