@@ -1,0 +1,68 @@
+name: Operator Release Assets
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Resolve tool versions
+        id: aqua-versions
+        run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: ${{ steps.aqua-versions.outputs.go }}
+          cache-dependency-path: operator/go.sum
+
+      - name: Validate release ref
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Operator release assets must run from a version tag."
+            exit 1
+          fi
+          case "${GITHUB_REF_NAME}" in
+            *.*.*) ;;
+            *)
+              echo "::error::Operator release tag must match *.*.*."
+              exit 1
+              ;;
+          esac
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release assets are current
+        run: |
+          make -C operator manifests kustomize
+          mkdir -p deploy/operator
+          operator/bin/kustomize-v5.3.0 build operator/config/default > deploy/operator/install.yaml
+          git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum deploy/operator/install.yaml
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            deploy/operator/install.yaml
+            operator/compatibility.yaml
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
