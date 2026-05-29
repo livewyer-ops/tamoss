@@ -1,0 +1,49 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-authentik
+  namespace: tams
+spec:
+  fullnameOverride: tams
+  auth:
+    providedBy: authentik-blueprints
+    required: true
+    authentikBlueprints:
+      platformNamespace: authentik
+      issuerURL: https://auth.tamoss.example.com
+      applicationSlug: tamoss-tams
+      redirectURIs:
+        - https://app.tamoss.example.com/auth/callback
+      groupBindings:
+        - groupName: tamoss-admins
+          permissions:
+            - admin
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
+  httpRoute:
+    enabled: true
+    ui:
+      hostnames:
+        - app.tamoss.example.com

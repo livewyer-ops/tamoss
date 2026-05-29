@@ -1,0 +1,20 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  labels:
+    app.kubernetes.io/name: tamoss
+    app.kubernetes.io/managed-by: kustomize
+  name: tamoss-archive
+spec:
+  tamossRef:
+    name: tamoss-sample
+  provider: rustfs
+  label: tamoss.us-east-1:s3:archive
+  bucketName: archive
+  endpoint:
+    default:
+      url: http://tamoss-sample-s3:9000
+    public:
+      url: https://s3.tamoss.localtest.me
+  credentials:
+    existingSecret: tamoss-sample-s3-creds

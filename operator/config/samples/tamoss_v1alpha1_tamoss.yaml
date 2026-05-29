@@ -1,0 +1,33 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: tamoss-minimal
+  namespace: tams
+spec:
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY

@@ -1,0 +1,217 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-remote
+  namespace: tams
+spec:
+  fullnameOverride: tams
+  secrets:
+    apiToken:
+      generate: true
+  auth:
+    providedBy: external
+    required: true
+    trustForwardAuthHeaders: false
+    external:
+      oauth2:
+        enabled: true
+        issuer: https://auth.tamoss.example.com/application/o/tams-api/
+        jwksUri: http://authentik-server.authentik.svc.cluster.local/application/o/tams-api/jwks/
+        algorithms:
+          - RS256
+  api:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: livewyer/tamoss-api
+      pullPolicy: IfNotPresent
+    env:
+      TAMOSS_S3_CONNECT_TIMEOUT_SECONDS: "1"
+      TAMOSS_S3_READ_TIMEOUT_SECONDS: "2"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 384Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: true
+  worker:
+    enabled: true
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 384Mi
+    pdb:
+      enabled: true
+  ui:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: livewyer/tamoss-ui
+      pullPolicy: IfNotPresent
+    env:
+      TAMOSS_API_URL: /api
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    pdb:
+      enabled: true
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgres.example.internal
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: https://s3.tamoss.example.com
+          public:
+            url: https://s3.tamoss.example.com
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
+  ingress:
+    enabled: false
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: traefik
+        namespace: traefik
+        kind: Gateway
+        sectionName: websecure
+    api:
+      hostnames:
+        - api.tamoss.example.com
+      defaultFilters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: cors
+    ui:
+      hostnames:
+        - app.tamoss.example.com
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /outpost.goauthentik.io/
+          backendRefs:
+            - name: authentik-server
+              namespace: authentik
+              port: 80
+              weight: 1
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /api
+          filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: authentik
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: cors
+          backendRefs:
+            - name: tams-ui
+              port: 3000
+              weight: 1
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: authentik
+            - type: ExtensionRef
+              extensionRef:
+                group: traefik.io
+                kind: Middleware
+                name: cors
+          backendRefs:
+            - name: tams-ui
+              port: 3000
+              weight: 1
+  networkPolicy:
+    enabled: true
+    api:
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: traefik
+          ports:
+            - protocol: TCP
+              port: 8000
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tamoss
+                  app.kubernetes.io/instance: tamoss-remote
+                  app.kubernetes.io/component: ui
+          ports:
+            - protocol: TCP
+              port: 8000
+      egress:
+        - {}
+    ui:
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: traefik
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: traefik
+          ports:
+            - protocol: TCP
+              port: 8080
+      egress:
+        - {}
+    worker:
+      ingress: []
+      egress:
+        - {}

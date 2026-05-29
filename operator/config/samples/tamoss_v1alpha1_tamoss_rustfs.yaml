@@ -1,0 +1,30 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-rustfs
+  namespace: tams
+spec:
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgres.example.internal
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: rustfs-operator
+      rustfsOperator:
+        pools:
+          - name: pool-0
+            servers: 4
+            volumesPerServer: 4
+            storage:
+              size: 100Gi
+        bucket:
+          name: tamoss
+          createIfMissing: true

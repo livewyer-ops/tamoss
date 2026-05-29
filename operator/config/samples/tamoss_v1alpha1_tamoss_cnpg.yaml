@@ -1,0 +1,29 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-cnpg
+  namespace: tams
+spec:
+  backends:
+    db:
+      providedBy: cnpg
+      cnpg:
+        instances: 3
+        postgresVersion: "18"
+        storage:
+          size: 50Gi
+        monitoring:
+          enablePodMonitor: true
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: https://s3.tamoss.example.com
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
