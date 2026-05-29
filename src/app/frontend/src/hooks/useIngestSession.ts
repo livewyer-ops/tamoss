@@ -2,7 +2,25 @@ import { useState, useCallback, useRef } from "react";
 import { useApi } from "@/contexts/ApiContext";
 import { ffmpegService, type ProbeResult } from "@/services/ffmpeg-service";
 import type { FlowSegmentWrite, Source } from "@/types/tams";
-import { buildTimerange } from "@/utils/hls-manifest";
+import {
+  sampleDurationNanoseconds,
+  secondsToNanoseconds,
+  timerangeFromNanoseconds,
+  timestampFromNanoseconds,
+} from "@/utils/tams-time";
+import {
+  SOURCE_FORMAT,
+  codecToMime,
+  createIngestId,
+  existingChildSourceId,
+  sourceMetadata,
+  type SourceDraft,
+  type SourceMetadata,
+  type TrackMode,
+  type TrackSourceResolution,
+} from "@/hooks/ingest/sourceDrafts";
+
+export type { SourceDraft } from "@/hooks/ingest/sourceDrafts";
 
 export type IngestFileStatus =
   | "pending"
@@ -25,88 +43,90 @@ export interface IngestFile {
   multiFlowId?: string;
 }
 
+function measuredDurationNanoseconds(probe: ProbeResult): bigint {
+  return probe.durationNanoseconds ?? secondsToNanoseconds(probe.duration);
+}
+
+function ingestDurationNanoseconds(
+  probe: ProbeResult,
+  segmentCount: number,
+  targetSegmentDurationNanoseconds: bigint,
+): bigint {
+  const measured = measuredDurationNanoseconds(probe);
+  if (measured > 0n) return measured;
+  return targetSegmentDurationNanoseconds * BigInt(segmentCount);
+}
+
+function segmentTimingNanoseconds(
+  index: number,
+  segmentCount: number,
+  totalDurationNanoseconds: bigint,
+  targetSegmentDurationNanoseconds: bigint,
+): { startNanoseconds: bigint; endNanoseconds: bigint } {
+  const useTargetDuration =
+    targetSegmentDurationNanoseconds * BigInt(Math.max(segmentCount - 1, 0)) <
+    totalDurationNanoseconds;
+
+  const startNanoseconds = useTargetDuration
+    ? targetSegmentDurationNanoseconds * BigInt(index)
+    : (totalDurationNanoseconds * BigInt(index)) / BigInt(segmentCount);
+  const endNanoseconds =
+    index === segmentCount - 1
+      ? totalDurationNanoseconds
+      : useTargetDuration
+        ? targetSegmentDurationNanoseconds * BigInt(index + 1)
+        : (totalDurationNanoseconds * BigInt(index + 1)) / BigInt(segmentCount);
+
+  if (endNanoseconds <= startNanoseconds) {
+    return {
+      startNanoseconds:
+        targetSegmentDurationNanoseconds * BigInt(Math.max(index, 0)),
+      endNanoseconds:
+        targetSegmentDurationNanoseconds * BigInt(Math.max(index + 1, 1)),
+    };
+  }
+
+  return { startNanoseconds, endNanoseconds };
+}
+
+function buildSegmentRegistration(
+  objectId: string,
+  mode: "video" | "audio",
+  flowStartNanoseconds: bigint,
+  flowEndNanoseconds: bigint,
+  sourceProbe: ProbeResult,
+): FlowSegmentWrite {
+  const durationNanoseconds = flowEndNanoseconds - flowStartNanoseconds;
+  const registration: FlowSegmentWrite = {
+    object_id: objectId,
+    timerange: timerangeFromNanoseconds(
+      flowStartNanoseconds,
+      flowEndNanoseconds,
+    ),
+    object_timerange: timerangeFromNanoseconds(0n, durationNanoseconds),
+    ts_offset: timestampFromNanoseconds(flowStartNanoseconds),
+  };
+
+  const frameRate = mode === "video" ? sourceProbe.frameRate : undefined;
+  const lastDuration = frameRate
+    ? sampleDurationNanoseconds(frameRate)
+    : undefined;
+  if (lastDuration !== undefined) {
+    registration.last_duration = timestampFromNanoseconds(lastDuration);
+  }
+  return registration;
+}
+
+interface AllocatedObject {
+  objectId: string;
+  storageId: string;
+}
+
 interface IngestSession {
   sourceId: string | null;
   segmentDuration: number;
   files: IngestFile[];
   running: boolean;
-}
-
-const CODEC_MIME_MAP: Record<string, string> = {
-  h264: "video/h264",
-  h265: "video/h265",
-  hevc: "video/h265",
-  vp8: "video/vp8",
-  vp9: "video/vp9",
-  av1: "video/av1",
-  mpeg2video: "video/mpeg",
-  aac: "audio/aac",
-  mp3: "audio/mpeg",
-  opus: "audio/opus",
-  vorbis: "audio/vorbis",
-  flac: "audio/flac",
-  pcm_s16le: "audio/x-raw-int",
-  pcm_s24le: "audio/x-raw-int",
-};
-
-const SOURCE_FORMAT = {
-  audio: "urn:x-nmos:format:audio",
-  multi: "urn:x-nmos:format:multi",
-  video: "urn:x-nmos:format:video",
-} as const;
-
-type SourceFormat = (typeof SOURCE_FORMAT)[keyof typeof SOURCE_FORMAT];
-type TrackMode = "video" | "audio";
-
-export interface SourceDraft {
-  id: string;
-  format: SourceFormat;
-  label: string;
-  description?: string;
-}
-
-interface SourceMetadata {
-  label?: string;
-  description?: string;
-}
-
-interface TrackSourceResolution {
-  videoSourceId?: string;
-  audioSourceId?: string;
-  createParentMultiFlow: boolean;
-  sourceMetadata: Record<string, SourceMetadata>;
-}
-
-function codecToMime(
-  codec: string | undefined,
-  isVideo: boolean,
-): string | undefined {
-  if (!codec) return undefined;
-  const mapped = CODEC_MIME_MAP[codec.toLowerCase()];
-  if (mapped) return mapped;
-  return `${isVideo ? "video" : "audio"}/${codec.toLowerCase()}`;
-}
-
-function uuid(): string {
-  return crypto.randomUUID();
-}
-
-function existingChildSourceId(
-  source: { id: string; source_collection?: Source["source_collection"] },
-  role: TrackMode,
-): string | undefined {
-  return source.source_collection?.find(
-    (item) => item.role === role && item.id !== source.id,
-  )?.id;
-}
-
-function sourceMetadata(
-  source: Pick<Source, "label" | "description">,
-): SourceMetadata {
-  return {
-    label: source.label,
-    description: source.description,
-  };
 }
 
 export function useIngestSession() {
@@ -129,7 +149,7 @@ export function useIngestSession() {
   const addFiles = useCallback((files: File[]) => {
     const newFiles: IngestFile[] = files.map((file) => ({
       file,
-      id: uuid(),
+      id: createIngestId(),
       status: "pending" as const,
       tracks: { hasVideo: false, hasAudio: false },
       progress: 0,
@@ -162,6 +182,19 @@ export function useIngestSession() {
     });
   }, []);
 
+  const cleanupAllocatedObjects = useCallback(
+    async (allocatedObjects: AllocatedObject[]) => {
+      await Promise.allSettled(
+        allocatedObjects.map((object) =>
+          api.deleteObjectInstance(object.objectId, {
+            storage_id: object.storageId,
+          }),
+        ),
+      );
+    },
+    [api],
+  );
+
   const processTrack = useCallback(
     async (
       file: File,
@@ -172,8 +205,9 @@ export function useIngestSession() {
       segDuration: number,
       progressBase: number,
       progressShare: number,
+      storageId?: string,
     ): Promise<string> => {
-      const flowId = uuid();
+      const flowId = createIngestId();
       const isVideo = mode === "video";
 
       const format = isVideo
@@ -189,6 +223,10 @@ export function useIngestSession() {
         codec,
         container: "video/mp2t",
         label: `${file.name} (${mode})`,
+        tags: {
+          "tamoss-ingest": "managed-browser",
+          "tamoss-ingest-timing": "source-derived",
+        },
         ...(isVideo && probe.width && probe.height
           ? {
               essence_parameters: {
@@ -211,41 +249,83 @@ export function useIngestSession() {
       // Segment the file
       updateFile(fileId, { status: "segmenting" });
       const blobs = await ffmpegService.segment(file, segDuration, mode);
+      if (blobs.length === 0) {
+        throw new Error(`Managed ingest produced no ${mode} segments.`);
+      }
 
       // Allocate storage for all segments at once
       updateFile(fileId, { status: "uploading" });
-      const objectIds = blobs.map(() => uuid());
-      const allocation = await api.allocateStorage(flowId, objectIds);
-      const mediaObjects = allocation.media_objects;
-
-      // Upload each segment
+      const objectIds = blobs.map(() => createIngestId());
       const segmentRegistrations: FlowSegmentWrite[] = [];
-
-      for (let i = 0; i < blobs.length; i++) {
-        if (abortRef.current) throw new Error("Aborted");
-
-        const obj = mediaObjects[i];
-        await api.uploadRaw(obj.put_url, blobs[i]);
-
-        const startSecs = i * segDuration;
-        const endSecs = Math.min((i + 1) * segDuration, probe.duration);
-        const timerange = buildTimerange(startSecs, endSecs);
-
-        segmentRegistrations.push({ object_id: obj.object_id, timerange });
-
-        const pct = progressBase + ((i + 1) / blobs.length) * progressShare;
-        updateFile(fileId, { progress: Math.round(pct) });
+      const allocatedObjects: AllocatedObject[] = [];
+      const targetSegmentDurationNanoseconds =
+        secondsToNanoseconds(segDuration);
+      if (targetSegmentDurationNanoseconds <= 0n) {
+        throw new Error("Managed ingest requires a positive segment duration.");
       }
+      const totalDurationNanoseconds = ingestDurationNanoseconds(
+        probe,
+        blobs.length,
+        targetSegmentDurationNanoseconds,
+      );
 
-      // Register all segments at once
-      updateFile(fileId, { status: "registering" });
-      if (segmentRegistrations.length > 0) {
-        await api.addFlowSegments(flowId, segmentRegistrations);
+      try {
+        const allocation = await api.allocateStorage(flowId, objectIds, {
+          storageId,
+        });
+        const mediaObjects = allocation.media_objects;
+
+        for (let i = 0; i < blobs.length; i++) {
+          if (abortRef.current) throw new Error("Aborted");
+
+          const obj = mediaObjects[i];
+          const allocatedStorageId = obj.storage_id ?? storageId;
+          if (!allocatedStorageId) {
+            throw new Error(
+              "Storage allocation did not include a storage backend.",
+            );
+          }
+          allocatedObjects.push({
+            objectId: obj.object_id,
+            storageId: allocatedStorageId,
+          });
+          await api.uploadRaw(obj.put_url, blobs[i]);
+
+          // Per-segment ffmpeg.wasm probes are full decode passes in the browser.
+          // Use the source probe and generated segment count for registration timing.
+          const timing = segmentTimingNanoseconds(
+            i,
+            blobs.length,
+            totalDurationNanoseconds,
+            targetSegmentDurationNanoseconds,
+          );
+          segmentRegistrations.push(
+            buildSegmentRegistration(
+              obj.object_id,
+              mode,
+              timing.startNanoseconds,
+              timing.endNanoseconds,
+              probe,
+            ),
+          );
+
+          const pct = progressBase + ((i + 1) / blobs.length) * progressShare;
+          updateFile(fileId, { progress: Math.round(pct) });
+        }
+
+        // Register all segments at once
+        updateFile(fileId, { status: "registering" });
+        if (segmentRegistrations.length > 0) {
+          await api.addFlowSegments(flowId, segmentRegistrations);
+        }
+      } catch (err) {
+        await cleanupAllocatedObjects(allocatedObjects);
+        throw err;
       }
 
       return flowId;
     },
-    [api, updateFile],
+    [api, cleanupAllocatedObjects, updateFile],
   );
 
   const ensureChildSource = useCallback(
@@ -260,7 +340,7 @@ export function useIngestSession() {
       const existing = existingChildSourceId(parent, role);
       if (existing) return { sourceId: existing };
 
-      const sourceId = uuid();
+      const sourceId = createIngestId();
       const baseLabel = parent.label?.trim() || fileName;
       return {
         sourceId,
@@ -358,7 +438,7 @@ export function useIngestSession() {
   );
 
   const startIngest = useCallback(
-    async (sourceOverride?: string | SourceDraft) => {
+    async (sourceOverride?: string | SourceDraft, storageId?: string) => {
       abortRef.current = false;
       const source = sourceOverride ?? session.sourceId;
       if (!source) {
@@ -418,6 +498,7 @@ export function useIngestSession() {
               session.segmentDuration,
               5,
               share,
+              storageId,
             );
             updateFile(ingestFile.id, { videoFlowId });
             await applySourceMetadata(
@@ -441,6 +522,7 @@ export function useIngestSession() {
               session.segmentDuration,
               base,
               share,
+              storageId,
             );
             updateFile(ingestFile.id, { audioFlowId });
             await applySourceMetadata(
@@ -459,7 +541,7 @@ export function useIngestSession() {
             trackSources.createParentMultiFlow &&
             (videoFlowId || audioFlowId)
           ) {
-            multiFlowId = uuid();
+            multiFlowId = createIngestId();
             await api.createFlow(multiFlowId, {
               id: multiFlowId,
               source_id: sourceId,

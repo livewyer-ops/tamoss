@@ -11,6 +11,11 @@ import {
 import { usePageTitle } from "@/hooks/usePageTitle";
 import Badge from "@/components/Badge";
 import ErrorMessage from "@/components/ErrorMessage";
+import StorageBackendSelector from "@/components/StorageBackendSelector";
+import {
+  findStorageBackend,
+  storageBackendDisplay,
+} from "@/utils/storageBackends";
 
 const statusConfig: Record<
   IngestFileStatus,
@@ -70,9 +75,11 @@ export default function IngestPage() {
     reset,
   } = useIngestSession();
   const sources = useApiQuery(() => api.getSources({ limit: "100" }), [api]);
+  const storageBackends = useApiQuery(() => api.getStorageBackends(), [api]);
 
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storageId, setStorageId] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("existing");
   const [newSourceLabel, setNewSourceLabel] = useState("");
   const [newSourceDescription, setNewSourceDescription] = useState("");
@@ -124,7 +131,7 @@ export default function IngestPage() {
         setError("Select or create a source before starting ingest.");
         return;
       }
-      await startIngest(source);
+      await startIngest(source, storageId || undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ingest failed");
     }
@@ -135,6 +142,7 @@ export default function IngestPage() {
     session.sourceId,
     setSourceId,
     sourceMode,
+    storageId,
     startIngest,
   ]);
 
@@ -145,6 +153,7 @@ export default function IngestPage() {
     sourceMode === "create"
       ? newSourceLabel.trim().length > 0 && newSourceFormat.length > 0
       : Boolean(session.sourceId);
+  const selectedBackend = findStorageBackend(storageBackends.data, storageId);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
@@ -304,6 +313,16 @@ export default function IngestPage() {
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-tams-500 focus:outline-none focus:ring-1 focus:ring-tams-500 disabled:bg-gray-50"
           />
         </div>
+        <StorageBackendSelector
+          id="ingest-storage-backend"
+          label="Storage backend"
+          value={storageId}
+          onChange={setStorageId}
+          backends={storageBackends.data}
+          disabled={session.running}
+          includeAllOption
+          allLabel="Default backend"
+        />
       </div>
 
       {/* Drop zone */}
@@ -433,6 +452,9 @@ export default function IngestPage() {
                     {file.file.name}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant="default">
+                      {storageBackendDisplay(selectedBackend)}
+                    </Badge>
                     {file.videoFlowId && (
                       <Link
                         to={`/flows/${file.videoFlowId}`}
@@ -604,7 +626,7 @@ function FileRow({
               onClick={onRemove}
               className="text-red-500 hover:text-red-700"
             >
-              Remove
+              Remove from queue
             </button>
           )}
         </td>

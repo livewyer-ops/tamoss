@@ -13,7 +13,10 @@ import StateStrip from "@/components/StateStrip";
 import ApiReferencePanel from "@/components/ApiReferencePanel";
 import RawPayload from "@/components/RawPayload";
 import SectionHeading from "@/components/SectionHeading";
+import ConfirmAction from "@/components/ConfirmAction";
+import StorageBackendSelector from "@/components/StorageBackendSelector";
 import { formatTimerange } from "@/utils/format";
+import type { ObjectUrl } from "@/types/tams";
 
 const OBJECT_DETAIL_PAGE_SIZE = "50";
 
@@ -22,22 +25,54 @@ export default function ObjectDetailPage() {
   const { objectId } = useParams<{ objectId: string }>();
   const api = useApi();
   const [pageStack, setPageStack] = useState<string[]>([]);
+  const [storageId, setStorageId] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ObjectUrl | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const currentPage = pageStack[pageStack.length - 1];
 
   useEffect(() => {
     setPageStack([]);
-  }, [objectId]);
+  }, [objectId, storageId]);
+
+  const storageBackends = useApiQuery(() => api.getStorageBackends(), [api]);
 
   const object = useApiQuery(
     () =>
       objectId
         ? api.getObject(objectId, {
             limit: OBJECT_DETAIL_PAGE_SIZE,
+            ...(storageId ? { accept_storage_ids: storageId } : {}),
             ...(currentPage ? { page: currentPage } : {}),
+            verbose_storage: true,
           })
         : Promise.resolve(null),
-    [api, objectId, currentPage],
+    [api, objectId, currentPage, storageId],
   );
+
+  async function handleDeleteObjectInstance() {
+    if (!objectId || !deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await api.deleteObjectInstance(
+        objectId,
+        deleteTarget.storage_id
+          ? { storage_id: deleteTarget.storage_id }
+          : { label: deleteTarget.label },
+      );
+      setDeleteTarget(null);
+      object.refetch();
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "Object instance delete failed",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   if (object.loading) {
     return <LoadingSpinner message="Loading object..." />;
@@ -238,10 +273,27 @@ export default function ObjectDetailPage() {
       </div>
 
       <section className="mt-6 tamoss-panel rounded-2xl p-6">
-        <SectionHeading
-          title="Playback URLs"
-          description="Use these URLs to verify object reachability and playback behavior."
-        />
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <SectionHeading
+            title="Playback URLs"
+            description="Use these URLs to verify object reachability and playback behavior."
+          />
+          <StorageBackendSelector
+            id="object-storage-filter"
+            label="Storage backend"
+            value={storageId}
+            onChange={setStorageId}
+            backends={storageBackends.data}
+            includeAllOption
+            allLabel="All storage backends"
+            className="min-w-64"
+          />
+        </div>
+        {deleteError && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            {deleteError}
+          </div>
+        )}
         {mediaObject.get_urls?.length ? (
           <div className="space-y-3">
             {mediaObject.get_urls.map((entry, index) => (
@@ -310,6 +362,18 @@ export default function ObjectDetailPage() {
                     >
                       Open URL
                     </a>
+                    {(entry.storage_id || entry.label) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteTarget(entry);
+                          setDeleteError(null);
+                        }}
+                        className="rounded-md border border-red-300 px-3 py-1.5 text-center text-xs font-medium text-red-600 hover:bg-red-50"
+                      >
+                        Delete instance
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -322,6 +386,25 @@ export default function ObjectDetailPage() {
           />
         )}
       </section>
+
+      <ConfirmAction
+        open={deleteTarget !== null}
+        variant="danger"
+        title="Delete object storage instance?"
+        description={
+          deleteTarget
+            ? `This deletes the ${deleteTarget.label ?? deleteTarget.storage_id ?? "selected"} object instance from this media object. If this is the final instance, the API will reject the request and the flow segment deletion path must be used instead.`
+            : undefined
+        }
+        confirmLabel="Confirm delete"
+        busy={deleteBusy}
+        busyLabel="Deleting..."
+        onConfirm={handleDeleteObjectInstance}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+      />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <ApiReferencePanel

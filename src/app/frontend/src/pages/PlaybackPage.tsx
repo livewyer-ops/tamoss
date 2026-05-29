@@ -14,6 +14,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorMessage from "@/components/ErrorMessage";
 import Badge from "@/components/Badge";
 import CopyButton from "@/components/CopyButton";
+import StorageBackendSelector from "@/components/StorageBackendSelector";
 import {
   formatCodec,
   formatFormat,
@@ -40,6 +41,19 @@ const EMPTY_SEGMENTS: FlowSegment[] = [];
 const EMPTY_CHILDREN: MultiPlaybackChild[] = [];
 const PLAYBACK_FLOW_PAGE_SIZE = "300";
 const PLAYBACK_SEGMENT_PAGE_SIZE = "300";
+const AUDIO_SYNC_TOLERANCE_SECONDS = 0.35;
+
+type HlsModule = typeof import("hls.js");
+
+let hlsModulePromise: Promise<HlsModule> | null = null;
+
+function loadHlsModule(): Promise<HlsModule> {
+  hlsModulePromise ??= import("hls.js").catch((err: unknown) => {
+    hlsModulePromise = null;
+    throw err;
+  });
+  return hlsModulePromise;
+}
 
 function firstPlayableUrl(segment: FlowSegment): string | null {
   return segment.get_urls?.[0]?.url ?? null;
@@ -74,12 +88,17 @@ export default function PlaybackPage() {
   usePageTitle("Playback");
   const api = useApi();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  const audioHlsRef = useRef<{ destroy: () => void } | null>(null);
   const manifestRef = useRef<string[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeFlowId = searchParams.get("flow") ?? "";
+  const activeStorageId = searchParams.get("storage") ?? "";
   const [selectedFlowId, setSelectedFlowId] = useState(activeFlowId);
+  const [selectedStorageId, setSelectedStorageId] = useState(activeStorageId);
   const [manifestUrl, setManifestUrl] = useState<string | null>(null);
+  const [audioManifestUrl, setAudioManifestUrl] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
@@ -87,10 +106,16 @@ export default function PlaybackPage() {
     setSelectedFlowId(activeFlowId);
   }, [activeFlowId]);
 
+  useEffect(() => {
+    setSelectedStorageId(activeStorageId);
+  }, [activeStorageId]);
+
   const flows = useApiQuery(
     () => api.getFlows({ limit: PLAYBACK_FLOW_PAGE_SIZE }),
     [api],
   );
+
+  const storageBackends = useApiQuery(() => api.getStorageBackends(), [api]);
 
   const flow = useApiQuery(
     () => (activeFlowId ? api.getFlow(activeFlowId) : Promise.resolve(null)),
@@ -101,12 +126,14 @@ export default function PlaybackPage() {
     () =>
       activeFlowId && flow.data && flow.data.format !== MULTI_FORMAT
         ? api.getFlowSegments(activeFlowId, {
+            ...(activeStorageId ? { accept_storage_ids: activeStorageId } : {}),
             include_object_timerange: true,
             limit: PLAYBACK_SEGMENT_PAGE_SIZE,
             presigned: "true",
+            verbose_storage: true,
           })
         : Promise.resolve({ data: [] as FlowSegment[], nextKey: undefined }),
-    [api, activeFlowId, flow.data?.format],
+    [api, activeFlowId, activeStorageId, flow.data?.format],
   );
 
   const multiPlaybackQuery = useApiQuery(async () => {
@@ -120,9 +147,11 @@ export default function PlaybackPage() {
         const [childFlow, childSegments] = await Promise.all([
           api.getFlow(item.id).catch(() => null),
           api.getFlowSegments(item.id, {
+            ...(activeStorageId ? { accept_storage_ids: activeStorageId } : {}),
             include_object_timerange: true,
             limit: PLAYBACK_SEGMENT_PAGE_SIZE,
             presigned: "true",
+            verbose_storage: true,
           }),
         ]);
         return {
@@ -134,7 +163,7 @@ export default function PlaybackPage() {
     );
 
     return { children };
-  }, [api, activeFlowId, flow.data?.format]);
+  }, [api, activeFlowId, activeStorageId, flow.data?.format]);
 
   const selectedFlow = flow.data;
   const isMultiFlow = selectedFlow?.format === MULTI_FORMAT;
@@ -173,6 +202,7 @@ export default function PlaybackPage() {
       manifestRef.current = [];
     }
     setManifestUrl(null);
+    setAudioManifestUrl(null);
     setPlaybackState(activeFlowId ? "loading" : "idle");
     setPlaybackError(null);
 
@@ -192,27 +222,31 @@ export default function PlaybackPage() {
       return;
     }
 
-    const manifest = isMultiFlow
+    const nextManifest = isMultiFlow
       ? buildMultiFlowManifest(videoSegments, audioSegments)
       : buildHlsManifest(segments, selectedFlow?.codec ?? undefined);
-    const nextManifest =
-      typeof manifest === "string" ? manifest : manifest?.masterUrl;
-    if (!manifest || !nextManifest) {
+    const nextManifestUrl =
+      typeof nextManifest === "string"
+        ? nextManifest
+        : nextManifest?.primaryUrl;
+    if (!nextManifest || !nextManifestUrl) {
       setPlaybackState("idle");
       return;
     }
 
-    manifestRef.current =
-      typeof manifest === "string"
-        ? [manifest]
-        : [manifest.masterUrl, ...manifest.subUrls];
-    setManifestUrl(nextManifest);
+    const nextManifestUrls =
+      typeof nextManifest === "string" ? [nextManifest] : nextManifest.urls;
+    manifestRef.current = nextManifestUrls;
+    setManifestUrl(nextManifestUrl);
+    setAudioManifestUrl(
+      typeof nextManifest === "string" ? null : nextManifest.audioUrl,
+    );
 
     return () => {
-      if (manifestRef.current.includes(nextManifest)) {
-        manifestRef.current.forEach(revokeManifestUrl);
-        manifestRef.current = [];
-      }
+      nextManifestUrls.forEach(revokeManifestUrl);
+      manifestRef.current = manifestRef.current.filter(
+        (url) => !nextManifestUrls.includes(url),
+      );
     };
   }, [
     activeFlowId,
@@ -242,7 +276,7 @@ export default function PlaybackPage() {
 
     async function attachPlayer() {
       try {
-        const { default: Hls } = await import("hls.js");
+        const { default: Hls } = await loadHlsModule();
         if (cancelled) return;
 
         if (hlsRef.current) {
@@ -317,6 +351,164 @@ export default function PlaybackPage() {
     };
   }, [manifestUrl]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !audioManifestUrl) return;
+    const activeAudio = audio;
+    const activeManifestUrl = audioManifestUrl;
+
+    let cancelled = false;
+
+    async function attachAudioPlayer() {
+      try {
+        const { default: Hls } = await loadHlsModule();
+        if (cancelled) return;
+
+        if (audioHlsRef.current) {
+          audioHlsRef.current.destroy();
+          audioHlsRef.current = null;
+        }
+
+        if (Hls.isSupported()) {
+          const hls = new Hls({ enableWorker: true });
+          audioHlsRef.current = hls;
+
+          hls.on(
+            Hls.Events.ERROR,
+            (
+              _event,
+              data: { fatal: boolean; type?: string; details?: string },
+            ) => {
+              if (!data.fatal || cancelled) return;
+              setPlaybackError(
+                `Audio HLS error: ${data.type ?? "unknown"} ${
+                  data.details ?? ""
+                }`.trim(),
+              );
+              hls.destroy();
+              audioHlsRef.current = null;
+            },
+          );
+          hls.loadSource(activeManifestUrl);
+          hls.attachMedia(activeAudio);
+          return;
+        }
+
+        if (activeAudio.canPlayType("application/vnd.apple.mpegurl")) {
+          activeAudio.src = activeManifestUrl;
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPlaybackError(
+            err instanceof Error
+              ? err.message
+              : "Audio playback initialisation failed",
+          );
+        }
+      }
+    }
+
+    attachAudioPlayer();
+
+    return () => {
+      cancelled = true;
+      if (audioHlsRef.current) {
+        audioHlsRef.current.destroy();
+        audioHlsRef.current = null;
+      }
+      if (!activeAudio.paused) {
+        activeAudio.pause();
+      }
+      activeAudio.removeAttribute("src");
+    };
+  }, [audioManifestUrl]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!video || !audio || !audioManifestUrl) return;
+
+    const activeVideo = video;
+    const activeAudio = audio;
+
+    function syncAudioTime(force = false) {
+      const videoTime = activeVideo.currentTime;
+      const audioTime = activeAudio.currentTime;
+      if (!Number.isFinite(videoTime) || !Number.isFinite(audioTime)) return;
+      if (
+        force ||
+        Math.abs(audioTime - videoTime) > AUDIO_SYNC_TOLERANCE_SECONDS
+      ) {
+        try {
+          activeAudio.currentTime = videoTime;
+        } catch {
+          // The audio element may not have metadata yet; the next sync tick
+          // will retry once hls.js has buffered enough media.
+        }
+      }
+    }
+
+    function syncAudioProperties() {
+      activeAudio.muted = activeVideo.muted;
+      activeAudio.volume = activeVideo.volume;
+      activeAudio.playbackRate = activeVideo.playbackRate;
+    }
+
+    function playAudio() {
+      syncAudioProperties();
+      syncAudioTime(true);
+      void activeAudio.play().catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setPlaybackError(
+          err instanceof Error ? err.message : "Audio playback failed",
+        );
+      });
+    }
+
+    function pauseAudio() {
+      if (!activeAudio.paused) {
+        activeAudio.pause();
+      }
+    }
+
+    function syncAndResumeAudio() {
+      syncAudioTime(true);
+      if (!activeVideo.paused && !activeVideo.ended) {
+        playAudio();
+      }
+    }
+
+    function seekAudio() {
+      syncAudioTime(true);
+    }
+
+    function correctAudioDrift() {
+      syncAudioTime(false);
+    }
+
+    syncAudioProperties();
+    activeVideo.addEventListener("play", playAudio);
+    activeVideo.addEventListener("pause", pauseAudio);
+    activeVideo.addEventListener("ended", pauseAudio);
+    activeVideo.addEventListener("seeking", seekAudio);
+    activeVideo.addEventListener("seeked", syncAndResumeAudio);
+    activeVideo.addEventListener("ratechange", syncAudioProperties);
+    activeVideo.addEventListener("volumechange", syncAudioProperties);
+    activeVideo.addEventListener("timeupdate", correctAudioDrift);
+
+    return () => {
+      activeVideo.removeEventListener("play", playAudio);
+      activeVideo.removeEventListener("pause", pauseAudio);
+      activeVideo.removeEventListener("ended", pauseAudio);
+      activeVideo.removeEventListener("seeking", seekAudio);
+      activeVideo.removeEventListener("seeked", syncAndResumeAudio);
+      activeVideo.removeEventListener("ratechange", syncAudioProperties);
+      activeVideo.removeEventListener("volumechange", syncAudioProperties);
+      activeVideo.removeEventListener("timeupdate", correctAudioDrift);
+      pauseAudio();
+    };
+  }, [audioManifestUrl]);
+
   const loading =
     flow.loading ||
     (isMultiFlow ? multiPlaybackQuery.loading : segmentQuery.loading);
@@ -340,7 +532,7 @@ export default function PlaybackPage() {
             it is not a replacement for a broadcast playout system.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-end">
           <label htmlFor="playback-flow-select" className="sr-only">
             Select flow for playback
           </label>
@@ -357,9 +549,23 @@ export default function PlaybackPage() {
               </option>
             ))}
           </select>
+          <StorageBackendSelector
+            id="playback-storage-select"
+            label="Storage backend"
+            value={selectedStorageId}
+            onChange={setSelectedStorageId}
+            backends={storageBackends.data}
+            includeAllOption
+            allLabel="All storage backends"
+            className="sm:min-w-72"
+          />
           <button
             onClick={() => {
-              if (selectedFlowId) setSearchParams({ flow: selectedFlowId });
+              if (selectedFlowId) {
+                const next: Record<string, string> = { flow: selectedFlowId };
+                if (selectedStorageId) next.storage = selectedStorageId;
+                setSearchParams(next);
+              }
             }}
             disabled={!selectedFlowId}
             className="tamoss-button-primary px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
@@ -431,13 +637,21 @@ export default function PlaybackPage() {
 
             <div className="bg-black">
               {manifestUrl ? (
-                <video
-                  ref={videoRef}
-                  className="aspect-video w-full"
-                  controls
-                  playsInline
-                  aria-label="TAMS HLS playback preview"
-                />
+                <>
+                  <video
+                    ref={videoRef}
+                    className="aspect-video w-full"
+                    controls
+                    playsInline
+                    aria-label="TAMS HLS playback preview"
+                  />
+                  <audio
+                    ref={audioRef}
+                    aria-hidden="true"
+                    className="hidden"
+                    preload="auto"
+                  />
+                </>
               ) : (
                 <div className="flex aspect-video items-center justify-center px-6 text-center">
                   <div>
