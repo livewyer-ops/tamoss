@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "namespace": "tams",
+        "name": "tamoss-kind"
+      },
+      "status": {
+        "schemaVersion": "0.0.1",
+        "resolved": {
+          "versions": {
+            "schema": "0.0.1",
+            "tamoss": "dev",
+            "tamsAPI": "8.0"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+paths:
+  /flows:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              examples:
+                flow:
+                  externalValue: examples/flows.json

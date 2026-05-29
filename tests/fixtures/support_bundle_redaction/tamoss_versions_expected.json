@@ -1,0 +1,12 @@
+[
+  {
+    "namespace": "tams",
+    "name": "tamoss-kind",
+    "schemaVersion": "0.0.1",
+    "resolvedVersions": {
+      "schema": "0.0.1",
+      "tamoss": "dev",
+      "tamsAPI": "8.0"
+    }
+  }
+]

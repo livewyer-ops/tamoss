@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "namespace": "tams",
+        "name": "tamoss-kind"
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "BackendsReady",
+            "status": "True"
+          },
+          {
+            "type": "SchemaMigrated",
+            "status": "True"
+          },
+          {
+            "type": "IdentityReady",
+            "status": "True"
+          },
+          {
+            "type": "RoutingReady",
+            "status": "True"
+          }
+        ],
+        "replicas": {
+          "api": {
+            "desired": 1,
+            "available": 1
+          },
+          "ui": {
+            "desired": 1,
+            "available": 1
+          },
+          "worker": {
+            "desired": 1,
+            "available": 1
+          }
+        }
+      }
+    }
+  ]
+}

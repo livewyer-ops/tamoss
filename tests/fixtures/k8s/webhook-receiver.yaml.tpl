@@ -46,10 +46,12 @@ kind: Service
 metadata:
   name: $name
   namespace: $namespace
+  labels:
+    app.kubernetes.io/name: $name
 spec:
   selector:
     app.kubernetes.io/name: $name
   ports:
     - name: http
-      port: 8080
+      port: 80
       targetPort: http

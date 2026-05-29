@@ -1,0 +1,14 @@
+paths:
+  /flows:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              examples:
+                quoted:
+                  $ref: examples/flows.yaml#/quoted
+                plain:
+                  $ref: examples/flows.yaml#/plain
+              schema:
+                $ref: schemas/flow.yaml

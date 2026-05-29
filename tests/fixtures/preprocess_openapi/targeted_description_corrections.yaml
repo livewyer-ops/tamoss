@@ -1,0 +1,16 @@
+paths:
+  /webhooks/{webhookId}:
+    parameters:
+      - name: webhookId
+        description: Webhook identifier
+  /flow-delete-requests:
+    get:
+      description: List deletion requests currently being worked on, for monitoring in development.
+components:
+  schemas:
+    FlowDeleteRequest:
+      properties:
+        id:
+          description: ID of the Flow to which the deletion request relates
+        filter:
+          description: A comma-seperated value

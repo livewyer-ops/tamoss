@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "namespace": "tams",
+        "name": "tams-storage-default"
+      },
+      "spec": {
+        "defaultStorage": true,
+        "tamossRef": {
+          "name": "tamoss-kind"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "BucketReady",
+            "status": "True"
+          },
+          {
+            "type": "DatabaseReady",
+            "status": "True"
+          }
+        ]
+      }
+    }
+  ]
+}

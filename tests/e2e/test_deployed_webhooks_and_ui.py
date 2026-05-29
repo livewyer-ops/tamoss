@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import base64
 import json
 import re
-import subprocess
 import time
 from contextlib import suppress
 from pathlib import Path
 from string import Template
+from subprocess import CompletedProcess
 from typing import Any
 from uuid import uuid4
 
@@ -21,12 +20,16 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
-from tests.e2e.conftest import E2EClient, E2ETarget
+from tests.e2e.client import E2EClient
+from tests.e2e.kubernetes import kubectl
+from tests.e2e.target import E2ETarget
+from tests.support.fixtures import load_json_fixture
+from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.e2e
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 TINY_INGEST_MP4 = REPO_ROOT / "tests/fixtures/e2e/tiny-ingest.mp4"
+DEMO_FLOW_ID = "00000000-0000-4000-8000-000000000102"
 WEBHOOK_RECEIVER_MANIFEST = REPO_ROOT / "tests/fixtures/k8s/webhook-receiver.yaml.tpl"
 TAMOSS_API_SCOPES = (
     "tams-api/admin",
@@ -36,6 +39,7 @@ TAMOSS_API_SCOPES = (
 )
 
 
+@pytest.mark.smoke
 def test_deployed_webhook_registration_and_event_status(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
@@ -49,14 +53,7 @@ def test_deployed_webhook_registration_and_event_status(
         created = e2e_client.request_json(
             "POST",
             "/service/webhooks",
-            json={
-                "url": receiver["url"],
-                "events": ["sources/created", "flows/created"],
-                "source_ids": [source_id],
-                "api_key_name": "x-api-key",
-                "api_key_value": "secret-value",
-                "tags": {"suite": "deployed-e2e"},
-            },
+            json=_webhook_payload(receiver["url"], source_id),
             expected=201,
         )
         webhook_id = created["id"]
@@ -67,18 +64,7 @@ def test_deployed_webhook_registration_and_event_status(
         e2e_client.request_json(
             "PUT",
             f"/flows/{flow_id}",
-            json={
-                "id": flow_id,
-                "source_id": source_id,
-                "format": "urn:x-nmos:format:video",
-                "codec": "video/h264",
-                "container": "video/mp2t",
-                "essence_parameters": {
-                    "frame_width": 1920,
-                    "frame_height": 1080,
-                    "frame_rate": {"numerator": 25, "denominator": 1},
-                },
-            },
+            json=_video_flow_payload(flow_id, source_id),
             expected=201,
         )
 
@@ -92,14 +78,22 @@ def test_deployed_webhook_registration_and_event_status(
             receiver["pod"],
             expected_event_types={"sources/created", "flows/created"},
         )
-        event_types = [delivery["body"]["event_type"] for delivery in deliveries]
-        assert event_types == ["sources/created", "flows/created"]
+        deliveries_by_type = {
+            delivery["body"]["event_type"]: delivery for delivery in deliveries
+        }
+        assert set(deliveries_by_type) == {"sources/created", "flows/created"}
         assert all(
             delivery["headers"].get("x-api-key") == "secret-value"
             for delivery in deliveries
         )
-        assert deliveries[0]["body"]["event"]["source"]["id"] == source_id
-        assert deliveries[1]["body"]["event"]["flow"]["id"] == flow_id
+        assert (
+            deliveries_by_type["sources/created"]["body"]["event"]["source"]["id"]
+            == source_id
+        )
+        assert (
+            deliveries_by_type["flows/created"]["body"]["event"]["flow"]["id"]
+            == flow_id
+        )
     finally:
         if webhook_id is not None:
             e2e_client.request(
@@ -109,6 +103,7 @@ def test_deployed_webhook_registration_and_event_status(
         _delete_webhook_receiver(e2e_target, receiver["name"])
 
 
+@pytest.mark.smoke
 def test_deployed_ui_ingress_authenticates_and_proxies_api(
     e2e_client: E2EClient, e2e_target: E2ETarget, e2e_browser: Browser
 ) -> None:
@@ -151,6 +146,43 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     assert {"name": "webhooks"} in proxied_service["event_stream_mechanisms"]
 
 
+def test_deployed_cert_manager_certificates_are_ready(e2e_target: E2ETarget) -> None:
+    if not e2e_target.kubeconfig:
+        pytest.skip("cert-manager certificate checks require Kubernetes access")
+    if not e2e_target.certificate_refs:
+        pytest.skip("no cert-manager Certificate refs configured for this target")
+
+    for ref in e2e_target.certificate_refs:
+        namespace, name = _split_resource_ref(
+            ref, default_namespace=e2e_target.namespace
+        )
+        result = _kubectl_for_target(
+            e2e_target,
+            "-n",
+            namespace,
+            "get",
+            "certificate",
+            name,
+            "-o",
+            "json",
+        )
+        certificate = json.loads(result.stdout)
+        ready = next(
+            (
+                condition
+                for condition in certificate.get("status", {}).get("conditions", [])
+                if condition.get("type") == "Ready"
+            ),
+            None,
+        )
+        assert ready is not None, (
+            f"Certificate {namespace}/{name} has no Ready condition"
+        )
+        assert ready.get("status") == "True", (
+            f"Certificate {namespace}/{name} is not Ready: {ready}"
+        )
+
+
 def test_deployed_oauth2_client_credentials_token_grants_api_access(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
@@ -173,25 +205,47 @@ def test_deployed_oauth2_client_credentials_without_scope_grants_api_access(
     _assert_bearer_token_grants_service_access(e2e_client, e2e_target, token_payload)
 
 
+def test_deployed_oidc_metadata_and_jwks_are_ready(
+    e2e_client: E2EClient,
+    e2e_target: E2ETarget,
+) -> None:
+    if not e2e_target.oauth2_enabled:
+        pytest.skip("OAuth2 E2E is disabled for this target")
+
+    metadata_response = e2e_client.session.get(
+        f"{e2e_target.oauth_issuer_url}.well-known/openid-configuration",
+        timeout=e2e_target.timeout_seconds,
+        verify=e2e_target.verify_tls,
+    )
+    assert metadata_response.status_code == 200, metadata_response.text
+    metadata = metadata_response.json()
+    assert metadata["issuer"] == e2e_target.oauth_issuer_url
+    assert metadata["token_endpoint"] == f"{e2e_target.auth_url}/application/o/token/"
+
+    jwks_response = e2e_client.session.get(
+        metadata["jwks_uri"],
+        timeout=e2e_target.timeout_seconds,
+        verify=e2e_target.verify_tls,
+    )
+    assert jwks_response.status_code == 200, jwks_response.text
+    keys = jwks_response.json().get("keys", [])
+    assert any(key.get("kty") == "RSA" and key.get("kid") for key in keys)
+
+
 def _client_credentials_token(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
     *,
     scope: str | None = None,
 ) -> dict[str, Any]:
-    if not e2e_target.kubeconfig:
-        pytest.skip("OAuth2 E2E requires Kubernetes secret access")
-
-    client_secret = _secret_value(
-        e2e_target,
-        namespace=e2e_target.auth_namespace,
-        secret_name="tams-authentik",
-        key="TAMOSS_OAUTH_CLIENT_SECRET",
-    )
+    if not e2e_target.oauth2_enabled:
+        pytest.skip("OAuth2 E2E is disabled for this target")
+    if not e2e_target.oauth_client_secret:
+        pytest.skip("OAuth2 E2E requires a client secret")
     token_request = {
         "grant_type": "client_credentials",
-        "client_id": "tams-api-client",
-        "client_secret": client_secret,
+        "client_id": e2e_target.oauth_client_id,
+        "client_secret": e2e_target.oauth_client_secret,
     }
     if scope is not None:
         token_request["scope"] = scope
@@ -204,6 +258,20 @@ def _client_credentials_token(
     )
     assert token_response.status_code == 200, token_response.text
     return token_response.json()
+
+
+def _webhook_payload(receiver_url: str, source_id: str) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("e2e/webhook_registration.json")
+    payload["url"] = receiver_url
+    payload["source_ids"] = [source_id]
+    return payload
+
+
+def _video_flow_payload(flow_id: str, source_id: str) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/video_flow_payload.json")
+    payload["id"] = flow_id
+    payload["source_id"] = source_id
+    return payload
 
 
 def _assert_bearer_token_grants_service_access(
@@ -223,6 +291,7 @@ def _assert_bearer_token_grants_service_access(
     assert api_response.json()["api_version"] == "8.0"
 
 
+@pytest.mark.smoke
 def test_deployed_ui_ingest_uploads_and_registers_media(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
@@ -269,6 +338,62 @@ def test_deployed_ui_ingest_uploads_and_registers_media(
         e2e_client.poll_delete_request(accepted.json()["id"])
 
 
+@pytest.mark.smoke
+def test_deployed_ui_playback_preview_buffers_demo_media(
+    e2e_target: E2ETarget,
+    e2e_browser: Browser,
+) -> None:
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    page = context.new_page()
+    page.set_default_timeout(60_000)
+    try:
+        _login_through_ui_ingress(page, e2e_target)
+        page.goto(
+            f"{e2e_target.ui_url}/playback?flow={DEMO_FLOW_ID}",
+            wait_until="domcontentloaded",
+        )
+        page.get_by_text("Preview ready").wait_for()
+        play_result = page.evaluate(
+            """async () => {
+                const video = document.querySelector('video');
+                if (!video) return {ok: false, error: 'no video element'};
+                video.muted = true;
+                video.currentTime = 0;
+                try {
+                    await video.play();
+                    return {ok: true};
+                } catch (err) {
+                    return {ok: false, error: String(err)};
+                }
+            }"""
+        )
+        page.wait_for_timeout(3_000)
+        state = page.evaluate(
+            """() => {
+                const video = document.querySelector('video');
+                if (!video) return null;
+                return {
+                    readyState: video.readyState,
+                    paused: video.paused,
+                    currentTime: video.currentTime,
+                    duration: video.duration,
+                    bufferedEnd: video.buffered.length
+                        ? video.buffered.end(video.buffered.length - 1)
+                        : 0,
+                };
+            }"""
+        )
+    finally:
+        context.close()
+
+    assert play_result["ok"], play_result
+    assert state is not None
+    assert state["readyState"] >= 2
+    assert state["duration"] > 0
+    assert state["currentTime"] >= min(0.75, state["duration"])
+    assert state["bufferedEnd"] >= state["currentTime"]
+
+
 def _poll_webhook_status(
     e2e_client: E2EClient, webhook_id: str, *, timeout_seconds: float = 60.0
 ) -> dict:
@@ -284,9 +409,10 @@ def _poll_webhook_status(
 
 
 def _login_through_ui_ingress(page: Page, target: E2ETarget) -> None:
+    app_root_pattern = _app_root_url_pattern(target)
     page.goto(target.ui_url, wait_until="domcontentloaded")
     for _ in range(8):
-        if _is_app_url(page, target):
+        if app_root_pattern.match(page.url) and _has_runtime_config(page):
             page.wait_for_load_state("domcontentloaded")
             return
         _fill_first_visible(
@@ -307,15 +433,25 @@ def _login_through_ui_ingress(page: Page, target: E2ETarget) -> None:
         _click_authentik_submit(page)
         page.wait_for_timeout(1000)
 
-    page.wait_for_url(
-        re.compile(f"^{re.escape(target.ui_url.rstrip('/'))}(/|$)"),
-        timeout=60_000,
-    )
+    page.wait_for_url(app_root_pattern, timeout=60_000)
     page.wait_for_load_state("domcontentloaded")
+    page.wait_for_function("() => Boolean(window.__TAMOSS_CONFIG__)", timeout=60_000)
 
 
-def _is_app_url(page: Page, target: E2ETarget) -> bool:
-    return page.url.startswith(target.ui_url.rstrip("/"))
+def _app_root_url_pattern(target: E2ETarget) -> re.Pattern[str]:
+    app_root = re.escape(target.ui_url.rstrip("/"))
+    return re.compile(f"^{app_root}/?(?:[?#].*)?$")
+
+
+def _has_runtime_config(page: Page) -> bool:
+    with suppress(PlaywrightTimeoutError):
+        return bool(
+            page.wait_for_function(
+                "() => Boolean(window.__TAMOSS_CONFIG__)",
+                timeout=1_000,
+            )
+        )
+    return False
 
 
 def _fill_first_visible(page: Page, selectors: list[str], value: str) -> bool:
@@ -366,8 +502,8 @@ def _start_webhook_receiver(target: E2ETarget) -> dict[str, str]:
         name=name,
         namespace=target.namespace,
     )
-    _kubectl(target, "apply", "-f", "-", input_text=manifest)
-    _kubectl(
+    _kubectl_for_target(target, "apply", "-f", "-", input_text=manifest)
+    _kubectl_for_target(
         target,
         "-n",
         target.namespace,
@@ -379,12 +515,12 @@ def _start_webhook_receiver(target: E2ETarget) -> dict[str, str]:
     return {
         "name": name,
         "pod": name,
-        "url": f"http://{name}.{target.namespace}.svc.cluster.local:8080/events",
+        "url": f"http://{name}.{target.namespace}.svc.cluster.local/events",
     }
 
 
 def _delete_webhook_receiver(target: E2ETarget, name: str) -> None:
-    _kubectl(
+    _kubectl_for_target(
         target,
         "-n",
         target.namespace,
@@ -420,7 +556,7 @@ def _poll_webhook_receiver_events(
 
 
 def _receiver_events(target: E2ETarget, pod_name: str) -> list[dict]:
-    result = _kubectl(
+    result = _kubectl_for_target(
         target,
         "-n",
         target.namespace,
@@ -434,28 +570,15 @@ def _receiver_events(target: E2ETarget, pod_name: str) -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
-def _secret_value(
-    target: E2ETarget,
-    *,
-    namespace: str,
-    secret_name: str,
-    key: str,
-) -> str:
-    result = _kubectl(
-        target,
-        "-n",
-        namespace,
-        "get",
-        "secret",
-        secret_name,
-        "-o",
-        f"jsonpath={{.data.{key}}}",
-    )
-    return base64.b64decode(result.stdout.strip(), validate=True).decode().strip()
+def _split_resource_ref(ref: str, *, default_namespace: str) -> tuple[str, str]:
+    if "/" in ref:
+        namespace, name = ref.split("/", 1)
+        return namespace, name
+    return default_namespace, ref
 
 
 def _deployed_worker_image(target: E2ETarget) -> str:
-    result = _kubectl(
+    result = _kubectl_for_target(
         target,
         "-n",
         target.namespace,
@@ -470,21 +593,15 @@ def _deployed_worker_image(target: E2ETarget) -> str:
     return image
 
 
-def _kubectl(
+def _kubectl_for_target(
     target: E2ETarget,
     *args: str,
     input_text: str | None = None,
-) -> subprocess.CompletedProcess[str]:
-    command = ["kubectl"]
-    if target.kubeconfig:
-        command.extend(["--kubeconfig", target.kubeconfig])
-    command.extend(args)
-    return subprocess.run(
-        command,
-        input=input_text,
-        text=True,
-        check=True,
-        capture_output=True,
+) -> CompletedProcess[str]:
+    return kubectl(
+        kubeconfig=target.kubeconfig,
+        args=list(args),
+        input_text=input_text,
     )
 
 

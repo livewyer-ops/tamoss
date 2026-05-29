@@ -1,0 +1,13 @@
+{
+  "url": "",
+  "events": [
+    "sources/created",
+    "flows/created"
+  ],
+  "source_ids": [],
+  "api_key_name": "x-api-key",
+  "api_key_value": "secret-value",
+  "tags": {
+    "suite": "deployed-e2e"
+  }
+}

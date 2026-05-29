@@ -1,0 +1,73 @@
+[
+  {
+    "namespace": "tams",
+    "name": "tamoss-kind",
+    "phases": [
+      {
+        "name": "dependenciesAndBackends",
+        "source": "Tamoss/BackendsReady",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      },
+      {
+        "name": "defaultStorageBucket",
+        "source": "StorageBackend/BucketReady",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      },
+      {
+        "name": "storageDatabaseRegistration",
+        "source": "StorageBackend/DatabaseReady",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      },
+      {
+        "name": "schemaMigration",
+        "source": "Tamoss/SchemaMigrated",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      },
+      {
+        "name": "identity",
+        "source": "Tamoss/IdentityReady",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      },
+      {
+        "name": "workloads",
+        "source": "Tamoss/status.replicas",
+        "status": "True",
+        "reason": "WorkloadsAvailable",
+        "components": {
+          "api": {
+            "status": "True",
+            "available": 1,
+            "desired": 1
+          },
+          "ui": {
+            "status": "True",
+            "available": 1,
+            "desired": 1
+          },
+          "worker": {
+            "status": "True",
+            "available": 1,
+            "desired": 1
+          }
+        }
+      },
+      {
+        "name": "routes",
+        "source": "Tamoss/RoutingReady",
+        "status": "True",
+        "reason": "",
+        "message": ""
+      }
+    ]
+  }
+]

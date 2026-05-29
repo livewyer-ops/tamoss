@@ -1,0 +1,162 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "data": {
+        "password": "c2VjcmV0",
+        "username": "dGFtcw=="
+      },
+      "kind": "Secret",
+      "metadata": {
+        "annotations": {
+          "kubectl.kubernetes.io/last-applied-configuration": "{\"data\":{\"password\":\"c2VjcmV0\"}}"
+        },
+        "name": "database",
+        "namespace": "tams"
+      },
+      "type": "Opaque"
+    },
+    {
+      "apiVersion": "v1",
+      "data": {
+        "tls.crt": "Y2VydA==",
+        "tls.key": "a2V5"
+      },
+      "kind": "Secret",
+      "metadata": {
+        "name": "app-tls",
+        "namespace": "tams"
+      },
+      "stringData": {
+        "tls.key": "raw-key"
+      },
+      "type": "kubernetes.io/tls"
+    },
+    {
+      "apiVersion": "v1",
+      "data": {
+        "client_id": "tamoss",
+        "client_secret": "secret",
+        "issuer": "https://auth.example.com"
+      },
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "tamoss-oauth2-credentials",
+        "namespace": "tams"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "api",
+        "namespace": "tams"
+      },
+      "spec": {
+        "template": {
+          "spec": {
+            "containers": [
+              {
+                "env": [
+                  {
+                    "name": "POSTGRES_PASSWORD",
+                    "value": "secret"
+                  },
+                  {
+                    "name": "AUTHORIZATION",
+                    "value": "Bearer runtime-secret"
+                  },
+                  {
+                    "name": "TAMOSS_PUBLIC_URL",
+                    "value": "https://app.example.com"
+                  }
+                ],
+                "name": "api"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "data": {
+        "api_key_name": "x-tamoss-webhook",
+        "api_key_value": "hook-secret",
+        "target_url": "https://webhook.example.com/events"
+      },
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "webhook-runtime",
+        "namespace": "tams"
+      }
+    },
+    {
+      "apiVersion": "tamoss.livewyer.io/v1alpha1",
+      "kind": "StorageBackend",
+      "metadata": {
+        "name": "archive",
+        "namespace": "tams"
+      },
+      "spec": {
+        "credentials": {
+          "existingSecret": "archive-s3-creds",
+          "secretKeys": {
+            "accessKey": "accessKeyID",
+            "secretKey": "secretAccessKey"
+          }
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "message": "failed using https://user:pass@s3.example.com/archive",
+            "reason": "EndpointUnreachable",
+            "status": "False",
+            "type": "BucketReady"
+          }
+        ],
+        "error": {
+          "summary": "Authorization: Bearer webhook-secret"
+        },
+        "resolved": {
+          "credentialsSecret": "archive-s3-creds"
+        }
+      }
+    },
+    {
+      "apiVersion": "tamoss.livewyer.io/v1alpha1",
+      "kind": "Tamoss",
+      "metadata": {
+        "name": "tamoss",
+        "namespace": "tams"
+      },
+      "spec": {
+        "secrets": {
+          "apiToken": {
+            "generate": false,
+            "token": "plain-token"
+          }
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "message": "POSTGRES_PASSWORD=secret",
+            "reason": "BackendCheckFailed",
+            "status": "False",
+            "type": "BackendsReady"
+          }
+        ],
+        "resolved": {
+          "generatedSecrets": {
+            "apiToken": "tamoss-api-token",
+            "oauth2Credentials": "tamoss-oauth2-credentials"
+          }
+        }
+      }
+    }
+  ],
+  "kind": "List"
+}
