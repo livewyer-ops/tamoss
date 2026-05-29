@@ -1,31 +1,55 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Protocol
 
-from tamoss.domain.model import StorageBackend
+from tamoss.domain.model import (
+    ObjectGetUrlBatchKey,
+    ObjectGetUrlRequest,
+    ObjectStorageMetadata,
+    StorageBackend,
+)
 
 
 class ObjectStorage(Protocol):
     def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
-    ) -> dict:
-        raise NotImplementedError
+        self,
+        *,
+        object_id: str,
+        flow_container: str,
+        backend: StorageBackend,
+    ) -> dict[str, object]: ...
 
-    def build_get_url(self, *, object_id: str, backend: StorageBackend) -> str:
-        raise NotImplementedError
+    def build_get_urls_batch(
+        self,
+        requests: Iterable[ObjectGetUrlRequest],
+    ) -> Mapping[ObjectGetUrlBatchKey, Iterable[Mapping[str, object]]]: ...
 
-    def build_get_urls(self, *, object_id: str, backend: StorageBackend) -> list[dict]:
-        raise NotImplementedError
+    def object_metadata(
+        self,
+        object_id: str,
+        *,
+        backend: StorageBackend | None = None,
+    ) -> ObjectStorageMetadata | None: ...
 
-    def write(
-        self, object_id: str, data: bytes, *, backend: StorageBackend | None = None
-    ) -> None:
-        raise NotImplementedError
+    def copy(
+        self,
+        object_id: str,
+        *,
+        source_backend: StorageBackend,
+        destination_backend: StorageBackend,
+    ) -> None: ...
 
-    def read(
-        self, object_id: str, *, backend: StorageBackend | None = None
-    ) -> bytes | None:
-        raise NotImplementedError
+    def delete(
+        self,
+        object_id: str,
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None: ...
 
-    def delete(self, object_id: str, *, backend: StorageBackend | None = None) -> None:
-        raise NotImplementedError
+    def delete_batch(
+        self,
+        object_ids: Iterable[str],
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None: ...

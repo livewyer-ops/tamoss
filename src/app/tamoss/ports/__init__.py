@@ -1,1 +1,1 @@
-"""Ports used by application use cases."""
+"""Static port contracts for application dependencies."""

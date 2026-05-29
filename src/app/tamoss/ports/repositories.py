@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -10,6 +10,8 @@ from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
     MediaObjectRecord,
+    ObjectCleanupRecord,
+    ObjectCopyRecord,
     SegmentRecord,
     ServiceMetadata,
     SourceRecord,
@@ -19,40 +21,38 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
+from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
 
 
-@dataclass(frozen=True)
-class SegmentTimerangeBounds:
-    start: int
-    end: int
-    is_point: bool = False
+class TransactionalRepository(Protocol):
+    def unit_of_work(self) -> AbstractContextManager[object]: ...
 
 
-class TamossRepository(Protocol):
-    def unit_of_work(self) -> AbstractContextManager[TamossRepository]:
-        raise NotImplementedError
+class StorageBackendRepository(Protocol):
+    def list_storage_backends(self) -> list[StorageBackend]: ...
 
-    def lock_flow_segments(self, flow_id: UUID) -> None:
-        raise NotImplementedError
+    def default_storage_backend(self) -> StorageBackend | None: ...
 
-    def get_service_metadata(self) -> ServiceMetadata | None:
-        raise NotImplementedError
+    def get_storage_backend(self, storage_id: UUID) -> StorageBackend | None: ...
 
-    def save_service_metadata(self, metadata: ServiceMetadata) -> None:
-        raise NotImplementedError
 
-    def list_storage_backends(self) -> list[StorageBackend]:
-        raise NotImplementedError
+class ServiceRepository(StorageBackendRepository, Protocol):
+    def get_service_metadata(self) -> ServiceMetadata | None: ...
 
-    def default_storage_backend(self) -> StorageBackend | None:
-        raise NotImplementedError
+    def save_service_metadata(self, metadata: ServiceMetadata) -> None: ...
 
-    def get_storage_backend(self, storage_id: UUID) -> StorageBackend | None:
-        raise NotImplementedError
 
-    def list_flows(self) -> list[FlowRecord]:
-        raise NotImplementedError
+class FlowLookupRepository(Protocol):
+    def get_flow(self, flow_id: UUID) -> FlowRecord | None: ...
 
+
+class FlowCollectionRepository(FlowLookupRepository, Protocol):
+    def list_flows(self) -> list[FlowRecord]: ...
+
+    def save_flow(self, flow: FlowRecord) -> None: ...
+
+
+class FlowRepository(FlowCollectionRepository, Protocol):
     def list_flows_page(
         self,
         *,
@@ -70,33 +70,30 @@ class TamossRepository(Protocol):
         tag_exists: dict[str, bool],
         page: str | None,
         limit: int | None,
-    ) -> Page[FlowRecord]:
-        raise NotImplementedError
+    ) -> Page[FlowRecord]: ...
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
-        raise NotImplementedError
+    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]: ...
 
-    def get_flow(self, flow_id: UUID) -> FlowRecord | None:
-        raise NotImplementedError
+    def list_segments(self, flow_id: UUID) -> list[SegmentRecord]: ...
 
-    def save_flow(self, flow: FlowRecord) -> None:
-        raise NotImplementedError
+    def list_flow_ids_matching_tags_page(
+        self,
+        *,
+        flow_ids: Iterable[UUID],
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        page: str | None,
+        limit: int | None,
+    ) -> Page[UUID]: ...
 
-    def delete_flow(self, flow_id: UUID) -> None:
-        raise NotImplementedError
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
 
-    def get_source(self, source_id: UUID) -> SourceRecord | None:
-        raise NotImplementedError
+    def save_source(self, source: SourceRecord) -> None: ...
 
-    def save_source(self, source: SourceRecord) -> None:
-        raise NotImplementedError
+    def save_flow(self, flow: FlowRecord) -> None: ...
 
-    def delete_source(self, source_id: UUID) -> None:
-        raise NotImplementedError
 
-    def list_sources(self) -> list[SourceRecord]:
-        raise NotImplementedError
-
+class SourceRepository(Protocol):
     def list_sources_page(
         self,
         *,
@@ -106,39 +103,85 @@ class TamossRepository(Protocol):
         tag_exists: dict[str, bool],
         page: str | None,
         limit: int | None,
-    ) -> Page[SourceRecord]:
-        raise NotImplementedError
+    ) -> Page[SourceRecord]: ...
+
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
+
+    def save_source(self, source: SourceRecord) -> None: ...
+
+    def list_flows(self) -> list[FlowRecord]: ...
 
     def source_relationships_for(
-        self, source_ids: Iterable[UUID]
-    ) -> dict[UUID, SourceRelationships]:
-        raise NotImplementedError
+        self,
+        source_ids: Iterable[UUID],
+    ) -> dict[UUID, SourceRelationships]: ...
 
-    def get_object(self, object_id: str) -> MediaObjectRecord | None:
-        raise NotImplementedError
 
-    def get_objects(self, object_ids: Iterable[str]) -> dict[str, MediaObjectRecord]:
-        raise NotImplementedError
+class WebhookEventRepository(Protocol):
+    def list_webhooks(self) -> list[WebhookRecord]: ...
 
-    def save_object(self, media_object: MediaObjectRecord) -> None:
-        raise NotImplementedError
+    def save_webhook(self, webhook: WebhookRecord) -> None: ...
 
-    def create_object(self, media_object: MediaObjectRecord) -> bool:
-        raise NotImplementedError
+    def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None: ...
 
-    def delete_object(self, object_id: str) -> None:
-        raise NotImplementedError
 
-    def list_segments(self, flow_id: UUID) -> list[SegmentRecord]:
-        raise NotImplementedError
+class WebhookResourceRepository(Protocol):
+    def list_flows(self) -> list[FlowRecord]: ...
+
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
+
+
+class WebhookRepository(WebhookEventRepository, Protocol):
+    def list_webhooks_page(
+        self,
+        *,
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        page: str | None,
+        limit: int | None,
+    ) -> Page[WebhookRecord]: ...
+
+    def get_webhook(self, webhook_id: UUID) -> WebhookRecord | None: ...
+
+    def delete_webhook(self, webhook_id: UUID) -> None: ...
+
+    def claim_webhook_deliveries(
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[WebhookDeliveryRecord]: ...
+
+    def get_webhook_delivery(
+        self,
+        delivery_id: UUID,
+    ) -> WebhookDeliveryRecord | None: ...
+
+
+class SegmentRepository(TransactionalRepository, StorageBackendRepository, Protocol):
+    def lock_flow_segments(self, flow_id: UUID) -> None: ...
+
+    def get_flow(self, flow_id: UUID) -> FlowRecord | None: ...
+
+    def get_objects(
+        self, object_ids: Iterable[str]
+    ) -> dict[str, MediaObjectRecord]: ...
 
     def list_segments_overlapping(
         self,
         *,
         flow_id: UUID,
         timeranges: Iterable[SegmentTimerangeBounds],
-    ) -> list[SegmentRecord]:
-        raise NotImplementedError
+    ) -> list[SegmentRecord]: ...
+
+    def save_registered_segments(
+        self,
+        *,
+        flow: FlowRecord,
+        media_objects: Iterable[MediaObjectRecord],
+        segments: Iterable[SegmentRecord],
+    ) -> None: ...
 
     def list_segments_page(
         self,
@@ -152,81 +195,112 @@ class TamossRepository(Protocol):
         reverse_order: bool,
         page: str | None,
         limit: int | None,
-    ) -> Page[SegmentRecord]:
-        raise NotImplementedError
+    ) -> Page[SegmentRecord]: ...
 
-    def append_segment(self, segment: SegmentRecord) -> None:
-        raise NotImplementedError
 
-    def save_registered_segments(
+class ObjectRepository(
+    TransactionalRepository,
+    StorageBackendRepository,
+    Protocol,
+):
+    def get_object(self, object_id: str) -> MediaObjectRecord | None: ...
+
+    def save_object(self, media_object: MediaObjectRecord) -> None: ...
+
+    def claim_object_copies(
         self,
         *,
-        flow: FlowRecord,
-        media_objects: Iterable[MediaObjectRecord],
-        segments: Iterable[SegmentRecord],
-    ) -> None:
-        raise NotImplementedError
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[ObjectCopyRecord]: ...
 
-    def replace_segments(self, flow_id: UUID, segments: list[SegmentRecord]) -> None:
-        raise NotImplementedError
+    def save_object_copy(self, copy: ObjectCopyRecord) -> None: ...
 
-    def list_webhooks(self) -> list[WebhookRecord]:
-        raise NotImplementedError
 
-    def list_webhooks_page(
-        self,
-        *,
-        tag_values: dict[str, set[str]],
-        tag_exists: dict[str, bool],
-        page: str | None,
-        limit: int | None,
-    ) -> Page[WebhookRecord]:
-        raise NotImplementedError
+class ObjectCleanupRepository(Protocol):
+    def save_object_cleanup(self, cleanup: ObjectCleanupRecord) -> None: ...
 
-    def list_flow_ids_matching_tags_page(
-        self,
-        *,
-        flow_ids: Iterable[UUID],
-        tag_values: dict[str, set[str]],
-        tag_exists: dict[str, bool],
-        page: str | None,
-        limit: int | None,
-    ) -> Page[UUID]:
-        raise NotImplementedError
 
-    def get_webhook(self, webhook_id: UUID) -> WebhookRecord | None:
-        raise NotImplementedError
+class StorageRepository(
+    TransactionalRepository,
+    StorageBackendRepository,
+    Protocol,
+):
+    def create_object(self, media_object: MediaObjectRecord) -> bool: ...
 
-    def save_webhook(self, webhook: WebhookRecord) -> None:
-        raise NotImplementedError
 
-    def delete_webhook(self, webhook_id: UUID) -> None:
-        raise NotImplementedError
+class DeletionRepository(
+    TransactionalRepository,
+    StorageBackendRepository,
+    FlowCollectionRepository,
+    ObjectCleanupRepository,
+    Protocol,
+):
+    def delete_flow(self, flow_id: UUID) -> None: ...
 
-    def list_webhook_deliveries(self) -> list[WebhookDeliveryRecord]:
-        raise NotImplementedError
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
 
-    def get_webhook_delivery(self, delivery_id: UUID) -> WebhookDeliveryRecord | None:
-        raise NotImplementedError
+    def delete_source(self, source_id: UUID) -> None: ...
 
-    def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None:
-        raise NotImplementedError
+    def list_delete_requests(self) -> list[DeletionRequestRecord]: ...
 
-    def claim_webhook_deliveries(
-        self, *, worker_id: str, limit: int, lease_seconds: int
-    ) -> list[WebhookDeliveryRecord]:
-        raise NotImplementedError
+    def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None: ...
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]:
-        raise NotImplementedError
-
-    def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None:
-        raise NotImplementedError
-
-    def save_delete_request(self, request: DeletionRequestRecord) -> None:
-        raise NotImplementedError
+    def save_delete_request(self, request: DeletionRequestRecord) -> None: ...
 
     def claim_delete_requests(
-        self, *, worker_id: str, limit: int, lease_seconds: int
-    ) -> list[DeletionRequestRecord]:
-        raise NotImplementedError
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[DeletionRequestRecord]: ...
+
+    def list_object_cleanups(
+        self,
+        *,
+        delete_request_id: UUID | None = None,
+        statuses: set[str] | None = None,
+    ) -> list[ObjectCleanupRecord]: ...
+
+    def claim_object_cleanups(
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[ObjectCleanupRecord]: ...
+
+    def get_objects(
+        self, object_ids: Iterable[str]
+    ) -> dict[str, MediaObjectRecord]: ...
+
+    def list_unreferenced_objects_created_before(
+        self,
+        *,
+        before: datetime,
+        limit: int,
+    ) -> list[MediaObjectRecord]: ...
+
+    def save_object(self, media_object: MediaObjectRecord) -> None: ...
+
+    def delete_object(self, object_id: str) -> None: ...
+
+    def list_segments(self, flow_id: UUID) -> list[SegmentRecord]: ...
+
+    def list_segments_for_objects(
+        self,
+        *,
+        flow_id: UUID,
+        object_ids: Iterable[str],
+    ) -> list[SegmentRecord]: ...
+
+    def segment_delete_timerange(self, delete_filter: SegmentDeleteFilter) -> str: ...
+
+    def delete_segment_batch(
+        self,
+        delete_filter: SegmentDeleteFilter,
+        *,
+        limit: int,
+    ) -> list[SegmentRecord]: ...
