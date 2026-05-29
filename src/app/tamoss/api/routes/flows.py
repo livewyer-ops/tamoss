@@ -1,22 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_use_cases
+from tamoss.api.dependencies import get_deletion_use_cases, get_flow_use_cases
 from tamoss.api.presenters import (
     deletion_request_accepted_response,
     flow_response,
     head_response,
     with_page_headers,
 )
-from tamoss.api.query_params import validate_query_params
-from tamoss.api.schemas import DeletionRequestResponse, FlowCollectionItem, FlowWrite
-from tamoss.application.use_cases import TamossUseCases
+from tamoss.api.query_params import tag_filter_parameters, validate_query_params
+from tamoss.application.contexts.deletion import DeletionUseCases
+from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
+from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 from tamoss.domain.tags import TagValue, parse_tag_filters
+from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Flows"])
 
@@ -24,10 +27,12 @@ router = APIRouter(tags=["Flows"])
 @router.get(
     "/flows",
     responses={400: {"description": "Bad request. Invalid query options."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 @router.head(
     "/flows",
     responses={400: {"description": "Bad request. Invalid query options."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 def list_flows(
     request: Request,
@@ -36,21 +41,16 @@ def list_flows(
     timerange: str | None = None,
     include_timerange: bool = Query(
         default=False,
-        description=(
-            "TAMOSS extension. Include each listed Flow's computed content "
-            "timerange in the response."
-        ),
+        description="Include each listed Flow's computed content timerange.",
     ),
     format: str | None = None,
     codec: str | None = None,
     label: str | None = None,
     frame_width: int | None = None,
     frame_height: int | None = None,
-    tag_name: str | None = Query(default=None, alias="tag.{name}"),
-    tag_exists_name: bool | None = Query(default=None, alias="tag_exists.{name}"),
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(
         request,
@@ -68,8 +68,11 @@ def list_flows(
         },
         allowed_prefixes=("tag.", "tag_exists."),
     )
-    tag_values, tag_exists = parse_tag_filters(request.query_params)
-    flow_page = use_cases.list_flows(
+    try:
+        tag_values, tag_exists = parse_tag_filters(request.query_params)
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
+    flow_page = flows.list_flows(
         source_id=source_id,
         timerange=timerange,
         format=format,
@@ -86,7 +89,7 @@ def list_flows(
     if head := head_response(request, response):
         return head
     timeranges = (
-        use_cases.flow_timeranges(flow.id for flow in flow_page.items)
+        flows.flow_timeranges(flow.id for flow in flow_page.items)
         if include_timerange
         else {}
     )
@@ -111,17 +114,17 @@ def list_flows(
     },
 )
 def get_flow(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
     include_timerange: bool = False,
     timerange: str | None = None,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, {"include_timerange", "timerange"})
-    flow = use_cases.get_flow(flowId, include_collected_by=True)
+    flow = flows.get_flow(flow_id, include_collected_by=True)
     flow_timerange = None
     if include_timerange or timerange is not None:
-        computed_timerange = use_cases.flow_timerange(flowId, timerange=timerange)
+        computed_timerange = flows.flow_timerange(flow_id, timerange=timerange)
         if include_timerange:
             flow_timerange = computed_timerange
     if head := head_response(request):
@@ -140,18 +143,19 @@ def get_flow(
     },
 )
 def put_flow(
-    flowId: UUID,
-    flow: FlowWrite,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow: contract_models.Flow,
     request: Request,
-    response: Response,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     identity = identify_request(request)
-    stored, created = use_cases.put_flow(
-        flow_id=flowId, flow_write=flow, identity=identity
+    stored, created = flows.put_flow(
+        flow_id=flow_id,
+        flow=contract_dump(flow),
+        supplied_fields=set(flow.root.model_fields_set),
+        identity=identity,
     )
     if not created:
-        response.status_code = status.HTTP_204_NO_CONTENT
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     return flow_response(stored)
 
@@ -162,20 +166,20 @@ def put_flow(
     responses={
         202: {
             "description": "Deletion accepted.",
-            "model": DeletionRequestResponse,
+            "model": contract_models.DeletionRequest,
         },
         403: {"description": "Forbidden."},
         404: {"description": "The requested Flow ID in the path is invalid."},
     },
 )
 def delete_flow(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
     validate_query_params(request, set())
     identity = identify_request(request)
-    delete_request = use_cases.delete_flow(flow_id=flowId, identity=identity)
+    delete_request = deletion.delete_flow(flow_id=flow_id, identity=identity)
     if delete_request is not None:
         return deletion_request_accepted_response(delete_request, request)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -183,7 +187,7 @@ def delete_flow(
 
 @router.get(
     "/flows/{flowId}/flow_collection",
-    response_model=list[FlowCollectionItem],
+    response_model=list[contract_models.FlowCollectionItem],
     response_model_exclude_none=True,
     responses={404: {"description": "The requested Flow does not exist."}},
 )
@@ -192,12 +196,12 @@ def delete_flow(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_collection(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    collection = use_cases.get_flow_collection(flowId)
+    collection = flows.get_flow_collection(flow_id)
     if head := head_response(request):
         return head
     return collection
@@ -213,14 +217,16 @@ def get_flow_collection(
     },
 )
 def put_flow_collection(
-    flowId: UUID,
-    collection: list[FlowCollectionItem],
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    collection: list[contract_models.FlowCollectionItem],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     identity = identify_request(request)
-    use_cases.set_flow_collection(
-        flow_id=flowId, collection=collection, identity=identity
+    flows.set_flow_collection(
+        flow_id=flow_id,
+        collection=[contract_dump(item) for item in collection],
+        identity=identity,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -234,13 +240,13 @@ def put_flow_collection(
     },
 )
 def delete_flow_collection(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
     identity = identify_request(request)
-    use_cases.delete_flow_collection(flow_id=flowId, identity=identity)
+    flows.delete_flow_collection(flow_id=flow_id, identity=identity)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -253,12 +259,12 @@ def delete_flow_collection(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_label(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    label = use_cases.get_flow_property(flowId, "label")
+    label = flows.get_flow_property(flow_id, "label")
     if head := head_response(request):
         return head
     return label
@@ -274,11 +280,17 @@ def get_flow_label(
     },
 )
 def put_flow_label(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    request: Request,
     label: str = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_property(flowId, "label", label)
+    flows.set_flow_property(
+        flow_id,
+        "label",
+        label,
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -291,12 +303,12 @@ def put_flow_label(
     },
 )
 def delete_flow_label(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_flow_property(flowId, "label")
+    flows.delete_flow_property(flow_id, "label", identity=identify_request(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -309,12 +321,12 @@ def delete_flow_label(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_description(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    description = use_cases.get_flow_property(flowId, "description")
+    description = flows.get_flow_property(flow_id, "description")
     if head := head_response(request):
         return head
     return description
@@ -330,11 +342,17 @@ def get_flow_description(
     },
 )
 def put_flow_description(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    request: Request,
     description: str = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_property(flowId, "description", description)
+    flows.set_flow_property(
+        flow_id,
+        "description",
+        description,
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -347,12 +365,16 @@ def put_flow_description(
     },
 )
 def delete_flow_description(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_flow_property(flowId, "description")
+    flows.delete_flow_property(
+        flow_id,
+        "description",
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -365,15 +387,15 @@ def delete_flow_description(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_avg_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    value = use_cases.get_flow_int_property(flowId, "avg_bit_rate")
+    avg_bit_rate = flows.get_flow_property(flow_id, "avg_bit_rate")
     if head := head_response(request):
         return head
-    return value
+    return avg_bit_rate
 
 
 @router.put(
@@ -386,11 +408,17 @@ def get_flow_avg_bit_rate(
     },
 )
 def put_flow_avg_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    request: Request,
     value: int = Body(..., ge=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_int_property(flowId, "avg_bit_rate", value)
+    flows.set_flow_property(
+        flow_id,
+        "avg_bit_rate",
+        value,
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -403,12 +431,16 @@ def put_flow_avg_bit_rate(
     },
 )
 def delete_flow_avg_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_flow_property(flowId, "avg_bit_rate")
+    flows.delete_flow_property(
+        flow_id,
+        "avg_bit_rate",
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -421,15 +453,15 @@ def delete_flow_avg_bit_rate(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_max_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    value = use_cases.get_flow_int_property(flowId, "max_bit_rate")
+    max_bit_rate = flows.get_flow_property(flow_id, "max_bit_rate")
     if head := head_response(request):
         return head
-    return value
+    return max_bit_rate
 
 
 @router.put(
@@ -442,11 +474,17 @@ def get_flow_max_bit_rate(
     },
 )
 def put_flow_max_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    request: Request,
     value: int = Body(..., ge=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_int_property(flowId, "max_bit_rate", value)
+    flows.set_flow_property(
+        flow_id,
+        "max_bit_rate",
+        value,
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -459,12 +497,16 @@ def put_flow_max_bit_rate(
     },
 )
 def delete_flow_max_bit_rate(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_flow_property(flowId, "max_bit_rate")
+    flows.delete_flow_property(
+        flow_id,
+        "max_bit_rate",
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -477,12 +519,12 @@ def delete_flow_max_bit_rate(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_read_only(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    read_only = use_cases.get_flow(flowId).read_only
+    read_only = flows.get_flow_property(flow_id, "read_only")
     if head := head_response(request):
         return head
     return read_only
@@ -500,11 +542,17 @@ def get_flow_read_only(
     },
 )
 def put_flow_read_only(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    request: Request,
     read_only: bool = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_read_only(flowId, read_only)
+    flows.set_flow_property(
+        flow_id,
+        "read_only",
+        read_only,
+        identity=identify_request(request),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -517,12 +565,12 @@ def put_flow_read_only(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_tags(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    tags = use_cases.get_flow_tags(flowId)
+    tags = flows.get_flow_tags(flow_id)
     if head := head_response(request):
         return head
     return tags
@@ -537,13 +585,13 @@ def get_flow_tags(
     responses={404: {"description": "The requested Flow tag does not exist."}},
 )
 def get_flow_tag(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     name: str,
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    tag = use_cases.get_flow_tag(flowId, name)
+    tag = flows.get_flow_tag(flow_id, name)
     if head := head_response(request):
         return head
     return tag
@@ -559,12 +607,13 @@ def get_flow_tag(
     },
 )
 def put_flow_tag(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     name: str,
+    request: Request,
     value: TagValue = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
-    use_cases.set_flow_tag(flowId, name, value)
+    flows.set_flow_tag(flow_id, name, value, identity=identify_request(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -577,11 +626,11 @@ def put_flow_tag(
     },
 )
 def delete_flow_tag(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     name: str,
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_flow_tag(flowId, name)
+    flows.delete_flow_tag(flow_id, name, identity=identify_request(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

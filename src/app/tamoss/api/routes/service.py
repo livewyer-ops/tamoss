@@ -4,33 +4,36 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from tamoss.api.dependencies import get_use_cases
+from tamoss.api.dependencies import get_service_use_cases
 from tamoss.api.presenters import head_response, storage_backend_response
 from tamoss.api.query_params import validate_query_params
-from tamoss.api.schemas import ServiceInfoUpdate
-from tamoss.application.use_cases import TamossUseCases
+from tamoss.application.contexts.service import ServiceUseCases
+from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 
 router = APIRouter(tags=["Service"])
 
 
 @router.get("/")
 @router.head("/")
-def root(request: Request, use_cases: TamossUseCases = Depends(get_use_cases)) -> Any:
+def root(
+    request: Request, service: ServiceUseCases = Depends(get_service_use_cases)
+) -> Any:
     validate_query_params(request, set())
     if head := head_response(request):
         return head
-    return use_cases.root_paths()
+    return service.root_paths()
 
 
 @router.get("/service")
 @router.head("/service")
 def service(
-    request: Request, use_cases: TamossUseCases = Depends(get_use_cases)
+    request: Request, service: ServiceUseCases = Depends(get_service_use_cases)
 ) -> Any:
     validate_query_params(request, set())
     if head := head_response(request):
         return head
-    return use_cases.service_info()
+    return service.service_info()
 
 
 @router.post(
@@ -42,22 +45,21 @@ def service(
     },
 )
 def post_service(
-    service_update: ServiceInfoUpdate,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    service_update: contract_models.ServicePost,
+    service: ServiceUseCases = Depends(get_service_use_cases),
 ) -> Response:
-    use_cases.update_service_info(service_update)
+    service.update_service_info(contract_dump(service_update))
     return Response()
 
 
 @router.get("/service/storage-backends")
 @router.head("/service/storage-backends")
 def storage_backends(
-    request: Request, use_cases: TamossUseCases = Depends(get_use_cases)
+    request: Request, service: ServiceUseCases = Depends(get_service_use_cases)
 ) -> Any:
     validate_query_params(request, set())
     if head := head_response(request):
         return head
     return [
-        storage_backend_response(backend)
-        for backend in use_cases.list_storage_backends()
+        storage_backend_response(backend) for backend in service.list_storage_backends()
     ]

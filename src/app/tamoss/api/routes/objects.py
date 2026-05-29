@@ -1,19 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
+from urllib.parse import unquote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_use_cases
+from tamoss.api.dependencies import get_flow_use_cases, get_object_use_cases
 from tamoss.api.presenters import head_response, object_response, with_page_headers
 from tamoss.api.query_params import (
+    flow_tag_filter_parameters,
+    parse_flow_tag_filters,
     parse_get_url_labels,
     parse_storage_ids,
     validate_query_params,
 )
-from tamoss.api.schemas import MediaObjectRegistration
-from tamoss.application.use_cases import TamossUseCases
+from tamoss.application.contexts.flows import FlowUseCases
+from tamoss.application.contexts.objects import ObjectUseCases
+from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 
 router = APIRouter(tags=["Objects"])
 
@@ -29,11 +34,14 @@ router = APIRouter(tags=["Objects"])
     },
 )
 def post_object_instance(
-    objectId: str,
-    registration: MediaObjectRegistration,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    object_id: Annotated[str, Path(alias="objectId")],
+    registration: contract_models.ObjectsInstancesPost,
+    objects: ObjectUseCases = Depends(get_object_use_cases),
 ) -> Response:
-    use_cases.register_object_instance(object_id=objectId, registration=registration)
+    objects.register_object_instance(
+        object_id=unquote(object_id),
+        registration=contract_dump(registration),
+    )
     return Response(status_code=status.HTTP_201_CREATED)
 
 
@@ -47,15 +55,17 @@ def post_object_instance(
     },
 )
 def delete_object_instance(
-    objectId: str,
+    object_id: Annotated[str, Path(alias="objectId")],
     request: Request,
     storage_id: UUID | None = None,
     label: str | None = None,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    objects: ObjectUseCases = Depends(get_object_use_cases),
 ) -> Response:
     validate_query_params(request, {"storage_id", "label"})
-    use_cases.delete_object_instance(
-        object_id=objectId, storage_id=storage_id, label=label
+    objects.delete_object_instance(
+        object_id=unquote(object_id),
+        storage_id=storage_id,
+        label=label,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -66,6 +76,7 @@ def delete_object_instance(
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The requested Media Object does not exist."},
     },
+    dependencies=[Depends(flow_tag_filter_parameters)],
 )
 @router.head(
     "/objects/{objectId:path}",
@@ -73,22 +84,20 @@ def delete_object_instance(
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The requested Media Object does not exist."},
     },
+    dependencies=[Depends(flow_tag_filter_parameters)],
 )
 def get_object(
-    objectId: str,
+    object_id: Annotated[str, Path(alias="objectId")],
     request: Request,
     response: Response,
-    flow_tag_name: str | None = Query(default=None, alias="flow_tag.{name}"),
-    flow_tag_exists_name: bool | None = Query(
-        default=None, alias="flow_tag_exists.{name}"
-    ),
     verbose_storage: bool = False,
     accept_get_urls: str | None = None,
     accept_storage_ids: str | None = None,
     presigned: bool | None = None,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    objects: ObjectUseCases = Depends(get_object_use_cases),
+    flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(
         request,
@@ -102,11 +111,11 @@ def get_object(
         },
         allowed_prefixes=("flow_tag.", "flow_tag_exists."),
     )
-    media_object = use_cases.get_object(objectId)
+    media_object = objects.get_object(object_id)
     accepted_labels = parse_get_url_labels(accept_get_urls)
     accepted_storage_ids = parse_storage_ids(accept_storage_ids)
-    tag_values, tag_exists = _parse_flow_tag_filters(request)
-    flow_page = use_cases.referenced_flows_matching_tags_page(
+    tag_values, tag_exists = parse_flow_tag_filters(request)
+    flow_page = flows.referenced_flows_matching_tags_page(
         media_object,
         tag_values,
         tag_exists,
@@ -119,7 +128,7 @@ def get_object(
     return object_response(
         media_object,
         flow_page.items,
-        get_urls=use_cases.object_get_urls(
+        get_urls=objects.object_get_urls(
             media_object,
             accept_get_urls=accepted_labels,
             accept_storage_ids=accepted_storage_ids,
@@ -127,18 +136,3 @@ def get_object(
             verbose_storage=verbose_storage,
         ),
     )
-
-
-def _parse_flow_tag_filters(
-    request: Request,
-) -> tuple[dict[str, set[str]], dict[str, bool]]:
-    values: dict[str, set[str]] = {}
-    exists: dict[str, bool] = {}
-    for key, value in request.query_params.items():
-        if key.startswith("flow_tag."):
-            values[key.removeprefix("flow_tag.")] = {
-                part for part in value.split(",") if part
-            }
-        elif key.startswith("flow_tag_exists."):
-            exists[key.removeprefix("flow_tag_exists.")] = value.lower() == "true"
-    return values, exists

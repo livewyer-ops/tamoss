@@ -1,57 +1,53 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_use_cases
-from tamoss.api.presenters import head_response, source_response, with_page_headers
-from tamoss.api.query_params import validate_query_params
-from tamoss.application.use_cases import SourceRelationships, TamossUseCases
-from tamoss.domain.model import SourceRecord
+from tamoss.api.dependencies import get_source_use_cases
+from tamoss.api.presenters import (
+    head_response,
+    source_response_with_relationships,
+    with_page_headers,
+)
+from tamoss.api.query_params import tag_filter_parameters, validate_query_params
+from tamoss.application.contexts.sources import SourceUseCases
 from tamoss.domain.tags import TagValue, parse_tag_filters
+from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Sources"])
-
-
-def _source_response(
-    source: SourceRecord, *, relationships: dict[UUID, SourceRelationships]
-) -> dict:
-    relationship = relationships.get(source.id)
-    return source_response(
-        source,
-        source_collection=relationship.source_collection if relationship else None,
-        collected_by=relationship.collected_by if relationship else None,
-    )
 
 
 @router.get(
     "/sources",
     responses={400: {"description": "Bad request. Invalid query options."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 @router.head(
     "/sources",
     responses={400: {"description": "Bad request. Invalid query options."}},
+    dependencies=[Depends(tag_filter_parameters)],
 )
 def list_sources(
     request: Request,
     response: Response,
     label: str | None = None,
     format: str | None = None,
-    tag_name: str | None = Query(default=None, alias="tag.{name}"),
-    tag_exists_name: bool | None = Query(default=None, alias="tag_exists.{name}"),
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(
         request,
         {"label", "format", "page", "limit"},
         allowed_prefixes=("tag.", "tag_exists."),
     )
-    tag_values, tag_exists = parse_tag_filters(request.query_params)
-    source_page = use_cases.list_sources(
+    try:
+        tag_values, tag_exists = parse_tag_filters(request.query_params)
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
+    source_page = sources.list_sources(
         label=label,
         format=format,
         tag_values=tag_values,
@@ -62,11 +58,11 @@ def list_sources(
     with_page_headers(response, request, source_page)
     if head := head_response(request, response):
         return head
-    relationships = use_cases.source_relationships(
+    relationships = sources.source_relationships(
         source.id for source in source_page.items
     )
     return [
-        _source_response(source, relationships=relationships)
+        source_response_with_relationships(source, relationships=relationships)
         for source in source_page.items
     ]
 
@@ -80,16 +76,16 @@ def list_sources(
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    source = use_cases.get_source(sourceId)
+    source = sources.get_source(source_id)
     if head := head_response(request):
         return head
-    return _source_response(
-        source, relationships=use_cases.source_relationships([source.id])
+    return source_response_with_relationships(
+        source, relationships=sources.source_relationships([source.id])
     )
 
 
@@ -102,12 +98,12 @@ def get_source(
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source_label(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    label = use_cases.get_source_property(sourceId, "label")
+    label = sources.get_source_property(source_id, "label")
     if head := head_response(request):
         return head
     return label
@@ -123,11 +119,11 @@ def get_source_label(
     },
 )
 def put_source_label(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     label: str = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
-    use_cases.set_source_property(sourceId, "label", label)
+    sources.set_source_property(source_id, "label", label)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -140,12 +136,12 @@ def put_source_label(
     },
 )
 def delete_source_label(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_source_property(sourceId, "label")
+    sources.delete_source_property(source_id, "label")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -158,12 +154,12 @@ def delete_source_label(
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source_description(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    description = use_cases.get_source_property(sourceId, "description")
+    description = sources.get_source_property(source_id, "description")
     if head := head_response(request):
         return head
     return description
@@ -179,11 +175,11 @@ def get_source_description(
     },
 )
 def put_source_description(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     description: str = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
-    use_cases.set_source_property(sourceId, "description", description)
+    sources.set_source_property(source_id, "description", description)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -196,12 +192,12 @@ def put_source_description(
     },
 )
 def delete_source_description(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_source_property(sourceId, "description")
+    sources.delete_source_property(source_id, "description")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -214,12 +210,12 @@ def delete_source_description(
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source_tags(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    tags = use_cases.get_source_tags(sourceId)
+    tags = sources.get_source_tags(source_id)
     if head := head_response(request):
         return head
     return tags
@@ -234,13 +230,13 @@ def get_source_tags(
     responses={404: {"description": "The requested Source tag does not exist."}},
 )
 def get_source_tag(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     name: str,
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(request, set())
-    tag = use_cases.get_source_tag(sourceId, name)
+    tag = sources.get_source_tag(source_id, name)
     if head := head_response(request):
         return head
     return tag
@@ -256,12 +252,12 @@ def get_source_tag(
     },
 )
 def put_source_tag(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     name: str,
     value: TagValue = Body(...),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
-    use_cases.set_source_tag(sourceId, name, value)
+    sources.set_source_tag(source_id, name, value)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -274,11 +270,11 @@ def put_source_tag(
     },
 )
 def delete_source_tag(
-    sourceId: UUID,
+    source_id: Annotated[UUID, Path(alias="sourceId")],
     name: str,
     request: Request,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Response:
     validate_query_params(request, set())
-    use_cases.delete_source_tag(sourceId, name)
+    sources.delete_source_tag(source_id, name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

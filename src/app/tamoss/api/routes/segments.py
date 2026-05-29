@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
+from mediatimestamp import TimeRange, Timestamp
 
-from tamoss.api.dependencies import get_use_cases
+from tamoss.api.dependencies import get_deletion_use_cases, get_segment_use_cases
 from tamoss.api.presenters import (
     deletion_request_accepted_response,
     head_response,
@@ -18,14 +19,13 @@ from tamoss.api.query_params import (
     parse_storage_ids,
     validate_query_params,
 )
-from tamoss.api.schemas import (
-    DeletionRequestResponse,
-    FailedSegment,
-    FailedSegmentsResponse,
-    FlowSegmentPost,
-)
-from tamoss.application.use_cases import TamossUseCases
+from tamoss.application.contexts.deletion import DeletionUseCases
+from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
+from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
+from tamoss.domain.model import SegmentRecord
+from tamoss.domain.timeranges import finite_normalized_timerange_bounds
 from tamoss.errors import BadRequest, error_payload
 
 router = APIRouter(tags=["FlowSegments"])
@@ -46,7 +46,7 @@ router = APIRouter(tags=["FlowSegments"])
     },
 )
 def list_segments(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
     response: Response,
     object_id: str | None = None,
@@ -59,7 +59,7 @@ def list_segments(
     include_object_timerange: bool = False,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
     validate_query_params(
         request,
@@ -78,8 +78,8 @@ def list_segments(
     )
     accepted_labels = parse_get_url_labels(accept_get_urls)
     accepted_storage_ids = parse_storage_ids(accept_storage_ids)
-    segment_page = use_cases.list_segments(
-        flow_id=flowId,
+    segment_page = segments.list_segments(
+        flow_id=flow_id,
         object_id=object_id,
         timerange=timerange,
         reverse_order=reverse_order,
@@ -89,28 +89,22 @@ def list_segments(
     with_page_headers(response, request, segment_page)
     response.headers["X-Paging-Reverse-Order"] = str(reverse_order).lower()
     response.headers["X-Paging-Timerange"] = segment_page.timerange or "()"
+    coverage_gaps = segment_coverage_gaps(segment_page.items)
+    if coverage_gaps:
+        response.headers["X-TAMOSS-Coverage-Gaps"] = ",".join(coverage_gaps)
     if head := head_response(request, response):
         return head
-    include_get_urls = accepted_labels != set()
-    objects_by_id = (
-        use_cases.repository.get_objects(
-            segment.object_id for segment in segment_page.items
-        )
-        if include_get_urls
-        else {}
+    get_urls_by_object_id = segments.segment_get_urls(
+        segment_page.items,
+        accept_get_urls=accepted_labels,
+        accept_storage_ids=accepted_storage_ids,
+        presigned=presigned,
+        verbose_storage=verbose_storage,
     )
     return [
         segment_response(
             segment,
-            use_cases.object_get_urls(
-                media_object,
-                accept_get_urls=accepted_labels,
-                accept_storage_ids=accepted_storage_ids,
-                presigned=presigned,
-                verbose_storage=verbose_storage,
-            )
-            if (media_object := objects_by_id.get(segment.object_id)) is not None
-            else [],
+            get_urls_by_object_id.get(segment.object_id, []),
             include_object_timerange=include_object_timerange,
         )
         for segment in segment_page.items
@@ -124,7 +118,7 @@ def list_segments(
     responses={
         200: {
             "description": "Some Flow Segments failed validation.",
-            "model": FailedSegmentsResponse,
+            "model": contract_models.FlowSegmentBulkFailure,
         },
         400: {"description": "Bad request. Invalid Flow Segment JSON."},
         403: {"description": "Forbidden."},
@@ -132,33 +126,40 @@ def list_segments(
     },
 )
 def post_segments(
-    flowId: UUID,
-    body: FlowSegmentPost | list[FlowSegmentPost],
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    flow_id: Annotated[UUID, Path(alias="flowId")],
+    body: contract_models.FlowSegmentPost | list[contract_models.FlowSegmentPost],
+    segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
-    if isinstance(body, list):
-        failed: list[FailedSegment] = []
+    segment_body = (
+        [contract_dump(segment) for segment in body]
+        if isinstance(body, list)
+        else contract_dump(body)
+    )
+    if isinstance(segment_body, list):
+        failed: list[contract_models.FailedSegment] = []
         for segment, result in zip(
-            body, use_cases.register_segments(flow_id=flowId, segment_posts=body)
+            segment_body,
+            segments.register_segments(flow_id=flow_id, segment_posts=segment_body),
+            strict=True,
         ):
             if result.error:
                 failed.append(
-                    FailedSegment(
-                        object_id=segment.object_id,
-                        timerange=segment.timerange,
+                    contract_models.FailedSegment(
+                        object_id=segment["object_id"],
+                        timerange=segment["timerange"],
                         error=error_payload("TAMSError", result.error),
                     )
                 )
         if failed:
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content=FailedSegmentsResponse(failed_segments=failed).model_dump(
-                    exclude_none=True, mode="json"
-                ),
+                content=contract_models.FlowSegmentBulkFailure(
+                    failed_segments=failed
+                ).model_dump(exclude_none=True, mode="json"),
             )
         return Response(status_code=status.HTTP_201_CREATED)
 
-    result = use_cases.register_segment(flow_id=flowId, segment_post=body)
+    result = segments.register_segment(flow_id=flow_id, segment_post=segment_body)
     if result.error:
         raise BadRequest(result.error)
     return Response(status_code=status.HTTP_201_CREATED)
@@ -170,7 +171,7 @@ def post_segments(
     responses={
         202: {
             "description": "Deletion accepted.",
-            "model": DeletionRequestResponse,
+            "model": contract_models.DeletionRequest,
         },
         400: {"description": "Bad request."},
         403: {"description": "Forbidden."},
@@ -178,16 +179,16 @@ def post_segments(
     },
 )
 def delete_segments(
-    flowId: UUID,
+    flow_id: Annotated[UUID, Path(alias="flowId")],
     request: Request,
     timerange: str | None = None,
     object_id: str | None = None,
-    use_cases: TamossUseCases = Depends(get_use_cases),
+    deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
     validate_query_params(request, {"timerange", "object_id"})
     identity = identify_request(request)
-    delete_request = use_cases.delete_segments(
-        flow_id=flowId,
+    delete_request = deletion.delete_segments(
+        flow_id=flow_id,
         timerange=timerange,
         object_id=object_id,
         identity=identity,
@@ -195,3 +196,32 @@ def delete_segments(
     if delete_request is not None:
         return deletion_request_accepted_response(delete_request, request)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def segment_coverage_gaps(segments: list[SegmentRecord]) -> list[str]:
+    bounds: list[tuple[int, int]] = []
+    for segment in segments:
+        try:
+            parsed = TimeRange.from_str(segment.timerange)
+            normalized = finite_normalized_timerange_bounds(parsed)
+        except Exception as exc:
+            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
+        assert normalized.start is not None
+        assert normalized.end is not None
+        bounds.append((normalized.start, normalized.end))
+
+    if not bounds:
+        return []
+
+    bounds.sort()
+    gaps: list[str] = []
+    covered_end = bounds[0][1]
+    for start, end in bounds[1:]:
+        if start > covered_end:
+            gaps.append(
+                f"[{Timestamp.from_nanosec(covered_end)}_"
+                f"{Timestamp.from_nanosec(start)})"
+            )
+        if end > covered_end:
+            covered_end = end
+    return gaps

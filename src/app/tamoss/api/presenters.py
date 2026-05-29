@@ -5,25 +5,23 @@ from uuid import UUID
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from tamoss.api.schemas import (
-    DeletionRequestResponse,
-    FlowSegmentResponse,
-    ObjectResponse,
-    SourceResponse,
-    StorageBackendResponse,
-    WebhookResponse,
-)
+from tamoss.contract.generated import contract_models
+from tamoss.contract.payloads import flow_payload, source_payload
+from tamoss.contract.serialization import contract_dump
 from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
     MediaObjectRecord,
     SegmentRecord,
     SourceRecord,
+    SourceRelationships,
     StorageBackend,
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
 from tamoss.errors import normalize_error_payload
+
+JsonPayload = dict[str, object]
 
 
 def with_page_headers(response: Response, request: Request, page: Page[object]) -> None:
@@ -45,36 +43,45 @@ def head_response(
     return Response(status_code=200, headers=headers)
 
 
-def storage_backend_response(backend: StorageBackend) -> dict:
-    return StorageBackendResponse(
-        id=backend.id,
-        label=backend.label,
-        default_storage=backend.default_storage,
-        store_type=backend.store_type,
-        provider=backend.provider,
-        region=backend.region,
-        store_product=backend.store_product,
-    ).model_dump(exclude_none=True, mode="json")
+def storage_backend_response(backend: StorageBackend) -> JsonPayload:
+    return contract_dump(
+        contract_models.StorageBackendsListItem(
+            id=str(backend.id),
+            label=backend.label,
+            default_storage=backend.default_storage,
+            store_type=backend.store_type,
+            provider=backend.provider,
+            region=backend.region,
+            store_product=backend.store_product,
+        )
+    )
 
 
 def source_response(
     source: SourceRecord,
     *,
-    source_collection: list[dict] | None = None,
+    source_collection: list[dict[str, object]] | None = None,
     collected_by: list[UUID] | None = None,
-) -> dict:
-    return SourceResponse(
-        id=source.id,
-        format=source.format,
-        label=source.label,
-        description=source.description,
-        tags=source.tags,
+) -> JsonPayload:
+    return source_payload(
+        source,
         source_collection=source_collection,
         collected_by=collected_by,
-    ).model_dump(exclude_none=True, mode="json")
+    )
 
 
-def webhook_response(webhook: WebhookRecord) -> dict:
+def source_response_with_relationships(
+    source: SourceRecord, *, relationships: dict[UUID, SourceRelationships]
+) -> JsonPayload:
+    relationship = relationships.get(source.id)
+    return source_response(
+        source,
+        source_collection=relationship.source_collection if relationship else None,
+        collected_by=relationship.collected_by if relationship else None,
+    )
+
+
+def webhook_response(webhook: WebhookRecord) -> JsonPayload:
     payload = {
         key: value
         for key, value in webhook.data.items()
@@ -82,27 +89,31 @@ def webhook_response(webhook: WebhookRecord) -> dict:
     }
     if "error" in payload:
         payload["error"] = normalize_error_payload(payload["error"])
-    return WebhookResponse(
-        **payload,
-        id=webhook.id,
-        status=webhook.status,
-        tags=webhook.tags,
-    ).model_dump(exclude_none=True, mode="json")
+    return contract_dump(
+        contract_models.WebhookGet(
+            **payload,
+            id=str(webhook.id),
+            status=webhook.status,
+            tags=webhook.tags,
+        )
+    )
 
 
-def deletion_request_response(request: DeletionRequestRecord) -> dict:
-    return DeletionRequestResponse(
-        id=request.id,
-        flow_id=request.flow_id,
-        timerange_to_delete=request.timerange_to_delete,
-        timerange_remaining=request.timerange_remaining,
-        delete_flow=request.delete_flow,
-        created=request.created.isoformat(),
-        created_by=request.created_by,
-        updated=request.updated.isoformat(),
-        status=request.status,
-        error=normalize_error_payload(request.error),
-    ).model_dump(exclude_none=True, mode="json")
+def deletion_request_response(request: DeletionRequestRecord) -> JsonPayload:
+    return contract_dump(
+        contract_models.DeletionRequest(
+            id=str(request.id),
+            flow_id=str(request.flow_id),
+            timerange_to_delete=request.timerange_to_delete,
+            timerange_remaining=request.timerange_remaining,
+            delete_flow=request.delete_flow,
+            created=request.created,
+            created_by=request.created_by,
+            updated=request.updated,
+            status=request.status,
+            error=normalize_error_payload(request.error),
+        )
+    )
 
 
 def deletion_request_accepted_response(
@@ -117,55 +128,49 @@ def deletion_request_accepted_response(
     )
 
 
-def flow_response(flow: FlowRecord, *, timerange: str | None = None) -> dict:
-    payload = dict(flow.data)
-    payload["id"] = str(flow.id)
-    if flow.source_id is not None:
-        payload["source_id"] = str(flow.source_id)
-    if flow.format is not None:
-        payload["format"] = flow.format
-    if flow.container is not None:
-        payload["container"] = flow.container
-    payload["read_only"] = flow.read_only
-    payload["tags"] = flow.tags
-    if timerange is not None:
-        payload["timerange"] = timerange
-    if flow.segments_updated is not None:
-        payload["segments_updated"] = flow.segments_updated.isoformat()
-    return {key: value for key, value in payload.items() if value is not None}
+def flow_response(flow: FlowRecord, *, timerange: str | None = None) -> JsonPayload:
+    return flow_payload(flow, timerange=timerange)
 
 
 def segment_response(
     segment: SegmentRecord,
-    get_urls: list[dict],
+    get_urls: list[dict[str, object]],
     *,
     include_object_timerange: bool = False,
-) -> dict:
-    return FlowSegmentResponse(
-        object_id=segment.object_id,
-        timerange=segment.timerange,
-        ts_offset=segment.ts_offset,
-        last_duration=segment.last_duration,
-        object_timerange=segment.object_timerange if include_object_timerange else None,
-        sample_offset=segment.sample_offset,
-        sample_count=segment.sample_count,
-        get_urls=get_urls,
-        key_frame_count=segment.key_frame_count,
-    ).model_dump(exclude_none=True, mode="json")
+) -> JsonPayload:
+    return contract_dump(
+        contract_models.FlowSegment(
+            object_id=segment.object_id,
+            timerange=segment.timerange,
+            ts_offset=segment.ts_offset,
+            last_duration=segment.last_duration,
+            object_timerange=segment.object_timerange
+            if include_object_timerange
+            else None,
+            sample_offset=segment.sample_offset,
+            sample_count=segment.sample_count,
+            get_urls=get_urls,
+            key_frame_count=segment.key_frame_count,
+        )
+    )
 
 
 def object_response(
     media_object: MediaObjectRecord,
-    referenced_by_flows: list,
+    referenced_by_flows: list[UUID],
     *,
-    get_urls: list[dict],
-) -> dict:
+    get_urls: list[dict[str, object]],
+) -> JsonPayload:
     timerange = media_object.timerange or "()"
-    return ObjectResponse(
-        id=media_object.id,
-        referenced_by_flows=referenced_by_flows,
-        first_referenced_by_flow=media_object.first_referenced_by_flow,
-        timerange=timerange,
-        get_urls=get_urls,
-        key_frame_count=media_object.key_frame_count,
-    ).model_dump(exclude_none=True, mode="json")
+    return contract_dump(
+        contract_models.Object(
+            id=media_object.id,
+            referenced_by_flows=[str(flow_id) for flow_id in referenced_by_flows],
+            first_referenced_by_flow=str(media_object.first_referenced_by_flow)
+            if media_object.first_referenced_by_flow is not None
+            else None,
+            timerange=timerange,
+            get_urls=get_urls,
+            key_frame_count=media_object.key_frame_count,
+        )
+    )
