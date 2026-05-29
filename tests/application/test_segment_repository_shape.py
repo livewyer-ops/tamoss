@@ -4,8 +4,8 @@ from collections.abc import Iterable
 from contextlib import nullcontext
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
-from tamoss.api.schemas import FlowSegmentPost
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.domain.model import (
@@ -19,18 +19,23 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
-from tamoss.ports.repositories import SegmentTimerangeBounds
+from tamoss.domain.segments import SegmentTimerangeBounds
 from tamoss.settings import Settings, StorageBackendSettings
+
+from tests.support.object_storage import InMemoryObjectStorage
+
+pytestmark = pytest.mark.architecture
 
 SEGMENT_COUNT = 300
 BACKEND_ID = UUID("11111111-1111-4111-8111-111111111111")
-BACKEND_LABEL = "tamoss.performance.primary"
+BACKEND_LABEL = "tamoss.us-east-1:s3:performance"
 
 
 def test_segment_listing_uses_bulk_repository_shape() -> None:
     backend = _storage_backend()
     repository = CountingRepository(backend)
-    use_cases = _use_cases(repository)
+    object_storage = InMemoryObjectStorage(include_backend_in_url=False)
+    use_cases = _use_cases(repository, object_storage=object_storage)
     flow_id = uuid4()
     repository.save_flow(_flow(flow_id))
     for index in range(SEGMENT_COUNT):
@@ -78,6 +83,111 @@ def test_segment_listing_uses_bulk_repository_shape() -> None:
     assert repository.get_objects_calls == 1
     assert repository.get_object_calls == 0
     assert repository.list_segments_calls == 0
+    assert len(object_storage.built_get_url_batches) == 1
+    assert set(object_storage.built_get_url_batches[0]) == {
+        (backend.id, _object_id(index)) for index in range(SEGMENT_COUNT)
+    }
+
+
+def test_segment_listing_reuses_get_urls_for_duplicate_objects() -> None:
+    backend = _storage_backend()
+    repository = CountingRepository(backend)
+    object_storage = InMemoryObjectStorage(include_backend_in_url=False)
+    use_cases = _use_cases(repository, object_storage=object_storage)
+    flow_id = uuid4()
+    object_id = _object_id(0)
+    repository.save_flow(_flow(flow_id))
+    repository.save_object(
+        MediaObjectRecord(
+            id=object_id,
+            timerange=f"[0:0_{SEGMENT_COUNT}:0)",
+            first_referenced_by_flow=flow_id,
+            referenced_by_flows={flow_id},
+            instances=[
+                ObjectInstance(
+                    storage_backend=backend,
+                    url=None,
+                    label=backend.label,
+                    controlled=True,
+                    presigned=True,
+                )
+            ],
+        )
+    )
+    for index in range(SEGMENT_COUNT):
+        repository.append_segment(
+            SegmentRecord(
+                flow_id=flow_id,
+                object_id=object_id,
+                timerange=_timerange(index),
+            )
+        )
+    repository.reset_counts()
+
+    app = create_app(_settings(), use_cases=use_cases)
+    with TestClient(app) as client:
+        response = client.get(
+            f"/flows/{flow_id}/segments",
+            params={
+                "limit": str(SEGMENT_COUNT),
+                "accept_get_urls": BACKEND_LABEL,
+                "presigned": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert len(response.json()) == SEGMENT_COUNT
+    assert repository.get_objects_calls == 1
+    assert object_storage.built_get_urls == [(backend.id, object_id)]
+    assert object_storage.built_get_url_batches == [[(backend.id, object_id)]]
+
+
+def test_segment_listing_returns_direct_controlled_url_without_presign_work() -> None:
+    backend = _storage_backend()
+    repository = CountingRepository(backend)
+    object_storage = InMemoryObjectStorage(include_backend_in_url=False)
+    use_cases = _use_cases(repository, object_storage=object_storage)
+    flow_id = uuid4()
+    object_id = _object_id(0)
+    repository.save_flow(_flow(flow_id))
+    repository.save_object(
+        MediaObjectRecord(
+            id=object_id,
+            timerange=_timerange(0),
+            first_referenced_by_flow=flow_id,
+            referenced_by_flows={flow_id},
+            instances=[
+                ObjectInstance(
+                    storage_backend=backend,
+                    url=None,
+                    label=backend.label,
+                    controlled=True,
+                    presigned=True,
+                )
+            ],
+        )
+    )
+    repository.append_segment(
+        SegmentRecord(flow_id=flow_id, object_id=object_id, timerange=_timerange(0))
+    )
+
+    app = create_app(_settings(), use_cases=use_cases)
+    with TestClient(app) as client:
+        response = client.get(
+            f"/flows/{flow_id}/segments",
+            params={
+                "accept_get_urls": BACKEND_LABEL,
+                "presigned": "false",
+            },
+        )
+
+    assert response.status_code == 200
+    get_urls = response.json()[0]["get_urls"]
+    assert len(get_urls) == 1
+    assert get_urls[0]["label"] == BACKEND_LABEL
+    assert get_urls[0]["presigned"] is False
+    assert object_storage.built_get_url_batches == [[(backend.id, object_id)]]
+    assert object_storage.built_get_urls == [(backend.id, object_id)]
 
 
 def test_segment_registration_uses_bounded_repository_shape() -> None:
@@ -90,13 +200,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
         repository.save_object(MediaObjectRecord(id=_object_id(index)))
     repository.reset_counts()
 
-    results = use_cases.register_segments(
+    results = use_cases.segments.register_segments(
         flow_id=flow_id,
         segment_posts=[
-            FlowSegmentPost(
-                object_id=_object_id(index),
-                timerange=_timerange(index),
-            )
+            {"object_id": _object_id(index), "timerange": _timerange(index)}
             for index in range(SEGMENT_COUNT)
         ],
     )
@@ -130,6 +237,38 @@ class CountingRepository:
         self.append_segment_calls = 0
         self.save_registered_segments_calls = 0
         self.lock_flow_segments_calls = 0
+
+    @property
+    def service_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def webhook_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def deletion_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def source_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def flow_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def storage_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def segment_repository(self) -> CountingRepository:
+        return self
+
+    @property
+    def object_repository(self) -> CountingRepository:
+        return self
 
     def list_storage_backends(self) -> list[StorageBackend]:
         return [self._storage_backend]
@@ -167,7 +306,7 @@ class CountingRepository:
         return Page(items=flows[:limit], limit=limit)
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
-        return {flow_id: "()" for flow_id in flow_ids}
+        return dict.fromkeys(flow_ids, "()")
 
     def get_flow(self, flow_id: UUID) -> FlowRecord | None:
         return self._flows.get(flow_id)
@@ -260,45 +399,15 @@ class CountingRepository:
             self._segments.setdefault(segment.flow_id, []).append(segment)
 
 
-class DummyObjectStorage:
-    def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
-    ) -> dict:
-        return {}
-
-    def build_get_url(self, *, object_id: str, backend: StorageBackend) -> str:
-        return f"https://objects.example.test/{object_id}"
-
-    def build_get_urls(self, *, object_id: str, backend: StorageBackend) -> list[dict]:
-        return []
-
-    def write(
-        self, object_id: str, data: bytes, *, backend: StorageBackend | None = None
-    ) -> None:
-        return None
-
-    def read(
-        self, object_id: str, *, backend: StorageBackend | None = None
-    ) -> bytes | None:
-        return None
-
-    def iter_chunks(
-        self,
-        object_id: str,
-        *,
-        backend: StorageBackend | None = None,
-        chunk_size: int = 1024 * 1024,
-    ):
-        return None
-
-    def delete(self, object_id: str, *, backend: StorageBackend | None = None) -> None:
-        return None
-
-
-def _use_cases(repository: CountingRepository) -> TamossUseCases:
+def _use_cases(
+    repository: CountingRepository,
+    *,
+    object_storage: InMemoryObjectStorage | None = None,
+) -> TamossUseCases:
     return TamossUseCases(
         repository=repository,
-        object_storage=DummyObjectStorage(),
+        object_storage=object_storage
+        or InMemoryObjectStorage(include_backend_in_url=False),
         settings=_settings(),
     )
 
@@ -306,7 +415,6 @@ def _use_cases(repository: CountingRepository) -> TamossUseCases:
 def _settings() -> Settings:
     return Settings(
         auth_required=False,
-        database_url=None,
         storage_backend=StorageBackendSettings(
             id=BACKEND_ID,
             label=BACKEND_LABEL,

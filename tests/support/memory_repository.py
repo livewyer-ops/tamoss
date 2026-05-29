@@ -5,16 +5,22 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import RLock
+from typing import TypeVar
 from uuid import UUID
 
-from mediatimestamp import TimeRange
+from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
+from tamoss.domain import flow_collections
+from tamoss.domain import segments as segment_domain
+from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
 from tamoss.domain.model import (
     DeletionRequestRecord,
+    DomainErrorPayload,
     FlowRecord,
     MediaObjectRecord,
+    ObjectCleanupRecord,
+    ObjectCopyRecord,
     SegmentRecord,
     ServiceMetadata,
     SourceRecord,
@@ -25,15 +31,32 @@ from tamoss.domain.model import (
     utc_now,
 )
 from tamoss.domain.pagination import Page, page_sequence
+from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
 from tamoss.domain.tags import tags_match
 from tamoss.errors import normalize_error_payload
-from tamoss.ports.repositories import SegmentTimerangeBounds
+
+WorkerRecord = (
+    WebhookDeliveryRecord
+    | DeletionRequestRecord
+    | ObjectCleanupRecord
+    | ObjectCopyRecord
+)
+WorkerRecordT = TypeVar("WorkerRecordT", bound=WorkerRecord)
 
 
-class InMemoryRepository:
-    def __init__(self, storage_backend: StorageBackend):
+class FakeTamossRepository:
+    def __init__(
+        self,
+        storage_backend: StorageBackend,
+        *,
+        storage_backends: Iterable[StorageBackend] | None = None,
+    ):
         self._lock = RLock()
-        self._storage_backend = storage_backend
+        self._storage_backends = list(storage_backends or [storage_backend])
+        self._storage_backend = next(
+            (backend for backend in self._storage_backends if backend.default_storage),
+            self._storage_backends[0],
+        )
         self._flows: dict[UUID, FlowRecord] = {}
         self._sources: dict[UUID, SourceRecord] = {}
         self._objects: dict[str, MediaObjectRecord] = {}
@@ -41,10 +64,44 @@ class InMemoryRepository:
         self._webhooks: dict[UUID, WebhookRecord] = {}
         self._webhook_deliveries: dict[UUID, WebhookDeliveryRecord] = {}
         self._delete_requests: dict[UUID, DeletionRequestRecord] = {}
+        self._object_cleanups: dict[UUID, ObjectCleanupRecord] = {}
+        self._object_copies: dict[UUID, ObjectCopyRecord] = {}
         self._service_metadata: ServiceMetadata | None = None
 
+    @property
+    def service_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def webhook_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def deletion_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def source_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def flow_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def storage_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def segment_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def object_repository(self) -> FakeTamossRepository:
+        return self
+
     @contextmanager
-    def unit_of_work(self) -> Iterator[InMemoryRepository]:
+    def unit_of_work(self) -> Iterator[FakeTamossRepository]:
         with self._lock:
             snapshot = (
                 deepcopy(self._flows),
@@ -54,6 +111,8 @@ class InMemoryRepository:
                 deepcopy(self._webhooks),
                 deepcopy(self._webhook_deliveries),
                 deepcopy(self._delete_requests),
+                deepcopy(self._object_cleanups),
+                deepcopy(self._object_copies),
                 deepcopy(self._service_metadata),
             )
             try:
@@ -67,6 +126,8 @@ class InMemoryRepository:
                     self._webhooks,
                     self._webhook_deliveries,
                     self._delete_requests,
+                    self._object_cleanups,
+                    self._object_copies,
                     self._service_metadata,
                 ) = snapshot
                 raise
@@ -82,9 +143,12 @@ class InMemoryRepository:
         with self._lock:
             self._service_metadata = metadata
 
+    def current_schema_revision(self) -> str:
+        return CURRENT_SCHEMA_REVISION
+
     def list_storage_backends(self) -> list[StorageBackend]:
         with self._lock:
-            return [self._storage_backend]
+            return list(self._storage_backends)
 
     def default_storage_backend(self) -> StorageBackend | None:
         with self._lock:
@@ -92,8 +156,9 @@ class InMemoryRepository:
 
     def get_storage_backend(self, storage_id: UUID) -> StorageBackend | None:
         with self._lock:
-            if storage_id == self._storage_backend.id:
-                return self._storage_backend
+            for backend in self._storage_backends:
+                if storage_id == backend.id:
+                    return backend
             return None
 
     def list_flows(self) -> list[FlowRecord]:
@@ -124,9 +189,12 @@ class InMemoryRepository:
                 flow_id: list(flow_segments)
                 for flow_id, flow_segments in self._segments.items()
             }
-        collected_by = _collected_by_by_flow_id(flows)
+        collected_by = flow_collections.collected_by_by_flow_id(flows)
         flows = [
-            _flow_with_collected_by(flow, collected_by.get(flow.id, []))
+            flow_collections.flow_with_collected_by(
+                flow,
+                collected_by.get(flow.id, []),
+            )
             for flow in flows
         ]
         if source_id is not None:
@@ -134,20 +202,27 @@ class InMemoryRepository:
         if format is not None:
             flows = [flow for flow in flows if flow.format == format]
         if codec is not None:
-            flows = [flow for flow in flows if _flow_data_value(flow, "codec") == codec]
+            flows = [
+                flow
+                for flow in flows
+                if flow_collections.flow_data_value(flow, "codec") == codec
+            ]
         if label is not None:
             flows = [flow for flow in flows if flow.data.get("label") == label]
         if frame_width is not None:
             flows = [
                 flow
                 for flow in flows
-                if _flow_data_value(flow, "frame_width") == frame_width
+                if flow_collections.flow_data_value(flow, "frame_width") == frame_width
             ]
         if frame_height is not None:
             flows = [
                 flow
                 for flow in flows
-                if _flow_data_value(flow, "frame_height") == frame_height
+                if (
+                    flow_collections.flow_data_value(flow, "frame_height")
+                    == frame_height
+                )
             ]
         if timerange_is_empty:
             flows = [flow for flow in flows if not segments.get(flow.id)]
@@ -155,7 +230,7 @@ class InMemoryRepository:
             flows = [
                 flow
                 for flow in flows
-                if _flow_timerange_matches(
+                if segment_domain.flow_timerange_matches(
                     segments.get(flow.id, []),
                     start=timerange_start,
                     end=timerange_end,
@@ -176,7 +251,8 @@ class InMemoryRepository:
                 for flow_id in requested_ids
             }
         return {
-            flow_id: _timerange_union(segments[flow_id]) for flow_id in requested_ids
+            flow_id: segment_domain.timerange_union(segments[flow_id])
+            for flow_id in requested_ids
         }
 
     def get_flow(self, flow_id: UUID) -> FlowRecord | None:
@@ -245,8 +321,8 @@ class InMemoryRepository:
         for parent_flow in flows:
             if parent_flow.source_id is None:
                 continue
-            for item in _flow_collection(parent_flow):
-                child_flow_id = _collection_child_id(item)
+            for item in flow_collections.flow_collection(parent_flow):
+                child_flow_id = flow_collections.collection_child_id(item)
                 if child_flow_id is None:
                     continue
                 child_flow = flows_by_id.get(child_flow_id)
@@ -296,9 +372,81 @@ class InMemoryRepository:
         with self._lock:
             self._objects.pop(object_id, None)
 
+    def list_unreferenced_objects_created_before(
+        self,
+        *,
+        before: datetime,
+        limit: int,
+    ) -> list[MediaObjectRecord]:
+        if limit < 1:
+            return []
+        with self._lock:
+            candidates = [
+                media_object
+                for media_object in self._objects.values()
+                if not media_object.referenced_by_flows
+                and media_object.created < before
+            ]
+        candidates.sort(
+            key=lambda media_object: (media_object.created, media_object.id)
+        )
+        return candidates[:limit]
+
     def list_segments(self, flow_id: UUID) -> list[SegmentRecord]:
         with self._lock:
             return list(self._segments.get(flow_id, []))
+
+    def list_segments_for_objects(
+        self, *, flow_id: UUID, object_ids: Iterable[str]
+    ) -> list[SegmentRecord]:
+        requested_ids = set(object_ids)
+        if not requested_ids:
+            return []
+        with self._lock:
+            segments = [
+                segment
+                for segment in self._segments.get(flow_id, [])
+                if segment.object_id in requested_ids
+            ]
+        segments.sort(key=segment_domain.segment_sort_key)
+        return segments
+
+    def segment_delete_timerange(self, delete_filter: SegmentDeleteFilter) -> str:
+        with self._lock:
+            matching = [
+                segment
+                for segment in self._segments.get(delete_filter.flow_id, [])
+                if _matches_segment_delete_filter(segment, delete_filter)
+            ]
+        return segment_domain.timerange_union(matching)
+
+    def delete_segment_batch(
+        self, delete_filter: SegmentDeleteFilter, *, limit: int
+    ) -> list[SegmentRecord]:
+        if limit < 1 or delete_filter.timerange_is_empty:
+            return []
+        with self._lock:
+            segments = list(self._segments.get(delete_filter.flow_id, []))
+            matching = [
+                segment
+                for segment in segments
+                if _matches_segment_delete_filter(segment, delete_filter)
+            ]
+            matching.sort(key=segment_domain.segment_sort_key)
+            deleted = matching[:limit]
+            deleted_keys = {
+                (segment.object_id, segment.timerange) for segment in deleted
+            }
+            remaining = [
+                segment
+                for segment in segments
+                if (segment.object_id, segment.timerange) not in deleted_keys
+            ]
+            if remaining:
+                self._segments[delete_filter.flow_id] = remaining
+            else:
+                self._segments.pop(delete_filter.flow_id, None)
+            return deleted
 
     def list_segments_overlapping(
         self,
@@ -316,7 +464,7 @@ class InMemoryRepository:
         seen: set[tuple[UUID, str, str]] = set()
         for segment in segments:
             if not any(
-                _segment_overlaps_bounds(
+                segment_domain.segment_overlaps_bounds(
                     segment,
                     start=timerange.start,
                     end=timerange.end,
@@ -330,7 +478,7 @@ class InMemoryRepository:
                 continue
             seen.add(key)
             matching.append(segment)
-        matching.sort(key=_segment_sort_key)
+        matching.sort(key=segment_domain.segment_sort_key)
         return matching
 
     def list_segments_page(
@@ -359,7 +507,7 @@ class InMemoryRepository:
             segments = [
                 segment
                 for segment in segments
-                if _segment_overlaps_bounds(
+                if segment_domain.segment_overlaps_bounds(
                     segment,
                     start=timerange_start,
                     end=timerange_end,
@@ -367,8 +515,8 @@ class InMemoryRepository:
                 )
             ]
 
-        segments.sort(key=_segment_sort_key, reverse=reverse_order)
-        matched_timerange = _timerange_union(segments)
+        segments.sort(key=segment_domain.segment_sort_key, reverse=reverse_order)
+        matched_timerange = segment_domain.timerange_union(segments)
         segment_page = page_sequence(segments, page=page, limit=limit)
         return Page(
             items=segment_page.items,
@@ -396,32 +544,23 @@ class InMemoryRepository:
                     segment.flow_id,
                     list(self._segments.get(segment.flow_id, [])),
                 )
-                segment_start, segment_end = _segment_bounds(segment)
+                segment_start, segment_end = segment_domain.segment_bounds(segment)
                 if any(
-                    _segment_overlaps_bounds(
+                    segment_domain.segment_overlaps_bounds(
                         existing,
                         start=segment_start,
                         end=segment_end,
-                        requested_is_point=segment_start == segment_end,
+                        requested_is_point=False,
                     )
                     for existing in known_segments
                 ):
-                    raise ValueError(
-                        "Segment timerange overlaps with an existing segment"
-                    )
+                    raise SegmentOverlapError(SEGMENT_OVERLAP_MESSAGE)
                 known_segments.append(segment)
             self._flows[flow.id] = flow
             for media_object in media_objects:
                 self._objects[media_object.id] = media_object
             for segment in pending_segments:
                 self._segments.setdefault(segment.flow_id, []).append(segment)
-
-    def replace_segments(self, flow_id: UUID, segments: list[SegmentRecord]) -> None:
-        with self._lock:
-            if segments:
-                self._segments[flow_id] = segments
-            else:
-                self._segments.pop(flow_id, None)
 
     def list_webhooks(self) -> list[WebhookRecord]:
         with self._lock:
@@ -490,42 +629,20 @@ class InMemoryRepository:
 
     def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None:
         with self._lock:
-            delivery.error = normalize_error_payload(delivery.error)
+            delivery.error = DomainErrorPayload.from_json_dict(delivery.error)
             self._webhook_deliveries[delivery.id] = delivery
 
     def claim_webhook_deliveries(
         self, *, worker_id: str, limit: int, lease_seconds: int
     ) -> list[WebhookDeliveryRecord]:
-        now = utc_now()
-        lease_expires = now + timedelta(seconds=lease_seconds)
-        claimed: list[WebhookDeliveryRecord] = []
         with self._lock:
-            deliveries = sorted(
+            return _claim_worker_records(
                 self._webhook_deliveries.values(),
-                key=lambda delivery: (delivery.created, str(delivery.id)),
+                statuses={"pending", "started"},
+                worker_id=worker_id,
+                limit=limit,
+                lease_seconds=lease_seconds,
             )
-            for delivery in deliveries:
-                if len(claimed) >= limit:
-                    break
-                if delivery.status not in {"pending", "started"}:
-                    continue
-                if (
-                    delivery.next_attempt_at is not None
-                    and delivery.next_attempt_at > now
-                ):
-                    continue
-                if (
-                    delivery.claim_expires_at is not None
-                    and delivery.claim_expires_at > now
-                ):
-                    continue
-                delivery.status = "started"
-                delivery.claimed_at = now
-                delivery.claimed_by = worker_id
-                delivery.claim_expires_at = lease_expires
-                delivery.updated = now
-                claimed.append(delivery)
-        return claimed
 
     def list_delete_requests(self) -> list[DeletionRequestRecord]:
         with self._lock:
@@ -537,169 +654,117 @@ class InMemoryRepository:
 
     def save_delete_request(self, request: DeletionRequestRecord) -> None:
         with self._lock:
-            request.error = normalize_error_payload(request.error)
+            request.error = DomainErrorPayload.from_json_dict(request.error)
             self._delete_requests[request.id] = request
 
     def claim_delete_requests(
         self, *, worker_id: str, limit: int, lease_seconds: int
     ) -> list[DeletionRequestRecord]:
-        now = utc_now()
-        lease_expires = now + timedelta(seconds=lease_seconds)
-        claimed: list[DeletionRequestRecord] = []
         with self._lock:
-            requests = sorted(
+            return _claim_worker_records(
                 self._delete_requests.values(),
-                key=lambda request: (request.created, str(request.id)),
+                statuses={"created", "started", "error"},
+                worker_id=worker_id,
+                limit=limit,
+                lease_seconds=lease_seconds,
             )
-            for request in requests:
-                if len(claimed) >= limit:
-                    break
-                if request.status not in {"created", "started", "error"}:
-                    continue
-                if (
-                    request.claim_expires_at is not None
-                    and request.claim_expires_at > now
-                ):
-                    continue
-                request.status = "started"
-                request.claimed_at = now
-                request.claimed_by = worker_id
-                request.claim_expires_at = lease_expires
-                request.updated = now
-                claimed.append(request)
-        return claimed
+
+    def list_object_cleanups(
+        self,
+        *,
+        delete_request_id: UUID | None = None,
+        statuses: set[str] | None = None,
+    ) -> list[ObjectCleanupRecord]:
+        with self._lock:
+            cleanups = list(self._object_cleanups.values())
+        if delete_request_id is not None:
+            cleanups = [
+                cleanup
+                for cleanup in cleanups
+                if cleanup.delete_request_id == delete_request_id
+            ]
+        if statuses is not None:
+            cleanups = [cleanup for cleanup in cleanups if cleanup.status in statuses]
+        cleanups.sort(key=lambda cleanup: (cleanup.created, str(cleanup.id)))
+        return cleanups
+
+    def save_object_cleanup(self, cleanup: ObjectCleanupRecord) -> None:
+        with self._lock:
+            cleanup.error = DomainErrorPayload.from_json_dict(cleanup.error)
+            self._object_cleanups[cleanup.id] = cleanup
+
+    def claim_object_cleanups(
+        self, *, worker_id: str, limit: int, lease_seconds: int
+    ) -> list[ObjectCleanupRecord]:
+        with self._lock:
+            return _claim_worker_records(
+                self._object_cleanups.values(),
+                statuses={"pending", "started", "error"},
+                worker_id=worker_id,
+                limit=limit,
+                lease_seconds=lease_seconds,
+                unowned_only=True,
+            )
+
+    def list_object_copies(
+        self, *, statuses: set[str] | None = None
+    ) -> list[ObjectCopyRecord]:
+        with self._lock:
+            copies = list(self._object_copies.values())
+        if statuses is not None:
+            copies = [copy for copy in copies if copy.status in statuses]
+        copies.sort(key=lambda copy: (copy.created, str(copy.id)))
+        return copies
+
+    def save_object_copy(self, copy: ObjectCopyRecord) -> None:
+        with self._lock:
+            copy.error = DomainErrorPayload.from_json_dict(copy.error)
+            self._object_copies[copy.id] = copy
+
+    def claim_object_copies(
+        self, *, worker_id: str, limit: int, lease_seconds: int
+    ) -> list[ObjectCopyRecord]:
+        with self._lock:
+            return _claim_worker_records(
+                self._object_copies.values(),
+                statuses={"pending", "started", "error"},
+                worker_id=worker_id,
+                limit=limit,
+                lease_seconds=lease_seconds,
+            )
 
 
-def _flow_data_value(flow: FlowRecord, name: str) -> object:
-    if name in flow.data:
-        return flow.data[name]
-    essence_parameters = flow.data.get("essence_parameters")
-    if isinstance(essence_parameters, dict):
-        return essence_parameters.get(name)
-    return None
-
-
-def _flow_collection(flow: FlowRecord) -> list[dict]:
-    collection = flow.data.get("flow_collection")
-    if not isinstance(collection, list):
-        return []
-    return [dict(item) for item in collection if isinstance(item, dict)]
-
-
-def _collection_child_id(item: dict) -> UUID | None:
-    raw_id = item.get("id")
-    if raw_id is None:
-        return None
-    try:
-        return UUID(str(raw_id))
-    except ValueError:
-        return None
-
-
-def _collected_by_by_flow_id(flows: list[FlowRecord]) -> dict[UUID, list[str]]:
-    collected_by: dict[UUID, list[str]] = {}
-    for parent in flows:
-        parent_id = str(parent.id)
-        for item in _flow_collection(parent):
-            child_id = _collection_child_id(item)
-            if child_id is None:
-                continue
-            parent_ids = collected_by.setdefault(child_id, [])
-            if parent_id not in parent_ids:
-                parent_ids.append(parent_id)
-    return collected_by
-
-
-def _flow_with_collected_by(flow: FlowRecord, collected_by: list[str]) -> FlowRecord:
-    data = dict(flow.data)
-    if collected_by:
-        data["collected_by"] = collected_by
-    else:
-        data.pop("collected_by", None)
-    return replace(flow, data=data)
-
-
-def _flow_timerange_matches(
-    segments: list[SegmentRecord],
+def _claim_worker_records(
+    records: Iterable[WorkerRecordT],
     *,
-    start: int | None,
-    end: int | None,
-    requested_is_point: bool,
-) -> bool:
-    if not segments:
-        return False
-    starts: list[int] = []
-    ends: list[int] = []
-    for segment in segments:
-        segment_start, segment_end = _segment_bounds(segment)
-        starts.append(segment_start)
-        ends.append(segment_end)
-    flow_start = min(starts)
-    flow_end = max(ends)
-    flow_is_point = flow_start == flow_end
-
-    if requested_is_point and start is not None:
-        if flow_is_point:
-            return flow_start == start
-        return flow_start <= start < flow_end
-    if end is not None and flow_start >= end:
-        return False
-    if start is not None:
-        if flow_is_point:
-            return flow_start >= start
-        return flow_end > start
-    return True
-
-
-def _segment_bounds(segment: SegmentRecord) -> tuple[int, int]:
-    parsed = TimeRange.from_str(segment.timerange)
-    if parsed.start is None or parsed.end is None:
-        raise ValueError("Segment timerange must have finite start and end bounds.")
-    return int(parsed.start.to_nanosec()), int(parsed.end.to_nanosec())
-
-
-def _segment_overlaps_bounds(
-    segment: SegmentRecord,
-    *,
-    start: int | None,
-    end: int | None,
-    requested_is_point: bool,
-) -> bool:
-    segment_start, segment_end = _segment_bounds(segment)
-    segment_is_point = segment_start == segment_end
-
-    if requested_is_point and start is not None:
-        if segment_is_point:
-            return segment_start == start
-        return segment_start <= start < segment_end
-
-    if end is not None and segment_start >= end:
-        return False
-    if start is not None:
-        if segment_is_point:
-            return segment_start >= start
-        if segment_end <= start:
-            return False
-    return True
-
-
-def _segment_sort_key(segment: SegmentRecord) -> tuple[int, int, str]:
-    start, end = _segment_bounds(segment)
-    return end, start, segment.object_id
-
-
-def _timerange_union(segments: list[SegmentRecord]) -> str:
-    ranges: list[TimeRange] = []
-    for segment in segments:
-        parsed = TimeRange.from_str(segment.timerange)
-        if not parsed.is_empty():
-            ranges.append(parsed)
-    if not ranges:
-        return "()"
-    merged = ranges[0]
-    for parsed in ranges[1:]:
-        merged = merged.extend_to_encompass_timerange(parsed)
-    return str(merged)
+    statuses: set[str],
+    worker_id: str,
+    limit: int,
+    lease_seconds: int,
+    unowned_only: bool = False,
+) -> list[WorkerRecordT]:
+    now = utc_now()
+    lease_expires = now + timedelta(seconds=lease_seconds)
+    claimed: list[WorkerRecordT] = []
+    for record in sorted(records, key=lambda item: (item.created, str(item.id))):
+        if len(claimed) >= limit:
+            break
+        if record.status not in statuses:
+            continue
+        if unowned_only and getattr(record, "delete_request_id", None) is not None:
+            continue
+        next_attempt_at = getattr(record, "next_attempt_at", None)
+        if next_attempt_at is not None and next_attempt_at > now:
+            continue
+        if record.claim_expires_at is not None and record.claim_expires_at > now:
+            continue
+        record.status = "started"
+        record.claimed_at = now
+        record.claimed_by = worker_id
+        record.claim_expires_at = lease_expires
+        record.updated = now
+        claimed.append(record)
+    return claimed
 
 
 def _normalize_webhook_error(webhook: WebhookRecord) -> None:
@@ -710,3 +775,25 @@ def _normalize_webhook_error(webhook: WebhookRecord) -> None:
         webhook.data.pop("error", None)
     else:
         webhook.data["error"] = error
+
+
+def _matches_segment_delete_filter(
+    segment: SegmentRecord, delete_filter: SegmentDeleteFilter
+) -> bool:
+    if delete_filter.timerange_is_empty:
+        return False
+    if (
+        delete_filter.object_id is not None
+        and segment.object_id != delete_filter.object_id
+    ):
+        return False
+    segment_start, segment_end = segment_domain.segment_bounds(segment)
+    if (
+        delete_filter.timerange_start is not None
+        and segment_start < delete_filter.timerange_start
+    ):
+        return False
+    return not (
+        delete_filter.timerange_end is not None
+        and segment_end > delete_filter.timerange_end
+    )

@@ -42,7 +42,6 @@ def object_storage(
     settings = Settings(
         auth_required=False,
         public_base_url="http://testserver",
-        s3_auto_create_bucket=True,
         s3_presign_ttl_seconds=120,
         s3_connect_timeout_seconds=2,
         s3_read_timeout_seconds=2,
@@ -75,13 +74,17 @@ def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
     assert object_storage.read(object_id, backend=s3_backend) == body
 
     get_urls = object_storage.build_get_urls(object_id=object_id, backend=s3_backend)
-    assert [item["presigned"] for item in get_urls] == [True]
-    assert [item["label"] for item in get_urls] == [s3_backend.label]
-    assert unquote(urlparse(get_urls[0]["url"]).path).endswith(
+    assert [item["presigned"] for item in get_urls] == [False, True]
+    assert [item["label"] for item in get_urls] == [
+        s3_backend.label,
+        s3_backend.label,
+    ]
+    presigned_get_url = next(item for item in get_urls if item["presigned"] is True)
+    assert unquote(urlparse(presigned_get_url["url"]).path).endswith(
         f"/{s3_backend.bucket_name}/{object_id}"
     )
 
-    get_response = requests.get(get_urls[0]["url"], timeout=5)
+    get_response = requests.get(presigned_get_url["url"], timeout=5)
     assert get_response.status_code == 200
     assert get_response.content == body
 
