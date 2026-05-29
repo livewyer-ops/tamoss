@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from types import TracebackType
+from typing import Any
 
 import anyio
 from fastapi import FastAPI, Request
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from jwt import PyJWKClientError
+from starlette.responses import Response
 
 from tamoss.api.routes import (
     delete_requests,
@@ -21,9 +25,9 @@ from tamoss.api.routes import (
 )
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.auth import authenticate_request, unauthorized_headers, warm_oauth2_jwks
-from tamoss.bootstrap import create_use_cases
+from tamoss.bootstrap import StartupConfigurationError, create_use_cases
+from tamoss.contract.openapi import load_public_openapi
 from tamoss.errors import Unauthorized, error_payload, register_error_handlers
-from tamoss.openapi_extensions import apply_tamoss_extensions
 from tamoss.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -38,7 +42,7 @@ def create_app(
     resolved_settings = use_cases.settings
 
     @asynccontextmanager
-    async def lifespan(application: FastAPI):
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         try:
             await _warm_runtime_auth(resolved_settings)
             yield
@@ -48,7 +52,7 @@ def create_app(
     application = FastAPI(
         title="Time Addressable Media Open Source Store",
         description="TAMOSS API for time-addressable media workflows.",
-        version=resolved_settings.api_version,
+        version=resolved_settings.tamoss_version,
         lifespan=lifespan,
     )
     application.state.tamoss_use_cases = use_cases
@@ -79,7 +83,10 @@ def _close_repository(application: FastAPI) -> None:
 
 def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
     @application.middleware("http")
-    async def tamoss_auth_middleware(request: Request, call_next):
+    async def tamoss_auth_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         if _auth_is_skipped(request):
             return await call_next(request)
         try:
@@ -88,7 +95,7 @@ def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
             return JSONResponse(
                 status_code=exc.status_code,
                 content=error_payload(exc.error_type, exc.detail),
-                headers=unauthorized_headers(),
+                headers=unauthorized_headers(settings),
             )
         return await call_next(request)
 
@@ -96,7 +103,7 @@ def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
 async def _warm_runtime_auth(settings: Settings) -> None:
     try:
         await anyio.to_thread.run_sync(warm_oauth2_jwks, settings)
-    except Exception:
+    except (OSError, PyJWKClientError, TimeoutError, ValueError):
         logger.warning("OAuth2 JWKS warmup failed", exc_info=True)
 
 
@@ -108,81 +115,40 @@ def _auth_is_skipped(request: Request) -> bool:
 
 
 def _install_openapi_schema(application: FastAPI, settings: Settings) -> None:
-    def custom_openapi() -> dict:
+    def custom_openapi() -> dict[str, Any]:
         if application.openapi_schema:
             return application.openapi_schema
-        schema = get_openapi(
-            title=application.title,
-            version=settings.api_version,
-            description=application.description,
-            routes=application.routes,
-        )
-        _remove_generated_validation_responses(schema)
-        _align_bbc_delete_request_path(schema)
-        _remove_head_response_bodies(schema)
-        apply_tamoss_extensions(schema)
-        application.openapi_schema = schema
+        application.openapi_schema = load_public_openapi(settings)
         return application.openapi_schema
 
-    setattr(application, "openapi", custom_openapi)
+    setattr(application, "openapi", custom_openapi)  # noqa: B010
 
 
-def _remove_generated_validation_responses(schema: dict) -> None:
-    for path_item in schema.get("paths", {}).values():
-        for operation in path_item.values():
-            if isinstance(operation, dict):
-                operation.get("responses", {}).pop("422", None)
+class _FailedStartupLifespan:
+    def __init__(self, startup_error: StartupConfigurationError) -> None:
+        self._startup_error = startup_error
 
+    async def __aenter__(self) -> None:
+        logger.error("TAMOSS startup configuration is invalid: %s", self._startup_error)
+        raise self._startup_error
 
-def _align_bbc_delete_request_path(schema: dict) -> None:
-    runtime_path = "/flow-delete-requests/{request_id}"
-    bbc_path = "/flow-delete-requests/{request-id}"
-    paths = schema.get("paths", {})
-    if runtime_path not in paths:
-        return
-    paths[bbc_path] = paths.pop(runtime_path)
-    for operation in paths[bbc_path].values():
-        if not isinstance(operation, dict):
-            continue
-        for parameter in operation.get("parameters", []):
-            if parameter.get("in") == "path" and parameter.get("name") == "request_id":
-                parameter["name"] = "request-id"
-
-
-def _remove_head_response_bodies(schema: dict) -> None:
-    for path_item in schema.get("paths", {}).values():
-        if not isinstance(path_item, dict):
-            continue
-        head_operation = path_item.get("head")
-        if _is_paged_head_operation(head_operation):
-            continue
-        if isinstance(head_operation, dict):
-            for response in head_operation.get("responses", {}).values():
-                if isinstance(response, dict):
-                    response.pop("content", None)
-
-
-def _is_paged_head_operation(operation: object) -> bool:
-    if not isinstance(operation, dict):
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> bool:
         return False
-    return any(
-        parameter.get("in") == "query" and parameter.get("name") in {"page", "limit"}
-        for parameter in operation.get("parameters", [])
-        if isinstance(parameter, dict)
-    )
 
 
 def _default_app() -> FastAPI:
     try:
         return create_app()
-    except RuntimeError as exc:
+    except StartupConfigurationError as exc:
         startup_error = exc
 
-        @asynccontextmanager
-        async def failed_lifespan(_application: FastAPI):
-            logger.error("TAMOSS startup configuration is invalid: %s", startup_error)
-            raise startup_error
-            yield
+        def failed_lifespan(_application: FastAPI) -> _FailedStartupLifespan:
+            return _FailedStartupLifespan(startup_error)
 
         return FastAPI(lifespan=failed_lifespan)
 
