@@ -1,0 +1,6 @@
+{
+  "url": "https://example.test/bbc-webhook",
+  "events": [
+    "flows/created"
+  ]
+}

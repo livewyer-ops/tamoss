@@ -1,0 +1,15 @@
+{
+  "id": "",
+  "source_id": "",
+  "format": "urn:x-nmos:format:video",
+  "codec": "video/h264",
+  "container": "video/mp2t",
+  "essence_parameters": {
+    "frame_width": 1920,
+    "frame_height": 1080,
+    "frame_rate": {
+      "numerator": 25,
+      "denominator": 1
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "url": "https://example.test/bbc-webhook",
+  "events": [
+    "flows/created",
+    "flows/segments_added"
+  ],
+  "api_key_name": "x-api-key",
+  "api_key_value": "secret-value",
+  "tags": {
+    "owner": "bbc",
+    "purpose": [
+      "parity",
+      "webhook"
+    ]
+  }
+}

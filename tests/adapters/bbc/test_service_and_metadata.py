@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from tamoss.errors import ConfigurationError
 from tamoss.settings import Settings
+
+from tests.adapters.bbc.support import PRIMARY_BACKEND_LABEL
+from tests.support.fixtures import load_json_fixture
 
 pytestmark = pytest.mark.bbc
 
@@ -32,8 +36,8 @@ def test_service_root_and_metadata_follow_bbc_service_shape(
     assert payload["type"] == "urn:x-tams:service.tamoss"
     assert payload["api_version"] == "8.0"
     assert payload["service_version"] == "tamoss-bbc-parity"
-    assert payload["min_object_timeout"] == "0:300"
-    assert payload["min_presigned_url_timeout"] == "0:30"
+    assert payload["min_object_timeout"] == "300:0"
+    assert payload["min_presigned_url_timeout"] == "30:0"
     assert {"name": "webhooks"} in payload["event_stream_mechanisms"]
 
     service_head = client.head("/service")
@@ -47,7 +51,7 @@ def test_service_metadata_update_is_reflected_in_service_resource(
     """bbc-id: semantic.service.schema.required_fields"""
     updated = client.post(
         "/service",
-        json={"name": "BBC parity service", "description": "metadata update"},
+        json=load_json_fixture("bbc/service_metadata_update.json"),
     )
     assert updated.status_code == 200
 
@@ -68,7 +72,7 @@ def test_storage_backend_listing_returns_configured_s3_backend(
     assert storage_backends.status_code == 200
     payload = storage_backends.json()
     assert len(payload) == 1
-    assert payload[0]["label"] == "tamoss.storage.primary"
+    assert payload[0]["label"] == PRIMARY_BACKEND_LABEL
     assert payload[0]["default_storage"] is True
     assert all(item["store_type"] == "http_object_store" for item in payload)
 
@@ -87,7 +91,7 @@ def test_readyz_checks_repository_dependency(
     repository = tamoss_app.state.tamoss_use_cases.repository
 
     def fail_metadata_check():
-        raise RuntimeError("repository unavailable")
+        raise ConfigurationError("repository unavailable")
 
     monkeypatch.setattr(repository, "get_service_metadata", fail_metadata_check)
     ready = client.get("/readyz")

@@ -4,6 +4,8 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from tamoss.contract.generated import contract_models
+from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE
 
 from tests.adapters.bbc.support import (
     IMAGE_FORMAT,
@@ -12,9 +14,15 @@ from tests.adapters.bbc.support import (
     VIDEO_FORMAT,
     allocate_objects,
     assert_bbc_error,
+    create_video_flow,
+    flow_collection_item,
     image_flow_payload,
     multi_flow_payload,
     register_segment,
+    segment_payload,
+    segment_wrapper_payload,
+    storage_allocation_payload,
+    upload_allocated_object,
     video_flow_payload,
 )
 
@@ -84,8 +92,87 @@ def test_video_flow_write_creates_source_and_supports_read_filters(
     assert listed_sources.status_code == 200
     assert [item["id"] for item in listed_sources.json()] == [str(source_id)]
 
+    invalid_tag_exists = client.get(
+        "/sources",
+        params={"tag_exists.editorial": "maybe"},
+    )
+    assert invalid_tag_exists.status_code == 400
 
-def test_list_flows_can_include_timerange_extension(client: TestClient) -> None:
+
+def test_flow_and_source_response_shape_is_stable_across_routes(
+    client: TestClient,
+) -> None:
+    flow_id, source_id, created_flow = create_video_flow(
+        client,
+        label="Programme video",
+        tags={"editorial": "programme"},
+    )
+    listed_flow = client.get("/flows").json()[0]
+    fetched_flow = client.get(f"/flows/{flow_id}").json()
+    fetched_source = client.get(f"/sources/{source_id}").json()
+    listed_source = client.get("/sources").json()[0]
+
+    for payload in (created_flow, listed_flow, fetched_flow):
+        assert payload["id"] == str(flow_id)
+        assert payload["source_id"] == str(source_id)
+        assert payload["format"] == VIDEO_FORMAT
+        assert payload["read_only"] is False
+        assert payload["tags"] == {"editorial": "programme"}
+        assert payload["created"]
+        assert payload["metadata_updated"]
+        assert payload["metadata_version"]
+
+    for payload in (fetched_source, listed_source):
+        assert payload["id"] == str(source_id)
+        assert payload["format"] == VIDEO_FORMAT
+        assert payload["tags"] == {"editorial": "programme"}
+        assert payload["created"]
+        assert payload["updated"]
+
+
+def test_core_api_responses_validate_against_contract_models(
+    client: TestClient,
+) -> None:
+    flow_id, source_id, _ = create_video_flow(client)
+    object_id = register_segment(client, flow_id, object_id=f"bbc/{uuid4()}.ts")
+
+    contract_models.Service.model_validate(client.get("/service").json())
+    contract_models.Flow.model_validate(client.get(f"/flows/{flow_id}").json())
+    contract_models.Source.model_validate(client.get(f"/sources/{source_id}").json())
+    contract_models.FlowSegment.model_validate(
+        client.get(f"/flows/{flow_id}/segments").json()[0]
+    )
+    contract_models.Object.model_validate(client.get(f"/objects/{object_id}").json())
+
+
+def test_flow_metadata_version_is_preserved_on_create_and_bumped_on_update(
+    client: TestClient,
+) -> None:
+    flow_id = uuid4()
+    source_id = uuid4()
+    created = client.put(
+        f"/flows/{flow_id}",
+        json=video_flow_payload(
+            flow_id,
+            source_id,
+            metadata_version="upstream-version",
+        ),
+    )
+    assert created.status_code == 201
+    assert created.json()["metadata_version"] == "upstream-version"
+
+    updated = client.put(f"/flows/{flow_id}/label", json="new label")
+    fetched = client.get(f"/flows/{flow_id}")
+
+    assert updated.status_code == 204
+    assert fetched.status_code == 200
+    assert fetched.json()["metadata_version"] != "upstream-version"
+    assert fetched.json()["updated_by"]
+
+
+def test_list_flows_can_include_timerange_compatibility_extension(
+    client: TestClient,
+) -> None:
     flow_id = uuid4()
     idle_flow_id = uuid4()
     source_id = uuid4()
@@ -165,6 +252,13 @@ def test_flow_and_source_property_endpoints_round_trip(client: TestClient) -> No
     flow_label_get = client.get(f"/flows/{flow_id}/label")
     assert flow_label_get.status_code == 200
     assert flow_label_get.json() == "updated"
+    flow_label_head = client.head(f"/flows/{flow_id}/label")
+    assert flow_label_head.status_code == 200
+    assert flow_label_head.content == b""
+    invalid_flow_label_query = client.get(
+        f"/flows/{flow_id}/label", params={"include_timerange": "true"}
+    )
+    assert invalid_flow_label_query.status_code == 400
     flow_label_delete = client.delete(f"/flows/{flow_id}/label")
     assert flow_label_delete.status_code == 204
     missing_flow_label = client.get(f"/flows/{flow_id}/label")
@@ -187,17 +281,20 @@ def test_flow_and_source_property_endpoints_round_trip(client: TestClient) -> No
     assert read_only.status_code == 204
     assert client.get(f"/flows/{flow_id}/read_only").json() is False
 
-    tag_put = client.put(f"/flows/{flow_id}/tags/editorial", json=["clean", "tx"])
+    tag_put = client.put(f"/flows/{flow_id}/tags/editorial/role", json=["clean", "tx"])
     assert tag_put.status_code == 204
-    flow_tag = client.get(f"/flows/{flow_id}/tags/editorial")
+    flow_tag = client.get(f"/flows/{flow_id}/tags/editorial/role")
     assert flow_tag.status_code == 200
     assert flow_tag.json() == ["clean", "tx"]
-    tag_delete = client.delete(f"/flows/{flow_id}/tags/editorial")
+    tag_delete = client.delete(f"/flows/{flow_id}/tags/editorial/role")
     assert tag_delete.status_code == 204
 
     source_label = client.put(f"/sources/{source_id}/label", json="source label")
     assert source_label.status_code == 204
     assert client.get(f"/sources/{source_id}/label").json() == "source label"
+    source_label_head = client.head(f"/sources/{source_id}/label")
+    assert source_label_head.status_code == 200
+    assert source_label_head.content == b""
     source_description = client.put(
         f"/sources/{source_id}/description", json="source description"
     )
@@ -235,7 +332,7 @@ def test_flow_collection_projects_to_source_collection_and_collected_by(
 
     updated_collection = client.put(
         f"/flows/{parent_flow_id}/flow_collection",
-        json=[{"id": str(child_flow_id), "role": "video"}],
+        json=[flow_collection_item(child_flow_id)],
     )
     assert updated_collection.status_code == 204
 
@@ -278,15 +375,11 @@ def test_flow_validation_follows_bbc_concrete_content_shapes(
     assert image.json()["format"] == IMAGE_FORMAT
 
     missing_essence_flow_id = uuid4()
+    missing_essence_payload = video_flow_payload(missing_essence_flow_id, uuid4())
+    missing_essence_payload.pop("essence_parameters")
     missing_essence = client.put(
         f"/flows/{missing_essence_flow_id}",
-        json={
-            "id": str(missing_essence_flow_id),
-            "source_id": str(uuid4()),
-            "format": VIDEO_FORMAT,
-            "codec": "video/h264",
-            "container": "video/mp2t",
-        },
+        json=missing_essence_payload,
     )
     assert missing_essence.status_code == 400
     assert_bbc_error(missing_essence.json())
@@ -294,18 +387,7 @@ def test_flow_validation_follows_bbc_concrete_content_shapes(
     mismatch_flow_id = uuid4()
     mismatch = client.put(
         f"/flows/{mismatch_flow_id}",
-        json={
-            "id": str(mismatch_flow_id),
-            "source_id": str(image_source_id),
-            "format": VIDEO_FORMAT,
-            "codec": "video/h264",
-            "container": "video/mp2t",
-            "essence_parameters": {
-                "frame_width": 1920,
-                "frame_height": 1080,
-                "frame_rate": {"numerator": 25, "denominator": 1},
-            },
-        },
+        json=video_flow_payload(mismatch_flow_id, image_source_id),
     )
     assert mismatch.status_code == 400
 
@@ -325,26 +407,28 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
 
     allocated = client.post(
         f"/flows/{flow_id}/storage",
-        json={"object_ids": [object_one, object_two]},
+        json=storage_allocation_payload([object_one, object_two]),
     )
     assert allocated.status_code == 201
     assert [item["object_id"] for item in allocated.json()["media_objects"]] == [
         object_one,
         object_two,
     ]
+    upload_allocated_object(client, object_one)
+    upload_allocated_object(client, object_two)
 
     segments = client.post(
         f"/flows/{flow_id}/segments",
         json=[
-            {"object_id": object_one, "timerange": "[0:0_10:0)"},
-            {
-                "object_id": object_two,
-                "timerange": "[10:0_20:0)",
-                "object_timerange": "[100:0_110:0)",
-                "sample_offset": 10,
-                "sample_count": 250,
-                "key_frame_count": 5,
-            },
+            segment_payload(object_one),
+            segment_payload(
+                object_two,
+                "[10:0_20:0)",
+                object_timerange="[100:0_110:0)",
+                sample_offset=10,
+                sample_count=250,
+                key_frame_count=5,
+            ),
         ],
     )
     assert segments.status_code == 201
@@ -392,7 +476,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
 
     invalid_wrapper = client.post(
         f"/flows/{flow_id}/segments",
-        json={"segments": [{"object_id": object_one, "timerange": "[20:0_30:0)"}]},
+        json=segment_wrapper_payload([segment_payload(object_one, "[20:0_30:0)")]),
     )
     assert invalid_wrapper.status_code == 400
 
@@ -408,20 +492,127 @@ def test_segment_batch_reports_per_segment_failures(client: TestClient) -> None:
     object_one = f"bbc/{uuid4()}.ts"
     object_two = f"bbc/{uuid4()}.ts"
     allocate_objects(client, flow_id, [object_one, object_two])
+    upload_allocated_object(client, object_one)
+    upload_allocated_object(client, object_two)
 
     initial = client.post(
         f"/flows/{flow_id}/segments",
-        json={"object_id": object_one, "timerange": "[0:0_10:0)"},
+        json=segment_payload(object_one),
     )
     assert initial.status_code == 201
 
     response = client.post(
         f"/flows/{flow_id}/segments",
         json=[
-            {"object_id": object_two, "timerange": "[5:0_15:0)"},
-            {"object_id": object_two, "timerange": "[10:0_20:0)"},
+            segment_payload(object_two, "[5:0_15:0)"),
+            segment_payload(object_two, "[10:0_20:0)"),
         ],
     )
     assert response.status_code == 200
     assert response.json()["failed_segments"][0]["object_id"] == object_two
     assert response.json()["failed_segments"][0]["error"]["type"] == "TAMSError"
+
+
+def test_segment_timerange_validation_follows_bbc_boundary_rules(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    object_id = f"bbc/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [object_id])
+    upload_allocated_object(client, object_id)
+
+    for timerange in ["(0:0_10:0]", "[5:0_5:0)"]:
+        response = client.post(
+            f"/flows/{flow_id}/segments",
+            json=segment_payload(object_id, timerange),
+        )
+        assert response.status_code == 400
+
+    inclusive_last_duration = client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(
+            object_id,
+            "[0:0_10:0]",
+            last_duration="0:40000000",
+        ),
+    )
+    assert inclusive_last_duration.status_code == 400
+
+
+def test_segment_registration_derives_object_timerange_from_ts_offset(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    object_id = f"bbc/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [object_id])
+    upload_allocated_object(client, object_id)
+
+    registered = client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(
+            object_id,
+            "[10:0_20:0)",
+            ts_offset="10:0",
+        ),
+    )
+    listed = client.get(
+        f"/flows/{flow_id}/segments",
+        params={"include_object_timerange": "true"},
+    )
+    media_object = client.get(f"/objects/{object_id}")
+
+    assert registered.status_code == 201
+    assert listed.status_code == 200
+    assert listed.json()[0]["object_timerange"] == "[0:0_10:0)"
+    assert media_object.status_code == 200
+    assert media_object.json()["timerange"] == "[0:0_10:0)"
+
+
+def test_segment_overlap_and_queries_respect_timerange_boundaries(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    inclusive_object = register_segment(
+        client,
+        flow_id,
+        object_id=f"bbc/{uuid4()}.ts",
+        timerange="[0:0_10:0]",
+    )
+    adjacent_object = f"bbc/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [adjacent_object])
+    upload_allocated_object(client, adjacent_object)
+
+    overlapping = client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(adjacent_object, "[10:0_20:0)"),
+    )
+    assert overlapping.status_code == 400
+    assert overlapping.json()["summary"] == SEGMENT_OVERLAP_MESSAGE
+
+    includes_endpoint = client.get(
+        f"/flows/{flow_id}/segments", params={"timerange": "[10:0]"}
+    )
+    assert includes_endpoint.status_code == 200
+    assert [item["object_id"] for item in includes_endpoint.json()] == [
+        inclusive_object
+    ]
+
+    excludes_endpoint = client.get(
+        f"/flows/{flow_id}/segments", params={"timerange": "(10:0_20:0)"}
+    )
+    assert excludes_endpoint.status_code == 200
+    assert excludes_endpoint.json() == []
+
+
+def test_segment_coverage_gap_header_is_separate_from_flow_extent(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    register_segment(client, flow_id, timerange="[0:0_10:0)")
+    register_segment(client, flow_id, timerange="[20:0_30:0)")
+
+    listed = client.get(f"/flows/{flow_id}/segments")
+
+    assert listed.status_code == 200
+    assert listed.headers["x-paging-timerange"] == "[0:0_30:0)"
+    assert listed.headers["x-tamoss-coverage-gaps"] == "[10:0_20:0)"

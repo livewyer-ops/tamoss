@@ -1,36 +1,22 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-BBC_API_SPEC_PATH = REPO_ROOT / "src/vendor/bbc-tams/api/TimeAddressableMediaStore.yaml"
-BBC_CONTENT_FORMAT_SCHEMA_PATH = (
-    REPO_ROOT / "src/vendor/bbc-tams/api/schemas/content-format.json"
-)
+from tests.support import paths
+from tests.support.fixtures import load_json_fixture
+
+REPO_ROOT = paths.REPO_ROOT
+BBC_API_SPEC_PATH = paths.BBC_API_SPEC_PATH
+BBC_CONTENT_FORMAT_SCHEMA_PATH = paths.BBC_CONTENT_FORMAT_SCHEMA_PATH
 
 PRIMARY_BACKEND_ID = UUID("11111111-1111-4111-8111-111111111111")
-PRIMARY_BACKEND_LABEL = "tamoss.storage.primary"
+PRIMARY_BACKEND_LABEL = "tamoss.us-east-1:s3:tamoss-primary"
 
 VIDEO_FORMAT = "urn:x-nmos:format:video"
-AUDIO_FORMAT = "urn:x-nmos:format:audio"
-DATA_FORMAT = "urn:x-nmos:format:data"
-MULTI_FORMAT = "urn:x-nmos:format:multi"
 IMAGE_FORMAT = "urn:x-tam:format:image"
-
-MIN_VIDEO_ESSENCE = {
-    "frame_width": 1920,
-    "frame_height": 1080,
-    "frame_rate": {"numerator": 25, "denominator": 1},
-}
-
-MIN_IMAGE_ESSENCE = {
-    "frame_width": 1920,
-    "frame_height": 1080,
-}
 
 
 def video_flow_payload(
@@ -38,14 +24,9 @@ def video_flow_payload(
     source_id: str | UUID,
     **overrides: Any,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "id": str(flow_id),
-        "source_id": str(source_id),
-        "format": VIDEO_FORMAT,
-        "codec": "video/h264",
-        "container": "video/mp2t",
-        "essence_parameters": MIN_VIDEO_ESSENCE,
-    }
+    payload: dict[str, Any] = load_json_fixture("bbc/video_flow_payload.json")
+    payload["id"] = str(flow_id)
+    payload["source_id"] = str(source_id)
     payload.update(overrides)
     return payload
 
@@ -55,14 +36,9 @@ def image_flow_payload(
     source_id: str | UUID,
     **overrides: Any,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "id": str(flow_id),
-        "source_id": str(source_id),
-        "format": IMAGE_FORMAT,
-        "codec": "image/jpeg",
-        "container": "image/jpeg",
-        "essence_parameters": MIN_IMAGE_ESSENCE,
-    }
+    payload: dict[str, Any] = load_json_fixture("bbc/image_flow_payload.json")
+    payload["id"] = str(flow_id)
+    payload["source_id"] = str(source_id)
     payload.update(overrides)
     return payload
 
@@ -72,12 +48,68 @@ def multi_flow_payload(
     source_id: str | UUID,
     **overrides: Any,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "id": str(flow_id),
-        "source_id": str(source_id),
-        "format": MULTI_FORMAT,
-        "container": "video/mp2t",
-    }
+    payload: dict[str, Any] = load_json_fixture("bbc/multi_flow_payload.json")
+    payload["id"] = str(flow_id)
+    payload["source_id"] = str(source_id)
+    payload.update(overrides)
+    return payload
+
+
+def segment_payload(
+    object_id: str,
+    timerange: str = "[0:0_10:0)",
+    **overrides: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/segment_payload.json")
+    payload["object_id"] = object_id
+    payload["timerange"] = timerange
+    payload.update(overrides)
+    return payload
+
+
+def segment_wrapper_payload(segments: list[dict[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/segment_wrapper_payload.json")
+    payload["segments"] = segments
+    return payload
+
+
+def storage_allocation_payload(
+    object_ids: list[str],
+    *,
+    storage_id: UUID | str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/storage_allocation.json")
+    payload["object_ids"] = object_ids
+    if storage_id is not None:
+        payload["storage_id"] = str(storage_id)
+    if limit is not None:
+        payload["limit"] = limit
+    return payload
+
+
+def controlled_object_instance_payload(storage_id: UUID | str) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/controlled_object_instance.json")
+    payload["storage_id"] = str(storage_id)
+    return payload
+
+
+def external_object_instance(url: str, *, label: str = "external") -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/external_object_instance.json")
+    payload["url"] = url
+    payload["label"] = label
+    return payload
+
+
+def flow_collection_item(flow_id: UUID | str, *, role: str = "video") -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/flow_collection_item.json")
+    payload["id"] = str(flow_id)
+    payload["role"] = role
+    return payload
+
+
+def webhook_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = load_json_fixture("bbc/webhook_minimal.json")
     payload.update(overrides)
     return payload
 
@@ -106,10 +138,23 @@ def allocate_objects(
 ) -> list[dict[str, Any]]:
     response = client.post(
         f"/flows/{flow_id}/storage",
-        json={"object_ids": object_ids},
+        json=storage_allocation_payload(object_ids),
     )
     assert response.status_code == 201
     return response.json()["media_objects"]
+
+
+def upload_allocated_object(
+    client: TestClient,
+    object_id: str,
+    *,
+    storage_id: UUID = PRIMARY_BACKEND_ID,
+    data: bytes = b"segment",
+) -> None:
+    use_cases = client.app.state.tamoss_use_cases
+    backend = use_cases.repository.get_storage_backend(storage_id)
+    assert backend is not None
+    use_cases.object_storage.write(object_id, data, backend=backend)
 
 
 def register_segment(
@@ -122,10 +167,8 @@ def register_segment(
 ) -> str:
     resolved_object_id = object_id or f"bbc/{uuid4()}.ts"
     allocate_objects(client, flow_id, [resolved_object_id])
-    payload: dict[str, Any] = {
-        "object_id": resolved_object_id,
-        "timerange": timerange,
-    }
+    upload_allocated_object(client, resolved_object_id)
+    payload = segment_payload(resolved_object_id, timerange)
     payload.update(overrides)
     response = client.post(f"/flows/{flow_id}/segments", json=payload)
     assert response.status_code == 201

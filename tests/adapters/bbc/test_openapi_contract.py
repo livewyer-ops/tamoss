@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
 from types import ModuleType
 
 import pytest
 from fastapi import FastAPI
 
 from tests.adapters.bbc.support import BBC_API_SPEC_PATH, REPO_ROOT
+from tests.support.paths import load_python_module
 
 pytestmark = pytest.mark.bbc
 
@@ -33,13 +32,71 @@ def test_runtime_openapi_keeps_bbc_delete_request_path_shape(
 
     assert "/flow-delete-requests/{request-id}" in schema["paths"]
     assert "/flow-delete-requests/{request_id}" not in schema["paths"]
-    parameters = schema["paths"]["/flow-delete-requests/{request-id}"]["get"][
-        "parameters"
-    ]
+    parameters = _operation_parameters(
+        schema,
+        "/flow-delete-requests/{request-id}",
+        "get",
+    )
     assert any(
         parameter["in"] == "path" and parameter["name"] == "request-id"
         for parameter in parameters
     )
+
+
+def test_runtime_openapi_hides_tamoss_object_mutation_aliases(
+    tamoss_app: FastAPI,
+) -> None:
+    schema = tamoss_app.openapi()
+
+    assert "post" not in schema["paths"]["/objects/{objectId}"]
+    assert "delete" not in schema["paths"]["/objects/{objectId}"]
+    assert "post" in schema["paths"]["/objects/{objectId}/instances"]
+    assert "delete" in schema["paths"]["/objects/{objectId}/instances"]
+
+
+def test_runtime_openapi_documents_tag_filter_and_path_shapes(
+    tamoss_app: FastAPI,
+) -> None:
+    schema = tamoss_app.openapi()
+
+    for path in ("/flows", "/sources"):
+        get_parameters = {
+            parameter["name"]
+            for parameter in _operation_parameters(schema, path, "get")
+        }
+        assert {"tag.{name}", "tag_exists.{name}"} <= get_parameters
+
+    for path in ("/flows/{flowId}/tags/{name}", "/sources/{sourceId}/tags/{name}"):
+        get_parameters = [
+            parameter
+            for parameter in _operation_parameters(schema, path, "get")
+            if parameter["in"] == "path"
+        ]
+        assert {parameter["name"] for parameter in get_parameters} >= {"name"}
+
+
+def test_runtime_openapi_distinguishes_core_and_compatibility_timerange_parameters(
+    tamoss_app: FastAPI,
+) -> None:
+    schema = tamoss_app.openapi()
+    flow_list_parameters = _operation_parameters(schema, "/flows", "get")
+    list_include_timerange = next(
+        parameter
+        for parameter in flow_list_parameters
+        if parameter["name"] == "include_timerange"
+    )
+    flow_detail_parameters = _operation_parameters(schema, "/flows/{flowId}", "get")
+    detail_include_timerange = next(
+        parameter
+        for parameter in flow_detail_parameters
+        if parameter["name"] == "include_timerange"
+    )
+
+    assert list_include_timerange["x-tamoss-extension"] is True
+    assert (
+        "Third-party compatibility extension" in list_include_timerange["description"]
+    )
+    assert "x-tamoss-extension" not in detail_include_timerange
 
 
 def test_runtime_openapi_uses_bbc_error_response_codes(tamoss_app: FastAPI) -> None:
@@ -58,12 +115,45 @@ def test_runtime_openapi_uses_bbc_error_response_codes(tamoss_app: FastAPI) -> N
         assert status_code in schema["paths"][path][method]["responses"]
 
 
+def test_runtime_openapi_documents_tamoss_error_payload(tamoss_app: FastAPI) -> None:
+    schema = tamoss_app.openapi()
+
+    assert "ErrorPayload" in schema["components"]["schemas"]
+    error_response = schema["paths"]["/flows/{flowId}"]["put"]["responses"]["400"]
+    assert error_response["x-tamoss-error-payload"] == {
+        "$ref": "#/components/schemas/ErrorPayload"
+    }
+
+
+def test_runtime_openapi_distinguishes_tamoss_and_tams_versions(
+    tamoss_app: FastAPI,
+) -> None:
+    schema = tamoss_app.openapi()
+
+    assert schema["info"]["version"] != "0.0.0"
+    assert schema["info"]["version"] != "8.0"
+    assert schema["info"]["x-tamoss-version"] == schema["info"]["version"]
+    assert schema["info"]["x-bbc-tams-api-version"] == "8.0"
+
+
 def _load_openapi_parity_module() -> ModuleType:
-    module_path = REPO_ROOT / "src/scripts/check_tamoss_openapi_parity.py"
-    spec = importlib.util.spec_from_file_location("tamoss_openapi_parity", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot load {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_python_module(
+        "tamoss_openapi_parity",
+        REPO_ROOT / "src/scripts/check_tamoss_openapi_parity.py",
+    )
+
+
+def _operation_parameters(
+    schema: dict,
+    path: str,
+    method: str,
+) -> list[dict]:
+    path_item = schema["paths"][path]
+    return [
+        parameter
+        for parameter in [
+            *path_item.get("parameters", []),
+            *path_item[method].get("parameters", []),
+        ]
+        if "name" in parameter
+    ]

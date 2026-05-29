@@ -1,0 +1,11 @@
+{
+  "id": "",
+  "source_id": "",
+  "format": "urn:x-tam:format:image",
+  "codec": "image/jpeg",
+  "container": "image/jpeg",
+  "essence_parameters": {
+    "frame_width": 1920,
+    "frame_height": 1080
+  }
+}
