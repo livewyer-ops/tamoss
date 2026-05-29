@@ -1,0 +1,108 @@
+version: 1
+metadata:
+  name: tamoss-tams-example
+  labels:
+    app.kubernetes.io/name: tamoss
+    app.kubernetes.io/instance: example
+    app.kubernetes.io/managed-by: tamoss-operator
+    tamoss.livewyer.io/authentik-version: "2026.2"
+entries:
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-tams-api-admin
+    state: present
+    identifiers:
+      scope_name: tams-api/admin
+    attrs:
+      name: TAMOSS API tams-api/admin
+      scope_name: tams-api/admin
+      description: Allow TAMOSS API scope tams-api/admin
+      expression: return {}
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-tams-api-read
+    state: present
+    identifiers:
+      scope_name: tams-api/read
+    attrs:
+      name: TAMOSS API tams-api/read
+      scope_name: tams-api/read
+      description: Allow TAMOSS API scope tams-api/read
+      expression: return {}
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-tams-api-write
+    state: present
+    identifiers:
+      scope_name: tams-api/write
+    attrs:
+      name: TAMOSS API tams-api/write
+      scope_name: tams-api/write
+      description: Allow TAMOSS API scope tams-api/write
+      expression: return {}
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-tams-api-delete
+    state: present
+    identifiers:
+      scope_name: tams-api/delete
+    attrs:
+      name: TAMOSS API tams-api/delete
+      scope_name: tams-api/delete
+      description: Allow TAMOSS API scope tams-api/delete
+      expression: return {}
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    state: present
+    identifiers:
+      name: tamoss-tams-example
+    attrs:
+      name: tamoss-tams-example
+      client_id: client-id
+      client_secret: client-secret
+      authorization_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-authorization-implicit-consent
+      invalidation_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-invalidation-flow
+      signing_key: !Find
+        - authentik_crypto.certificatekeypair
+        - - name
+          - authentik Self-signed Certificate
+      redirect_uris:
+        - matching_mode: strict
+          url: https://app.example.com/auth/callback
+      property_mappings:
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - openid
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - profile
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - email
+        - !KeyOf scope-tams-api-admin
+        - !KeyOf scope-tams-api-read
+        - !KeyOf scope-tams-api-write
+        - !KeyOf scope-tams-api-delete
+  - model: authentik_core.group
+    state: present
+    identifiers:
+      name: tamoss-admins
+    attrs:
+      name: tamoss-admins
+      attributes:
+        tamoss_permissions:
+          - admin
+  - model: authentik_core.application
+    id: application
+    state: present
+    identifiers:
+      slug: tamoss-tams-example
+    attrs:
+      name: tamoss-tams-example
+      slug: tamoss-tams-example
+      provider: !KeyOf provider
