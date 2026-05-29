@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-chainsaw
+  namespace: auth
+status:
+  (conditions[?type == 'Available'] | [0].status): "True"

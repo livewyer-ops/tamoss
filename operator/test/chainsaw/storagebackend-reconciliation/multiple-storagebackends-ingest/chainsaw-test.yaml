@@ -1,0 +1,54 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: multiple-storagebackends-ingest
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: extended
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply multi backend instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/rustfs-managed-tamoss.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - apply:
+            file: resources/tamoss-api-bundled.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
+              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            file: assert/tamoss-default-ready.yaml
+            timeout: 5m
+        - apply:
+            file: resources/archive-storagebackend.yaml
+        - assert:
+            file: assert/archive-storagebackend-ready.yaml
+            timeout: 5m
+
+    - name: ingest through each storage backend
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: performs API ingest and S3 read-back for each storage backend.
+              ./scripts/ingest-storagebackends.sh

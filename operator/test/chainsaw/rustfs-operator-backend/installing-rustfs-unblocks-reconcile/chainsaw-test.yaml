@@ -1,0 +1,58 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: installing-rustfs-unblocks-reconcile
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: require absent rustfs tenant crd
+      try:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: this scenario proves install-unblocks behavior and must start without the RustFS Tenant CRD.
+              if kubectl get crd tenants.rustfs.com >/dev/null 2>&1; then
+                echo "RustFS Operator Tenant CRD is already installed; run this scenario on a Chainsaw cluster without RustFS CRDs" >&2
+                exit 1
+              fi
+
+    - name: install rustfs crd after blocked reconcile
+      try:
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator.yaml
+        - assert:
+            file: ../missing-operator-blocks-reconcile/assert/missing-dependency-status.yaml
+            timeout: 150s
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - script:
+            content: |
+              set -eu
+              kubectl wait --for=condition=Established crd/tenants.rustfs.com --timeout=120s
+        - assert:
+            file: ../tenant-emitted-with-owner-ref/assert/tenant-owner-ref.yaml
+            timeout: 180s
+
+    - name: rustfs status update reconciles owning tamoss
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+              - name: CHAINSAW_RECONCILE_AFTER_STATUS_PATCH
+                value: "false"
+            content: |
+              set -eu
+              # chainsaw-script: patches RustFS status without touching Tamoss; the owned Tenant watch must enqueue reconciliation.
+              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            file: ../tamoss-delete-cascades-to-tenant/assert/default-storagebackend-owned.yaml
+            timeout: 120s

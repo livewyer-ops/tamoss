@@ -1,0 +1,71 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-namespace-not-allowed
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: authentik
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: restrict allowed authentik platform namespaces
+      try:
+        - apply:
+            file: ../../fixtures/authentik.yaml
+        - apply:
+            file: ../../fixtures/auth-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: resources/other-auth-rbac.yaml
+        - assert:
+            file: ../../fixtures/assert/authentik-available.yaml
+            timeout: 180s
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: switches the operator to the Authentik auth-only test overlay.
+              kubectl apply --server-side -k ../../../../config/chainsaw-authentik-auth-only
+        - assert:
+            file: ../../fixtures/assert/operator-ready.yaml
+            timeout: 180s
+
+    - name: apply blocked platform namespace instance
+      try:
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/platform-namespace-not-allowed.yaml
+            timeout: 2m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: verifies no Blueprint was applied in the Authentik fixture.
+              . ../../scripts/lib.sh
+              blueprint="tamoss-${NAMESPACE}-auth-blocked"
+              [ "$(chainsaw_authentik_apply_count "$blueprint")" = "0" ]
+      finally:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: finally blocks cannot use native assert operations, so cleanup waits inline.
+              kubectl apply --server-side -k ../../../../config/chainsaw >/dev/null
+              kubectl -n tamoss-system rollout status deployment/operator-controller-manager --timeout=180s >/dev/null
+              end=$(($(date +%s) + 60))
+              until [ -n "$(kubectl -n tamoss-system get endpoints operator-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)" ]; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for operator webhook endpoint" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+              # The endpoint can be published before the webhook listener accepts TLS.
+              sleep 5

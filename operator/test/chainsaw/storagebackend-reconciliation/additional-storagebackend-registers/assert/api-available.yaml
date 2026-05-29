@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-api
+  labels:
+    app.kubernetes.io/instance: tamoss
+    app.kubernetes.io/component: api
+(status.conditions[?type == 'Available'] | [0].status): "True"
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+(status.conditions[?type == 'Ready'] | [0].status): "True"

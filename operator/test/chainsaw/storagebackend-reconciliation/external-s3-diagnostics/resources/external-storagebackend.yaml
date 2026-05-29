@@ -1,0 +1,24 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: external
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  id: 22222222-2222-5222-8222-222222222222
+  tamossRef:
+    name: tamoss
+  provider: external-s3
+  label: tamoss.us-east-1:s3:external
+  region: us-east-1
+  bucketName: external
+  endpoint:
+    default:
+      url: http://rustfs-svc:9000
+    public:
+      url: http://rustfs-svc:9000
+  credentials:
+    existingSecret: tams-rustfs-auth
+    secretKeys:
+      accessKey: RUSTFS_ACCESS_KEY
+      secretKey: RUSTFS_SECRET_KEY

@@ -1,0 +1,80 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-policy-health-visible
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply cnpg backup instance
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: resources/backup-object-store-secret.yaml
+        - apply:
+            file: resources/tamoss-cnpg-backup.yaml
+        - assert:
+            file: assert/cnpg-crds-established.yaml
+            timeout: 120s
+        - assert:
+            file: assert/scheduled-backup-emitted.yaml
+            timeout: 120s
+    - name: archiving status is unknown
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/backup-archiving-unknown.yaml
+    - name: archiving failure is surfaced
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              CNPG_STATUS_JSON='{"status":{"conditions":[{"type":"Ready","status":"True","reason":"ClusterReady","message":"Cluster is ready"},{"type":"ContinuousArchiving","status":"False","reason":"WALArchiveFailing","message":"archive command failed"}]}}' \
+                ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/backup-archiving-failed.yaml
+    - name: backup failure newer than success is surfaced
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              CNPG_STATUS_JSON='{"status":{"conditions":[{"type":"Ready","status":"True","reason":"ClusterReady","message":"Cluster is ready"},{"type":"ContinuousArchiving","status":"True","reason":"ContinuousArchivingReady","message":"archiving ready"}],"lastSuccessfulBackup":"2026-05-22T10:00:00Z","lastFailedBackup":"2026-05-22T11:00:00Z"}}' \
+                ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/backup-policy-failed.yaml
+    - name: healthy backup is surfaced
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              CNPG_STATUS_JSON='{"status":{"conditions":[{"type":"Ready","status":"True","reason":"ClusterReady","message":"Cluster is ready"},{"type":"ContinuousArchiving","status":"True","reason":"ContinuousArchivingReady","message":"archiving ready"}],"lastSuccessfulBackup":"2026-05-22T12:00:00Z","lastFailedBackup":"2026-05-22T11:00:00Z"}}' \
+                ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/backup-policy-healthy.yaml

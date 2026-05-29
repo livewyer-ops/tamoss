@@ -1,0 +1,12 @@
+apiVersion: rustfs.com/v1alpha1
+kind: Tenant
+metadata:
+  name: tamoss-s3
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): tamoss
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].controller): true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tamoss-s3
+(spec.selector."rustfs.tenant"): tamoss-s3

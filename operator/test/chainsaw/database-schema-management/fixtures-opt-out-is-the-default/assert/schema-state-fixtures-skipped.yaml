@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tamoss-schema-state
+(data.appliedVersion): "0.0.1"
+(data.fixturesApplied): "false"
+(data.jobUID != ''): true

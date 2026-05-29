@@ -1,0 +1,41 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: replica-count-change-is-rolled-out
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: instance
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance and change replica count
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                api:
+                  replicaCount: 2
+        - assert:
+            file: assert/api-replicas-updated.yaml

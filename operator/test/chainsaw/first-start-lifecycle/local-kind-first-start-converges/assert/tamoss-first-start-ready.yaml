@@ -1,0 +1,22 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-kind
+  namespace: tams
+status:
+  (conditions[?type == 'Ready'] | [0].status): "True"
+  (conditions[?type == 'BackendsReady'] | [0].status): "True"
+  (conditions[?type == 'SchemaMigrated'] | [0].status): "True"
+  (conditions[?type == 'IdentityReady'] | [0].status): "True"
+  (conditions[?type == 'RoutingReady'] | [0].status): "True"
+  (resolved.resources.defaultStorageBackend): tams-storage-default
+  replicas:
+    api:
+      desired: 1
+      available: 1
+    ui:
+      desired: 1
+      available: 1
+    worker:
+      desired: 1
+      available: 1

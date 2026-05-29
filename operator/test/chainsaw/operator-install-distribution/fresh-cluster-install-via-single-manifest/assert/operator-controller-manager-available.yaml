@@ -1,0 +1,6 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-controller-manager
+  namespace: tamoss-system
+(status.conditions[?type == 'Available'] | [0].status): "True"

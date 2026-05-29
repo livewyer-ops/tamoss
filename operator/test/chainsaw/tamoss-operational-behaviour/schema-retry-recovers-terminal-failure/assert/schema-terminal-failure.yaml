@@ -1,0 +1,17 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+(status.conditions[?type == 'Degraded'] | [0].status): "True"
+(status.conditions[?type == 'Degraded'] | [0].reason): SchemaMigrationFailed
+(status.conditions[?type == 'Upgradeable'] | [0].status): "False"
+(status.conditions[?type == 'Upgradeable'] | [0].reason): SchemaMigrationFailed
+(status.upgrade.phase): Blocked
+(status.schemaMigration.phase): Failed
+(status.schemaMigration.attempts): 3
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tamoss-schema-state
+(data.failureCount): "3"

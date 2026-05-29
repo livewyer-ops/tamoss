@@ -1,0 +1,21 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: immutable
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: changed
+  auth:
+    providedBy: none
+    required: false
+  api:
+    enabled: false
+  ui:
+    enabled: false
+  worker:
+    enabled: false
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false

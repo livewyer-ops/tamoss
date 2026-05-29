@@ -1,0 +1,54 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-deployment-waits-for-migration
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: schema
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance and observe migration gate
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: schema Job name follows the runtime schema version and this scenario
+              # observes the transient absence of the API deployment before migration completion.
+              schema_version="${SCHEMA_VERSION:-0.0.1}"
+              job_suffix="$(printf '%s' "$schema_version" | tr . -)"
+              end=$(($(date +%s) + 30))
+              until kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for schema migration job" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+              pair="$(kubectl -n "$NAMESPACE" get tamoss tamoss -o "jsonpath={.status.conditions[?(@.type=='SchemaMigrated')].status}:{.status.conditions[?(@.type=='SchemaMigrated')].reason}" 2>/dev/null || true)"
+              if [ "$pair" != "True:SchemaApplied" ]; then
+                ! kubectl -n "$NAMESPACE" get deployment tamoss-api >/dev/null 2>&1
+              fi
+              kubectl -n "$NAMESPACE" wait --for=condition=Complete "job/tamoss-schema-migrate-${job_suffix}" --timeout=240s
+        - assert:
+            file: assert/api-deployment-present.yaml

@@ -1,0 +1,66 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: tamoss
+  secrets:
+    apiToken:
+      generate: true
+      token: ""
+  auth:
+    required: false
+  api:
+    enabled: true
+    replicaCount: 0
+    image:
+      repository: livewyer/tamoss-api
+      tag: dev
+      pullPolicy: IfNotPresent
+    resources:
+      limits:
+        memory: 512Mi
+  worker:
+    enabled: false
+    replicaCount: 0
+    pdb:
+      enabled: false
+  ui:
+    enabled: true
+    replicaCount: 0
+    image:
+      repository: livewyer/tamoss-ui
+      tag: dev
+      pullPolicy: IfNotPresent
+  backends:
+    db:
+      providedBy: external
+      applyFixtures: true
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false

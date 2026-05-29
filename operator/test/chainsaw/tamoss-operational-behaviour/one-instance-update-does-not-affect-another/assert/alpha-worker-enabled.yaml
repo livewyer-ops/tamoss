@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha-worker
+  labels:
+    app.kubernetes.io/instance: alpha
+    app.kubernetes.io/component: worker
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+(spec.replicas): 0
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: alpha
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: beta
+(status.conditions[?type == 'Ready'] | [0].status): "True"

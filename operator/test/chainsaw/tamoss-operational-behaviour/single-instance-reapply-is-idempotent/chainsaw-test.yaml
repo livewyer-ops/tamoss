@@ -1,0 +1,93 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: single-instance-reapply-is-idempotent
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply managed instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/rustfs-managed-tamoss.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
+              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            file: assert/tamoss-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/default-storagebackend-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/generated-secrets-present.yaml
+        - assert:
+            file: assert/state-configmaps-ready.yaml
+
+    - name: snapshot reconciled state
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: captures before/after values; native assertions cover current Kubernetes readiness.
+              api_token="$(kubectl -n "$NAMESPACE" get secret tamoss-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')"
+              runtime_creds="$(kubectl -n "$NAMESPACE" get secret tamoss-storage-backend-credentials -o jsonpath='{.data.credentials\\.json}')"
+              schema_version="$(kubectl -n "$NAMESPACE" get configmap tamoss-schema-state -o jsonpath='{.data.appliedVersion}')"
+              bucket_hash="$(kubectl -n "$NAMESPACE" get configmap tamoss-storage-default-bucket-state -o jsonpath='{.data.desiredHash}')"
+              db_hash="$(kubectl -n "$NAMESPACE" get configmap tamoss-storage-default-db-state -o jsonpath='{.data.desiredHash}')"
+              kubectl -n "$NAMESPACE" create configmap idempotency-snapshot \
+                --from-literal=apiToken="$api_token" \
+                --from-literal=runtimeCredentials="$runtime_creds" \
+                --from-literal=schemaVersion="$schema_version" \
+                --from-literal=bucketHash="$bucket_hash" \
+                --from-literal=dbHash="$db_hash"
+
+    - name: reapply same instance
+      try:
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
+        - assert:
+            file: assert/tamoss-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/default-storagebackend-ready.yaml
+            timeout: 5m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: compares historical values captured before the repeated apply.
+              expect() {
+                kubectl -n "$NAMESPACE" get configmap idempotency-snapshot -o "jsonpath={.data.$1}"
+              }
+              [ "$(kubectl -n "$NAMESPACE" get secret tamoss-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')" = "$(expect apiToken)" ]
+              [ "$(kubectl -n "$NAMESPACE" get secret tamoss-storage-backend-credentials -o jsonpath='{.data.credentials\\.json}')" = "$(expect runtimeCredentials)" ]
+              [ "$(kubectl -n "$NAMESPACE" get configmap tamoss-schema-state -o jsonpath='{.data.appliedVersion}')" = "$(expect schemaVersion)" ]
+              [ "$(kubectl -n "$NAMESPACE" get configmap tamoss-storage-default-bucket-state -o jsonpath='{.data.desiredHash}')" = "$(expect bucketHash)" ]
+              [ "$(kubectl -n "$NAMESPACE" get configmap tamoss-storage-default-db-state -o jsonpath='{.data.desiredHash}')" = "$(expect dbHash)" ]
+              [ "$(kubectl -n "$NAMESPACE" get storagebackend -l app.kubernetes.io/instance=tamoss,app.kubernetes.io/component=storage-backend --no-headers | wc -l | tr -d ' ')" = "1" ]

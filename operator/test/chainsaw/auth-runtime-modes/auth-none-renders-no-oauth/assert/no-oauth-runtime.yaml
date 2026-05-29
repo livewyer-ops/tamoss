@@ -1,0 +1,16 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: auth-none
+(status.conditions[?type == 'IdentityReady'] | [0].status): "True"
+(status.conditions[?type == 'IdentityReady'] | [0].reason): AuthenticationDisabled
+(status.auth.provider): none
+(status.providers.auth.provider): none
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-none-ui
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_AUTH_REQUIRED'] | [0].value): "false"
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_ENABLED'] | [0].value): "false"
+(spec.template.spec.containers[?name == 'ui'] | [0].envFrom[?secretRef.name == 'auth-none-oauth2-creds'] | length(@)): 0

@@ -1,0 +1,60 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: installing-cnpg-unblocks-reconcile
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: require absent cnpg crd
+      try:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: this scenario proves install-unblocks behavior and must start without the CNPG CRD.
+              if kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+                echo "CNPG Cluster CRD is already installed; run this scenario on a Chainsaw cluster without CNPG CRDs" >&2
+                exit 1
+              fi
+
+    - name: install cnpg crd after blocked reconcile
+      try:
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - assert:
+            file: assert/missing-dependency-status.yaml
+            timeout: 150s
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - assert:
+            file: ../api-pod-uses-cnpg-secret/assert/cnpg-cluster-crd-established.yaml
+            timeout: 120s
+        - assert:
+            file: assert/cnpg-cluster-created.yaml
+            timeout: 180s
+    - name: cnpg status update reconciles owning tamoss
+      try:
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+              - name: CHAINSAW_RECONCILE_AFTER_STATUS_PATCH
+                value: "false"
+            content: |
+              set -eu
+              # chainsaw-script: patches CNPG status without touching Tamoss; the owned Cluster watch must enqueue reconciliation.
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: ../api-pod-uses-cnpg-secret/assert/api-deployment-uses-cnpg-secret.yaml
+            timeout: 120s

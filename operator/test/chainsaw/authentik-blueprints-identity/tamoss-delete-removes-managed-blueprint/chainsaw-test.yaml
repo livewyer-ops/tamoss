@@ -1,0 +1,68 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tamoss-delete-removes-managed-blueprint
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: extended
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: authentik
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply authentik-backed instance
+      try:
+        - apply:
+            file: ../../fixtures/authentik.yaml
+        - apply:
+            file: ../../fixtures/auth-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - assert:
+            file: ../../fixtures/assert/authentik-available.yaml
+            timeout: 180s
+        - apply:
+            file: ../../fixtures/tamoss-authentik.yaml
+        - assert:
+            file: assert/managed-blueprint-ready-for-delete.yaml
+            timeout: 2m
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: Tamoss
+            name: tamoss
+            timeout: 120s
+            for:
+              deletion: {}
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: waits for the Authentik fixture debug API to drop the managed Blueprint.
+              blueprint="tamoss-${NAMESPACE}-tamoss"
+              end=$(($(date +%s) + 120))
+              while [ -n "$(../../scripts/print-authentik-blueprint.sh "$blueprint" 2>/dev/null || true)" ]; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for managed Blueprint deletion" >&2
+                  exit 1
+                fi
+                sleep 2
+              done

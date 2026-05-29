@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: primary-schema-state
+data:
+  ready: "true"
+  schemaVersion: "0.0.1"
+  fixturesApplied: "false"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: secondary-schema-state
+data:
+  ready: "true"
+  schemaVersion: "0.0.1"
+  fixturesApplied: "false"

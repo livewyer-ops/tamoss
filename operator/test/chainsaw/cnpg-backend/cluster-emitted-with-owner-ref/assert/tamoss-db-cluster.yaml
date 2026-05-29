@@ -1,0 +1,7 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tamoss-db
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): tamoss
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].controller): true
+(spec.enableSuperuserAccess): true

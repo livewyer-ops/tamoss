@@ -1,0 +1,23 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Configuration
+metadata:
+  name: tamoss-operator-chainsaw
+spec:
+  timeouts:
+    apply: 3m
+    assert: 3m
+    cleanup: 3m
+    delete: 3m
+    error: 3m
+    exec: 3m
+  namespaceTemplate:
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      generateName: tamoss-chainsaw-
+      labels:
+        app.kubernetes.io/name: tamoss-chainsaw
+  skipDelete: false
+  reportFormat: JUNIT-TEST
+  reportName: junit-operator-chainsaw
+  reportPath: reports

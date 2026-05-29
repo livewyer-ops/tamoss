@@ -1,0 +1,75 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: explicit-token-replaces-generated-value
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: instance
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance and replace generated token
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - assert:
+            file: assert/api-token-secret-present.yaml
+        - assert:
+            file: assert/api-deployment-present.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: captures the original rollout checksum for later comparison.
+              before="$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.metadata.annotations.checksum/api-token-secret}')"
+              kubectl -n "$NAMESPACE" create configmap token-checksum-snapshot --from-literal=before="$before"
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                secrets:
+                  apiToken:
+                    token: user-supplied-token
+        - assert:
+            file: assert/explicit-token-secret.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: compares checksum values captured around the token change.
+              before="$(kubectl -n "$NAMESPACE" get configmap token-checksum-snapshot -o jsonpath='{.data.before}')"
+              end=$(($(date +%s) + 90))
+              while true; do
+                after="$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.metadata.annotations.checksum/api-token-secret}' 2>/dev/null || true)"
+                if [ "$before" != "$after" ] && [ -n "$after" ]; then
+                  exit 0
+                fi
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for api token checksum change" >&2
+                  exit 1
+                fi
+                sleep 2
+              done

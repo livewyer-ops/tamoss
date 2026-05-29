@@ -1,0 +1,41 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: redirect-uri-derived-from-ingress
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: authentik
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply ingress-derived redirect instance
+      try:
+        - apply:
+            file: ../../fixtures/authentik.yaml
+        - apply:
+            file: ../../fixtures/auth-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - assert:
+            file: ../../fixtures/assert/authentik-available.yaml
+            timeout: 180s
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/identity-blueprint-submitted.yaml
+            timeout: 2m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: reads the Authentik fixture debug API to verify rendered redirect URI content.
+              blueprint="tamoss-${NAMESPACE}-auth-ingress"
+              ../../scripts/print-authentik-blueprint.sh "$blueprint" |
+                grep -q "https://app.auth-ingress.test/auth/callback"

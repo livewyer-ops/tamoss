@@ -1,0 +1,40 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: missing-credentials-surfaces-status
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply storage backend with missing credentials
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - apply:
+            file: resources/archive-storagebackend.yaml
+        - assert:
+            file: assert/archive-storagebackend-missing-secret.yaml
+            timeout: 2m
+        - assert:
+            file: assert/missing-secret-event.yaml
+            timeout: 1m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: confirms no bucket/database jobs were launched.
+              if kubectl -n "$NAMESPACE" get job -l tamoss.livewyer.io/storage-backend=archive --no-headers 2>/dev/null | grep -q .; then
+                kubectl -n "$NAMESPACE" get job -l tamoss.livewyer.io/storage-backend=archive
+                exit 1
+              fi

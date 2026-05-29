@@ -1,0 +1,134 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-pod-uses-creds-secret
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply rustfs operator instance
+      try:
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/rustfs-managed-tamoss.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator.yaml
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                api:
+                  replicaCount: 1
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+            timeout: 120s
+        - assert:
+            file: assert/generated-creds-secret.yaml
+            timeout: 120s
+        - assert:
+            file: assert/tenant-owner-ref.yaml
+            timeout: 120s
+
+    - name: simulate rustfs tenant readiness
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: RustFS Tenant status is simulated because no RustFS controller is running in Chainsaw.
+              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+
+    - name: wait for storage backend reconciliation
+      try:
+        - assert:
+            file: assert/bucket-state-ready.yaml
+            timeout: 120s
+        - assert:
+            file: assert/db-state-ready.yaml
+            timeout: 120s
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              metadata:
+                name: tamoss-storage-default
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - assert:
+            file: assert/api-deployment-uses-creds-secret.yaml
+            timeout: 120s
+
+    - name: verify rendered credential payload
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: decodes the runtime credential JSON and compares it with the rendered backend Secret.
+              backend_id="$(kubectl -n "$NAMESPACE" get secret tamoss-backends -o jsonpath='{.data.TAMOSS_STORAGE_BACKEND_ID}' | base64 -d)"
+              kubectl -n "$NAMESPACE" get secret tamoss-storage-backend-credentials -o jsonpath='{.data.credentials\.json}' | base64 -d | grep -q "\"storageBackendId\": \"$backend_id\""
+              kubectl -n "$NAMESPACE" get secret tamoss-backends -o jsonpath='{.data.TAMOSS_S3_PUBLIC_ENDPOINT}' | base64 -d | grep -q "https://s3.tamoss.test"
+
+    - name: complete simulated cleanup
+      try:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              name: tamoss-storage-default
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: this test deletes the managed StorageBackend directly, so its database cleanup job must be completed.
+              complete_job() {
+                job="$1"
+                for _ in $(seq 1 60); do
+                  kubectl -n "$NAMESPACE" get job "$job" >/dev/null 2>&1 && break
+                  sleep 1
+                done
+                now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                payload="$(printf '{"status":{"active":0,"ready":0,"succeeded":1,"terminating":0,"conditions":[{"type":"SuccessCriteriaMet","status":"True","lastProbeTime":"%s","lastTransitionTime":"%s"},{"type":"Complete","status":"True","lastProbeTime":"%s","lastTransitionTime":"%s"}],"completionTime":"%s"}}' "$now" "$now" "$now" "$now" "$now")"
+                kubectl -n "$NAMESPACE" patch job "$job" --subresource=status --type=merge -p "$payload" >/dev/null 2>&1 ||
+                  kubectl -n "$NAMESPACE" patch job "$job" --type=merge -p "$payload" >/dev/null
+                kubectl -n "$NAMESPACE" annotate storagebackend tamoss-storage-default "chainsaw.livewyer.io/tick=$(date +%s%N)" --overwrite >/dev/null 2>&1 || true
+              }
+              complete_job tamoss-storage-default-db-deregister
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: StorageBackend
+            name: tamoss-storage-default
+            timeout: 120s
+            for:
+              deletion: {}
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: Tamoss
+            name: tamoss
+            timeout: 120s
+            for:
+              deletion: {}

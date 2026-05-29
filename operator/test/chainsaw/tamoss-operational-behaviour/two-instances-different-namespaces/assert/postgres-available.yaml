@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: tamoss-cross-alpha
+(status.conditions[?type == 'Available'] | [0].status): "True"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: tamoss-cross-beta
+(status.conditions[?type == 'Available'] | [0].status): "True"

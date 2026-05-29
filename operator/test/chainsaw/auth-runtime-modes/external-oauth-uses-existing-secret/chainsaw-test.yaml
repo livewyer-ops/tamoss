@@ -1,0 +1,36 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: external-oauth-uses-existing-secret
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: external
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply external oauth instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: resources/oauth-secret.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/external-oauth-runtime.yaml
+            timeout: 120s
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: absence checks are clearer as direct Kubernetes lookups.
+              ! kubectl -n "$NAMESPACE" get secret external-oauth-oauth2-creds

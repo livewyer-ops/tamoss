@@ -1,0 +1,46 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: external-s3-diagnostics
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: external
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply external s3 storage backend with failed diagnostic
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - apply:
+            file: resources/external-storagebackend.yaml
+        - assert:
+            file: assert/external-storagebackend-diagnostic-failed.yaml
+            timeout: 5m
+        - assert:
+            file: assert/endpoint-unreachable-event.yaml
+            timeout: 1m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: confirms external providers do not get TAMOSS bucket lifecycle Jobs.
+              ! kubectl -n "$NAMESPACE" get job external-bucket-init
+              ! kubectl -n "$NAMESPACE" get job external-bucket-delete

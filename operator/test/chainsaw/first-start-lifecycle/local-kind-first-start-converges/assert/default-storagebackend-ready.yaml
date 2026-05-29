@@ -1,0 +1,13 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: tams-storage-default
+  namespace: tams
+spec:
+  defaultStorage: true
+  tamossRef:
+    name: tamoss-kind
+status:
+  (conditions[?type == 'Ready'] | [0].status): "True"
+  (conditions[?type == 'BucketReady'] | [0].status): "True"
+  (conditions[?type == 'DatabaseReady'] | [0].status): "True"

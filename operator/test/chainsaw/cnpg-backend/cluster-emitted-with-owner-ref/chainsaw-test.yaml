@@ -1,0 +1,27 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cluster-emitted-with-owner-ref
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply cnpg instance
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - assert:
+            file: assert/cnpg-cluster-crd-established.yaml
+            timeout: 120s
+        - assert:
+            file: assert/tamoss-db-cluster.yaml
+            timeout: 120s

@@ -1,0 +1,11 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha-postgresql
+(status.conditions[?type == 'Available'] | [0].status): "True"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beta-postgresql
+(status.conditions[?type == 'Available'] | [0].status): "True"

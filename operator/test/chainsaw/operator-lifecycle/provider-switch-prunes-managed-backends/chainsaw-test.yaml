@@ -1,0 +1,101 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: provider-switch-prunes-managed-backends
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply managed provider instance
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - apply:
+            file: resources/tamoss-managed.yaml
+        - assert:
+            file: assert/cnpg-cluster-owned.yaml
+            timeout: 120s
+
+    - name: unblock rustfs reconciliation
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/rustfs-tenant-owned.yaml
+            timeout: 120s
+
+    - name: switch to external providers and assert managed resources are pruned
+      try:
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                backends:
+                  db:
+                    providedBy: external
+                    cnpg: null
+                    external:
+                      host: postgresql
+                      port: "5432"
+                      database: tams
+                      auth:
+                        existingSecret: tams-postgresql-auth
+                        secretKeys:
+                          username: username
+                          password: password
+                  s3:
+                    providedBy: external
+                    rustfsOperator: null
+                    external:
+                      endpoint:
+                        default:
+                          url: http://rustfs-svc:9000
+                      region: us-east-1
+                      bucket: tamoss
+                      auth:
+                        existingSecret: tams-rustfs-auth
+                        secretKeys:
+                          accessKey: RUSTFS_ACCESS_KEY
+                          secretKey: RUSTFS_SECRET_KEY
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              ../../scripts/reconcile-tamoss.sh tamoss
+        - wait:
+            apiVersion: postgresql.cnpg.io/v1
+            kind: Cluster
+            name: tamoss-db
+            timeout: 120s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: rustfs.com/v1alpha1
+            kind: Tenant
+            name: tamoss-s3
+            timeout: 120s
+            for:
+              deletion: {}

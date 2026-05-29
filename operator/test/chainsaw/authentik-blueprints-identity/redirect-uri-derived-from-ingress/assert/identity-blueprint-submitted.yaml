@@ -1,0 +1,8 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: auth-ingress
+  namespace: ($namespace)
+status:
+  (conditions[?type == 'IdentityBlueprintSubmitted'] | [0].status): "True"
+  (conditions[?type == 'IdentityBlueprintSubmitted'] | [0].reason): ManagedBlueprintApplied

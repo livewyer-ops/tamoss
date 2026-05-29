@@ -1,0 +1,45 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: missing-operator-blocks-reconcile
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: require absent cnpg crd
+      try:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: this scenario proves missing dependency behavior and must run without the CNPG CRD.
+              if kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+                echo "CNPG Cluster CRD is installed; run this scenario on a Chainsaw cluster without CNPG CRDs" >&2
+                exit 1
+              fi
+
+    - name: apply cnpg instance without cnpg crd
+      try:
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - assert:
+            file: assert/missing-dependency-status.yaml
+            timeout: 150s
+        - assert:
+            file: assert/missing-dependency-event.yaml
+            timeout: 150s
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: checks the provider name in the generated Event message.
+              kubectl -n "$NAMESPACE" get events --field-selector involvedObject.name=tamoss,reason=MissingDependencyOperator --no-headers | grep -q "CloudNativePG"
+              ! kubectl -n "$NAMESPACE" get deployment tamoss-api

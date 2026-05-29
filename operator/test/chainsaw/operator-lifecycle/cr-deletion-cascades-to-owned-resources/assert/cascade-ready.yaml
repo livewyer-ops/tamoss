@@ -1,0 +1,10 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: cascade
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cascade-api

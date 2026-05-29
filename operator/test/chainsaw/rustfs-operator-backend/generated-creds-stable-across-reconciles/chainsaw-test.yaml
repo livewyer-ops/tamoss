@@ -1,0 +1,44 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: generated-creds-stable-across-reconciles
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply rustfs operator instance
+      try:
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator.yaml
+        - assert:
+            file: assert/generated-creds-secret.yaml
+            timeout: 120s
+
+    - name: force reconciles and compare generated credentials
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: compares generated Secret data before and after forced reconciles.
+              first_access="$(kubectl -n "$NAMESPACE" get secret tamoss-s3-creds -o jsonpath='{.data.RUSTFS_ACCESS_KEY}')"
+              first_secret="$(kubectl -n "$NAMESPACE" get secret tamoss-s3-creds -o jsonpath='{.data.RUSTFS_SECRET_KEY}')"
+              ../../scripts/reconcile-tamoss.sh tamoss
+              sleep 5
+              ../../scripts/reconcile-tamoss.sh tamoss
+              sleep 5
+              second_access="$(kubectl -n "$NAMESPACE" get secret tamoss-s3-creds -o jsonpath='{.data.RUSTFS_ACCESS_KEY}')"
+              second_secret="$(kubectl -n "$NAMESPACE" get secret tamoss-s3-creds -o jsonpath='{.data.RUSTFS_SECRET_KEY}')"
+              [ "$first_access" = "$second_access" ]
+              [ "$first_secret" = "$second_secret" ]

@@ -1,0 +1,26 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: multi-server-production-defaults
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: release
+    test.tamoss.io/domain: profile
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: external
+    test.tamoss.io/profile: multi-server
+spec:
+  steps:
+    - name: apply multi-server profile with external providers
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: resources/schema-state.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/workload-defaults.yaml
+            timeout: 120s

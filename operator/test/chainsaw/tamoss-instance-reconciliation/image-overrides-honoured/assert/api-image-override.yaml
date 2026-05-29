@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-override-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/tamoss-api:v1.2.3

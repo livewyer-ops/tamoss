@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-controller-manager
+  namespace: tamoss-system
+(status.conditions[?type == 'Available'] | [0].status): "True"
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: operator-webhook-service
+  namespace: tamoss-system
+(subsets[0].addresses[0].ip != ''): true

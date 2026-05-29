@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alpha-oauth2-creds
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: beta-oauth2-creds
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): beta
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha-api
+(spec.template.spec.containers[?name == 'api'] | [0].envFrom[?secretRef.name == 'alpha-oauth2-creds'] | [0].secretRef.name): alpha-oauth2-creds
+(spec.template.spec.containers[?name == 'api'] | [0].env[?name == 'TAMOSS_OAUTH2_ISSUER'] | [0].value): http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-alpha/
+(spec.template.spec.containers[?name == 'api'] | [0].env[?name == 'TAMOSS_OAUTH2_JWKS_URI'] | [0].value): http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-alpha/jwks/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beta-api
+(spec.template.spec.containers[?name == 'api'] | [0].envFrom[?secretRef.name == 'beta-oauth2-creds'] | [0].secretRef.name): beta-oauth2-creds
+(spec.template.spec.containers[?name == 'api'] | [0].env[?name == 'TAMOSS_OAUTH2_ISSUER'] | [0].value): http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-beta/
+(spec.template.spec.containers[?name == 'api'] | [0].env[?name == 'TAMOSS_OAUTH2_JWKS_URI'] | [0].value): http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-beta/jwks/
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: alpha
+(status.conditions[?type == 'IdentityReady'] | [0].status): "True"
+(status.auth.managedBlueprint): tamoss-alpha
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: beta
+(status.conditions[?type == 'IdentityReady'] | [0].status): "True"
+(status.auth.managedBlueprint): tamoss-beta

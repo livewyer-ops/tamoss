@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha-api
+  labels:
+    app.kubernetes.io/instance: alpha
+    app.kubernetes.io/component: api
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beta-api
+  labels:
+    app.kubernetes.io/instance: beta
+    app.kubernetes.io/component: api
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): beta
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alpha-api
+  labels:
+    app.kubernetes.io/instance: alpha
+    app.kubernetes.io/component: api
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: beta-api
+  labels:
+    app.kubernetes.io/instance: beta
+    app.kubernetes.io/component: api
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): beta
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alpha-api-token
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: beta-api-token
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): beta
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: alpha-storage-default
+  labels:
+    app.kubernetes.io/instance: alpha
+    app.kubernetes.io/component: storage-backend
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): alpha
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: beta-storage-default
+  labels:
+    app.kubernetes.io/instance: beta
+    app.kubernetes.io/component: storage-backend
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): beta
+(status.conditions[?type == 'Ready'] | [0].status): "True"

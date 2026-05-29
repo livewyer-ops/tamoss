@@ -1,0 +1,57 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tamoss-delete-cascades-to-cluster
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply cnpg instance
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - assert:
+            file: assert/cnpg-cluster-crd-established.yaml
+        - assert:
+            file: assert/tamoss-db-cluster.yaml
+            timeout: 2m
+
+    - name: delete instance and assert cluster deletion
+      try:
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: Tamoss
+            name: tamoss
+            timeout: 120s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: postgresql.cnpg.io/v1
+            kind: Cluster
+            name: tamoss-db
+            timeout: 120s
+            for:
+              deletion: {}

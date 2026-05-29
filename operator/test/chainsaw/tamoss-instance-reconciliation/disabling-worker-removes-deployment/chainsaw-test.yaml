@@ -1,0 +1,64 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disabling-worker-removes-deployment
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: instance
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply worker-enabled instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/worker-resources-present.yaml
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: worker-toggle
+                namespace: ($namespace)
+              spec:
+                worker:
+                  enabled: false
+                  pdb:
+                    enabled: false
+        - wait:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: worker-toggle-worker
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: policy/v1
+            kind: PodDisruptionBudget
+            name: worker-toggle-worker
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            name: worker-toggle-worker
+            timeout: 90s
+            for:
+              deletion: {}

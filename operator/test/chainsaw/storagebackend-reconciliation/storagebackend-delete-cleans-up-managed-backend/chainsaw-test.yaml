@@ -1,0 +1,60 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: storagebackend-delete-cleans-up-managed-backend
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: extended
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  timeouts:
+    exec: 5m
+  steps:
+    - name: apply managed storage backend
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - apply:
+            file: resources/archive-storagebackend.yaml
+        - assert:
+            file: assert/archive-storagebackend-ready.yaml
+            timeout: 5m
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: checks real RustFS and PostgreSQL side effects for the managed backend.
+              ./scripts/assert-storagebackend-present.sh
+
+    - name: confirmed delete cleans up provider state
+      try:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              name: archive
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: waits for finalizer cleanup and verifies provider-side deletion.
+              ./scripts/assert-storagebackend-deleted.sh

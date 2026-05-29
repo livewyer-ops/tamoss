@@ -1,0 +1,21 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: local-kind-first-start-converges
+  labels:
+    test.tamoss.io/target: deployed
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: read-only
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: local-kind
+spec:
+  steps:
+    - name: assert first-start lifecycle status
+      try:
+        - assert:
+            file: assert/tamoss-first-start-ready.yaml
+            timeout: 60s
+        - assert:
+            file: assert/default-storagebackend-ready.yaml
+            timeout: 60s

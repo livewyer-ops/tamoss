@@ -1,0 +1,21 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: fresh-cluster-install-via-single-manifest
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: install
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: local-kind
+spec:
+  steps:
+    - name: assert operator install is ready
+      try:
+        - assert:
+            file: assert/tamoss-crd-established.yaml
+            timeout: 60s
+        - assert:
+            file: assert/operator-controller-manager-available.yaml
+            timeout: 60s

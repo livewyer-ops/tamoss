@@ -1,0 +1,8 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  namespace: ($namespace)
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): AllComponentsReady
+(status.phase): Ready

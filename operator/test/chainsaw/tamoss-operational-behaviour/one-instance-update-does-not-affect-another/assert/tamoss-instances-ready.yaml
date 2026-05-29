@@ -1,0 +1,17 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: alpha
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.resolved.resources.api): alpha-api
+(status.resolved.resources.ui): alpha-ui
+(status.resolved.resources.defaultStorageBackend): alpha-storage-default
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: beta
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.resolved.resources.api): beta-api
+(status.resolved.resources.ui): beta-ui
+(status.resolved.resources.defaultStorageBackend): beta-storage-default

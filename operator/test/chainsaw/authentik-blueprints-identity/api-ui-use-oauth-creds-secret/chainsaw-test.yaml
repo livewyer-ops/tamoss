@@ -1,0 +1,43 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-ui-use-oauth-creds-secret
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: authentik
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply ready authentik-backed instance
+      try:
+        - apply:
+            file: ../../fixtures/authentik.yaml
+        - apply:
+            file: ../../fixtures/auth-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - assert:
+            file: ../../fixtures/assert/authentik-available.yaml
+            timeout: 180s
+        - apply:
+            file: ../../fixtures/tamoss-authentik.yaml
+        - assert:
+            file: assert/oauth2-secret-and-workloads.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: the JWKS URL includes a Chainsaw-generated namespace value.
+              [ "$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="TAMOSS_OAUTH2_JWKS_URI")].value}')" = "http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-${NAMESPACE}-tamoss/jwks/" ]
+        - assert:
+            file: assert/managed-blueprint-applied-event.yaml
+            timeout: 1m

@@ -1,0 +1,6 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: tamoss-storage-default
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): tamoss
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].controller): true

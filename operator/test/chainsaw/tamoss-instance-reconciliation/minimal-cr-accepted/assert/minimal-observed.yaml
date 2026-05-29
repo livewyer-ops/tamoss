@@ -1,0 +1,7 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: minimal
+  namespace: ($namespace)
+status:
+  (observedGeneration != null): true

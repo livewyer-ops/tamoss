@@ -1,0 +1,32 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: ignored
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+  namespace: other
+spec:
+  auth:
+    required: false
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        auth:
+          existingSecret: missing
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        bucket: tamoss
+        auth:
+          existingSecret: missing
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY

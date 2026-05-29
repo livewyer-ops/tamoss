@@ -1,0 +1,44 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: default-storagebackend-is-emitted
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply managed storage instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: ../../fixtures/rustfs-managed-tamoss.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - apply:
+            file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
+              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            file: assert/tamoss-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/default-storagebackend-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/storagebackend-bucket-created-event.yaml
+            timeout: 1m

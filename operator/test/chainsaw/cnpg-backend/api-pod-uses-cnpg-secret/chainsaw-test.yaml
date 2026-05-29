@@ -1,0 +1,42 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-pod-uses-cnpg-secret
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply ready cnpg instance
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - assert:
+            file: assert/cnpg-cluster-crd-established.yaml
+            timeout: 120s
+        - assert:
+            file: assert/tamoss-db-cluster.yaml
+            timeout: 120s
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status and generated Secret simulation; no CNPG controller is running in Chainsaw.
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - assert:
+            file: assert/api-deployment-uses-cnpg-secret.yaml
+            timeout: 120s

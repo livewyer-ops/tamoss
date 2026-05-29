@@ -1,0 +1,42 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: tamoss
+  auth:
+    required: false
+  api:
+    enabled: true
+    replicaCount: 0
+  ui:
+    enabled: true
+    replicaCount: 0
+  backends:
+    db:
+      providedBy: cnpg
+      cnpg:
+        instances: 1
+        postgresVersion: "18"
+        storage:
+          size: 10Gi
+    s3:
+      providedBy: rustfs-operator
+      rustfsOperator:
+        image: rustfs/rustfs:1.0.0-beta.3
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"
+        publicEndpoint:
+          url: https://s3.tamoss.test
+        bucket:
+          name: tamoss
+          createIfMissing: true
+        pools:
+          - name: pool-0
+            servers: 2
+            volumesPerServer: 2
+            storage:
+              size: 10Gi

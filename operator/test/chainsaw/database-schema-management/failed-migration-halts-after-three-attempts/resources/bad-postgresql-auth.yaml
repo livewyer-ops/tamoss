@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bad-postgresql-auth
+type: Opaque
+stringData:
+  username: nobody
+  password: wrong
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tams-rustfs-auth
+type: Opaque
+stringData:
+  RUSTFS_ACCESS_KEY: rustfsadmin
+  RUSTFS_SECRET_KEY: rustfsadmin

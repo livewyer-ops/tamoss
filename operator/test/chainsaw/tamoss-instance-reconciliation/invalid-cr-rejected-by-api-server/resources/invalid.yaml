@@ -1,0 +1,9 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: invalid
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  api:
+    replicaCount: -1

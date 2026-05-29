@@ -1,0 +1,58 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: namespace-scoped-install-rejects-cross-namespace
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: release
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: configure namespace scoped operator
+      try:
+        - apply:
+            file: resources/namespaces.yaml
+        - apply:
+            file: resources/tams-rbac.yaml
+        - script:
+            content: |
+              set -eu
+              kubectl apply --server-side -k ../../../../config/chainsaw-watch-tams
+        - assert:
+            file: ../../fixtures/assert/operator-ready.yaml
+            timeout: 180s
+
+    - name: apply cross namespace instance
+      try:
+        - apply:
+            file: resources/ignored-tamoss.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              sleep 30
+              ! kubectl -n other get deployment ignored-api >/dev/null 2>&1
+              kubectl -n tamoss-system logs deployment/operator-controller-manager -c manager --tail=200 |
+                grep -q "watching configured namespaces"
+      finally:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: finally blocks cannot use native assert operations, so cleanup waits inline.
+              kubectl apply --server-side -k ../../../../config/chainsaw >/dev/null
+              kubectl -n tamoss-system rollout status deployment/operator-controller-manager --timeout=180s >/dev/null
+              end=$(($(date +%s) + 60))
+              until [ -n "$(kubectl -n tamoss-system get endpoints operator-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)" ]; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for operator webhook endpoint" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+              # The endpoint can be published before the webhook listener accepts TLS.
+              sleep 5

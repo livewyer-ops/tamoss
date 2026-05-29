@@ -1,0 +1,39 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: two-instances-different-namespaces
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: extended
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply two namespaces
+      try:
+        - apply:
+            file: resources/namespaces-rbac.yaml
+        - apply:
+            file: ../../fixtures/rustfs-crd.yaml
+        - apply:
+            file: resources/rustfs.yaml
+        - apply:
+            file: resources/postgres.yaml
+        - assert:
+            file: assert/postgres-available.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
+              NAMESPACE=tamoss-cross-alpha ../../scripts/simulate-rustfs-tenant-ready.sh alpha-s3 tamoss
+              NAMESPACE=tamoss-cross-beta ../../scripts/simulate-rustfs-tenant-ready.sh beta-s3 tamoss
+        - assert:
+            file: assert/tamoss-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/resources-scoped.yaml
+            timeout: 5m

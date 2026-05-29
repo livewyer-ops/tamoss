@@ -1,0 +1,54 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: auth-ingress
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: auth-ingress
+  auth:
+    providedBy: authentik-blueprints
+    required: true
+    authentikBlueprints:
+      platformNamespace: auth
+      apiTokenSecretRef:
+        name: authentik-chainsaw-api-token
+        key: token
+      issuerURL: http://authentik-chainsaw.auth.svc:9000
+      internalURL: http://authentik-chainsaw.auth.svc:9000
+  api:
+    enabled: true
+    replicaCount: 0
+  ui:
+    enabled: true
+    replicaCount: 0
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
+  ingress:
+    enabled: true
+    ui:
+      web:
+        host: app.auth-ingress.test

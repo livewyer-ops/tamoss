@@ -1,0 +1,8 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: archive
+spec:
+  bucketName: archive
+  credentials:
+    existingSecret: tams-rustfs-auth

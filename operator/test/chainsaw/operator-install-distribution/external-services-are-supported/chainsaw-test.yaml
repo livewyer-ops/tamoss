@@ -1,0 +1,54 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: external-services-are-supported
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: install
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: external
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: install external backend fixtures
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              backend_namespace="${NAMESPACE}-backends"
+              kubectl get namespace "$backend_namespace" >/dev/null 2>&1 || kubectl create namespace "$backend_namespace"
+              kubectl -n "$backend_namespace" apply -f ../../fixtures/postgres.yaml
+              kubectl -n "$backend_namespace" wait --for=condition=Available deployment/postgresql --timeout=120s
+              kubectl -n "$backend_namespace" apply -f ../../fixtures/rustfs.yaml
+              kubectl -n "$backend_namespace" wait --for=condition=Available deployment/rustfs --timeout=180s
+
+    - name: apply instance using external services
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              kubectl -n "$NAMESPACE" wait --for=condition=Ready tamoss/external --timeout=240s
+              [ "$(kubectl -n "$NAMESPACE" get tamoss external -o jsonpath='{.status.auth.provider}')" = "external" ]
+              ! kubectl -n "$NAMESPACE" get deployment -l app.kubernetes.io/name=postgresql --no-headers 2>/dev/null | grep -q .
+              ! kubectl -n "$NAMESPACE" get deployment -l app.kubernetes.io/name=rustfs --no-headers 2>/dev/null | grep -q .
+      finally:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              kubectl delete namespace "${NAMESPACE}-backends" --ignore-not-found=true --wait=false

@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: ($namespace)
+status:
+  (conditions[?type == 'Available'] | [0].status): "True"

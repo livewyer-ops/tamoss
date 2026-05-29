@@ -1,0 +1,65 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: delete-protection-requires-confirmation
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: release
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/tamoss-present.yaml
+
+    - name: unconfirmed delete is denied
+      try:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+            expect:
+              - match:
+                  apiVersion: tamoss.livewyer.io/v1alpha1
+                  kind: Tamoss
+                  metadata:
+                    name: tamoss
+                check:
+                  ($error != null): true
+        - assert:
+            file: assert/tamoss-present.yaml
+
+    - name: confirmed delete is allowed
+      try:
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: Tamoss
+            name: tamoss
+            timeout: 120s
+            for:
+              deletion: {}

@@ -1,0 +1,113 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  namespace: tamoss-cross-alpha
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: alpha
+  auth:
+    required: false
+  api:
+    enabled: true
+    replicaCount: 0
+    image:
+      repository: livewyer/tamoss-api
+      tag: dev
+      pullPolicy: IfNotPresent
+  worker:
+    enabled: false
+    replicaCount: 0
+  ui:
+    enabled: true
+    replicaCount: 0
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: rustfs-operator
+      rustfsOperator:
+        image: rustfs/rustfs:1.0.0-beta.3
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"
+        bucket:
+          name: tamoss
+          createIfMissing: true
+        pools:
+          - name: pool-0
+            servers: 2
+            volumesPerServer: 2
+            storage:
+              size: 1Gi
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  namespace: tamoss-cross-beta
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: beta
+  auth:
+    required: false
+  api:
+    enabled: true
+    replicaCount: 0
+    image:
+      repository: livewyer/tamoss-api
+      tag: dev
+      pullPolicy: IfNotPresent
+  worker:
+    enabled: false
+    replicaCount: 0
+  ui:
+    enabled: true
+    replicaCount: 0
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: rustfs-operator
+      rustfsOperator:
+        image: rustfs/rustfs:1.0.0-beta.3
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"
+        bucket:
+          name: tamoss
+          createIfMissing: true
+        pools:
+          - name: pool-0
+            servers: 2
+            volumesPerServer: 2
+            storage:
+              size: 1Gi
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false

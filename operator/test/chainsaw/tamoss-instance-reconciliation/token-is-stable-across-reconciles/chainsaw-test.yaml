@@ -1,0 +1,45 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: token-is-stable-across-reconciles
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: instance
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance and force reconciles
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - assert:
+            file: assert/api-token-secret-present.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: captures and compares generated token bytes across forced reconciles.
+              first="$(kubectl -n "$NAMESPACE" get secret tamoss-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')"
+              ../../scripts/reconcile-tamoss.sh tamoss
+              sleep 5
+              ../../scripts/reconcile-tamoss.sh tamoss
+              sleep 5
+              second="$(kubectl -n "$NAMESPACE" get secret tamoss-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')"
+              [ "$first" = "$second" ]

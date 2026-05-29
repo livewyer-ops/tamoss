@@ -1,0 +1,91 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cr-deletion-cascades-to-owned-resources
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply backend fixtures and instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/cascade-ready.yaml
+            timeout: 4m
+
+    - name: delete instance and assert owned resources are gone
+      try:
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: cascade
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: cascade
+        - wait:
+            apiVersion: tamoss.livewyer.io/v1alpha1
+            kind: Tamoss
+            name: cascade
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: apps/v1
+            kind: Deployment
+            selector: app.kubernetes.io/instance=cascade,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Service
+            selector: app.kubernetes.io/instance=cascade,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            selector: app.kubernetes.io/instance=cascade,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: ConfigMap
+            selector: app.kubernetes.io/instance=cascade,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 90s
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            selector: app.kubernetes.io/instance=cascade,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 90s
+            for:
+              deletion: {}

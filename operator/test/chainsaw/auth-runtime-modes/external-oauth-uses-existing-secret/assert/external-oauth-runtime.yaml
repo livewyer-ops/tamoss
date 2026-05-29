@@ -1,0 +1,16 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: external-oauth
+(status.conditions[?type == 'IdentityReady'] | [0].status): "True"
+(status.conditions[?type == 'IdentityReady'] | [0].reason): ExternalIdentityConfigured
+(status.auth.provider): external
+(status.providers.auth.provider): external
+(status.providers.auth.ownership): external
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-oauth-ui
+(spec.template.spec.containers[?name == 'ui'] | [0].envFrom[?secretRef.name == 'external-oauth-creds'] | [0].secretRef.name): external-oauth-creds
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_ENABLED'] | [0].value): "true"

@@ -1,0 +1,15 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: tamoss-db-backup
+(spec.schedule): "0 0 2 * * *"
+(spec.cluster.name): tamoss-db
+(spec.backupOwnerReference): cluster
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tamoss-db
+(spec.backup.retentionPolicy): 30d
+(spec.backup.barmanObjectStore.endpointURL): http://rustfs-svc:9000
+(spec.backup.barmanObjectStore.destinationPath): s3://tamoss-backups/tamoss-db

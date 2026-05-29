@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tamoss-storage-default-db-state
+(metadata.ownerReferences[?kind == 'StorageBackend'] | [0].name): tamoss-storage-default
+(data.ready): "true"
+(data.bucketName): tamoss
+(data.jobUID != ''): true

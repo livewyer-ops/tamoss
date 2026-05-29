@@ -1,0 +1,24 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: failed-reconcile-surfaces-in-status-and-events
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply missing backend instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/missing-secret-status.yaml
+        - assert:
+            file: assert/missing-secret-event.yaml
+            timeout: 1m

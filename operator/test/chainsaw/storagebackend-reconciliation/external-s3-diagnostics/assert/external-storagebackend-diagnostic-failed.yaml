@@ -1,0 +1,18 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: external
+(status.phase): Ready
+(status.backendID): 22222222-2222-5222-8222-222222222222
+(status.bucketName): external
+(status.resolved.provider): external-s3
+(status.resolved.endpointURL): http://rustfs-svc:9000
+(status.resolved.publicEndpointURL): http://rustfs-svc:9000
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): StorageBackendReady
+(status.conditions[?type == 'BucketReady'] | [0].status): "True"
+(status.conditions[?type == 'BucketReady'] | [0].reason): BucketReady
+(status.conditions[?type == 'DatabaseReady'] | [0].status): "True"
+(status.conditions[?type == 'DatabaseReady'] | [0].reason): DatabaseRegistered
+(status.conditions[?type == 'ExternalS3DiagnosticReady'] | [0].status): "False"
+(status.conditions[?type == 'ExternalS3DiagnosticReady'] | [0].reason): EndpointUnreachable

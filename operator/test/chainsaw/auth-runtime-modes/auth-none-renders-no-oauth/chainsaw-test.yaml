@@ -1,0 +1,34 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: auth-none-renders-no-oauth
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply auth-none instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/no-oauth-runtime.yaml
+            timeout: 120s
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: absence checks are clearer as direct Kubernetes lookups.
+              ! kubectl -n "$NAMESPACE" get secret auth-none-oauth2-creds

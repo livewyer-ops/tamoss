@@ -1,0 +1,75 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-disabled-prunes-scheduledbackup
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply cnpg instance with backup enabled
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - apply:
+            file: ../backup-policy-health-visible/resources/backup-object-store-secret.yaml
+        - apply:
+            file: ../backup-policy-health-visible/resources/tamoss-cnpg-backup.yaml
+        - assert:
+            file: ../backup-policy-health-visible/assert/scheduled-backup-emitted.yaml
+            timeout: 120s
+
+    - name: disable backup and assert scheduled backup is pruned
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: CNPG status is simulated because no CNPG controller is running in Chainsaw.
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                backends:
+                  db:
+                    cnpg:
+                      backup:
+                        enabled: false
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              ../../scripts/reconcile-tamoss.sh tamoss
+        - wait:
+            apiVersion: postgresql.cnpg.io/v1
+            kind: ScheduledBackup
+            name: tamoss-db-backup
+            timeout: 120s
+            for:
+              deletion: {}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: tamoss-db
+                namespace: ($namespace)

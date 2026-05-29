@@ -1,0 +1,13 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: tamoss-storage-default
+  labels:
+    app.kubernetes.io/instance: tamoss
+    app.kubernetes.io/component: storage-backend
+(metadata.ownerReferences[?kind == 'Tamoss'] | [0].name): tamoss
+(spec.defaultStorage): true
+(spec.tamossRef.name): tamoss
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'BucketReady'] | [0].status): "True"
+(status.conditions[?type == 'DatabaseReady'] | [0].status): "True"

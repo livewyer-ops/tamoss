@@ -1,0 +1,29 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: monitoring-overlay-renders
+  labels:
+    test.tamoss.io/target: render
+    test.tamoss.io/tier: release
+    test.tamoss.io/domain: observability
+    test.tamoss.io/lifecycle: read-only
+    test.tamoss.io/provider: none
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: render base and monitoring overlay
+      try:
+        - script:
+            content: |
+              set -eu
+              # chainsaw-script: render-only install-distribution check for optional Prometheus resources.
+              base="$(kubectl kustomize ../../../../../operator/config/default)"
+              if printf '%s' "$base" | grep -q 'monitoring.coreos.com'; then
+                echo "base install rendered monitoring.coreos.com resources" >&2
+                exit 1
+              fi
+
+              monitoring="$(kubectl kustomize ../../../../../operator/config/prometheus)"
+              printf '%s' "$monitoring" | grep -q 'kind: ServiceMonitor'
+              printf '%s' "$monitoring" | grep -q 'kind: PrometheusRule'
+              printf '%s' "$monitoring" | grep -q 'alert: TAMOSSReconcileErrors'

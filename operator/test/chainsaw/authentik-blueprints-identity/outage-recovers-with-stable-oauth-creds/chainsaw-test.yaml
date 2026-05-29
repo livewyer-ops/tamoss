@@ -1,0 +1,83 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: outage-recovers-with-stable-oauth-creds
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: extended
+    test.tamoss.io/domain: auth
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: authentik
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply ready authentik-backed instance
+      try:
+        - apply:
+            file: ../../fixtures/authentik.yaml
+        - apply:
+            file: ../../fixtures/auth-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - assert:
+            file: ../../fixtures/assert/authentik-available.yaml
+            timeout: 180s
+        - apply:
+            file: ../../fixtures/tamoss-authentik.yaml
+        - assert:
+            file: assert/identity-ready.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: stores opaque OAuth credential bytes for a later stability comparison.
+              kubectl -n "$NAMESPACE" create configmap oauth-snapshot \
+                --from-literal=client_id="$(kubectl -n "$NAMESPACE" get secret tamoss-oauth2-creds -o jsonpath='{.data.client_id}')" \
+                --from-literal=client_secret="$(kubectl -n "$NAMESPACE" get secret tamoss-oauth2-creds -o jsonpath='{.data.client_secret}')"
+    - name: outage reports identity not ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: simulates a platform Authentik outage and triggers a reconcile.
+              kubectl -n auth scale deployment/authentik-chainsaw --replicas=0
+              kubectl -n auth rollout status deployment/authentik-chainsaw --timeout=60s
+              ../../scripts/reconcile-tamoss.sh tamoss
+        - assert:
+            file: assert/identity-unavailable.yaml
+    - name: recovery restores identity without rotating creds
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: restores the Authentik fixture and triggers a reconcile.
+              kubectl -n auth scale deployment/authentik-chainsaw --replicas=1
+              kubectl -n auth rollout status deployment/authentik-chainsaw --timeout=180s
+              ../../scripts/reconcile-tamoss.sh tamoss
+        - assert:
+            file: assert/identity-ready.yaml
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: compares Secret data before and after outage recovery.
+              before_id="$(kubectl -n "$NAMESPACE" get configmap oauth-snapshot -o jsonpath='{.data.client_id}')"
+              before_secret="$(kubectl -n "$NAMESPACE" get configmap oauth-snapshot -o jsonpath='{.data.client_secret}')"
+              after_id="$(kubectl -n "$NAMESPACE" get secret tamoss-oauth2-creds -o jsonpath='{.data.client_id}')"
+              after_secret="$(kubectl -n "$NAMESPACE" get secret tamoss-oauth2-creds -o jsonpath='{.data.client_secret}')"
+              [ "$before_id" = "$after_id" ]
+              [ "$before_secret" = "$after_secret" ]

@@ -1,0 +1,21 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: immutable-storage
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  id: 33333333-3333-5333-8333-333333333333
+  tamossRef:
+    name: changed
+  provider: external-s3
+  region: us-east-1
+  bucketName: immutable
+  endpoint:
+    default:
+      url: https://s3.example.test
+  credentials:
+    existingSecret: immutable-s3-creds
+    secretKeys:
+      accessKey: accessKey
+      secretKey: secretKey

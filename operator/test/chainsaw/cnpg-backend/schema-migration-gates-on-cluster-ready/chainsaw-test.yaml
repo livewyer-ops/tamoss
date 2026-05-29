@@ -1,0 +1,50 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: schema-migration-gates-on-cluster-ready
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: db
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: cnpg
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply cnpg instance and release cluster readiness
+      try:
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/tamoss-cnpg.yaml
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - assert:
+            file: assert/cnpg-cluster-crd-established.yaml
+            timeout: 120s
+        - assert:
+            file: assert/tamoss-db-cluster.yaml
+            timeout: 120s
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: dynamic schema Job name and CNPG status simulation.
+              schema_version="${SCHEMA_VERSION:-0.0.1}"
+              job_suffix="$(printf '%s' "$schema_version" | tr . -)"
+              ! kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1
+              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+              end=$(($(date +%s) + 120))
+              until kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for schema migration Job" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+              kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" -o jsonpath='{.spec.template.spec.containers[0].args[*]}' |
+                grep -q "tamoss-db migrate --apply-cnpg-ownership"
