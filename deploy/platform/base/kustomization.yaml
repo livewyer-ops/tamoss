@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../components/cert-manager
+  - ../components/traefik/crds
+  - ../components/authentik/reference-localtest
+  - ../components/cnpg
+  - ../components/rustfs-operator
+  - cert-manager-issuer.yaml

@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+patches:
+  - path: traefik-kind-deployment-patch.yaml
+  - target:
+      version: v1
+      kind: Service
+      name: traefik
+      namespace: traefik
+    path: traefik-kind-service-patch.yaml
