@@ -1,0 +1,8 @@
+-- Canonical TAMOSS bootstrap SQL asset.
+-- Runtime migrations, local compose bootstrap, and database tests read this
+-- file from the Alembic migration assets package.
+--
+-- TAMOSS operational bootstrap rows.
+--
+-- Operator-managed storage backend rows are reconciled by StorageBackend
+-- resources. Keep this file for non-storage bootstrap data only.
