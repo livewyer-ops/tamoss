@@ -1,13 +1,101 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
+
+
+@dataclass(frozen=True)
+class DomainErrorPayload:
+    type: str
+    summary: str
+    time: str
+    incident_id: str | None = None
+    traceback: tuple[str, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def create(
+        cls,
+        error_type: str,
+        summary: str,
+        *,
+        incident_id: str | None = None,
+        traceback: tuple[str, ...] = (),
+    ) -> DomainErrorPayload:
+        return cls(
+            type=error_type,
+            summary=summary,
+            time=utc_now().isoformat(),
+            incident_id=incident_id,
+            traceback=traceback,
+        )
+
+    @classmethod
+    def from_json_dict(cls, value: object) -> DomainErrorPayload | None:
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            raise ValueError("Error payload must be a JSON object.")
+
+        error_type = value.get("type")
+        if not isinstance(error_type, str) or not error_type:
+            raise ValueError("Error payload requires a non-empty string type.")
+
+        summary = value.get("summary")
+        if not isinstance(summary, str) or not summary:
+            raise ValueError("Error payload requires a non-empty string summary.")
+
+        raw_time = value.get("time")
+        if isinstance(raw_time, datetime):
+            timestamp = raw_time
+        elif isinstance(raw_time, str) and raw_time:
+            timestamp = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+        else:
+            raise ValueError("Error payload requires a date-time string time.")
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError("Error payload time must include timezone information.")
+
+        raw_traceback = value.get("traceback")
+        if raw_traceback is None:
+            traceback = ()
+        elif isinstance(raw_traceback, list) and all(
+            isinstance(line, str) for line in raw_traceback
+        ):
+            traceback = tuple(raw_traceback)
+        else:
+            raise ValueError("Error payload traceback must be a list of strings.")
+
+        incident_id = value.get("incident_id")
+        if incident_id is not None and not isinstance(incident_id, str):
+            raise ValueError("Error payload incident_id must be a string.")
+
+        return cls(
+            type=error_type,
+            summary=summary,
+            time=timestamp.isoformat(),
+            incident_id=incident_id,
+            traceback=traceback,
+        )
+
+    def to_json_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": self.type,
+            "summary": self.summary,
+            "time": self.time,
+        }
+        if self.traceback:
+            payload["traceback"] = list(self.traceback)
+        if self.incident_id is not None:
+            payload["incident_id"] = self.incident_id
+        return payload
 
 
 @dataclass
@@ -26,6 +114,26 @@ class StorageBackend:
     secret_key: str | None = None
 
 
+ObjectGetUrlBatchKey = tuple[UUID, str]
+
+
+@dataclass(slots=True)
+class ObjectGetUrlRequest:
+    object_id: str
+    backend: StorageBackend
+    include_direct: bool = True
+    include_presigned: bool = True
+
+
+@dataclass(frozen=True)
+class ObjectStorageMetadata:
+    content_length: int | None = None
+    content_type: str | None = None
+    etag: str | None = None
+    checksum: str | None = None
+    observed_at: datetime = field(default_factory=utc_now)
+
+
 @dataclass
 class ServiceMetadata:
     name: str | None = None
@@ -35,7 +143,7 @@ class ServiceMetadata:
 @dataclass
 class WebhookRecord:
     id: UUID
-    data: dict
+    data: dict[str, Any]
     status: str
     tags: dict[str, str | list[str]] = field(default_factory=dict)
 
@@ -44,17 +152,17 @@ class WebhookRecord:
 class WebhookDeliveryRecord:
     id: UUID
     webhook_id: UUID
-    webhook_snapshot: dict
+    webhook_snapshot: dict[str, Any]
     event_type: str
     event_timestamp: datetime
-    payload: dict
+    payload: dict[str, Any]
     status: str
     created: datetime = field(default_factory=utc_now)
     updated: datetime = field(default_factory=utc_now)
     attempt_count: int = 0
     next_attempt_at: datetime | None = None
     response_status: int | None = None
-    error: dict[str, Any] | None = None
+    error: DomainErrorPayload | None = None
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
@@ -71,11 +179,42 @@ class DeletionRequestRecord:
     updated: datetime = field(default_factory=utc_now)
     timerange_remaining: str | None = None
     created_by: str | None = None
-    error: dict[str, Any] | None = None
+    error: DomainErrorPayload | None = None
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
-    segments_to_delete: list[SegmentRecord] = field(default_factory=list)
+
+
+@dataclass
+class ObjectCleanupRecord:
+    id: UUID
+    object_id: str
+    storage_backend_id: UUID
+    status: str
+    delete_request_id: UUID | None = None
+    created: datetime = field(default_factory=utc_now)
+    updated: datetime = field(default_factory=utc_now)
+    attempt_count: int = 0
+    error: DomainErrorPayload | None = None
+    claimed_at: datetime | None = None
+    claimed_by: str | None = None
+    claim_expires_at: datetime | None = None
+
+
+@dataclass
+class ObjectCopyRecord:
+    id: UUID
+    object_id: str
+    source_storage_backend_id: UUID
+    destination_storage_backend_id: UUID
+    status: str
+    created: datetime = field(default_factory=utc_now)
+    updated: datetime = field(default_factory=utc_now)
+    attempt_count: int = 0
+    error: DomainErrorPayload | None = None
+    claimed_at: datetime | None = None
+    claimed_by: str | None = None
+    claim_expires_at: datetime | None = None
 
 
 @dataclass
@@ -98,7 +237,7 @@ class SourceRelationships:
 @dataclass
 class FlowRecord:
     id: UUID
-    data: dict
+    data: dict[str, Any]
     source_id: UUID | None
     format: str | None
     container: str | None
@@ -127,6 +266,7 @@ class MediaObjectRecord:
     instances: list[ObjectInstance] = field(default_factory=list)
     key_frame_count: int | None = None
     bytes_written: int = 0
+    created: datetime = field(default_factory=utc_now)
 
 
 @dataclass
@@ -139,6 +279,5 @@ class SegmentRecord:
     object_timerange: str | None = None
     sample_offset: int | None = None
     sample_count: int | None = None
-    get_urls: list[dict] = field(default_factory=list)
     key_frame_count: int | None = None
     created: datetime = field(default_factory=utc_now)

@@ -5,6 +5,12 @@ from collections.abc import Mapping
 TagValue = str | list[str]
 
 
+def valid_tag_value(value: TagValue) -> bool:
+    if isinstance(value, str):
+        return True
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
 def parse_tag_filters(
     query_params: Mapping[str, str],
 ) -> tuple[dict[str, set[str]], dict[str, bool]]:
@@ -20,8 +26,17 @@ def parse_tag_filters(
             tag_name = key.removeprefix("tag_exists.")
             if tag_name == "{name}":
                 continue
-            exists[tag_name] = value.lower() == "true"
+            exists[tag_name] = parse_bool_filter(value)
     return values, exists
+
+
+def parse_bool_filter(value: str) -> bool:
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    raise ValueError("Input should be a valid boolean")
 
 
 def tags_match(
