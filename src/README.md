@@ -5,8 +5,8 @@ Time-addressable Media Store API contract.
 
 The package metadata in `pyproject.toml` uses this file as its Python package
 README. Keep it focused on the installable API server package; deployment,
-Helm, frontend, and contributor workflows are documented from the repository
-root.
+operator install, frontend, and contributor workflows are documented from the
+repository root.
 
 ## Package Scope
 
