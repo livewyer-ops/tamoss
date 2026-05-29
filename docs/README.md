@@ -1,0 +1,88 @@
+# TAMOSS Documentation
+
+TAMOSS is an operator-led Kubernetes product. Start from the outcome you need,
+then stay on the matching install, configuration, usage, and operations path.
+
+## Start Here
+
+| Goal | Start with | Next steps |
+| --- | --- | --- |
+| Validate TAMOSS locally | [Local Kind](getting-started/local-kind.md) | [Usage](usage.md), [Troubleshooting](operations/troubleshooting.md), [Task Commands](reference/task-commands.md) |
+| Install on an existing cluster | [Install](operations/install.md) | [Single Server](getting-started/single-server.md) or [Multi Server](getting-started/multi-server.md), then [Configuration](configuration.md) |
+| Choose a deployment shape | [Profiles](concepts/profiles.md) | `local-kind`, `single-server`, or `multi-server` |
+| Configure providers and endpoints | [Configuration](configuration.md) | [Provider Ownership](concepts/provider-ownership.md), [Runtime Configuration](reference/runtime-configuration.md), [Tamoss CR](reference/tamoss-cr.md), [StorageBackend CR](reference/storagebackend-cr.md) |
+| Use the UI or API | [Usage](usage.md) | [API](reference/api.md), [Storage Backends](concepts/storage-backends.md) |
+| Operate an installed cluster | [Day 2](operations/day-2.md) | [Backup and Restore](operations/backup-restore.md), [Upgrades](operations/upgrades.md), [Troubleshooting](operations/troubleshooting.md) |
+| Develop or test TAMOSS | [Development Workflow](development/contributing.md) | [Testing](development/testing.md), [Task Commands](reference/task-commands.md) |
+
+## Get Started
+
+- [Local Kind](getting-started/local-kind.md) - canonical local validation path.
+- [Single Server](getting-started/single-server.md) - run on one node or a
+  small self-managed Kubernetes cluster.
+- [Multi Server](getting-started/multi-server.md) - production-shaped
+  self-managed Kubernetes.
+- [Configuration](configuration.md) - durable product and provider
+  configuration.
+- [Usage](usage.md) - web UI, API, ingest, presigned URLs, and deletion.
+
+## Concepts
+
+- [Architecture](concepts/architecture.md) - operator, platform, and instance
+  boundaries.
+- [Profiles](concepts/profiles.md) - `local-kind`, `single-server`, and
+  `multi-server`.
+- [Provider Ownership](concepts/provider-ownership.md) - managed and external
+  PostgreSQL, S3, authentication, and HTTP.
+- [Storage Backends](concepts/storage-backends.md) - default and additional
+  TAMS storage backends.
+- [Tenancy](concepts/tenancy.md) - namespace-based tenant boundaries and shared
+  platform consumption.
+
+## Operations
+
+- [Install](operations/install.md) - apply platform, operator, and instance
+  layers.
+- [Day 2](operations/day-2.md) - status, scaling, pausing, drift, and logs.
+- [Backup and Restore](operations/backup-restore.md) - data ownership and
+  restore planning.
+- [Upgrades](operations/upgrades.md) - change sequencing and rollback.
+- [Deletion Protection](operations/deletion-protection.md) - required
+  confirmation annotations and finalizers.
+- [Troubleshooting](operations/troubleshooting.md) - diagnose readiness and
+  runtime failures.
+
+## Reference
+
+- [Tamoss CR](reference/tamoss-cr.md) - instance resource reference.
+- [StorageBackend CR](reference/storagebackend-cr.md) - additional object-store
+  backend reference.
+- [CRD Versioning](reference/crd-versioning.md) - API compatibility,
+  conversion, and deprecation plan.
+- [Runtime Configuration](reference/runtime-configuration.md) - workload,
+  image, and runtime environment overrides.
+- [Task Commands](reference/task-commands.md) - supported operational command
+  surface.
+- [API](reference/api.md) - BBC TAMS API and product health endpoints.
+
+## Development
+
+- [Contributing](../CONTRIBUTING.md) - public contribution workflow.
+- [Development Workflow](development/contributing.md) - local product
+  development.
+- [Testing](development/testing.md) - local, operator, and deployed gates.
+
+Docs are maintained as raw Markdown. Revisit a static site generator only if the
+documentation set grows beyond roughly 50 maintained pages or Markdown
+navigation becomes a clear maintenance burden.
+
+## Glossary
+
+| Term | Meaning |
+| --- | --- |
+| `Tamoss` | The namespaced custom resource reconciled into API, UI, worker, database, storage, identity, and routing resources. |
+| `StorageBackend` | A namespaced custom resource that represents a registered TAMS object-store backend and its readiness. |
+| Profile | A deployment shape such as `local-kind`, `single-server`, or `multi-server` that supplies defaults. |
+| Environment | A checked-in Kustomize overlay under `deploy/environments/<name>` used for durable cluster configuration. |
+| Managed | TAMOSS reconciles the Kubernetes-side resource lifecycle after prerequisites exist. |
+| External | TAMOSS consumes references to a service owned outside TAMOSS and does not mutate that service. |
