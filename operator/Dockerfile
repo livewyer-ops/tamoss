@@ -1,6 +1,6 @@
 # Build the manager binary. This Dockerfile is intended to be built from the
 # repository root with `docker build -f operator/Dockerfile .`.
-FROM golang:1.23 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.0.1
@@ -17,9 +17,10 @@ COPY operator/cmd/ cmd/
 COPY operator/api/ api/
 COPY operator/internal/ internal/
 
-# Build. TARGETARCH is set by buildx for multi-arch builds and may be empty for
-# a plain local build, in which case Go uses the builder image architecture.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath -a \
+# Build. TARGETOS and TARGETARCH are set by buildx for multi-arch builds and may
+# be empty for a plain local build, in which case Go uses the builder image
+# architecture.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=${VERSION}" \
     -o /workspace/manager ./cmd
 
