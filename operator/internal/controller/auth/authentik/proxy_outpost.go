@@ -165,7 +165,7 @@ func (c ProxyOutpostClient) Reconcile(ctx context.Context, tamoss *tamossv1alpha
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultProbeTimeout)
+		ctx, cancel = context.WithTimeout(ctx, defaultAPIOperationTimeout)
 		defer cancel()
 	}
 	api, err := c.managedBlueprintClient()
@@ -193,7 +193,7 @@ func (c ProxyOutpostClient) Reconcile(ctx context.Context, tamoss *tamossv1alpha
 func (c ProxyOutpostClient) Delete(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultProbeTimeout)
+		ctx, cancel = context.WithTimeout(ctx, defaultAPIOperationTimeout)
 		defer cancel()
 	}
 	api, err := c.managedBlueprintClient()

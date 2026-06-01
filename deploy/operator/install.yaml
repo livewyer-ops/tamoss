@@ -15529,7 +15529,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.serviceAccountName
-        image: livewyer/tamoss-operator:v0.0.1
+        image: livewyer/tamoss-operator:main
         livenessProbe:
           httpGet:
             path: /healthz

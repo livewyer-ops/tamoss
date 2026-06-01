@@ -15,8 +15,8 @@ import (
 
 func TestNewHTTPClientIsBounded(t *testing.T) {
 	client := NewHTTPClient()
-	if client.Timeout <= 0 || client.Timeout > 10*time.Second {
-		t.Fatalf("expected bounded timeout no greater than 10s, got %s", client.Timeout)
+	if client.Timeout <= 0 || client.Timeout > defaultAPIOperationTimeout {
+		t.Fatalf("expected bounded timeout no greater than API operation timeout, got %s", client.Timeout)
 	}
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {

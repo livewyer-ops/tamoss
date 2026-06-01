@@ -15,7 +15,14 @@ import (
 )
 
 const (
-	defaultAppName = "tamoss"
+	defaultAppName                     = "tamoss"
+	defaultCertManagerIssuerAnnotation = "cert-manager.io/cluster-issuer"
+	defaultLocalKindIssuerName         = "tamoss-selfsigned"
+	defaultPublicIssuerName            = "tamoss-public"
+	defaultLocalKindTLSSecretName      = "tamoss-localtest-tls"
+	defaultLocalKindS3TLSSecretName    = "tamoss-localtest-s3-tls"
+	defaultPublicTLSSecretName         = "tamoss-public-tls"
+	defaultPublicS3TLSSecretName       = "tamoss-s3-public-tls"
 )
 
 // Apply fills omitted Tamoss fields with operator-owned defaults.
@@ -66,7 +73,12 @@ func applyBaseComponentDefaults(tamoss *tamossv1alpha1.Tamoss) {
 }
 
 func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
-	defaultPlatformPublicEndpoint(tamoss, "tamoss.localtest.me")
+	defaultPlatformPublicEndpoint(tamoss, publicEndpointProfileDefaults{
+		BaseDomain:      "tamoss.localtest.me",
+		IssuerName:      defaultLocalKindIssuerName,
+		TLSSecretName:   defaultLocalKindTLSSecretName,
+		S3TLSSecretName: defaultLocalKindS3TLSSecretName,
+	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	if tamoss.Spec.API.Image.Tag == "" {
 		tamoss.Spec.API.Image.Tag = DefaultOperandTag
@@ -88,7 +100,11 @@ func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
 }
 
 func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
-	defaultPlatformPublicEndpoint(tamoss, "")
+	defaultPlatformPublicEndpoint(tamoss, publicEndpointProfileDefaults{
+		IssuerName:      defaultPublicIssuerName,
+		TLSSecretName:   defaultPublicTLSSecretName,
+		S3TLSSecretName: defaultPublicS3TLSSecretName,
+	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "250m", "384Mi", "1", "768Mi")
@@ -103,7 +119,11 @@ func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
 }
 
 func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
-	defaultPlatformPublicEndpoint(tamoss, "")
+	defaultPlatformPublicEndpoint(tamoss, publicEndpointProfileDefaults{
+		IssuerName:      defaultPublicIssuerName,
+		TLSSecretName:   defaultPublicTLSSecretName,
+		S3TLSSecretName: defaultPublicS3TLSSecretName,
+	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	setReplicas(&tamoss.Spec.API.WorkloadCommonSpec, 2)
 	setReplicas(&tamoss.Spec.Worker.WorkloadCommonSpec, 2)
@@ -127,25 +147,31 @@ func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	defaultRustFSOperator(tamoss, 4, 4, "100Gi")
 }
 
-func defaultPlatformPublicEndpoint(tamoss *tamossv1alpha1.Tamoss, baseDomain string) {
+type publicEndpointProfileDefaults struct {
+	BaseDomain      string
+	IssuerName      string
+	TLSSecretName   string
+	S3TLSSecretName string
+}
+
+func defaultPlatformPublicEndpoint(tamoss *tamossv1alpha1.Tamoss, defaults publicEndpointProfileDefaults) {
 	if tamoss.Spec.PublicEndpoint.BaseDomain == "" {
-		tamoss.Spec.PublicEndpoint.BaseDomain = baseDomain
+		tamoss.Spec.PublicEndpoint.BaseDomain = defaults.BaseDomain
 	}
 	if tamoss.Spec.PublicEndpoint.TLSSecretName == "" {
-		tamoss.Spec.PublicEndpoint.TLSSecretName = "tamoss-localtest-tls"
+		tamoss.Spec.PublicEndpoint.TLSSecretName = defaults.TLSSecretName
 	}
 	if tamoss.Spec.PublicEndpoint.S3TLSSecretName == "" {
-		tamoss.Spec.PublicEndpoint.S3TLSSecretName = "tamoss-localtest-s3-tls"
+		tamoss.Spec.PublicEndpoint.S3TLSSecretName = defaults.S3TLSSecretName
 	}
 	setBool(&tamoss.Spec.Ingress.Enabled, true)
 	if tamoss.Spec.Ingress.ClassName == "" {
 		tamoss.Spec.Ingress.ClassName = "traefik"
 	}
 	if tamoss.Spec.Ingress.Annotations == nil {
-		tamoss.Spec.Ingress.Annotations = map[string]string{}
-	}
-	if _, ok := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; !ok {
-		tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"] = "tamoss-selfsigned"
+		tamoss.Spec.Ingress.Annotations = map[string]string{
+			defaultCertManagerIssuerAnnotation: defaults.IssuerName,
+		}
 	}
 	defaultAuthentikBlueprints(tamoss)
 }
@@ -366,15 +392,15 @@ func defaultWorkloadResources(spec *tamossv1alpha1.WorkloadCommonSpec, requestCP
 }
 
 func defaultWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
-	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
+	command := []string{"/app/.venv/bin/python", "-m", "tamoss.worker", "health"}
 	if spec.ReadinessProbe == nil {
-		spec.ReadinessProbe = execProbe(command, 10, 5, 3)
+		spec.ReadinessProbe = execProbe(command, 10, 30, 3)
 	}
 	if spec.LivenessProbe == nil {
-		spec.LivenessProbe = execProbe(command, 30, 10, 3)
+		spec.LivenessProbe = execProbe(command, 30, 30, 3)
 	}
 	if spec.StartupProbe == nil {
-		spec.StartupProbe = execProbe(command, 10, 5, 12)
+		spec.StartupProbe = execProbe(command, 10, 30, 12)
 	}
 }
 
@@ -472,12 +498,7 @@ func serviceIngressRules(port int32) []networkingv1.NetworkPolicyIngressRule {
 
 func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	return []networkingv1.NetworkPolicyEgressRule{
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				networkPolicyTCPPort(53),
-				networkPolicyUDPPort(53),
-			},
-		},
+		dnsEgressRule(),
 		{
 			Ports: []networkingv1.NetworkPolicyPort{
 				networkPolicyTCPPort(80),
@@ -492,16 +513,24 @@ func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 
 func uiEgressRules(apiPort int32) []networkingv1.NetworkPolicyEgressRule {
 	return []networkingv1.NetworkPolicyEgressRule{
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				networkPolicyTCPPort(53),
-				networkPolicyUDPPort(53),
-			},
-		},
+		dnsEgressRule(),
 		{
 			Ports: []networkingv1.NetworkPolicyPort{
 				networkPolicyTCPPort(apiPort),
 			},
+		},
+	}
+}
+
+func dnsEgressRule() networkingv1.NetworkPolicyEgressRule {
+	// Some managed clusters evaluate NetworkPolicy after kube-dns Service DNAT,
+	// where CoreDNS receives traffic on target port 8053 instead of Service port 53.
+	return networkingv1.NetworkPolicyEgressRule{
+		Ports: []networkingv1.NetworkPolicyPort{
+			networkPolicyTCPPort(53),
+			networkPolicyUDPPort(53),
+			networkPolicyTCPPort(8053),
+			networkPolicyUDPPort(8053),
 		},
 	}
 }
