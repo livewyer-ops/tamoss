@@ -166,15 +166,24 @@ def webhook_matches(
 ) -> bool:
     if event_type not in _list_of_strings(webhook_data.get("events")):
         return False
-    return (
-        _selector_matches(flow_ids, _list_of_strings(webhook_data.get("flow_ids")))
-        and _selector_matches(
-            source_ids, _list_of_strings(webhook_data.get("source_ids"))
+    is_flow_event = event_type.startswith("flows/")
+    flow_filter_matches = True
+    flow_collected_filter_matches = True
+    if is_flow_event:
+        flow_filter_matches = _selector_matches(
+            flow_ids,
+            _list_of_strings(webhook_data.get("flow_ids")),
         )
-        and _selector_matches(
+        flow_collected_filter_matches = _selector_matches(
             flow_collected_by_ids,
             _list_of_strings(webhook_data.get("flow_collected_by_ids")),
         )
+    return (
+        flow_filter_matches
+        and _selector_matches(
+            source_ids, _list_of_strings(webhook_data.get("source_ids"))
+        )
+        and flow_collected_filter_matches
         and _selector_matches(
             source_collected_by_ids,
             _list_of_strings(webhook_data.get("source_collected_by_ids")),
@@ -341,10 +350,21 @@ def publish_source_event(
     event_type: str,
     source: SourceRecord,
 ) -> list[WebhookDeliveryRecord]:
+    relationship = resource_repository.source_relationships_for([source.id]).get(
+        source.id
+    )
     return publish_webhook_event(
         repository=repository,
         event_type=event_type,
-        event_factory=lambda _webhook: {"source": source_payload(source)},
+        event_factory=lambda _webhook: {
+            "source": source_payload(
+                source,
+                source_collection=(
+                    relationship.source_collection if relationship else None
+                ),
+                collected_by=relationship.collected_by if relationship else None,
+            )
+        },
         flow=None,
         source=source,
         flow_collected_by_ids=[],
@@ -378,7 +398,6 @@ def segment_payload(
         "timerange": segment.timerange,
         "ts_offset": segment.ts_offset,
         "last_duration": segment.last_duration,
-        "object_timerange": segment.object_timerange,
         "sample_offset": segment.sample_offset,
         "sample_count": segment.sample_count,
         "get_urls": get_urls,

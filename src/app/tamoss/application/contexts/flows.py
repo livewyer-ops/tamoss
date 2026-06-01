@@ -14,13 +14,13 @@ from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
+    collection_aware_flow_timeranges,
     collection_child_id,
     flow_collection,
     flow_with_collected_by,
 )
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
-from tamoss.domain.segments import timerange_union
 from tamoss.domain.tags import TagValue, valid_tag_value
 from tamoss.domain.timeranges import normalized_timerange_bounds
 from tamoss.errors import BadRequest, Forbidden, NotFound
@@ -214,19 +214,63 @@ class FlowUseCases:
         )
 
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
-        self.get_flow(flow_id)
-        flow_range = self._flow_timerange(flow_id)
+        flow = self.get_flow(flow_id)
+        try:
+            flow_range = TimeRange.from_str(
+                self._flow_timeranges([flow_id], seed_flows=[flow])[flow_id]
+            )
+        except ValueError as exc:
+            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
         requested_range = parse_query_timerange(timerange)
         if requested_range is None:
             return str(flow_range)
         return str(flow_range.intersect_with(requested_range))
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
+        return self._flow_timeranges(flow_ids)
+
+    def _flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        seed_flows: Iterable[FlowRecord] = (),
+    ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         if not requested_ids:
             return {}
-        timeranges = self.repository.flow_timeranges(requested_ids)
-        return {flow_id: timeranges.get(flow_id, "()") for flow_id in requested_ids}
+        flows = self._flows_for_timerange_resolution(requested_ids, seed_flows)
+        direct_timeranges = self.repository.flow_timeranges(flow.id for flow in flows)
+        try:
+            return collection_aware_flow_timeranges(
+                flows,
+                direct_timeranges,
+                requested_ids,
+            )
+        except ValueError as exc:
+            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
+
+    def _flows_for_timerange_resolution(
+        self,
+        flow_ids: Iterable[UUID],
+        seed_flows: Iterable[FlowRecord] = (),
+    ) -> list[FlowRecord]:
+        flows_by_id = {flow.id: flow for flow in seed_flows}
+        pending = list(dict.fromkeys(flow_ids))
+        index = 0
+        while index < len(pending):
+            flow_id = pending[index]
+            index += 1
+            flow = flows_by_id.get(flow_id)
+            if flow is None:
+                flow = self.repository.get_flow(flow_id)
+                if flow is None:
+                    continue
+                flows_by_id[flow.id] = flow
+            for item in flow_collection(flow):
+                child_id = collection_child_id(item)
+                if child_id is not None and child_id not in flows_by_id:
+                    pending.append(child_id)
+        return list(flows_by_id.values())
 
     def get_flow(
         self, flow_id: UUID, *, include_collected_by: bool = False
@@ -237,14 +281,6 @@ class FlowUseCases:
         if include_collected_by:
             return self._flow_with_collected_by(flow)
         return flow
-
-    def _flow_timerange(self, flow_id: UUID) -> TimeRange:
-        try:
-            return TimeRange.from_str(
-                timerange_union(self.repository.list_segments(flow_id))
-            )
-        except ValueError as exc:
-            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
 
     def get_flow_collection(self, flow_id: UUID) -> list[dict]:
         flow = self.get_flow(flow_id)

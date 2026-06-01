@@ -25,6 +25,8 @@ def objects_get_urls(
     media_object_list = list(media_objects)
     if accept_get_urls is not None and not accept_get_urls:
         return {media_object.id: [] for media_object in media_object_list}
+    if accept_storage_ids is not None and not accept_storage_ids:
+        accept_storage_ids = None
     controlled_get_urls = _controlled_get_urls_by_object(
         media_object_list,
         object_storage=object_storage,

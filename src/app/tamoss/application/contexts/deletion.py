@@ -122,6 +122,12 @@ class DeletionUseCases:
                 )
                 flow.segments_updated = utc_now()
                 self.repository.save_flow(flow)
+                webhooking.publish_flow_event(
+                    repository=self.webhook_repository,
+                    resource_repository=self.repository,
+                    event_type="flows/updated",
+                    flow=flow,
+                )
             return None
 
         timerange_to_delete = matching_timerange

@@ -19,7 +19,7 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
-from tamoss.domain.segments import SegmentTimerangeBounds
+from tamoss.domain.segments import SegmentTimerangeBounds, timerange_union
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
@@ -219,6 +219,41 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert repository.append_segment_calls == 0
 
 
+def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
+    repository = CountingRepository(_storage_backend())
+    use_cases = _use_cases(repository)
+    parent_id = uuid4()
+    child_id = uuid4()
+    unrelated_id = uuid4()
+    parent = _flow(parent_id)
+    parent.data["flow_collection"] = [{"id": str(child_id), "role": "video"}]
+    repository.save_flow(parent)
+    repository.save_flow(_flow(child_id))
+    repository.save_flow(_flow(unrelated_id))
+    repository.append_segment(
+        SegmentRecord(
+            flow_id=child_id,
+            object_id="bbc/performance/child.ts",
+            timerange="[0:0_10:0)",
+        )
+    )
+    repository.append_segment(
+        SegmentRecord(
+            flow_id=unrelated_id,
+            object_id="bbc/performance/unrelated.ts",
+            timerange="[50:0_60:0)",
+        )
+    )
+    repository.reset_counts()
+
+    result = use_cases.flows.flow_timerange(parent_id)
+
+    assert result == "[0:0_10:0)"
+    assert repository.list_flows_calls == 0
+    assert repository.get_flow_calls == 2
+    assert repository.flow_timeranges_requests == [[parent_id, child_id]]
+
+
 class CountingRepository:
     def __init__(self, storage_backend: StorageBackend):
         self._storage_backend = storage_backend
@@ -228,9 +263,12 @@ class CountingRepository:
         self.reset_counts()
 
     def reset_counts(self) -> None:
+        self.get_flow_calls = 0
         self.get_object_calls = 0
         self.get_objects_calls = 0
+        self.list_flows_calls = 0
         self.save_object_calls = 0
+        self.flow_timeranges_requests: list[list[UUID]] = []
         self.list_segments_calls = 0
         self.list_segments_page_calls = 0
         self.list_segments_overlapping_calls = 0
@@ -298,6 +336,7 @@ class CountingRepository:
         self._flows[flow.id] = flow
 
     def list_flows(self) -> list[FlowRecord]:
+        self.list_flows_calls += 1
         return list(self._flows.values())
 
     def list_flows_page(self, **kwargs) -> Page[FlowRecord]:
@@ -306,9 +345,15 @@ class CountingRepository:
         return Page(items=flows[:limit], limit=limit)
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
-        return dict.fromkeys(flow_ids, "()")
+        requested_ids = list(dict.fromkeys(flow_ids))
+        self.flow_timeranges_requests.append(requested_ids)
+        return {
+            flow_id: timerange_union(self._segments.get(flow_id, []))
+            for flow_id in requested_ids
+        }
 
     def get_flow(self, flow_id: UUID) -> FlowRecord | None:
+        self.get_flow_calls += 1
         return self._flows.get(flow_id)
 
     def get_source(self, source_id: UUID) -> SourceRecord | None:

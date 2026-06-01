@@ -296,6 +296,12 @@ def _process_segment_delete_request(
     )
     flow.segments_updated = utc_now()
     repository.save_flow(flow)
+    webhooking.publish_flow_event(
+        repository=webhook_repository,
+        resource_repository=repository,
+        event_type="flows/updated",
+        flow=flow,
+    )
     if remaining_timerange == "()":
         return None
     return remaining_timerange

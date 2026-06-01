@@ -711,14 +711,21 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
 ) -> None:
     use_cases = _use_cases(postgres_repo)
     identity = _identity()
-    parent_flow_id = uuid4()
-    parent_source_id = uuid4()
-    child_flow_id = uuid4()
-    child_source_id = uuid4()
+    parent_flow_id = UUID("00000000-0000-4000-8000-000000000100")
+    parent_source_id = UUID("00000000-0000-4000-8000-000000000101")
+    child_flow_id = UUID("00000000-0000-4000-8000-000000000109")
+    child_source_id = UUID("00000000-0000-4000-8000-000000000109")
+    audio_flow_id = UUID("00000000-0000-4000-8000-000000000102")
+    audio_source_id = UUID("00000000-0000-4000-8000-000000000102")
 
     use_cases.flows.put_flow(
         flow_id=child_flow_id,
         flow=_video_flow_write(child_flow_id, child_source_id),
+        identity=identity,
+    )
+    use_cases.flows.put_flow(
+        flow_id=audio_flow_id,
+        flow=_video_flow_write(audio_flow_id, audio_source_id),
         identity=identity,
     )
     use_cases.flows.put_flow(
@@ -729,18 +736,31 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
 
     use_cases.flows.set_flow_collection(
         flow_id=parent_flow_id,
-        collection=[{"id": str(child_flow_id), "role": "video"}],
+        collection=[
+            {"id": str(child_flow_id), "role": "video"},
+            {"id": str(audio_flow_id), "role": "audio"},
+        ],
         identity=identity,
     )
 
     assert use_cases.flows.get_flow_collection(parent_flow_id) == [
-        {"id": str(child_flow_id), "role": "video"}
+        {"id": str(child_flow_id), "role": "video"},
+        {"id": str(audio_flow_id), "role": "audio"},
     ]
     relationships = use_cases.sources.source_relationships()
     assert relationships[parent_source_id].source_collection == [
-        {"id": str(child_source_id), "role": "video"}
+        {"id": str(child_source_id), "role": "video"},
+        {"id": str(audio_source_id), "role": "audio"},
     ]
     assert relationships[child_source_id].collected_by == [parent_source_id]
+    assert relationships[audio_source_id].collected_by == [parent_source_id]
+    scoped_relationships = use_cases.sources.source_relationships(
+        [parent_source_id, child_source_id, audio_source_id]
+    )
+    assert scoped_relationships[parent_source_id].source_collection == [
+        {"id": str(child_source_id), "role": "video"},
+        {"id": str(audio_source_id), "role": "audio"},
+    ]
     assert use_cases.flows.get_flow(child_flow_id, include_collected_by=True).data[
         "collected_by"
     ] == [str(parent_flow_id)]
@@ -751,6 +771,10 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
     assert (
         "collected_by"
         not in use_cases.flows.get_flow(child_flow_id, include_collected_by=True).data
+    )
+    assert (
+        "collected_by"
+        not in use_cases.flows.get_flow(audio_flow_id, include_collected_by=True).data
     )
 
 
@@ -1116,3 +1140,58 @@ def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
 
     postgres_repo.webhook_repository.delete_webhook(webhook_id)
     assert postgres_repo.webhook_repository.get_webhook(webhook_id) is None
+
+
+def test_repository_claims_webhook_deliveries_in_queue_order(
+    postgres_repo: PostgresRepository,
+) -> None:
+    webhook_id = uuid4()
+    base_time = datetime.now(UTC) - timedelta(minutes=5)
+    first_id = UUID("00000000-0000-4000-8000-000000000101")
+    second_id = UUID("00000000-0000-4000-8000-000000000102")
+    third_id = UUID("00000000-0000-4000-8000-000000000103")
+    created_times = {
+        first_id: base_time,
+        second_id: base_time + timedelta(seconds=1),
+        third_id: base_time + timedelta(seconds=2),
+    }
+
+    postgres_repo.webhook_repository.save_webhook(
+        WebhookRecord(
+            id=webhook_id,
+            data={"url": "https://webhook.example.test/tamoss"},
+            status="started",
+        )
+    )
+    for delivery_id, sequence in (
+        (third_id, "third"),
+        (first_id, "first"),
+        (second_id, "second"),
+    ):
+        created = created_times[delivery_id]
+        postgres_repo.webhook_repository.save_webhook_delivery(
+            WebhookDeliveryRecord(
+                id=delivery_id,
+                webhook_id=webhook_id,
+                webhook_snapshot={"status": "started"},
+                event_type="flows/updated",
+                event_timestamp=created,
+                payload={"sequence": sequence},
+                status="pending",
+                created=created,
+                updated=created,
+                next_attempt_at=created,
+            )
+        )
+
+    claimed = postgres_repo.webhook_repository.claim_webhook_deliveries(
+        worker_id="worker-order",
+        limit=3,
+        lease_seconds=30,
+    )
+
+    assert [delivery.payload["sequence"] for delivery in claimed] == [
+        "first",
+        "second",
+        "third",
+    ]
