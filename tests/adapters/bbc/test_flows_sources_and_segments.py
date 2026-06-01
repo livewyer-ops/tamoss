@@ -215,6 +215,63 @@ def test_list_flows_can_include_timerange_compatibility_extension(
     assert_bbc_error(invalid.json())
 
 
+def test_collection_flows_include_child_timerange_compatibility_extension(
+    client: TestClient,
+) -> None:
+    first_flow_id = uuid4()
+    first_source_id = uuid4()
+    second_flow_id = uuid4()
+    second_source_id = uuid4()
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+
+    assert (
+        client.put(
+            f"/flows/{first_flow_id}",
+            json=video_flow_payload(first_flow_id, first_source_id),
+        ).status_code
+        == 201
+    )
+    assert (
+        client.put(
+            f"/flows/{second_flow_id}",
+            json=video_flow_payload(second_flow_id, second_source_id),
+        ).status_code
+        == 201
+    )
+    assert (
+        client.put(
+            f"/flows/{parent_flow_id}",
+            json=multi_flow_payload(parent_flow_id, parent_source_id),
+        ).status_code
+        == 201
+    )
+    register_segment(client, first_flow_id, timerange="[0:0_10:0)")
+    register_segment(client, second_flow_id, timerange="[20:0_30:0)")
+
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[
+            flow_collection_item(first_flow_id, role="video"),
+            flow_collection_item(second_flow_id, role="audio"),
+        ],
+    )
+    assert collection.status_code == 204
+
+    detail = client.get(
+        f"/flows/{parent_flow_id}", params={"include_timerange": "true"}
+    )
+    assert detail.status_code == 200
+    assert detail.json()["timerange"] == "[0:0_30:0)"
+
+    listed = client.get(
+        "/flows",
+        params={"source_id": str(parent_source_id), "include_timerange": "true"},
+    )
+    assert listed.status_code == 200
+    assert listed.json()[0]["timerange"] == "[0:0_30:0)"
+
+
 def test_flow_put_replaces_tags_when_omitted(client: TestClient) -> None:
     flow_id = uuid4()
     source_id = uuid4()

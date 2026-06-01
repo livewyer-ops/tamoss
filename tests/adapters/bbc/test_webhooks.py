@@ -216,25 +216,158 @@ def test_webhook_queues_bbc_flow_source_and_segment_events(
     assert event_types == [
         "sources/created",
         "flows/created",
+        "flows/updated",
         "flows/segments_added",
         "sources/updated",
         "flows/segments_deleted",
+        "flows/updated",
         "flows/deleted",
         "sources/deleted",
     ]
     assert deliveries[1].payload["event"]["flow"]["id"] == str(flow_id)
-    assert deliveries[2].payload["event"]["segments"][0]["object_id"] == object_id
-    assert deliveries[2].payload["event"]["segments"][0]["get_urls"][0]["label"] == (
+    assert deliveries[2].payload["event"]["flow"]["segments_updated"]
+    assert deliveries[3].payload["event"]["segments"][0]["object_id"] == object_id
+    assert deliveries[3].payload["event"]["segments"][0]["get_urls"][0]["label"] == (
         PRIMARY_BACKEND_LABEL
     )
-    assert deliveries[2].payload["event"]["segments"][0]["get_urls"][0][
+    assert deliveries[3].payload["event"]["segments"][0]["get_urls"][0][
         "storage_id"
     ] == str(PRIMARY_BACKEND_ID)
-    assert deliveries[4].payload["event"]["timerange"] == "[0:0_10:0)"
+    assert deliveries[5].payload["event"]["timerange"] == "[0:0_10:0)"
+    assert deliveries[6].payload["event"]["flow"]["segments_updated"]
     assert (
         client.get(f"/service/webhooks/{webhook.json()['id']}").json()["status"]
         == "started"
     )
+
+
+def test_webhook_flow_event_keeps_bbc_projection_without_collection_timerange(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    child_flow_id = uuid4()
+    child_source_id = uuid4()
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+
+    created_child = client.put(
+        f"/flows/{child_flow_id}",
+        json=video_flow_payload(child_flow_id, child_source_id),
+    )
+    assert created_child.status_code == 201
+    register_segment(client, child_flow_id, timerange="[0:0_10:0)")
+
+    created_parent = client.put(
+        f"/flows/{parent_flow_id}",
+        json=multi_flow_payload(parent_flow_id, parent_source_id),
+    )
+    assert created_parent.status_code == 201
+    webhook = client.post(
+        "/service/webhooks",
+        json=webhook_payload(events=["flows/updated"]),
+    )
+    assert webhook.status_code == 201
+
+    updated_collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[flow_collection_item(child_flow_id)],
+    )
+    assert updated_collection.status_code == 204
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    assert [delivery.event_type for delivery in deliveries] == ["flows/updated"]
+    payload = deliveries[0].payload["event"]["flow"]
+    assert payload["id"] == str(parent_flow_id)
+    assert "timerange" not in payload
+
+
+def test_webhook_source_events_ignore_flow_only_filters(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    source_id = uuid4()
+    flow_id = uuid4()
+    created = client.put(
+        f"/flows/{flow_id}",
+        json=video_flow_payload(flow_id, source_id),
+    )
+    assert created.status_code == 201
+    webhook = client.post(
+        "/service/webhooks",
+        json=webhook_payload(
+            events=["sources/updated"],
+            flow_ids=["00000000-0000-4000-8000-000000000001"],
+            flow_collected_by_ids=["00000000-0000-4000-8000-000000000002"],
+            source_ids=[str(source_id)],
+        ),
+    )
+    assert webhook.status_code == 201
+
+    updated = client.put(f"/sources/{source_id}/label", json="updated")
+    assert updated.status_code == 204
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    assert [delivery.event_type for delivery in deliveries] == ["sources/updated"]
+    assert deliveries[0].payload["event"]["source"]["id"] == str(source_id)
+
+
+def test_webhook_empty_storage_filter_keeps_get_urls(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    source_id = uuid4()
+    flow_id = uuid4()
+    created = client.put(
+        f"/flows/{flow_id}",
+        json=video_flow_payload(flow_id, source_id),
+    )
+    assert created.status_code == 201
+    webhook = client.post(
+        "/service/webhooks",
+        json=webhook_payload(
+            events=["flows/segments_added"],
+            accept_storage_ids=[],
+            verbose_storage=True,
+        ),
+    )
+    assert webhook.status_code == 201
+
+    register_segment(client, flow_id)
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    assert [delivery.event_type for delivery in deliveries] == ["flows/segments_added"]
+    get_urls = deliveries[0].payload["event"]["segments"][0]["get_urls"]
+    assert get_urls
+    assert {get_url["storage_id"] for get_url in get_urls} == {str(PRIMARY_BACKEND_ID)}
+
+
+def test_webhook_segment_payload_omits_object_timerange(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    source_id = uuid4()
+    flow_id = uuid4()
+    created = client.put(
+        f"/flows/{flow_id}",
+        json=video_flow_payload(flow_id, source_id),
+    )
+    assert created.status_code == 201
+    webhook = client.post(
+        "/service/webhooks",
+        json=webhook_payload(events=["flows/segments_added"]),
+    )
+    assert webhook.status_code == 201
+
+    object_id = register_segment(
+        client,
+        flow_id,
+        object_timerange="[10:0_20:0)",
+    )
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    segment = deliveries[0].payload["event"]["segments"][0]
+    assert segment["object_id"] == object_id
+    assert "object_timerange" not in segment
 
 
 def test_webhook_source_collection_filter_matches_child_events(
@@ -282,4 +415,7 @@ def test_webhook_source_collection_filter_matches_child_events(
     event_types = [delivery.event_type for delivery in deliveries]
     assert event_types == ["sources/updated", "flows/updated"]
     assert deliveries[0].payload["event"]["source"]["id"] == str(child_source_id)
+    assert deliveries[0].payload["event"]["source"]["collected_by"] == [
+        str(parent_source_id)
+    ]
     assert deliveries[1].payload["event"]["flow"]["id"] == str(child_flow_id)

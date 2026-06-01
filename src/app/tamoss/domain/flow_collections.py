@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from uuid import UUID
 
 from tamoss.domain.model import FlowRecord
+from tamoss.domain.timeranges import timerange_union_strings
 
 
 def flow_data_value(flow: FlowRecord, name: str) -> object:
@@ -64,3 +66,45 @@ def collection_role(item: object) -> str | None:
     if raw_role is None:
         return None
     return str(raw_role)
+
+
+def collection_aware_flow_timeranges(
+    flows: Iterable[FlowRecord],
+    direct_timeranges: Mapping[UUID, str],
+    flow_ids: Iterable[UUID],
+) -> dict[UUID, str]:
+    flows_by_id = {flow.id: flow for flow in flows}
+    cache: dict[UUID, str] = {}
+
+    def resolved_timerange(flow_id: UUID, visiting: set[UUID]) -> str:
+        if flow_id in cache:
+            return cache[flow_id]
+        if flow_id in visiting:
+            return _direct_timerange(direct_timeranges.get(flow_id)) or "()"
+
+        visiting.add(flow_id)
+        timeranges: list[str | None] = [
+            _direct_timerange(direct_timeranges.get(flow_id))
+        ]
+        flow = flows_by_id.get(flow_id)
+        if flow is not None:
+            for item in flow_collection(flow):
+                child_id = collection_child_id(item)
+                if child_id is not None:
+                    timeranges.append(resolved_timerange(child_id, visiting))
+        visiting.remove(flow_id)
+
+        merged = timerange_union_strings(timeranges) or "()"
+        cache[flow_id] = merged
+        return merged
+
+    return {
+        flow_id: resolved_timerange(flow_id, set())
+        for flow_id in list(dict.fromkeys(flow_ids))
+    }
+
+
+def _direct_timerange(timerange: str | None) -> str | None:
+    if timerange in {None, "()"}:
+        return None
+    return timerange

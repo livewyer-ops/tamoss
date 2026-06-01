@@ -130,6 +130,11 @@ class WebhookResourceRepository(Protocol):
 
     def get_source(self, source_id: UUID) -> SourceRecord | None: ...
 
+    def source_relationships_for(
+        self,
+        source_ids: Iterable[UUID],
+    ) -> dict[UUID, SourceRelationships]: ...
+
 
 class WebhookRepository(WebhookEventRepository, Protocol):
     def list_webhooks_page(

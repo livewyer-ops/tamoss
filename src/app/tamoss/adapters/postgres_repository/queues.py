@@ -171,6 +171,7 @@ class PostgresQueueMixin:
                     claimed_by,
                     claim_expires_at,
                     record,
+                    created_at,
                     updated_at
                 )
                 VALUES (
@@ -182,6 +183,7 @@ class PostgresQueueMixin:
                     %(claimed_by)s,
                     %(claim_expires_at)s,
                     %(record)s,
+                    %(created_at)s,
                     NOW()
                 )
                 ON CONFLICT (id) DO UPDATE SET
@@ -203,6 +205,7 @@ class PostgresQueueMixin:
                     "claimed_by": delivery.claimed_by,
                     "claim_expires_at": delivery.claim_expires_at,
                     "record": Jsonb(record),
+                    "created_at": delivery.created,
                 },
             )
 
@@ -585,6 +588,8 @@ def _claim_worker_records(
             FROM candidates
             WHERE {alias}.id = candidates.id
             RETURNING
+                {alias}.created_at,
+                {alias}.id,
                 {alias}.record,
                 {alias}.status,
                 {alias}.{state_column},
@@ -606,4 +611,6 @@ def _claim_worker_records(
             "lease_seconds": lease_seconds,
         },
     )
-    return [mapper(row) for row in cur.fetchall()]
+    rows = cur.fetchall()
+    rows.sort(key=lambda row: (row[0], str(row[1])))
+    return [mapper(row[2:]) for row in rows]

@@ -292,7 +292,7 @@ class PostgresFlowSourceMixin:
                         THEN parent.record->'data'->'flow_collection'
                         ELSE '[]'::jsonb
                     END
-                ) AS item(value)
+                ) WITH ORDINALITY AS item(value, ordinality)
                 JOIN tamoss_flows AS child
                   ON child.id::text = item.value->>'id'
                 WHERE parent.source_id IS NOT NULL
@@ -302,7 +302,7 @@ class PostgresFlowSourceMixin:
                     parent.source_id = ANY(%(source_ids)s::uuid[])
                     OR child.source_id = ANY(%(source_ids)s::uuid[])
                   )
-                ORDER BY parent.source_id, child.source_id, role
+                ORDER BY parent.source_id, parent.id, item.ordinality
                 """,
                 {"source_ids": requested_ids},
             )

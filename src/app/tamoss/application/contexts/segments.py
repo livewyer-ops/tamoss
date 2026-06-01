@@ -154,6 +154,12 @@ class SegmentUseCases:
                 media_objects=updated_media_objects.values(),
                 segments=accepted_segments,
             )
+            webhooking.publish_flow_event(
+                repository=self.webhook_repository,
+                resource_repository=self.flow_repository,
+                event_type="flows/updated",
+                flow=flow,
+            )
             webhooking.publish_segments_added(
                 repository=self.webhook_repository,
                 resource_repository=self.flow_repository,
