@@ -102,10 +102,10 @@ describe("useIngestSession", () => {
       ids.videoSource,
       ids.audioSource,
       ids.videoFlow,
-      ids.videoObject,
       ids.audioFlow,
-      ids.audioObject,
       ids.multiFlow,
+      ids.videoObject,
+      ids.audioObject,
     ]);
 
     const file = new File(["media"], "clip.mp4", { type: "video/mp4" });
@@ -161,6 +161,14 @@ describe("useIngestSession", () => {
       { id: ids.videoFlow, role: "video" },
       { id: ids.audioFlow, role: "audio" },
     ]);
+    expect(apiMock.createFlow.mock.calls.map(([flowId]) => flowId)).toEqual([
+      ids.videoFlow,
+      ids.audioFlow,
+      ids.multiFlow,
+    ]);
+    expect(apiMock.setFlowCollection.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMock.addFlowSegments.mock.invocationCallOrder[0],
+    );
     expect(apiMock.uploadRaw).toHaveBeenCalledWith(
       {
         url: `https://upload.example/${ids.videoObject}`,
@@ -239,7 +247,13 @@ describe("useIngestSession", () => {
   });
 
   it("records cleanup for allocated objects when ingest fails after allocation", async () => {
-    stubUuid([ids.file, ids.videoSource, ids.videoFlow, ids.videoObject]);
+    stubUuid([
+      ids.file,
+      ids.videoSource,
+      ids.videoFlow,
+      ids.multiFlow,
+      ids.videoObject,
+    ]);
     ffmpegServiceMock.probe.mockReset();
     ffmpegServiceMock.probe.mockResolvedValueOnce({
       duration: 6,

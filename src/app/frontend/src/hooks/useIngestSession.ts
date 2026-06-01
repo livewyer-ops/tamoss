@@ -195,17 +195,12 @@ export function useIngestSession() {
     [api],
   );
 
-  const processTrack = useCallback(
+  const createTrackFlow = useCallback(
     async (
       file: File,
-      fileId: string,
       sourceId: string,
       mode: "video" | "audio",
       probe: ProbeResult,
-      segDuration: number,
-      progressBase: number,
-      progressShare: number,
-      storageId?: string,
     ): Promise<string> => {
       const flowId = createIngestId();
       const isVideo = mode === "video";
@@ -246,7 +241,23 @@ export function useIngestSession() {
           : {}),
       });
 
-      // Segment the file
+      return flowId;
+    },
+    [api],
+  );
+
+  const registerTrackSegments = useCallback(
+    async (
+      file: File,
+      fileId: string,
+      flowId: string,
+      mode: "video" | "audio",
+      probe: ProbeResult,
+      segDuration: number,
+      progressBase: number,
+      progressShare: number,
+      storageId?: string,
+    ): Promise<void> => {
       updateFile(fileId, { status: "segmenting" });
       const blobs = await ffmpegService.segment(file, segDuration, mode);
       if (blobs.length === 0) {
@@ -322,8 +333,6 @@ export function useIngestSession() {
         await cleanupAllocatedObjects(allocatedObjects);
         throw err;
       }
-
-      return flowId;
     },
     [api, cleanupAllocatedObjects, updateFile],
   );
@@ -488,17 +497,11 @@ export function useIngestSession() {
           let audioFlowId: string | undefined;
 
           if (probe.hasVideo) {
-            const share = hasBoth ? 45 : 90;
-            videoFlowId = await processTrack(
+            videoFlowId = await createTrackFlow(
               ingestFile.file,
-              ingestFile.id,
               trackSources.videoSourceId ?? sourceId,
               "video",
               probe,
-              session.segmentDuration,
-              5,
-              share,
-              storageId,
             );
             updateFile(ingestFile.id, { videoFlowId });
             await applySourceMetadata(
@@ -511,18 +514,11 @@ export function useIngestSession() {
           }
 
           if (probe.hasAudio) {
-            const base = hasBoth ? 50 : 5;
-            const share = hasBoth ? 45 : 90;
-            audioFlowId = await processTrack(
+            audioFlowId = await createTrackFlow(
               ingestFile.file,
-              ingestFile.id,
               trackSources.audioSourceId ?? sourceId,
               "audio",
               probe,
-              session.segmentDuration,
-              base,
-              share,
-              storageId,
             );
             updateFile(ingestFile.id, { audioFlowId });
             await applySourceMetadata(
@@ -563,6 +559,37 @@ export function useIngestSession() {
             );
           }
 
+          if (probe.hasVideo && videoFlowId) {
+            const share = hasBoth ? 45 : 90;
+            await registerTrackSegments(
+              ingestFile.file,
+              ingestFile.id,
+              videoFlowId,
+              "video",
+              probe,
+              session.segmentDuration,
+              5,
+              share,
+              storageId,
+            );
+          }
+
+          if (probe.hasAudio && audioFlowId) {
+            const base = hasBoth ? 50 : 5;
+            const share = hasBoth ? 45 : 90;
+            await registerTrackSegments(
+              ingestFile.file,
+              ingestFile.id,
+              audioFlowId,
+              "audio",
+              probe,
+              session.segmentDuration,
+              base,
+              share,
+              storageId,
+            );
+          }
+
           updateFile(ingestFile.id, { status: "done", progress: 100 });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -578,7 +605,8 @@ export function useIngestSession() {
       session.sourceId,
       session.segmentDuration,
       updateFile,
-      processTrack,
+      createTrackFlow,
+      registerTrackSegments,
       resolveTrackSourceIds,
       applySourceMetadata,
     ],
