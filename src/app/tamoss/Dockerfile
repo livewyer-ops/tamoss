@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11.14-alpine3.22
 
+ARG VERSION=tamoss-dev
+
 LABEL "org.opencontainers.image.authors"="LiveWyer"
 LABEL "org.opencontainers.image.description"="TAMOSS API server"
 LABEL "org.opencontainers.image.source"="https://github.com/livewyer-ops/tamoss"
@@ -14,7 +16,9 @@ USER 1001:1001
 EXPOSE 8000
 
 ENV PYTHONPATH=/app/app \
-  UV_CACHE_DIR=/tmp/uv-cache
+  UV_CACHE_DIR=/tmp/uv-cache \
+  TAMOSS_VERSION=${VERSION} \
+  TAMOSS_SERVICE_VERSION=${VERSION}
 
 COPY --chown=1001:1001 src/app ./app
 

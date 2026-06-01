@@ -54,15 +54,32 @@ jobs:
       - name: Verify release assets are current
         run: |
           make -C operator manifests kustomize
-          mkdir -p deploy/operator
-          operator/bin/kustomize-v5.3.0 build operator/config/default > deploy/operator/install.yaml
-          git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum deploy/operator/install.yaml
+          operator/bin/kustomize-v5.3.0 build operator/config/default > /tmp/tamoss-operator-install.yaml
+          diff -u deploy/operator/install.yaml /tmp/tamoss-operator-install.yaml
+          git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum
+
+      - name: Build release install manifest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist/operator-release
+          cat > dist/operator-release/kustomization.yaml <<EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+            - ../../operator/config/default
+          images:
+            - name: livewyer/tamoss-operator
+              newName: livewyer/tamoss-operator
+              newTag: ${VERSION}
+          EOF
+          operator/bin/kustomize-v5.3.0 build dist/operator-release > dist/operator-release/install.yaml
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
-            deploy/operator/install.yaml
+            dist/operator-release/install.yaml
             operator/compatibility.yaml
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,7 @@
 .envrc
 .local/
 garden.yaml
+RULES.md
 tests/targets/remote.env
 *.kubeconfig
 .dockerconfigjson
