@@ -159,28 +159,6 @@ func TestRenderUsesExplicitDevelopmentTagWhenImageTagOmitted(t *testing.T) {
 	}
 }
 
-func TestRenderInjectsTamossRuntimeVersionEnv(t *testing.T) {
-	tamoss := rendererFixture()
-	tamoss.Spec.API.Image.Tag = "8.0.0-oss1"
-	tamoss.Spec.Worker.Enabled = ptr.To(true)
-
-	objects := Render(tamoss)
-
-	for _, name := range []string{"example-api", "example-worker"} {
-		deployment := deploymentByName(t, objects, name)
-		env := deployment.Spec.Template.Spec.Containers[0].Env
-		if got := envValue(env, "TAMOSS_VERSION"); got != "8.0.0-oss1" {
-			t.Fatalf("%s should receive TAMOSS_VERSION from API image tag, got %q", name, got)
-		}
-		if got := envValue(env, "TAMOSS_SERVICE_VERSION"); got != "8.0.0-oss1" {
-			t.Fatalf("%s should receive TAMOSS_SERVICE_VERSION from API image tag, got %q", name, got)
-		}
-		if got := envValue(env, "TAMOSS_TAMS_API_VERSION"); got != profiledefaults.DefaultTAMSAPIVersion {
-			t.Fatalf("%s should receive TAMS API compatibility version %q, got %q", name, profiledefaults.DefaultTAMSAPIVersion, got)
-		}
-	}
-}
-
 func objectIndex(t *testing.T, objects []client.Object, id string, match func(client.Object) bool) int {
 	t.Helper()
 	for i, obj := range objects {

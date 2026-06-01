@@ -15,7 +15,6 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	}
 	apiPort := firstServicePort(tamoss.Spec.Service.API.Ports, 8000)
 	env := append(backendEnv(tamoss), authEnv(tamoss)...)
-	env = append(env, runtimeVersionEnv(tamoss)...)
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
