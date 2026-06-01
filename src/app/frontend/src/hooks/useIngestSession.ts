@@ -1,6 +1,10 @@
 import { useState, useCallback, useRef } from "react";
 import { useApi } from "@/contexts/ApiContext";
-import { ffmpegService, type ProbeResult } from "@/services/ffmpeg-service";
+import {
+  ffmpegService,
+  type ProbeResult,
+  type SegmentProbeResult,
+} from "@/services/ffmpeg-service";
 import type { FlowSegmentWrite, Source } from "@/types/tams";
 import {
   sampleDurationNanoseconds,
@@ -94,17 +98,23 @@ function buildSegmentRegistration(
   mode: "video" | "audio",
   flowStartNanoseconds: bigint,
   flowEndNanoseconds: bigint,
+  objectStartNanoseconds: bigint,
+  objectEndNanoseconds: bigint,
   sourceProbe: ProbeResult,
 ): FlowSegmentWrite {
-  const durationNanoseconds = flowEndNanoseconds - flowStartNanoseconds;
   const registration: FlowSegmentWrite = {
     object_id: objectId,
     timerange: timerangeFromNanoseconds(
       flowStartNanoseconds,
       flowEndNanoseconds,
     ),
-    object_timerange: timerangeFromNanoseconds(0n, durationNanoseconds),
-    ts_offset: timestampFromNanoseconds(flowStartNanoseconds),
+    object_timerange: timerangeFromNanoseconds(
+      objectStartNanoseconds,
+      objectEndNanoseconds,
+    ),
+    ts_offset: timestampFromNanoseconds(
+      flowStartNanoseconds - objectStartNanoseconds,
+    ),
   };
 
   const frameRate = mode === "video" ? sourceProbe.frameRate : undefined;
@@ -115,6 +125,87 @@ function buildSegmentRegistration(
     registration.last_duration = timestampFromNanoseconds(lastDuration);
   }
   return registration;
+}
+
+interface MeasuredSegment {
+  blob: Blob;
+  flowStartNanoseconds: bigint;
+  flowEndNanoseconds: bigint;
+  objectStartNanoseconds: bigint;
+  objectEndNanoseconds: bigint;
+}
+
+async function measureSegments(
+  blobs: Blob[],
+  sourceProbe: ProbeResult,
+  targetSegmentDuration: number,
+): Promise<MeasuredSegment[]> {
+  const segmentProbes: Array<SegmentProbeResult | undefined> = [];
+
+  for (const blob of blobs) {
+    try {
+      segmentProbes.push(await ffmpegService.probeSegment(blob));
+    } catch {
+      segmentProbes.push(undefined);
+    }
+  }
+
+  const targetSegmentDurationNanoseconds = secondsToNanoseconds(
+    targetSegmentDuration,
+  );
+  if (targetSegmentDurationNanoseconds <= 0n) {
+    throw new Error("Managed ingest requires a positive segment duration.");
+  }
+
+  const allDurationsMeasured = segmentProbes.every(
+    (probe) =>
+      probe?.durationNanoseconds !== undefined &&
+      probe.durationNanoseconds > 0n,
+  );
+  const totalDurationNanoseconds = ingestDurationNanoseconds(
+    sourceProbe,
+    blobs.length,
+    targetSegmentDurationNanoseconds,
+  );
+
+  const measuredSegments: MeasuredSegment[] = [];
+  let flowCursorNanoseconds = 0n;
+
+  for (let index = 0; index < blobs.length; index++) {
+    const blob = blobs[index];
+    const probe = segmentProbes[index];
+    const fallbackTiming = segmentTimingNanoseconds(
+      index,
+      blobs.length,
+      totalDurationNanoseconds,
+      targetSegmentDurationNanoseconds,
+    );
+    const durationNanoseconds = allDurationsMeasured
+      ? probe?.durationNanoseconds
+      : fallbackTiming.endNanoseconds - fallbackTiming.startNanoseconds;
+    if (durationNanoseconds === undefined || durationNanoseconds <= 0n) {
+      throw new Error("Managed ingest could not determine segment duration.");
+    }
+    const objectStartNanoseconds = probe?.startTimeNanoseconds ?? 0n;
+    const objectEndNanoseconds = objectStartNanoseconds + durationNanoseconds;
+    const flowStartNanoseconds = allDurationsMeasured
+      ? flowCursorNanoseconds
+      : fallbackTiming.startNanoseconds;
+    const flowEndNanoseconds = allDurationsMeasured
+      ? flowStartNanoseconds + durationNanoseconds
+      : fallbackTiming.endNanoseconds;
+
+    measuredSegments.push({
+      blob,
+      flowStartNanoseconds,
+      flowEndNanoseconds,
+      objectStartNanoseconds,
+      objectEndNanoseconds,
+    });
+    flowCursorNanoseconds = flowEndNanoseconds;
+  }
+
+  return measuredSegments;
 }
 
 interface AllocatedObject {
@@ -263,22 +354,13 @@ export function useIngestSession() {
       if (blobs.length === 0) {
         throw new Error(`Managed ingest produced no ${mode} segments.`);
       }
+      const measuredSegments = await measureSegments(blobs, probe, segDuration);
 
       // Allocate storage for all segments at once
       updateFile(fileId, { status: "uploading" });
-      const objectIds = blobs.map(() => createIngestId());
+      const objectIds = measuredSegments.map(() => createIngestId());
       const segmentRegistrations: FlowSegmentWrite[] = [];
       const allocatedObjects: AllocatedObject[] = [];
-      const targetSegmentDurationNanoseconds =
-        secondsToNanoseconds(segDuration);
-      if (targetSegmentDurationNanoseconds <= 0n) {
-        throw new Error("Managed ingest requires a positive segment duration.");
-      }
-      const totalDurationNanoseconds = ingestDurationNanoseconds(
-        probe,
-        blobs.length,
-        targetSegmentDurationNanoseconds,
-      );
 
       try {
         const allocation = await api.allocateStorage(flowId, objectIds, {
@@ -286,10 +368,11 @@ export function useIngestSession() {
         });
         const mediaObjects = allocation.media_objects;
 
-        for (let i = 0; i < blobs.length; i++) {
+        for (let i = 0; i < measuredSegments.length; i++) {
           if (abortRef.current) throw new Error("Aborted");
 
           const obj = mediaObjects[i];
+          const segment = measuredSegments[i];
           const allocatedStorageId = obj.storage_id ?? storageId;
           if (!allocatedStorageId) {
             throw new Error(
@@ -300,27 +383,21 @@ export function useIngestSession() {
             objectId: obj.object_id,
             storageId: allocatedStorageId,
           });
-          await api.uploadRaw(obj.put_url, blobs[i]);
-
-          // Per-segment ffmpeg.wasm probes are full decode passes in the browser.
-          // Use the source probe and generated segment count for registration timing.
-          const timing = segmentTimingNanoseconds(
-            i,
-            blobs.length,
-            totalDurationNanoseconds,
-            targetSegmentDurationNanoseconds,
-          );
+          await api.uploadRaw(obj.put_url, segment.blob);
           segmentRegistrations.push(
             buildSegmentRegistration(
               obj.object_id,
               mode,
-              timing.startNanoseconds,
-              timing.endNanoseconds,
+              segment.flowStartNanoseconds,
+              segment.flowEndNanoseconds,
+              segment.objectStartNanoseconds,
+              segment.objectEndNanoseconds,
               probe,
             ),
           );
 
-          const pct = progressBase + ((i + 1) / blobs.length) * progressShare;
+          const pct =
+            progressBase + ((i + 1) / measuredSegments.length) * progressShare;
           updateFile(fileId, { progress: Math.round(pct) });
         }
 

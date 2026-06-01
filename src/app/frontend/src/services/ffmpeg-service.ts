@@ -24,6 +24,10 @@ export interface ProbeResult {
   keyFrameCount?: number;
 }
 
+export interface SegmentProbeResult extends ProbeResult {
+  startTimeNanoseconds: bigint;
+}
+
 function gcd(a: number, b: number): number {
   while (b !== 0) {
     const next = a % b;
@@ -75,6 +79,35 @@ class FFmpegService {
     const ff = this.ffmpeg!;
 
     await ff.writeFile("input", await fetchFile(file));
+    return this.probeWrittenFile("input", options);
+  }
+
+  async probeSegment(blob: Blob): Promise<SegmentProbeResult> {
+    await this.load();
+    const ff = this.ffmpeg!;
+
+    await ff.writeFile("segment.ts", await fetchFile(blob));
+    const probe = await this.probeWrittenFile("segment.ts");
+    const durationNanoseconds =
+      probe.durationNanoseconds ??
+      (probe.duration > 0
+        ? decimalSecondsToNanoseconds(probe.duration.toFixed(9))
+        : undefined);
+    return {
+      ...probe,
+      durationNanoseconds:
+        durationNanoseconds !== undefined && durationNanoseconds > 0n
+          ? durationNanoseconds
+          : undefined,
+      startTimeNanoseconds: probe.startTimeNanoseconds ?? 0n,
+    };
+  }
+
+  private async probeWrittenFile(
+    inputName: string,
+    options: { countKeyFrames?: boolean } = {},
+  ): Promise<ProbeResult> {
+    const ff = this.ffmpeg!;
 
     const logs: string[] = [];
     const logHandler = ({ message }: { message: string }) => {
@@ -84,7 +117,7 @@ class FFmpegService {
 
     try {
       // Capture probe metadata from FFmpeg log output without writing media.
-      await ff.exec(["-i", "input", "-f", "null", "-"]).catch(() => {});
+      await ff.exec(["-i", inputName, "-f", "null", "-"]).catch(() => {});
     } finally {
       ff.off("log", logHandler);
     }
@@ -161,7 +194,7 @@ class FFmpegService {
       ff.on("log", frameLogHandler);
       try {
         await ff
-          .exec(["-i", "input", "-vf", "showinfo", "-f", "null", "-"])
+          .exec(["-i", inputName, "-vf", "showinfo", "-f", "null", "-"])
           .catch(() => {});
       } finally {
         ff.off("log", frameLogHandler);
@@ -169,7 +202,7 @@ class FFmpegService {
       keyFrameCount = frameLogs.join("\n").match(/iskey:\s*1/g)?.length ?? 0;
     }
 
-    await ff.deleteFile("input");
+    await ff.deleteFile(inputName);
 
     return {
       hasVideo,

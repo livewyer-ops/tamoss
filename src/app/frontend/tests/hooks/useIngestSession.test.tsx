@@ -15,6 +15,7 @@ const { apiMock, ffmpegServiceMock } = vi.hoisted(() => ({
   },
   ffmpegServiceMock: {
     probe: vi.fn(),
+    probeSegment: vi.fn(),
     segment: vi.fn(),
   },
 }));
@@ -38,6 +39,19 @@ const ids = {
   videoSource: "00000000-0000-4000-8000-000000000002",
   videoObject: "00000000-0000-4000-8000-000000000008",
 };
+
+function segmentProbe(
+  durationNanoseconds: bigint,
+  startTimeNanoseconds: bigint = 1_400_000_000n,
+) {
+  return {
+    duration: Number(durationNanoseconds) / 1_000_000_000,
+    durationNanoseconds,
+    hasAudio: true,
+    hasVideo: false,
+    startTimeNanoseconds,
+  };
+}
 
 function stubUuid(sequence: string[]) {
   vi.spyOn(crypto, "randomUUID").mockImplementation(
@@ -91,6 +105,9 @@ describe("useIngestSession", () => {
       width: 1920,
     };
     ffmpegServiceMock.probe.mockResolvedValueOnce(sourceProbe);
+    ffmpegServiceMock.probeSegment.mockResolvedValue(
+      segmentProbe(6_000_000_000n),
+    );
     ffmpegServiceMock.segment.mockResolvedValue([
       new Blob(["segment"], { type: "video/mp2t" }),
     ]);
@@ -180,8 +197,8 @@ describe("useIngestSession", () => {
       {
         object_id: ids.videoObject,
         timerange: "[0:0_6:0)",
-        object_timerange: "[0:0_6:0)",
-        ts_offset: "0:0",
+        object_timerange: "[1:400000000_7:400000000)",
+        ts_offset: "-1:400000000",
         last_duration: "0:40000000",
       },
     ]);
@@ -189,14 +206,15 @@ describe("useIngestSession", () => {
       {
         object_id: ids.audioObject,
         timerange: "[0:0_6:0)",
-        object_timerange: "[0:0_6:0)",
-        ts_offset: "0:0",
+        object_timerange: "[1:400000000_7:400000000)",
+        ts_offset: "-1:400000000",
       },
     ]);
     expect(ffmpegServiceMock.probe).toHaveBeenCalledTimes(1);
+    expect(ffmpegServiceMock.probeSegment).toHaveBeenCalledTimes(2);
   });
 
-  it("derives segment timing when source duration is unavailable", async () => {
+  it("registers segment timing from measured media-object timing", async () => {
     stubUuid([ids.file, ids.videoFlow, ids.videoObject, ids.audioObject]);
     ffmpegServiceMock.probe.mockReset();
     ffmpegServiceMock.probe.mockResolvedValueOnce({
@@ -207,6 +225,68 @@ describe("useIngestSession", () => {
       frameRate: { numerator: 25, denominator: 1 },
       videoCodec: "h264",
       width: 1920,
+    });
+    ffmpegServiceMock.probeSegment.mockReset();
+    ffmpegServiceMock.probeSegment
+      .mockResolvedValueOnce(segmentProbe(4_000_000_000n, 1_500_000_000n))
+      .mockResolvedValueOnce(segmentProbe(8_500_000_000n, 1_500_000_000n));
+    ffmpegServiceMock.segment.mockResolvedValue([
+      new Blob(["segment-1"], { type: "video/mp2t" }),
+      new Blob(["segment-2"], { type: "video/mp2t" }),
+    ]);
+
+    const file = new File(["media"], "clip.mp4", { type: "video/mp4" });
+    const { result } = renderHook(() => useIngestSession());
+
+    act(() => result.current.addFiles([file]));
+    await waitFor(() => expect(result.current.session.files).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.startIngest({
+        id: ids.parentSource,
+        format: "urn:x-nmos:format:video",
+        label: "Programme",
+      });
+    });
+
+    expect(apiMock.addFlowSegments).toHaveBeenCalledWith(ids.videoFlow, [
+      {
+        object_id: ids.videoObject,
+        timerange: "[0:0_4:0)",
+        object_timerange: "[1:500000000_5:500000000)",
+        ts_offset: "-1:500000000",
+        last_duration: "0:40000000",
+      },
+      {
+        object_id: ids.audioObject,
+        timerange: "[4:0_12:500000000)",
+        object_timerange: "[1:500000000_10:0)",
+        ts_offset: "2:500000000",
+        last_duration: "0:40000000",
+      },
+    ]);
+    expect(result.current.session.files[0].status).toBe("done");
+  });
+
+  it("falls back to source timing when segment duration probing is unavailable", async () => {
+    stubUuid([ids.file, ids.videoFlow, ids.videoObject, ids.audioObject]);
+    ffmpegServiceMock.probe.mockReset();
+    ffmpegServiceMock.probe.mockResolvedValueOnce({
+      duration: 12,
+      durationNanoseconds: 12_000_000_000n,
+      hasAudio: false,
+      hasVideo: true,
+      height: 1080,
+      frameRate: { numerator: 25, denominator: 1 },
+      videoCodec: "h264",
+      width: 1920,
+    });
+    ffmpegServiceMock.probeSegment.mockReset();
+    ffmpegServiceMock.probeSegment.mockResolvedValue({
+      duration: 0,
+      hasAudio: false,
+      hasVideo: true,
+      startTimeNanoseconds: 1_600_000_000n,
     });
     ffmpegServiceMock.segment.mockResolvedValue([
       new Blob(["segment-1"], { type: "video/mp2t" }),
@@ -231,15 +311,15 @@ describe("useIngestSession", () => {
       {
         object_id: ids.videoObject,
         timerange: "[0:0_6:0)",
-        object_timerange: "[0:0_6:0)",
-        ts_offset: "0:0",
+        object_timerange: "[1:600000000_7:600000000)",
+        ts_offset: "-1:600000000",
         last_duration: "0:40000000",
       },
       {
         object_id: ids.audioObject,
         timerange: "[6:0_12:0)",
-        object_timerange: "[0:0_6:0)",
-        ts_offset: "6:0",
+        object_timerange: "[1:600000000_7:600000000)",
+        ts_offset: "4:400000000",
         last_duration: "0:40000000",
       },
     ]);
