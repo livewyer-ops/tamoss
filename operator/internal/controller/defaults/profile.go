@@ -392,15 +392,15 @@ func defaultWorkloadResources(spec *tamossv1alpha1.WorkloadCommonSpec, requestCP
 }
 
 func defaultWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
-	command := []string{"/app/.venv/bin/python", "-m", "tamoss.worker", "health"}
+	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
 	if spec.ReadinessProbe == nil {
-		spec.ReadinessProbe = execProbe(command, 10, 30, 3)
+		spec.ReadinessProbe = execProbe(command, 10, 5, 3)
 	}
 	if spec.LivenessProbe == nil {
-		spec.LivenessProbe = execProbe(command, 30, 30, 3)
+		spec.LivenessProbe = execProbe(command, 30, 10, 3)
 	}
 	if spec.StartupProbe == nil {
-		spec.StartupProbe = execProbe(command, 10, 30, 12)
+		spec.StartupProbe = execProbe(command, 10, 5, 12)
 	}
 }
 
