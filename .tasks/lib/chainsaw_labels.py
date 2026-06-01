@@ -33,8 +33,7 @@ SELECTORS = {
         "test.tamoss.io/provider notin (external)"
     ),
     "nightly": (
-        "test.tamoss.io/target=kind,"
-        "test.tamoss.io/tier in (smoke,standard,extended)"
+        "test.tamoss.io/target=kind,test.tamoss.io/tier in (smoke,standard,extended)"
     ),
     "release": "test.tamoss.io/tier=release",
     "deployed": "test.tamoss.io/target=deployed,test.tamoss.io/lifecycle=read-only",

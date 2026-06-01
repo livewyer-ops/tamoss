@@ -201,9 +201,7 @@ def run_kubectl(kubeconfig: Path, *args: str, input_text: str | None = None) -> 
             for part in (exc.stdout or "", exc.stderr or "")
             if part.strip()
         )
-        raise AssertionError(
-            f"{command} exited {exc.returncode}\n{output}"
-        ) from exc
+        raise AssertionError(f"{command} exited {exc.returncode}\n{output}") from exc
 
 
 def repo_path(value: str) -> Path:

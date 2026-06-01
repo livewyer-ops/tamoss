@@ -88,7 +88,7 @@ task_operator_chainsaw_apply_platform_prerequisites() {
     helm dependency build "$platform_chart_dir"
 
   task_step "Operator Chainsaw: apply platform prerequisites" \
-    sh -c 'helm --kubeconfig "$1" template tamoss-platform "$2" --namespace tamoss-platform --set certManager.enabled=true --set cnpg.enabled="$3" --set rustfsOperator.enabled="$4" --set authentik.enabled=false --set traefik.enabled=false | kubectl --kubeconfig "$1" apply --server-side --force-conflicts -f -' \
+    sh -c 'helm --kubeconfig "$1" template tamoss-platform "$2" --namespace tamoss-platform --set certManager.enabled=true --set cnpg.enabled="$3" --set rustfsOperator.enabled="$4" --set authentik.enabled=false --set traefik.enabled=false --set traefikCrds.enabled=false | kubectl --kubeconfig "$1" apply --server-side --force-conflicts -f -' \
       sh "$kubeconfig" "$platform_chart_dir" "$install_cnpg_operator" "$install_rustfs_operator"
 
   kubectl --kubeconfig "$kubeconfig" wait \

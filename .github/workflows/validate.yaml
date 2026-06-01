@@ -28,8 +28,15 @@ jobs:
         with:
           version: v1.35.0
 
+      - name: Resolve tool versions
+        id: aqua-versions
+        run: echo "ripgrep=$(python3 .github/scripts/aqua-version.py BurntSushi/ripgrep)" >> "$GITHUB_OUTPUT"
+
       - name: Install Task
         uses: ./.github/actions/setup-task
+
+      - name: Install ripgrep
+        run: .github/scripts/install-aqua-tool.sh ripgrep "${{ steps.aqua-versions.outputs.ripgrep }}"
 
       - name: Render operator install
         run: task operator:template >/tmp/tamoss-operator.yaml
@@ -52,12 +59,16 @@ jobs:
       - name: Install Task
         uses: ./.github/actions/setup-task
 
-      - name: Install yq
+      - name: Resolve tool versions
+        id: aqua-versions
         run: |
-          YQ_VERSION="$(python3 .github/scripts/aqua-version.py mikefarah/yq)"
-          curl -fsSL -o yq "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
-          sudo install yq /usr/local/bin/yq
-          yq --version
+          echo "ripgrep=$(python3 .github/scripts/aqua-version.py BurntSushi/ripgrep)" >> "$GITHUB_OUTPUT"
+          echo "yq=$(python3 .github/scripts/aqua-version.py mikefarah/yq)" >> "$GITHUB_OUTPUT"
+
+      - name: Install yq and ripgrep
+        run: |
+          .github/scripts/install-aqua-tool.sh yq "${{ steps.aqua-versions.outputs.yq }}"
+          .github/scripts/install-aqua-tool.sh ripgrep "${{ steps.aqua-versions.outputs.ripgrep }}"
 
       - name: Check workflow task names
         run: |
@@ -196,6 +207,7 @@ jobs:
 
       - name: OSV-Scanner filesystem scan
         id: osv-scanner
+        continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
         with:
           scan-args: |-

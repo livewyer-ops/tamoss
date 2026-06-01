@@ -31,6 +31,27 @@ DOCKER_DEFAULT_PLATFORM="${platform}" kind create cluster \
 
 kind load docker-image "${smoke_image}" --name "${cluster}"
 
+helm dependency build deploy/platform/chart
+helm --kubeconfig "${kubeconfig}" template tamoss-platform deploy/platform/chart \
+  --namespace tamoss-platform \
+  --set certManager.enabled=true \
+  --set cnpg.enabled=false \
+  --set rustfsOperator.enabled=false \
+  --set authentik.enabled=false \
+  --set traefik.enabled=false \
+  --set traefikCrds.enabled=false |
+  kubectl --kubeconfig "${kubeconfig}" apply --server-side --force-conflicts -f -
+kubectl --kubeconfig "${kubeconfig}" wait \
+  --for=condition=Established \
+  crd/certificates.cert-manager.io \
+  crd/issuers.cert-manager.io \
+  --timeout=120s
+kubectl --kubeconfig "${kubeconfig}" -n cert-manager rollout status \
+  deployment/cert-manager \
+  deployment/cert-manager-cainjector \
+  deployment/cert-manager-webhook \
+  --timeout=180s
+
 KUBECONFIG="${kubeconfig}" kubectl apply --server-side -k operator/config/kind-smoke
 KUBECONFIG="${kubeconfig}" kubectl wait \
   --for=condition=Established \

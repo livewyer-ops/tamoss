@@ -42,6 +42,7 @@ packages:
     # Linting / formatting / data
     - name: google/yamlfmt@v0.21.0 # .tasks/lint.yaml (lint:yamlfmt)
     - name: mikefarah/yq@v4.35.1 # .tasks/lib/profile.sh and platform dependency checks
+    - name: BurntSushi/ripgrep@14.1.1 # shell task checks and CI workflow validation
     - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
     # nightly-slo, and src/scripts/
 

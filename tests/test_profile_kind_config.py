@@ -178,7 +178,9 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
 def test_profile_platform_values_enable_authentik_by_default() -> None:
     registry = _load_yaml(ROOT / "deploy/profiles.yaml")
     for profile in registry["profiles"]:
-        values = _load_yaml(ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml")
+        values = _load_yaml(
+            ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml"
+        )
         assert values["authentik"]["enabled"] is True
 
     for values_file in [
@@ -207,7 +209,9 @@ def test_reference_platform_values_render_profile_authentik_host() -> None:
         ]
 
         assert len(auth_ingresses) == 1
-        assert auth_ingresses[0]["spec"]["rules"][0]["host"] == "auth.tamoss.example.com"
+        assert (
+            auth_ingresses[0]["spec"]["rules"][0]["host"] == "auth.tamoss.example.com"
+        )
         assert "localtest" not in yaml.safe_dump(auth_ingresses[0])
 
 

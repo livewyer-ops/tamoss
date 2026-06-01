@@ -21,7 +21,7 @@ repos:
         exclude: ^src/vendor/
       - id: check-yaml
         args: [--unsafe] # Allow custom YAML tags in openapi.yaml
-        exclude: ^deploy/charts/.+/templates/.*\.ya?ml$
+        exclude: ^(deploy/charts/.+/templates|deploy/platform/chart/templates)/.*\.ya?ml$
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=1024]
