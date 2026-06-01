@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: livewyer/tamoss-operator
-  newTag: v0.0.1
+  newTag: main
