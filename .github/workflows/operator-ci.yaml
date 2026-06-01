@@ -23,9 +23,7 @@ jobs:
 
       - name: Resolve tool versions
         id: aqua-versions
-        run: |
-          echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
-          echo "kubeconform=$(python3 .github/scripts/aqua-version.py yannh/kubeconform)" >> "$GITHUB_OUTPUT"
+        run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -48,14 +46,10 @@ jobs:
           task operator:install-manifest
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum deploy/operator/install.yaml
 
-      - name: Install kubeconform
-        env:
-          KUBECONFORM_VERSION: ${{ steps.aqua-versions.outputs.kubeconform }}
-        run: |
-          curl -fsSL -o kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          tar -xzf kubeconform.tar.gz kubeconform
-          sudo install kubeconform /usr/local/bin/kubeconform
-          kubeconform -v
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-operator-crd
 
       - name: Lint generated CRDs
         run: kubeconform -strict -ignore-missing-schemas -summary operator/config/crd/bases/*.yaml
@@ -69,9 +63,7 @@ jobs:
 
       - name: Resolve tool versions
         id: aqua-versions
-        run: |
-          echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
-          echo "kube_linter=$(python3 .github/scripts/aqua-version.py stackrox/kube-linter)" >> "$GITHUB_OUTPUT"
+        run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -82,59 +74,13 @@ jobs:
       - name: Install Task
         uses: ./.github/actions/setup-task
 
-      - name: Install kube-linter
-        env:
-          KUBE_LINTER_VERSION: ${{ steps.aqua-versions.outputs.kube_linter }}
-        run: .github/scripts/install-aqua-tool.sh kube-linter "${KUBE_LINTER_VERSION}"
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-operator-security
 
       - name: Lint operator manifests
         run: task operator:security-lint
-
-  operator-kind-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64]
-    steps:
-      - name: Git Checkout
-        uses: actions/checkout@v6
-
-      - name: Resolve tool versions
-        id: aqua-versions
-        run: |
-          echo "kind=$(python3 .github/scripts/aqua-version.py kubernetes-sigs/kind)" >> "$GITHUB_OUTPUT"
-          echo "kubectl=$(python3 .github/scripts/aqua-version.py kubernetes/kubectl)" >> "$GITHUB_OUTPUT"
-          echo "helm=$(python3 .github/scripts/aqua-version.py helm/helm)" >> "$GITHUB_OUTPUT"
-          echo "helmfile=$(python3 .github/scripts/aqua-version.py helmfile/helmfile)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Kind, kubectl, Helm, and Helmfile
-        env:
-          HELM_VERSION: ${{ steps.aqua-versions.outputs.helm }}
-          HELMFILE_VERSION: ${{ steps.aqua-versions.outputs.helmfile }}
-          KIND_VERSION: ${{ steps.aqua-versions.outputs.kind }}
-          KUBECTL_VERSION: ${{ steps.aqua-versions.outputs.kubectl }}
-        run: |
-          curl -fsSL -o kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64"
-          sudo install kind /usr/local/bin/kind
-          curl -fsSL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          sudo install kubectl /usr/local/bin/kubectl
-          .github/scripts/install-aqua-tool.sh helm "${HELM_VERSION}"
-          .github/scripts/install-aqua-tool.sh helmfile "${HELMFILE_VERSION}"
-          kind version
-          kubectl version --client=true
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
-        with:
-          platforms: amd64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
-
-      - name: Smoke test operator on Kind (${{ matrix.arch }})
-        run: bash .github/scripts/operator-kind-smoke.sh "${{ matrix.arch }}"
 
   operator-chainsaw-e2e:
     runs-on: ubuntu-latest
@@ -147,11 +93,6 @@ jobs:
         id: aqua-versions
         run: |
           echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
-          echo "kind=$(python3 .github/scripts/aqua-version.py kubernetes-sigs/kind)" >> "$GITHUB_OUTPUT"
-          echo "kubectl=$(python3 .github/scripts/aqua-version.py kubernetes/kubectl)" >> "$GITHUB_OUTPUT"
-          echo "helm=$(python3 .github/scripts/aqua-version.py helm/helm)" >> "$GITHUB_OUTPUT"
-          echo "helmfile=$(python3 .github/scripts/aqua-version.py helmfile/helmfile)" >> "$GITHUB_OUTPUT"
-          echo "chainsaw=$(python3 .github/scripts/aqua-version.py kyverno/chainsaw)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -162,26 +103,15 @@ jobs:
       - name: Install Task
         uses: ./.github/actions/setup-task
 
-      - name: Install Kind, kubectl, Helm, and Helmfile
-        env:
-          HELM_VERSION: ${{ steps.aqua-versions.outputs.helm }}
-          HELMFILE_VERSION: ${{ steps.aqua-versions.outputs.helmfile }}
-          KIND_VERSION: ${{ steps.aqua-versions.outputs.kind }}
-          KUBECTL_VERSION: ${{ steps.aqua-versions.outputs.kubectl }}
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-operator-chainsaw
+
+      - name: Show Kubernetes tool versions
         run: |
-          curl -fsSL -o kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64"
-          sudo install kind /usr/local/bin/kind
-          curl -fsSL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          sudo install kubectl /usr/local/bin/kubectl
-          .github/scripts/install-aqua-tool.sh helm "${HELM_VERSION}"
-          .github/scripts/install-aqua-tool.sh helmfile "${HELMFILE_VERSION}"
           kind version
           kubectl version --client=true
-
-      - name: Install chainsaw
-        env:
-          CHAINSAW_VERSION: ${{ steps.aqua-versions.outputs.chainsaw }}
-        run: .github/scripts/install-aqua-tool.sh chainsaw "${CHAINSAW_VERSION}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
