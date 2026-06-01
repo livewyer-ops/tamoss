@@ -28,7 +28,15 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "host": { "type": "string", "minLength": 1 },
+            "tlsSecretName": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "traefik": {
@@ -68,6 +76,37 @@
               "type": ["integer", "null"],
               "minimum": 30000,
               "maximum": 32767
+            },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["selfSigned", "public", "existing", "disabled"]
+        },
+        "issuerName": { "type": "string", "minLength": 1 },
+        "acme": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "email": { "type": "string" },
+            "server": { "type": "string", "minLength": 1 },
+            "privateKeySecretName": { "type": "string" },
+            "http01": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "ingressClassName": { "type": "string", "minLength": 1 }
+              }
             }
           }
         }

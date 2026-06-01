@@ -21,10 +21,10 @@ func Render(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 
 	objects = append(objects, renderServiceAccount(tamoss)...)
 	objects = append(objects, renderSecrets(tamoss)...)
+	objects = append(objects, renderServices(tamoss)...)
 	objects = append(objects, renderAPIDeployment(tamoss)...)
 	objects = append(objects, renderWorkerDeployment(tamoss)...)
 	objects = append(objects, renderUIDeployment(tamoss)...)
-	objects = append(objects, renderServices(tamoss)...)
 	objects = append(objects, renderIngresses(tamoss)...)
 	objects = append(objects, renderHTTPRoutes(tamoss)...)
 	objects = append(objects, renderNetworkPolicies(tamoss)...)

@@ -83,6 +83,27 @@ The operator derives:
 Override a specific endpoint only when that endpoint must deviate from the
 standard shape.
 
+## TLS Defaults
+
+`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned` and local test TLS
+Secret names. `single-server` and `multi-server` default to
+`ClusterIssuer/tamoss-public` with public TLS Secret names. The matching
+platform values use `tls.mode: public` to render an ACME ClusterIssuer for
+remote environments:
+
+```yaml
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com
+```
+
+Environment compositions only need to override this when the cluster already
+provides cert-manager, a different ClusterIssuer name, or pre-created TLS
+Secrets. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
+instead of receiving the profile default.
+
 ## Local Profile Validation
 
 Run profiles one at a time on Kind:

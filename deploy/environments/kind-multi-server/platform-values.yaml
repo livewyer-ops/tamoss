@@ -17,7 +17,6 @@ traefik:
     type: NodePort
     nodePort: 30443
 
-clusterIssuer:
-  selfSigned:
-    enabled: true
-    name: tamoss-selfsigned
+tls:
+  mode: selfSigned
+  issuerName: tamoss-selfsigned

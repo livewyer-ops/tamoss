@@ -67,6 +67,22 @@ from `deploy/instances/<profile>` and patches the `Tamoss` CR directly. Treat
 both files as the durable source of configuration for provider ownership,
 endpoints, resources, replicas, and routing.
 
+Generated remote environments default to trusted public TLS. The platform chart
+creates `ClusterIssuer/tamoss-public` when `tls.mode: public` is selected:
+
+```yaml
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com
+```
+
+Use `tls.mode: existing` when cert-manager and the ClusterIssuer are managed
+outside the TAMOSS platform layer. Use `tls.mode: disabled` when TLS Secrets are
+pre-created and cert-manager annotations should be omitted from explicit
+`Tamoss` ingress overrides.
+
 If automation cannot call Task, keep the same checked-in inputs and apply the
 same layers in order:
 

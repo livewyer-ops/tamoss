@@ -59,7 +59,9 @@ Use the multi-server profile as the baseline for production choices:
 - Review the profile defaults for pod security contexts, resource requests,
   PodDisruptionBudgets, pod anti-affinity, and NetworkPolicies before applying
   tenant-specific overrides.
-- Use public DNS names and trusted TLS certificates.
+- Use public DNS names and trusted TLS certificates. The default remote platform
+  values create `ClusterIssuer/tamoss-public` from `tls.mode: public`; set the
+  ACME email before applying.
 - Keep internal service URLs separate from public OAuth issuer and public S3
   URLs.
 - Confirm browser-facing S3 CORS permits the UI origin, `PUT`, and required

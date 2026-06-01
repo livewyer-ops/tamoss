@@ -42,9 +42,12 @@ Use `platform-values.yaml` to select platform components, and set a public base
 domain unless you configure every public endpoint directly.
 
 The operator derives `api`, `app`, `s3`, and `auth` hostnames from that base
-domain and applies profile defaults. Override normal `Tamoss` YAML fields
-directly in `tamoss-patch.yaml` when you need different provider ownership,
-resources, storage, or routing.
+domain and applies profile defaults. The remote profile defaults to
+`ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`, or
+switch `tls.mode` to `existing`/`disabled` when certificate ownership is outside
+the TAMOSS platform layer. Override normal `Tamoss` YAML fields directly in
+`tamoss-patch.yaml` when you need different provider ownership, resources,
+storage, or routing.
 
 See also:
 

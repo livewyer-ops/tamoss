@@ -76,6 +76,10 @@ task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 
 Remote environments are composition roots: `platform-values.yaml` configures the
 Helm-rendered platform, and the Kustomize overlay applies the `Tamoss` resources.
+Generated remote environments default to public ACME TLS through
+`ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
+before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
+`tls.mode: disabled` when TLS Secrets are supplied outside cert-manager.
 The raw apply sequence is:
 
 ```bash

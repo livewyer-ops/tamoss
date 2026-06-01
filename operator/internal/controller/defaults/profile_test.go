@@ -47,6 +47,10 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		t.Fatalf("expected multi-server NetworkPolicy rules, got %#v", tamoss.Spec.NetworkPolicy)
 	}
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Ingress[0].Ports[0], 8080)
+	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[0], 53, corev1.ProtocolTCP)
+	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[1], 53, corev1.ProtocolUDP)
+	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[2], 8053, corev1.ProtocolTCP)
+	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[3], 8053, corev1.ProtocolUDP)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[0], 8000)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Egress[1].Ports[4], 8080)
 	if tamoss.Spec.API.Affinity == nil || tamoss.Spec.API.Affinity.PodAntiAffinity == nil {
@@ -205,7 +209,7 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	rustfs := tamoss.Spec.Backends.S3.RustFSOperator
 	if rustfs == nil ||
 		rustfs.PublicEndpoint.URL != "https://s3.tamoss.example.com" ||
-		rustfs.PublicEndpoint.TLSSecretName != "tamoss-localtest-s3-tls" ||
+		rustfs.PublicEndpoint.TLSSecretName != "tamoss-s3-public-tls" ||
 		len(rustfs.Pools) != 1 ||
 		rustfs.Pools[0].Servers != 1 ||
 		rustfs.Pools[0].VolumesPerServer != 4 ||
@@ -217,6 +221,61 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
 	if tamoss.Spec.NetworkPolicy.IsEnabled() {
 		t.Fatalf("did not expect single-server NetworkPolicy default enabled")
+	}
+}
+
+func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
+	profiles := []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+	}
+
+	for _, profile := range profiles {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{
+				ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+				Spec: tamossv1alpha1.TamossSpec{
+					Profile: profile,
+					PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+						BaseDomain: "tamoss.example.com",
+					},
+				},
+			}
+
+			Apply(tamoss)
+
+			if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-public" {
+				t.Fatalf("expected public cert issuer annotation, got %q", got)
+			}
+			if len(tamoss.Spec.Ingress.TLS) != 1 || tamoss.Spec.Ingress.TLS[0].SecretName != "tamoss-public-tls" {
+				t.Fatalf("unexpected ingress TLS defaults: %#v", tamoss.Spec.Ingress.TLS)
+			}
+			if tamoss.Spec.Backends.S3.RustFSOperator == nil ||
+				tamoss.Spec.Backends.S3.RustFSOperator.PublicEndpoint.TLSSecretName != "tamoss-s3-public-tls" {
+				t.Fatalf("unexpected S3 TLS default: %#v", tamoss.Spec.Backends.S3.RustFSOperator)
+			}
+		})
+	}
+}
+
+func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+				BaseDomain: "tamoss.example.com",
+			},
+			Ingress: tamossv1alpha1.IngressSpec{
+				Annotations: map[string]string{},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	if _, ok := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; ok {
+		t.Fatalf("did not expect default cert issuer annotation when annotations are explicit")
 	}
 }
 
@@ -596,6 +655,14 @@ func assertNetworkPolicyPort(t *testing.T, port networkingv1.NetworkPolicyPort, 
 	t.Helper()
 	if port.Port == nil || port.Port.IntVal != want {
 		t.Fatalf("expected NetworkPolicy port %d, got %#v", want, port.Port)
+	}
+}
+
+func assertNetworkPolicyPortAndProtocol(t *testing.T, port networkingv1.NetworkPolicyPort, want int32, protocol corev1.Protocol) {
+	t.Helper()
+	assertNetworkPolicyPort(t, port, want)
+	if port.Protocol == nil || *port.Protocol != protocol {
+		t.Fatalf("expected NetworkPolicy port protocol %s, got %#v", protocol, port.Protocol)
 	}
 }
 

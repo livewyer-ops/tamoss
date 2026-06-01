@@ -9,6 +9,9 @@ rustfsOperator:
 
 authentik:
   enabled: false
+  ingress:
+    host: auth.tamoss.localtest.me
+    tlsSecretName: authentik-localtest-tls
 
 traefik:
   enabled: false
@@ -22,6 +25,17 @@ traefik:
   service:
     type: LoadBalancer
     nodePort: null
+    annotations: {}
+
+tls:
+  mode: existing
+  issuerName: tamoss-public
+  acme:
+    email: ""
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretName: ""
+    http01:
+      ingressClassName: traefik
 
 clusterIssuer:
   selfSigned:

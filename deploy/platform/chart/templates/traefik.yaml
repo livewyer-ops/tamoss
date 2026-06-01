@@ -111,6 +111,10 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/part-of: tamoss-platform
+  {{- with .Values.traefik.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.traefik.service.type }}
   selector:

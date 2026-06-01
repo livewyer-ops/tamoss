@@ -1,3 +1,5 @@
+{{- $mode := include "tamoss-platform.tlsMode" . -}}
+{{- $issuerName := include "tamoss-platform.tlsIssuerName" . -}}
 {{- if .Values.clusterIssuer.selfSigned.enabled }}
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -5,4 +7,36 @@ metadata:
   name: {{ .Values.clusterIssuer.selfSigned.name | quote }}
 spec:
   selfSigned: {}
+{{- else if eq $mode "selfSigned" }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $issuerName | quote }}
+spec:
+  selfSigned: {}
+{{- else if eq $mode "public" }}
+{{- $tls := .Values.tls | default dict -}}
+{{- $acme := (get $tls "acme") | default dict -}}
+{{- $email := required "tls.acme.email is required when tls.mode is public" (get $acme "email") -}}
+{{- $server := default "https://acme-v02.api.letsencrypt.org/directory" (get $acme "server") -}}
+{{- $privateKeySecretName := default (printf "%s-account-key" $issuerName) (get $acme "privateKeySecretName") -}}
+{{- $http01 := (get $acme "http01") | default dict -}}
+{{- $ingressClassName := default "traefik" (get $http01 "ingressClassName") -}}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $issuerName | quote }}
+spec:
+  acme:
+    email: {{ $email | quote }}
+    server: {{ $server | quote }}
+    privateKeySecretRef:
+      name: {{ $privateKeySecretName | quote }}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: {{ $ingressClassName | quote }}
+{{- else if or (eq $mode "existing") (eq $mode "disabled") }}
+{{- else }}
+{{- fail (printf "unsupported tls.mode %q; expected selfSigned, public, existing, or disabled" $mode) }}
 {{- end }}

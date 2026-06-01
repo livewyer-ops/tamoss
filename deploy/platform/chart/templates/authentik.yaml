@@ -1,5 +1,18 @@
 {{- if .Values.authentik.enabled }}
+{{- $authentik := .Files.Get "files/authentik/authentik.yaml" -}}
+{{- $tlsMode := include "tamoss-platform.tlsMode" . -}}
+{{- $tlsIssuerName := include "tamoss-platform.tlsIssuerName" . -}}
+{{- $authentikIngress := .Values.authentik.ingress | default dict -}}
+{{- $authentikHost := default "auth.tamoss.localtest.me" (get $authentikIngress "host") -}}
+{{- $authentikTLSSecretName := default "authentik-localtest-tls" (get $authentikIngress "tlsSecretName") -}}
+{{- $authentik = replace "auth.tamoss.localtest.me" $authentikHost $authentik -}}
+{{- $authentik = replace "authentik-localtest-tls" $authentikTLSSecretName $authentik -}}
+{{- if eq $tlsMode "disabled" -}}
+{{- $authentik = replace "    cert-manager.io/cluster-issuer: tamoss-selfsigned\n" "" $authentik -}}
+{{- else -}}
+{{- $authentik = replace "cert-manager.io/cluster-issuer: tamoss-selfsigned" (printf "cert-manager.io/cluster-issuer: %s" $tlsIssuerName) $authentik -}}
+{{- end }}
 {{ .Files.Get "files/authentik/namespace.yaml" }}
 ---
-{{ .Files.Get "files/authentik/authentik.yaml" }}
+{{ $authentik }}
 {{- end }}

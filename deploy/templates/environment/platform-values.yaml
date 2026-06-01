@@ -9,6 +9,9 @@ rustfsOperator:
 
 authentik:
   enabled: false
+  ingress:
+    host: auth.__DOMAIN__
+    tlsSecretName: authentik-public-tls
 
 traefik:
   enabled: true
@@ -16,6 +19,8 @@ traefik:
   service:
     type: LoadBalancer
 
-clusterIssuer:
-  selfSigned:
-    enabled: false
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com

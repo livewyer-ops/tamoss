@@ -6,6 +6,11 @@ metadata:
 spec:
   publicEndpoint:
     baseDomain: tamoss.localtest.me
+    tlsSecretName: tamoss-localtest-tls
+    s3TLSSecretName: tamoss-localtest-s3-tls
+  ingress:
+    annotations:
+      cert-manager.io/cluster-issuer: tamoss-selfsigned
   api:
     env:
       TAMOSS_WEBHOOK_ALLOWED_HOSTS: .svc.cluster.local

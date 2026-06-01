@@ -122,6 +122,26 @@ func TestRenderToggles(t *testing.T) {
 	}
 }
 
+func TestRenderOrdersServicesBeforeDependentDeployments(t *testing.T) {
+	objects := Render(rendererFixture())
+
+	apiService := objectIndex(t, objects, "Service/example-api", func(obj client.Object) bool {
+		_, ok := obj.(*corev1.Service)
+		return ok && obj.GetName() == "example-api"
+	})
+	apiDeployment := objectIndex(t, objects, "Deployment/example-api", func(obj client.Object) bool {
+		_, ok := obj.(*appsv1.Deployment)
+		return ok && obj.GetName() == "example-api"
+	})
+	uiDeployment := objectIndex(t, objects, "Deployment/example-ui", func(obj client.Object) bool {
+		_, ok := obj.(*appsv1.Deployment)
+		return ok && obj.GetName() == "example-ui"
+	})
+	if apiService > apiDeployment || apiService > uiDeployment {
+		t.Fatalf("expected API Service to render before dependent Deployments, got service=%d apiDeployment=%d uiDeployment=%d", apiService, apiDeployment, uiDeployment)
+	}
+}
+
 func TestRenderUsesExplicitDevelopmentTagWhenImageTagOmitted(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.API.Image.Tag = ""
@@ -137,6 +157,17 @@ func TestRenderUsesExplicitDevelopmentTagWhenImageTagOmitted(t *testing.T) {
 	if got := ui.Spec.Template.Spec.Containers[0].Image; got != "livewyer/tamoss-ui:dev" {
 		t.Fatalf("expected UI image to use explicit development tag, got %q", got)
 	}
+}
+
+func objectIndex(t *testing.T, objects []client.Object, id string, match func(client.Object) bool) int {
+	t.Helper()
+	for i, obj := range objects {
+		if match(obj) {
+			return i
+		}
+	}
+	t.Fatalf("expected object %s in %v", id, renderedIDs(objects))
+	return -1
 }
 
 func TestRenderAdvancedExtraResources(t *testing.T) {

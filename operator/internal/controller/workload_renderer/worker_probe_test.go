@@ -17,11 +17,14 @@ func TestWorkerDeploymentRendersHealthCommandProbes(t *testing.T) {
 
 	deployment := deploymentByName(t, Render(tamoss), "example-worker")
 	container := deployment.Spec.Template.Spec.Containers[0]
-	want := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
+	want := []string{"/app/.venv/bin/python", "-m", "tamoss.worker", "health"}
 
 	assertProbeCommand(t, "readiness", container.ReadinessProbe, want)
 	assertProbeCommand(t, "liveness", container.LivenessProbe, want)
 	assertProbeCommand(t, "startup", container.StartupProbe, want)
+	assertProbeTimeout(t, "readiness", container.ReadinessProbe, 30)
+	assertProbeTimeout(t, "liveness", container.LivenessProbe, 30)
+	assertProbeTimeout(t, "startup", container.StartupProbe, 30)
 }
 
 func assertProbeCommand(t *testing.T, name string, probe *corev1.Probe, want []string) {
@@ -31,5 +34,12 @@ func assertProbeCommand(t *testing.T, name string, probe *corev1.Probe, want []s
 	}
 	if !reflect.DeepEqual(probe.Exec.Command, want) {
 		t.Fatalf("expected %s probe command %#v, got %#v", name, want, probe.Exec.Command)
+	}
+}
+
+func assertProbeTimeout(t *testing.T, name string, probe *corev1.Probe, want int32) {
+	t.Helper()
+	if probe == nil || probe.TimeoutSeconds != want {
+		t.Fatalf("expected %s probe timeout %d, got %#v", name, want, probe)
 	}
 }
