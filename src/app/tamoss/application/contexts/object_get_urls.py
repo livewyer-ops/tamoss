@@ -98,7 +98,7 @@ def _controlled_get_urls_by_object(
     accept_storage_ids: set[str] | None,
     presigned: bool | None,
 ) -> dict[ObjectGetUrlBatchKey, list[JsonPayload]]:
-    requests: dict[ObjectGetUrlBatchKey, ObjectGetUrlRequest] = {}
+    url_requests: dict[ObjectGetUrlBatchKey, ObjectGetUrlRequest] = {}
     backends_by_key: dict[ObjectGetUrlBatchKey, StorageBackend] = {}
     for media_object in media_objects:
         for instance in media_object.instances:
@@ -114,9 +114,9 @@ def _controlled_get_urls_by_object(
             if not include_direct and not include_presigned:
                 continue
             key = (instance.storage_backend.id, media_object.id)
-            existing = requests.get(key)
+            existing = url_requests.get(key)
             if existing is None:
-                requests[key] = ObjectGetUrlRequest(
+                url_requests[key] = ObjectGetUrlRequest(
                     object_id=media_object.id,
                     backend=instance.storage_backend,
                     include_direct=include_direct,
@@ -128,12 +128,12 @@ def _controlled_get_urls_by_object(
                     existing.include_presigned or include_presigned
                 )
             backends_by_key[key] = instance.storage_backend
-    if not requests:
+    if not url_requests:
         return {}
     raw_get_urls: Mapping[
         ObjectGetUrlBatchKey,
         Iterable[Mapping[str, object]],
-    ] = object_storage.build_get_urls_batch(requests.values())
+    ] = object_storage.build_get_urls_batch(url_requests.values())
     return {
         key: [
             _controlled_get_url_payload(
