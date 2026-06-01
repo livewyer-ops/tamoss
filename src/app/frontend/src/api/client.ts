@@ -64,6 +64,29 @@ type PagedObjectParams = ObjectParams &
 
 export type WebhookListParams = PagingParams;
 
+export interface UploadRawOptions {
+  attempts?: number;
+  retryDelayMs?: number;
+  timeoutMs?: number;
+}
+
+const DEFAULT_UPLOAD_ATTEMPTS = 3;
+const DEFAULT_UPLOAD_RETRY_DELAY_MS = 500;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 60_000;
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function shouldRetryUploadStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 export class TamossApiClient extends ApiTransport {
   async getService(): Promise<ServiceInfo> {
     return this.request<ServiceInfo>("/service");
@@ -401,19 +424,65 @@ export class TamossApiClient extends ApiTransport {
   }
 
   // Raw upload (presigned URL, no auth headers)
-  async uploadRaw(request: HttpRequest, media: Blob): Promise<void> {
+  async uploadRaw(
+    request: HttpRequest,
+    media: Blob,
+    options: UploadRawOptions = {},
+  ): Promise<void> {
     const headers = new Headers(request.headers);
     if (request["content-type"]) {
       headers.set("Content-Type", request["content-type"]);
     }
     const uploadBody =
       request.body && request.body.length > 0 ? request.body : media;
-    const response = await fetch(request.url, {
-      method: "PUT",
-      body: uploadBody,
-      credentials: "same-origin",
-      headers,
-    });
-    if (!response.ok) throw new ApiError(response.status, "Upload failed");
+    const attempts = Math.max(1, options.attempts ?? DEFAULT_UPLOAD_ATTEMPTS);
+    const retryDelayMs = options.retryDelayMs ?? DEFAULT_UPLOAD_RETRY_DELAY_MS;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(request.url, {
+          method: "PUT",
+          body: uploadBody,
+          credentials: "same-origin",
+          headers,
+          signal: controller.signal,
+        });
+
+        if (response.ok) return;
+
+        const error = new ApiError(response.status, "Upload failed");
+        if (!shouldRetryUploadStatus(response.status) || attempt === attempts) {
+          throw error;
+        }
+        lastError = error;
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          !shouldRetryUploadStatus(error.status)
+        ) {
+          throw error;
+        }
+        lastError = error;
+        if (attempt === attempts) break;
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      await delay(retryDelayMs * attempt);
+    }
+
+    if (isAbortError(lastError)) {
+      throw new ApiError(0, "Upload timed out");
+    }
+    if (lastError instanceof ApiError) {
+      throw lastError;
+    }
+    const message = lastError instanceof Error ? lastError.message : "Unknown";
+    throw new ApiError(0, `Upload failed: ${message}`);
   }
 }

@@ -767,5 +767,92 @@ describe("TamossApiClient", () => {
         expect.objectContaining({ body: "signed-body" }),
       );
     });
+
+    it("retries transient upload failures", async () => {
+      mockFetch
+        .mockRejectedValueOnce(new TypeError("network reset"))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        });
+
+      const client = createClient();
+      await client.uploadRaw(
+        { url: "https://upload.example/obj-1" },
+        new Blob(["media"]),
+        { retryDelayMs: 0 },
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries retryable upload status codes", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        });
+
+      const client = createClient();
+      await client.uploadRaw(
+        { url: "https://upload.example/obj-1" },
+        new Blob(["media"]),
+        { retryDelayMs: 0 },
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry non-retryable upload status codes", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+      });
+
+      const client = createClient();
+      await expect(
+        client.uploadRaw(
+          { url: "https://upload.example/obj-1" },
+          new Blob(["media"]),
+        ),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("times out stalled uploads", async () => {
+      vi.useFakeTimers();
+      try {
+        mockFetch.mockImplementationOnce((_url, init?: RequestInit) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          });
+        });
+
+        const client = createClient();
+        const upload = client.uploadRaw(
+          { url: "https://upload.example/obj-1" },
+          new Blob(["media"]),
+          { attempts: 1, timeoutMs: 5 },
+        );
+        const assertion = expect(upload).rejects.toMatchObject({
+          message: "Upload timed out",
+          status: 0,
+        });
+
+        await vi.advanceTimersByTimeAsync(5);
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

@@ -9,8 +9,10 @@ const { apiMock, ffmpegServiceMock } = vi.hoisted(() => ({
     deleteObjectInstance: vi.fn(),
     getSource: vi.fn(),
     setFlowCollection: vi.fn(),
+    updateFlowTag: vi.fn(),
     updateSourceDescription: vi.fn(),
     updateSourceLabel: vi.fn(),
+    updateSourceTag: vi.fn(),
     uploadRaw: vi.fn(),
   },
   ffmpegServiceMock: {
@@ -88,8 +90,10 @@ describe("useIngestSession", () => {
     apiMock.uploadRaw.mockResolvedValue(undefined);
     apiMock.addFlowSegments.mockResolvedValue(undefined);
     apiMock.setFlowCollection.mockResolvedValue(undefined);
+    apiMock.updateFlowTag.mockResolvedValue(undefined);
     apiMock.updateSourceDescription.mockResolvedValue(undefined);
     apiMock.updateSourceLabel.mockResolvedValue(undefined);
+    apiMock.updateSourceTag.mockResolvedValue(undefined);
 
     const sourceProbe = {
       audioCodec: "aac",
@@ -141,6 +145,7 @@ describe("useIngestSession", () => {
         codec: "video/h264",
         container: "video/mp2t",
         format: "urn:x-nmos:format:video",
+        label: "Programme (video)",
         source_id: ids.videoSource,
         essence_parameters: expect.objectContaining({
           frame_height: 1080,
@@ -159,6 +164,7 @@ describe("useIngestSession", () => {
         codec: "audio/aac",
         container: "video/mp2t",
         format: "urn:x-nmos:format:audio",
+        label: "Programme (audio)",
         source_id: ids.audioSource,
       }),
     );
@@ -171,7 +177,12 @@ describe("useIngestSession", () => {
       ids.multiFlow,
       expect.objectContaining({
         format: "urn:x-nmos:format:multi",
+        label: "clip.mp4 (multi)",
         source_id: ids.parentSource,
+        tags: {
+          "tamoss-ingest": "managed-browser",
+          "tamoss-ingest-state": "pending",
+        },
       }),
     );
     expect(apiMock.setFlowCollection).toHaveBeenCalledWith(ids.multiFlow, [
@@ -210,6 +221,23 @@ describe("useIngestSession", () => {
         ts_offset: "-1:400000000",
       },
     ]);
+    expect(apiMock.updateFlowTag).toHaveBeenCalledWith(
+      ids.multiFlow,
+      "tamoss-ingest-state",
+      "complete",
+    );
+    expect(apiMock.updateSourceTag).toHaveBeenCalledWith(
+      ids.parentSource,
+      "tamoss-ingest-state",
+      "complete",
+    );
+    const segmentCallOrder = apiMock.addFlowSegments.mock.invocationCallOrder;
+    expect(segmentCallOrder[segmentCallOrder.length - 1]).toBeLessThan(
+      apiMock.updateFlowTag.mock.invocationCallOrder[0],
+    );
+    expect(apiMock.updateFlowTag.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMock.updateSourceTag.mock.invocationCallOrder[0],
+    );
     expect(ffmpegServiceMock.probe).toHaveBeenCalledTimes(1);
     expect(ffmpegServiceMock.probeSegment).toHaveBeenCalledTimes(2);
   });
@@ -265,7 +293,62 @@ describe("useIngestSession", () => {
         last_duration: "0:40000000",
       },
     ]);
+    expect(apiMock.createFlow).toHaveBeenCalledWith(
+      ids.videoFlow,
+      expect.objectContaining({
+        label: "Programme",
+      }),
+    );
     expect(result.current.session.files[0].status).toBe("done");
+  });
+
+  it("uses draft source labels in initial flow creation events", async () => {
+    stubUuid([
+      ids.file,
+      ids.videoSource,
+      ids.audioSource,
+      ids.videoFlow,
+      ids.audioFlow,
+      ids.multiFlow,
+      ids.videoObject,
+      ids.audioObject,
+    ]);
+
+    const file = new File(["media"], "clip.mp4", { type: "video/mp4" });
+    const { result } = renderHook(() => useIngestSession());
+
+    act(() => result.current.addFiles([file]));
+    await waitFor(() => expect(result.current.session.files).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.startIngest({
+        id: ids.parentSource,
+        format: "urn:x-nmos:format:multi",
+        label: "Programme",
+      });
+    });
+
+    expect(apiMock.createFlow).toHaveBeenCalledWith(
+      ids.videoFlow,
+      expect.objectContaining({
+        label: "Programme (video)",
+        source_id: ids.videoSource,
+      }),
+    );
+    expect(apiMock.createFlow).toHaveBeenCalledWith(
+      ids.audioFlow,
+      expect.objectContaining({
+        label: "Programme (audio)",
+        source_id: ids.audioSource,
+      }),
+    );
+    expect(apiMock.createFlow).toHaveBeenCalledWith(
+      ids.multiFlow,
+      expect.objectContaining({
+        label: "Programme",
+        source_id: ids.parentSource,
+      }),
+    );
   });
 
   it("falls back to source timing when segment duration probing is unavailable", async () => {
@@ -360,6 +443,8 @@ describe("useIngestSession", () => {
     expect(apiMock.deleteObjectInstance).toHaveBeenCalledWith(ids.videoObject, {
       storage_id: "storage-1",
     });
+    expect(apiMock.updateFlowTag).not.toHaveBeenCalled();
+    expect(apiMock.updateSourceTag).not.toHaveBeenCalled();
     expect(result.current.session.files[0].status).toBe("error");
   });
 });

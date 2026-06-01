@@ -292,6 +292,7 @@ export function useIngestSession() {
       sourceId: string,
       mode: "video" | "audio",
       probe: ProbeResult,
+      label?: string,
     ): Promise<string> => {
       const flowId = createIngestId();
       const isVideo = mode === "video";
@@ -308,7 +309,7 @@ export function useIngestSession() {
         format,
         codec,
         container: "video/mp2t",
-        label: `${file.name} (${mode})`,
+        label: label?.trim() || `${file.name} (${mode})`,
         tags: {
           "tamoss-ingest": "managed-browser",
           "tamoss-ingest-timing": "source-derived",
@@ -523,6 +524,14 @@ export function useIngestSession() {
     [api],
   );
 
+  const markParentIngestComplete = useCallback(
+    async (sourceId: string, flowId: string): Promise<void> => {
+      await api.updateFlowTag(flowId, "tamoss-ingest-state", "complete");
+      await api.updateSourceTag(sourceId, "tamoss-ingest-state", "complete");
+    },
+    [api],
+  );
+
   const startIngest = useCallback(
     async (sourceOverride?: string | SourceDraft, storageId?: string) => {
       abortRef.current = false;
@@ -574,35 +583,35 @@ export function useIngestSession() {
           let audioFlowId: string | undefined;
 
           if (probe.hasVideo) {
+            const videoSourceId = trackSources.videoSourceId ?? sourceId;
             videoFlowId = await createTrackFlow(
               ingestFile.file,
-              trackSources.videoSourceId ?? sourceId,
+              videoSourceId,
               "video",
               probe,
+              trackSources.sourceMetadata[videoSourceId]?.label,
             );
             updateFile(ingestFile.id, { videoFlowId });
             await applySourceMetadata(
-              trackSources.videoSourceId ?? sourceId,
-              trackSources.sourceMetadata[
-                trackSources.videoSourceId ?? sourceId
-              ],
+              videoSourceId,
+              trackSources.sourceMetadata[videoSourceId],
               appliedSourceMetadata,
             );
           }
 
           if (probe.hasAudio) {
+            const audioSourceId = trackSources.audioSourceId ?? sourceId;
             audioFlowId = await createTrackFlow(
               ingestFile.file,
-              trackSources.audioSourceId ?? sourceId,
+              audioSourceId,
               "audio",
               probe,
+              trackSources.sourceMetadata[audioSourceId]?.label,
             );
             updateFile(ingestFile.id, { audioFlowId });
             await applySourceMetadata(
-              trackSources.audioSourceId ?? sourceId,
-              trackSources.sourceMetadata[
-                trackSources.audioSourceId ?? sourceId
-              ],
+              audioSourceId,
+              trackSources.sourceMetadata[audioSourceId],
               appliedSourceMetadata,
             );
           }
@@ -619,7 +628,13 @@ export function useIngestSession() {
               id: multiFlowId,
               source_id: sourceId,
               format: "urn:x-nmos:format:multi",
-              label: `${ingestFile.file.name} (multi)`,
+              label:
+                trackSources.sourceMetadata[sourceId]?.label?.trim() ||
+                `${ingestFile.file.name} (multi)`,
+              tags: {
+                "tamoss-ingest": "managed-browser",
+                "tamoss-ingest-state": "pending",
+              },
             });
             const flowCollection = [
               videoFlowId ? { id: videoFlowId, role: "video" } : null,
@@ -667,6 +682,10 @@ export function useIngestSession() {
             );
           }
 
+          if (multiFlowId) {
+            await markParentIngestComplete(sourceId, multiFlowId);
+          }
+
           updateFile(ingestFile.id, { status: "done", progress: 100 });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -686,6 +705,7 @@ export function useIngestSession() {
       registerTrackSegments,
       resolveTrackSourceIds,
       applySourceMetadata,
+      markParentIngestComplete,
     ],
   );
 
