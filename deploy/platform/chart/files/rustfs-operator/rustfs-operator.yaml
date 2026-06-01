@@ -67,10 +67,10 @@ rules:
     resourceNames: ["certificates.cert-manager.io"]
     verbs: ["get"]
 
-  # PersistentVolumeClaims - read (tenant-scoped event discovery lists PVC names)
+  # PersistentVolumeClaims for tenant pool volumes.
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
   # Events for reconciliation notifications and console event list (core + events.k8s.io)
   - apiGroups: [""]

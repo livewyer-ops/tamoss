@@ -11,7 +11,7 @@ task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-Those workflows apply a Helm-managed platform layer, then the Kustomize operator
+Those workflows apply a Helm-rendered platform layer, then the Kustomize operator
 install, then the Kustomize environment overlay containing `Tamoss` resources.
 
 ## Layers

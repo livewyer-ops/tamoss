@@ -127,15 +127,34 @@ task_apply_env_platform() {
     return 1
   fi
 
-  task_step "Platform: apply Helm release $release" \
-    helm --kubeconfig "$kubeconfig" upgrade --install "$release" "$chart_dir" \
-      --namespace "$namespace" \
-      --create-namespace \
-      --values "$values_file" \
-      --wait \
-      --timeout "$timeout"
+  task_step "Platform: apply Helm-rendered platform" \
+    sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" apply --server-side --force-conflicts -f -' \
+      sh "$kubeconfig" "$release" "$chart_dir" "$namespace" "$values_file"
 
   task_wait_env_platform "$kubeconfig" "$values_file" "$timeout"
+}
+
+task_delete_env_platform() {
+  local kubeconfig="$1"
+  local environment_dir="$2"
+  local chart_dir="$3"
+  local release="$4"
+  local namespace="$5"
+  local values_file="$environment_dir/platform-values.yaml"
+
+  if [ ! -f "$values_file" ]; then
+    echo "Environment platform values $values_file were not found." >&2
+    return 1
+  fi
+
+  task_step "Platform: delete Helm-rendered platform" \
+    sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" delete --ignore-not-found -f -' \
+      sh "$kubeconfig" "$release" "$chart_dir" "$namespace" "$values_file"
+
+  task_step "Platform: delete stale Helm release state" \
+    helm --kubeconfig "$kubeconfig" uninstall "$release" \
+      --namespace "$namespace" \
+      --ignore-not-found
 }
 
 task_wait_authentik_platform() {
@@ -206,7 +225,7 @@ task_apply_env() {
 
   env_name="$(basename "$environment_dir")"
   rendered="$(mktemp)"
-  trap 'rm -f "$rendered"' EXIT
+  trap "rm -f '$rendered'" EXIT
 
   task_render_environment \
     "$environment_dir" \
@@ -261,7 +280,7 @@ task_wait_env() {
   local rendered namespace name
 
   rendered="$(mktemp)"
-  trap 'rm -f "$rendered"' EXIT
+  trap "rm -f '$rendered'" EXIT
 
   task_render_environment \
     "$environment_dir" \
@@ -286,7 +305,7 @@ task_show_env_status() {
   local rendered namespace name
 
   rendered="$(mktemp)"
-  trap 'rm -f "$rendered"' EXIT
+  trap "rm -f '$rendered'" EXIT
 
   task_render_environment \
     "$environment_dir" \

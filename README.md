@@ -75,15 +75,14 @@ task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
 Remote environments are composition roots: `platform-values.yaml` configures the
-Helm-managed platform, and the Kustomize overlay applies the `Tamoss` resources.
+Helm-rendered platform, and the Kustomize overlay applies the `Tamoss` resources.
 The raw apply sequence is:
 
 ```bash
-helm upgrade --install tamoss-platform ./deploy/platform/chart \
+helm template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
-  --create-namespace \
   --values deploy/environments/<name>/platform-values.yaml \
-  --wait
+  | kubectl apply --server-side --force-conflicts -f -
 kubectl apply --server-side -k deploy/operator
 kubectl apply -k deploy/environments/<name>
 ```

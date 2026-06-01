@@ -1,15 +1,14 @@
 # Platform
 
-Runtime platform installation is owned by the Helm chart in `chart/`.
+Runtime platform installation is rendered from the Helm chart in `chart/`.
 Environment compositions select platform behavior through their
 `platform-values.yaml` file, for example:
 
 ```bash
-helm upgrade --install tamoss-platform ./deploy/platform/chart \
+helm template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
-  --create-namespace \
   --values deploy/environments/kind-multi-server/platform-values.yaml \
-  --wait
+  | kubectl apply --server-side --force-conflicts -f -
 ```
 
 The `components/` tree remains as the checked-in vendoring input for upstream

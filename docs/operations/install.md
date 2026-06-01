@@ -71,11 +71,10 @@ If automation cannot call Task, keep the same checked-in inputs and apply the
 same layers in order:
 
 ```bash
-helm --kubeconfig "$KUBECONFIG" upgrade --install tamoss-platform ./deploy/platform/chart \
+helm --kubeconfig "$KUBECONFIG" template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
-  --create-namespace \
   --values deploy/environments/<name>/platform-values.yaml \
-  --wait
+  | kubectl --kubeconfig "$KUBECONFIG" apply --server-side --force-conflicts -f -
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ```
