@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "authentik": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "host": { "type": "string", "minLength": 1 },
+            "tlsSecretName": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "authentikChart": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["selfSigned", "public", "existing", "disabled"]
+        },
+        "issuerName": { "type": "string", "minLength": 1 },
+        "acme": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "email": { "type": "string" },
+            "server": { "type": "string", "minLength": 1 },
+            "privateKeySecretName": { "type": "string" },
+            "http01": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "ingressClassName": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "clusterIssuer": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "selfSigned": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

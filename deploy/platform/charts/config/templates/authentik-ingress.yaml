@@ -1,0 +1,44 @@
+{{- if and .Values.authentik.enabled (default true .Values.authentik.ingress.enabled) }}
+{{- $tlsMode := include "tamoss-platform-config.tlsMode" . -}}
+{{- $tlsIssuerName := include "tamoss-platform-config.tlsIssuerName" . -}}
+{{- $authentik := .Values.authentik | default dict -}}
+{{- $authentikChart := .Values.authentikChart | default dict -}}
+{{- $global := get $authentikChart "global" | default dict -}}
+{{- $ingress := get $authentik "ingress" | default dict -}}
+{{- $namespace := default (default "auth" (get $global "namespaceOverride")) (get $authentikChart "namespaceOverride") -}}
+{{- $host := default "auth.tamoss.localtest.me" (get $ingress "host") -}}
+{{- $tlsSecretName := default "authentik-localtest-tls" (get $ingress "tlsSecretName") -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik-server
+  namespace: {{ $namespace | quote }}
+  labels:
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/component: server
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/version: "2026.2.3"
+  {{- if ne $tlsMode "disabled" }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ $tlsIssuerName | quote }}
+  {{- end }}
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $tlsSecretName | quote }}
+{{- end }}

@@ -15,6 +15,7 @@ reports/**
 
 # Helm, kustomize, and deployment tool outputs.
 deploy/charts/**/charts/
+deploy/platform/charts/**/charts/
 *.helmwave
 helmwave.yml
 **/kustomize/**/.*

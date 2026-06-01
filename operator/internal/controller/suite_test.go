@@ -41,8 +41,8 @@ var _ = BeforeSuite(func() {
 		BinaryAssetsDirectory: envtestAssetsDirectory(),
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
-			filepath.Join("..", "..", "..", "deploy", "platform", "components", "cnpg", "cnpg.yaml"),
-			filepath.Join("..", "..", "..", "deploy", "platform", "components", "rustfs-operator", "tenant-crd.yaml"),
+			filepath.Join("..", "..", "test", "fixtures", "cnpg-crds.yaml"),
+			filepath.Join("..", "..", "..", "deploy", "platform", "charts", "rustfs-operator", "templates", "tenant-crd.yaml"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}

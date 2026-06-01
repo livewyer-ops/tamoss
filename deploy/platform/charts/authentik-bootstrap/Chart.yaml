@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tamoss-authentik-bootstrap
+description: Authentik bootstrap secrets for TAMOSS platform installs.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
