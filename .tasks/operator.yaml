@@ -261,6 +261,13 @@ tasks:
         vars:
           CHAINSAW_SELECTOR: "{{.CHAINSAW_CI_SELECTOR}}"
 
+  e2e:chainsaw:smoke:up:
+    silent: true
+    cmds:
+      - task: e2e:chainsaw:up
+        vars:
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_SMOKE_SELECTOR}}"
+
   install-manifest:
     silent: true
     dir: operator

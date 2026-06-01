@@ -2,6 +2,7 @@ name: Operator CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
   merge_group:
 
@@ -84,7 +85,14 @@ jobs:
 
   operator-chainsaw-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
+    env:
+      CHAINSAW_CLUSTER_NAME: tamoss-chainsaw-ci
+      CHAINSAW_KEEP_CLUSTER: "true"
+      CHAINSAW_INSTALL_RUSTFS_OPERATOR: ${{ vars.CHAINSAW_INSTALL_RUSTFS_OPERATOR || 'false' }}
+      CHAINSAW_INSTALL_CNPG_OPERATOR: ${{ vars.CHAINSAW_INSTALL_CNPG_OPERATOR || 'false' }}
+      KUBECONFIG: .local/tamoss-chainsaw-ci.kubeconfig
+      OPERATOR_IMAGE: livewyer/tamoss-operator:chainsaw-${{ github.sha }}
     steps:
       - name: Git Checkout
         uses: actions/checkout@v6
@@ -121,20 +129,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
-      - name: Run chainsaw suite
-        env:
-          CHAINSAW_CLUSTER_NAME: tamoss-chainsaw-ci
-          CHAINSAW_KEEP_CLUSTER: "true"
-          CHAINSAW_INSTALL_RUSTFS_OPERATOR: ${{ vars.CHAINSAW_INSTALL_RUSTFS_OPERATOR || 'false' }}
-          CHAINSAW_INSTALL_CNPG_OPERATOR: ${{ vars.CHAINSAW_INSTALL_CNPG_OPERATOR || 'false' }}
-          KUBECONFIG: ${{ runner.temp }}/tamoss-chainsaw-ci.kubeconfig
-          OPERATOR_IMAGE: livewyer/tamoss-operator:chainsaw-${{ github.sha }}
+      - name: Run chainsaw smoke suite
+        if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
+        run: |
+          echo "CHAINSAW_SUITE=smoke" >> "$GITHUB_ENV"
+          task operator:e2e:chainsaw:smoke:up
+
+      - name: Run full chainsaw suite
+        if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
         run: task operator:e2e:chainsaw:ci:up
 
       - name: Capture chainsaw diagnostics
-        if: failure()
-        env:
-          KUBECONFIG: ${{ runner.temp }}/tamoss-chainsaw-ci.kubeconfig
+        if: failure() || cancelled()
         run: .github/scripts/collect-chainsaw-diagnostics.sh reports/chainsaw-logs
 
       - name: Upload chainsaw reports
@@ -155,6 +161,8 @@ jobs:
             echo "## Operator chainsaw e2e"
             echo
             echo "- Result: ${{ job.status }}"
+            echo "- Suite: ${CHAINSAW_SUITE:-full}"
+            echo "- Full suite label: ci/full-operator-e2e"
             echo "- Report: reports/junit-operator-chainsaw.xml"
             echo "- Diagnostics: reports/chainsaw-logs/"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -180,7 +188,7 @@ jobs:
           PY
 
       - name: Publish chainsaw JUnit summary
-        if: always()
+        if: always() && hashFiles('reports/junit-operator-chainsaw.xml') != ''
         uses: test-summary/action@v2
         with:
           paths: reports/junit-operator-chainsaw.xml
