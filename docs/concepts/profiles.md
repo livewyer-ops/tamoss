@@ -17,8 +17,8 @@ Profiles do not define tenant identity. In shared clusters, tenant boundaries
 come from Kubernetes namespaces and the `Tamoss` resources applied in them.
 
 `deploy/profiles.yaml` is the profile registry used by Taskfile helpers. Each
-supported profile records its platform Kustomize path, local instance path,
-target environment file, and the Kind cluster config used for local validation.
+supported profile records its Kind environment composition, target environment
+file, and the Kind cluster config used for local validation.
 
 `local-kind` is a local test adapter. It creates a Kind cluster, loads local
 development images, uses `localtest.me`, and exists to validate the operator
@@ -29,7 +29,7 @@ Kind; it is not the remote install path.
 Running `task kind:up PROFILE=multi-server` validates the production reference
 profile on a disposable multi-node Kind cluster. That local harness exercises
 multi-node scheduling shape, but the production `multi-server` install path
-remains normal Kubernetes through the `k8s:*` tasks.
+remains normal Kubernetes through the `env:*` tasks.
 
 ## Security Defaults
 
@@ -99,8 +99,8 @@ Run the sequential profile gate:
 task kind:profiles:e2e
 ```
 
-The Kind-specific overlays, such as `deploy/platform/multi-server-kind`, are
-test adapters for local validation. They are not additional public profiles.
+The Kind-specific environments, such as `deploy/environments/kind-multi-server`,
+are test adapters for local validation. They are not additional public profiles.
 The `multi-server` local validation path also uses `deploy/kind-multi-server.yaml`
 so Kind creates one control-plane node and three worker nodes while keeping host
 HTTPS ingress on port 443.

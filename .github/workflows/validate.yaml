@@ -70,7 +70,7 @@ jobs:
         run: |
           environment="ci-single-server"
           rm -rf "deploy/environments/${environment}"
-          task k8s:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
+          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
           kubectl kustomize "deploy/environments/${environment}" >/tmp/tamoss-${environment}.yaml
 
       - name: Check platform and operand version pins

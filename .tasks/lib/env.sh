@@ -61,7 +61,7 @@ task_k8s_secret_value() {
     | base64 --decode || true
 }
 
-task_init_k8s_environment() {
+task_init_env() {
   local name="$1"
   local profile="$2"
   local domain="$3"
@@ -103,22 +103,115 @@ task_init_k8s_environment() {
 
   printf 'Created %s\n' "$environment_dir"
   printf 'Edit the YAML files there, then run:\n'
-  printf '  task k8s:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$name"
+  printf '  task env:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$name"
 }
 
-task_apply_k8s_environment() {
-  local env_name="$1"
-  local kubeconfig="$2"
-  local environment_dir="deploy/environments/$env_name"
-  local rendered profile namespace name platform_dir
+task_env_values_enabled() {
+  local values_file="$1"
+  local query="$2"
 
+  [ "$(yq -r "${query} // false" "$values_file")" = "true" ]
+}
+
+task_apply_env_platform() {
+  local kubeconfig="$1"
+  local environment_dir="$2"
+  local chart_dir="$3"
+  local release="$4"
+  local namespace="$5"
+  local timeout="$6"
+  local values_file="$environment_dir/platform-values.yaml"
+
+  if [ ! -f "$values_file" ]; then
+    echo "Environment platform values $values_file were not found." >&2
+    return 1
+  fi
+
+  task_step "Platform: apply Helm release $release" \
+    helm --kubeconfig "$kubeconfig" upgrade --install "$release" "$chart_dir" \
+      --namespace "$namespace" \
+      --create-namespace \
+      --values "$values_file" \
+      --wait \
+      --timeout "$timeout"
+
+  task_wait_env_platform "$kubeconfig" "$values_file" "$timeout"
+}
+
+task_wait_authentik_platform() {
+  local kubeconfig="$1"
+  local namespace="$2"
+
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
+    rollout status statefulset/authentik-postgresql --timeout=10m
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
+    rollout status deployment/authentik-server --timeout=10m
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
+    rollout status deployment/authentik-worker --timeout=10m
+}
+
+task_wait_env_platform() {
+  local kubeconfig="$1"
+  local values_file="$2"
+  local timeout="$3"
+
+  if task_env_values_enabled "$values_file" ".certManager.enabled"; then
+    task_step "Platform: wait for cert-manager" \
+      kubectl --kubeconfig "$kubeconfig" -n cert-manager wait \
+        --for=condition=Available \
+        deployment/cert-manager deployment/cert-manager-cainjector deployment/cert-manager-webhook \
+        --timeout="$timeout"
+  fi
+  if task_env_values_enabled "$values_file" ".traefik.enabled"; then
+    task_step "Platform: wait for Traefik" \
+      kubectl --kubeconfig "$kubeconfig" -n traefik \
+        rollout status deployment/traefik --timeout="$timeout"
+  fi
+  if task_env_values_enabled "$values_file" ".authentik.enabled"; then
+    task_step "Platform: wait for Authentik" \
+      task_wait_authentik_platform "$kubeconfig" auth
+  fi
+  if task_env_values_enabled "$values_file" ".cnpg.enabled"; then
+    task_step "Platform: wait for CNPG" \
+      task_wait_platform_deployment "$kubeconfig" clusters.postgresql.cnpg.io cnpg-system cnpg-controller-manager "$timeout"
+  fi
+  if task_env_values_enabled "$values_file" ".rustfsOperator.enabled"; then
+    task_step "Platform: wait for RustFS Operator" \
+      task_wait_platform_deployment "$kubeconfig" tenants.rustfs.com rustfs-system rustfs-operator "$timeout"
+  fi
+}
+
+task_wait_platform_deployment() {
+  local kubeconfig="$1"
+  local crd="$2"
+  local namespace="$3"
+  local deployment="$4"
+  local timeout="$5"
+
+  kubectl --kubeconfig "$kubeconfig" wait \
+    --for=condition=Established "crd/$crd" --timeout="$timeout"
+  kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
+    --for=condition=Available "deployment/$deployment" --timeout="$timeout"
+}
+
+task_apply_env() {
+  local environment_dir="$1"
+  local kubeconfig="$2"
+  local chart_dir="$3"
+  local operator_kustomize_dir="$4"
+  local platform_release="$5"
+  local platform_namespace="$6"
+  local platform_timeout="$7"
+  local rendered profile namespace name env_name
+
+  env_name="$(basename "$environment_dir")"
   rendered="$(mktemp)"
   trap 'rm -f "$rendered"' EXIT
 
   task_render_environment \
     "$environment_dir" \
     "$rendered" \
-    "Environment $environment_dir was not found. Create it with task k8s:init."
+    "Environment $environment_dir was not found. Create it with task env:init."
 
   profile="$(task_tamoss_field_from_rendered "$rendered" profile)"
   namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
@@ -126,7 +219,7 @@ task_apply_k8s_environment() {
   namespace="${namespace:-tams}"
 
   case "$profile" in
-    single-server|multi-server) ;;
+    local-kind|single-server|multi-server) ;;
     *)
       echo "Unable to infer a supported Tamoss spec.profile from $environment_dir." >&2
       return 1
@@ -136,29 +229,35 @@ task_apply_k8s_environment() {
     echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
     return 1
   fi
-  platform_dir="$(task_profile_remote_platform_dir "$profile")"
 
-  task_step "apply $profile platform" \
-    task_apply_operator_platform \
-      "$kubeconfig" \
-      deploy/platform/components/cert-manager \
-      "$platform_dir" \
-      auth \
-      rustfs-system \
-      rustfs-operator
-  task_apply_operator "$kubeconfig" deploy/operator
+  task_apply_env_platform \
+    "$kubeconfig" \
+    "$environment_dir" \
+    "$chart_dir" \
+    "$platform_release" \
+    "$platform_namespace" \
+    "$platform_timeout"
+  task_apply_operator "$kubeconfig" "$operator_kustomize_dir"
   task_wait_operator "$kubeconfig" tamoss-system operator-controller-manager
-  task_step "apply TAMOSS environment $env_name" \
-    kubectl --kubeconfig "$kubeconfig" apply -k "$environment_dir"
+  task_apply_env_instance "$environment_dir" "$kubeconfig"
 
   printf 'Applied %s/%s from %s\n' "$namespace" "$name" "$environment_dir"
 }
 
-task_wait_k8s_environment() {
-  local env_name="$1"
+task_apply_env_instance() {
+  local environment_dir="$1"
+  local kubeconfig="$2"
+  local env_name
+
+  env_name="$(basename "$environment_dir")"
+  task_step "Instance: apply TAMOSS environment $env_name" \
+    kubectl --kubeconfig "$kubeconfig" apply -k "$environment_dir"
+}
+
+task_wait_env() {
+  local environment_dir="$1"
   local kubeconfig="$2"
   local timeout="$3"
-  local environment_dir="deploy/environments/$env_name"
   local rendered namespace name
 
   rendered="$(mktemp)"
@@ -167,7 +266,7 @@ task_wait_k8s_environment() {
   task_render_environment \
     "$environment_dir" \
     "$rendered" \
-    "Environment $environment_dir was not found. Create it with task k8s:init."
+    "Environment $environment_dir was not found. Create it with task env:init."
   namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
   name="$(task_tamoss_field_from_rendered "$rendered" name)"
   namespace="${namespace:-tams}"
@@ -181,10 +280,9 @@ task_wait_k8s_environment() {
       wait --for=condition=Ready "tamoss/$name" --timeout="$timeout"
 }
 
-task_show_k8s_environment_status() {
-  local env_name="$1"
+task_show_env_status() {
+  local environment_dir="$1"
   local kubeconfig="$2"
-  local environment_dir="deploy/environments/$env_name"
   local rendered namespace name
 
   rendered="$(mktemp)"
@@ -193,7 +291,7 @@ task_show_k8s_environment_status() {
   task_render_environment \
     "$environment_dir" \
     "$rendered" \
-    "Environment $environment_dir was not found. Create it with task k8s:init."
+    "Environment $environment_dir was not found. Create it with task env:init."
   namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
   name="$(task_tamoss_field_from_rendered "$rendered" name)"
   namespace="${namespace:-tams}"
@@ -208,6 +306,28 @@ task_show_k8s_environment_status() {
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" get httproute
   fi
   kubectl --kubeconfig "$kubeconfig" -n "$namespace" get events --sort-by=.lastTimestamp | tail -40
+}
+
+task_diff_env() {
+  local environment_dir="$1"
+  local kubeconfig="$2"
+  local chart_dir="$3"
+  local platform_release="$4"
+  local platform_namespace="$5"
+  local values_file="$environment_dir/platform-values.yaml"
+
+  if [ ! -f "$values_file" ]; then
+    echo "Environment platform values $values_file were not found." >&2
+    return 1
+  fi
+
+  task_step "Platform: diff Helm-rendered platform" \
+    sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" diff -f - || true' \
+      sh "$kubeconfig" "$platform_release" "$chart_dir" "$platform_namespace" "$values_file"
+  task_step "Operator: diff TAMOSS operator" \
+    kubectl --kubeconfig "$kubeconfig" diff --server-side -k deploy/operator || true
+  task_step "Instance: diff TAMOSS environment" \
+    kubectl --kubeconfig "$kubeconfig" diff -k "$environment_dir" || true
 }
 
 task_condition_summary() {

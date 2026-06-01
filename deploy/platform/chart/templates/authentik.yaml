@@ -1,0 +1,5 @@
+{{- if .Values.authentik.enabled }}
+{{ .Files.Get "files/authentik/namespace.yaml" }}
+---
+{{ .Files.Get "files/authentik/authentik.yaml" }}
+{{- end }}

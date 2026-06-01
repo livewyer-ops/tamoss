@@ -1,0 +1,29 @@
+certManager:
+  enabled: false
+
+cnpg:
+  enabled: false
+
+rustfsOperator:
+  enabled: false
+
+authentik:
+  enabled: false
+
+traefik:
+  enabled: false
+  crds:
+    enabled: true
+  replicas: 2
+  image:
+    repository: traefik
+    tag: v3.7.1
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    nodePort: null
+
+clusterIssuer:
+  selfSigned:
+    enabled: false
+    name: tamoss-selfsigned

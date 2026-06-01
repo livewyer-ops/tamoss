@@ -1,0 +1,23 @@
+certManager:
+  enabled: true
+
+cnpg:
+  enabled: true
+
+rustfsOperator:
+  enabled: true
+
+authentik:
+  enabled: true
+
+traefik:
+  enabled: true
+  replicas: 1
+  service:
+    type: NodePort
+    nodePort: 30443
+
+clusterIssuer:
+  selfSigned:
+    enabled: true
+    name: tamoss-selfsigned

@@ -1,0 +1,21 @@
+certManager:
+  enabled: true
+
+cnpg:
+  enabled: true
+
+rustfsOperator:
+  enabled: true
+
+authentik:
+  enabled: false
+
+traefik:
+  enabled: true
+  replicas: 2
+  service:
+    type: LoadBalancer
+
+clusterIssuer:
+  selfSigned:
+    enabled: false

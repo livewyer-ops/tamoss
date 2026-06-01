@@ -27,7 +27,8 @@ task kind:up PROFILE=local-kind
 
 1. Create or reuse the Kind cluster from `deploy/kind.yaml`.
 2. Build and load local API, UI, and operator images.
-3. Apply `deploy/platform/local-kind`.
+3. Apply the Helm-managed platform from
+   `deploy/environments/local-kind/platform-values.yaml`.
 4. Apply the TAMOSS operator from `deploy/operator/local`.
 5. Apply the `local-kind` instance overlay.
 6. Wait for `Tamoss/tamoss-kind` to report `Ready=True`.

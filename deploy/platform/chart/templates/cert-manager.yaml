@@ -1,0 +1,3 @@
+{{- if .Values.certManager.enabled }}
+{{ .Files.Get "files/cert-manager/cert-manager.yaml" }}
+{{- end }}

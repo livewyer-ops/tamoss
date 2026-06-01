@@ -19,10 +19,8 @@ vars:
   PROFILE_KIND_CONFIG:
     sh: '. .tasks/lib/profile.sh; task_profile_kind_config "{{.PROFILE}}"'
   KIND_CONFIG: '{{default .PROFILE_KIND_CONFIG (default (env "KIND_CONFIG") .KIND_CONFIG)}}'
-  PROFILE_PLATFORM_KUSTOMIZE_DIR:
-    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" platformKustomizeDir'
-  PROFILE_INSTANCE_KUSTOMIZE_DIR:
-    sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" instanceKustomizeDir'
+  PROFILE_KIND_ENVIRONMENT_DIR:
+    sh: '. .tasks/lib/profile.sh; task_profile_kind_environment_dir "{{.PROFILE}}"'
   PROFILE_TAMOSS_NAME:
     sh: '. .tasks/lib/profile.sh; task_profile_field "{{.PROFILE}}" tamossName'
   PROFILE_TARGET_ENV:
@@ -37,6 +35,7 @@ includes:
   openapi: { taskfile: .tasks/openapi.yaml }
   dev:     { taskfile: .tasks/dev.yaml }
   docker:  { taskfile: .tasks/docker.yaml }
+  env:     { taskfile: .tasks/env.yaml }
   kind:    { taskfile: .tasks/kind.yaml }
   lint:    { taskfile: .tasks/lint.yaml }
   misc:    { taskfile: .tasks/misc.yaml }
@@ -103,10 +102,10 @@ tasks:
         set -euo pipefail
         . .tasks/lib/kind.sh
         task_kind_validate_profile_topology "{{.PROFILE}}" "{{.KUBECONFIG}}"
-      - task: operator:platform:apply
+      - task: env:platform:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-          PLATFORM_KUSTOMIZE_DIR: "{{.PROFILE_PLATFORM_KUSTOMIZE_DIR}}"
+          ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
       - task: operator:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -114,14 +113,14 @@ tasks:
       - task: operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - task: operator:instance:apply
+      - task: env:instance:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-          TAMOSS_CR: "{{.PROFILE_INSTANCE_KUSTOMIZE_DIR}}"
-      - task: operator:instance:wait
+          ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+      - task: env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
-          TAMOSS_NAME: "{{.PROFILE_TAMOSS_NAME}}"
+          ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
       - task: kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -150,54 +149,56 @@ tasks:
     cmds:
       - |
         set -euo pipefail
-        . .tasks/lib/k8s.sh
+        . .tasks/lib/env.sh
         task_print_kind_summary "{{.PROFILE_TARGET_ENV}}" "{{.KUBECONFIG}}"
 
   k8s:init:
-    desc: "Kubernetes: create a remote environment Kustomize overlay from templates"
+    desc: "Deprecated: use task env:init"
     silent: true
     requires:
       vars: [NAME, PROFILE, DOMAIN]
     cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/k8s.sh
-        task_init_k8s_environment "{{.NAME}}" "{{.PROFILE}}" "{{.DOMAIN}}"
+      - task: env:init
+        vars:
+          NAME: "{{.NAME}}"
+          PROFILE: "{{.PROFILE}}"
+          DOMAIN: "{{.DOMAIN}}"
 
   k8s:apply:
-    desc: "Kubernetes: apply platform, operator, and a remote environment overlay"
+    desc: "Deprecated: use task env:apply"
     silent: true
     requires:
       vars: [ENV, KUBECONFIG]
     cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/k8s.sh
-        task_apply_k8s_environment "{{.ENV}}" "{{.KUBECONFIG}}"
+      - task: env:apply
+        vars:
+          ENV: "{{.ENV}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
 
   k8s:wait:
-    desc: "Kubernetes: wait for a remote environment Tamoss instance to become ready"
+    desc: "Deprecated: use task env:wait"
     silent: true
     requires:
       vars: [ENV, KUBECONFIG]
     vars:
       TIMEOUT: '{{default "15m" .TIMEOUT}}'
     cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/k8s.sh
-        task_wait_k8s_environment "{{.ENV}}" "{{.KUBECONFIG}}" "{{.TIMEOUT}}"
+      - task: env:wait
+        vars:
+          ENV: "{{.ENV}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          TIMEOUT: "{{.TIMEOUT}}"
 
   k8s:status:
-    desc: "Kubernetes: show remote environment Tamoss status and namespace resources"
+    desc: "Deprecated: use task env:status"
     silent: true
     requires:
       vars: [ENV, KUBECONFIG]
     cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/k8s.sh
-        task_show_k8s_environment_status "{{.ENV}}" "{{.KUBECONFIG}}"
+      - task: env:status
+        vars:
+          ENV: "{{.ENV}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
 
   kind:down:
     desc: "Local Kind: delete the disposable Kind cluster and local runtime state"

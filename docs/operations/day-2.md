@@ -108,8 +108,8 @@ then reapply it:
 
 ```bash
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
 For a short investigation, patch the live `Tamoss` CR and then copy the chosen

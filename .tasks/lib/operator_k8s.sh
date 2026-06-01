@@ -8,8 +8,6 @@ else
 fi
 # shellcheck source=.tasks/lib/progress.sh
 . "$task_lib_dir/progress.sh"
-# shellcheck source=.tasks/lib/operator_platform.sh
-. "$task_lib_dir/operator_platform.sh"
 
 task_apply_operator() {
   local kubeconfig="$1"
@@ -17,35 +15,6 @@ task_apply_operator() {
 
   task_step "Operator: apply TAMOSS operator" \
     kubectl --kubeconfig "$kubeconfig" apply --server-side -k "$operator_kustomize_dir"
-}
-
-task_apply_operator_platform() {
-  local kubeconfig="$1"
-  local cert_manager_kustomize_dir="$2"
-  local platform_kustomize_dir="$3"
-  local authentik_namespace="$4"
-  local rustfs_operator_namespace="$5"
-  local rustfs_operator_release="$6"
-  local platform_name
-
-  platform_name="$(basename "$platform_kustomize_dir")"
-
-  task_step "Platform: install cert-manager" \
-    kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -k "$cert_manager_kustomize_dir"
-  task_step "Platform: wait for cert-manager" \
-    kubectl --kubeconfig "$kubeconfig" -n cert-manager wait \
-      --for=condition=Available \
-      deployment/cert-manager deployment/cert-manager-cainjector deployment/cert-manager-webhook \
-      --timeout=5m
-  task_step "Platform: apply $platform_name services" \
-    kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -k "$platform_kustomize_dir"
-  task_step "Platform: wait for Traefik" \
-    kubectl --kubeconfig "$kubeconfig" -n traefik \
-      rollout status deployment/traefik --timeout=3m
-  task_step "Platform: wait for Authentik" \
-    task_wait_authentik_platform "$kubeconfig" "$authentik_namespace"
-  task_step "Platform: wait for CNPG and RustFS Operator" \
-    task_wait_optional_backend_operators "$kubeconfig" "$rustfs_operator_namespace" "$rustfs_operator_release"
 }
 
 task_render_operator_kustomize() {

@@ -31,13 +31,11 @@ from the previous operator image to the current operator image.
 export KUBECONFIG=/path/to/kubeconfig
 export TAMOSS_ENV=my-prod
 
-kubectl --kubeconfig "$KUBECONFIG" diff -k deploy/platform/multi-server || true
-kubectl --kubeconfig "$KUBECONFIG" diff --server-side -k deploy/operator || true
-kubectl --kubeconfig "$KUBECONFIG" diff -k "deploy/environments/$TAMOSS_ENV" || true
+task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 
-task k8s:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task k8s:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+task env:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG"
 ```
 
@@ -48,7 +46,11 @@ If automation cannot call Task, keep the same source-controlled inputs and
 apply the rendered layers in the same order:
 
 ```bash
-kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/platform/multi-server
+helm --kubeconfig "$KUBECONFIG" upgrade --install tamoss-platform ./deploy/platform/chart \
+  --namespace tamoss-platform \
+  --create-namespace \
+  --values "deploy/environments/$TAMOSS_ENV/platform-values.yaml" \
+  --wait
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
 ```

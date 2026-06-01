@@ -40,16 +40,10 @@ task_profile_kind_config() {
   task_profile_field "$profile" kindConfig
 }
 
-task_profile_remote_platform_dir() {
+task_profile_kind_environment_dir() {
   local profile="$1"
-  local value
 
-  value="$(task_profile_query "$profile" ".remotePlatformKustomizeDir")"
-  if [ -n "$value" ]; then
-    printf '%s\n' "$value"
-    return
-  fi
-  task_profile_field "$profile" platformKustomizeDir
+  task_profile_field "$profile" kindEnvironmentDir
 }
 
 task_profile_remote_enabled() {
@@ -73,18 +67,22 @@ task_run_profile_e2e_sequence() {
 
 task_validate_profile() {
   local profile="$1"
-  local platform_dir
+  local kind_environment_dir
   local instance_dir
   local kind_config
   local target_env
 
-  platform_dir="$(task_profile_field "$profile" platformKustomizeDir)"
+  kind_environment_dir="$(task_profile_field "$profile" kindEnvironmentDir)"
   instance_dir="$(task_profile_field "$profile" instanceKustomizeDir)"
   kind_config="$(task_profile_field "$profile" kindConfig)"
   target_env="$(task_profile_field "$profile" targetEnv)"
 
-  test -d "$platform_dir" || {
-    echo "Profile platform path $platform_dir not found" >&2
+  test -d "$kind_environment_dir" || {
+    echo "Profile Kind environment path $kind_environment_dir not found" >&2
+    return 2
+  }
+  test -f "$kind_environment_dir/platform-values.yaml" || {
+    echo "Profile Kind environment platform values $kind_environment_dir/platform-values.yaml not found" >&2
     return 2
   }
   test -e "$instance_dir" || {

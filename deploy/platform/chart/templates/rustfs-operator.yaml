@@ -1,0 +1,7 @@
+{{- if .Values.rustfsOperator.enabled }}
+{{ .Files.Get "files/rustfs-operator/namespace.yaml" }}
+---
+{{ .Files.Get "files/rustfs-operator/tenant-crd.yaml" }}
+---
+{{ .Files.Get "files/rustfs-operator/rustfs-operator.yaml" }}
+{{- end }}

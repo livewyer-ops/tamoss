@@ -1,0 +1,25 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-single-server
+  namespace: tams
+spec:
+  publicEndpoint:
+    baseDomain: tamoss.localtest.me
+  api:
+    env:
+      TAMOSS_WEBHOOK_ALLOWED_HOSTS: .svc.cluster.local
+    image:
+      tag: dev
+  worker:
+    env:
+      TAMOSS_WEBHOOK_ALLOWED_HOSTS: .svc.cluster.local
+  ui:
+    image:
+      tag: dev
+  backends:
+    s3:
+      rustfsOperator:
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"

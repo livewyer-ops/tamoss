@@ -321,8 +321,8 @@ For an existing cluster, keep durable changes in the generated environment
 overlay and reapply the supported workflow:
 
 ```bash
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
 For a disposable local Kind cluster, recreate the full local environment:

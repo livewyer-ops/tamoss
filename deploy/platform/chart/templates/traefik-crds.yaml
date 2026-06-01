@@ -1,0 +1,3 @@
+{{- if and .Values.traefik.enabled .Values.traefik.crds.enabled }}
+{{ .Files.Get "files/traefik/traefik-crds.yaml" }}
+{{- end }}

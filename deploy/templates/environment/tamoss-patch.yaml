@@ -7,3 +7,5 @@ spec:
   profile: __PROFILE__
   publicEndpoint:
     baseDomain: __DOMAIN__
+  auth:
+    providedBy: none

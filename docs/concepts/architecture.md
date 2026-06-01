@@ -6,12 +6,13 @@ The user-facing deployment path is intentionally small:
 
 ```bash
 task kind:up PROFILE=local-kind
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-Those workflows apply three ordered Kustomize layers.
+Those workflows apply a Helm-managed platform layer, then the Kustomize operator
+install, then the Kustomize environment overlay containing `Tamoss` resources.
 
 ## Layers
 

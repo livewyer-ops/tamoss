@@ -23,10 +23,11 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task k8s:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment Kustomize overlay from checked-in templates. |
-| `task k8s:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply platform prerequisites, the TAMOSS operator, and the selected environment overlay. |
-| `task k8s:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
-| `task k8s:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
+| `task env:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. |
+| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the Helm platform, TAMOSS operator, and selected environment overlay. |
+| `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helm platform render, TAMOSS operator, and selected environment overlay. |
+| `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
+| `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
 
 ### Additional Validation Commands
 

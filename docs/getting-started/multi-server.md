@@ -39,16 +39,17 @@ For an existing cluster:
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-The platform layer installs reference cert-manager, Traefik, Authentik, CNPG,
-and RustFS Operator components. The TAMOSS operator reconciles the instance
-resources selected by the `Tamoss` CR; it does not install those platform
-operators from inside a `Tamoss` reconcile.
+The platform layer installs the components enabled in
+`deploy/environments/my-prod/platform-values.yaml`. The TAMOSS operator
+reconciles the instance resources selected by the `Tamoss` CR; it does not
+install platform operators from inside a `Tamoss` reconcile.
 
 ## Operate
 

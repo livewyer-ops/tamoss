@@ -67,16 +67,23 @@ Open:
 The equivalent Kubernetes install shape is always:
 
 ```bash
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
-task k8s:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
+task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
+task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
-Remote environments are normal Kustomize overlays. The raw apply sequence is:
+Remote environments are composition roots: `platform-values.yaml` configures the
+Helm-managed platform, and the Kustomize overlay applies the `Tamoss` resources.
+The raw apply sequence is:
 
 ```bash
-kubectl apply -k deploy/platform/<profile>
+helm upgrade --install tamoss-platform ./deploy/platform/chart \
+  --namespace tamoss-platform \
+  --create-namespace \
+  --values deploy/environments/<name>/platform-values.yaml \
+  --wait
 kubectl apply --server-side -k deploy/operator
 kubectl apply -k deploy/environments/<name>
 ```
@@ -85,9 +92,9 @@ kubectl apply -k deploy/environments/<name>
 
 | Profile | Use when | Default backing services |
 | --- | --- | --- |
-| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | CNPG, RustFS Operator, Authentik, cert-manager, and Traefik on host port 443. |
-| `single-server` | You run one Kubernetes node or a small self-managed cluster. | CNPG and RustFS Operator with single-node durable defaults. |
-| `multi-server` | You run production-shaped self-managed Kubernetes. | Replicated workloads, CNPG, RustFS Operator, Authentik, cert-manager, and Traefik. |
+| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | Local reference platform with CNPG, RustFS Operator, Authentik, cert-manager, and Traefik on host port 443. |
+| `single-server` | You run one Kubernetes node or a small self-managed cluster. | Single-node workload topology; platform services are selected by the environment. |
+| `multi-server` | You run production-shaped self-managed Kubernetes. | Replicated workload topology; platform services are selected by the environment. |
 
 Use `multi-server` as the production reference profile. External PostgreSQL,
 S3-compatible storage, OAuth2/OIDC, and ingress providers can be used where the
