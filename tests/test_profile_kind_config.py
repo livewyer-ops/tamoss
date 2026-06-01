@@ -19,11 +19,36 @@ def test_profile_registry_selects_kind_configurations() -> None:
     assert profiles["local-kind"]["kindConfig"] == "deploy/kind.yaml"
     assert profiles["single-server"]["kindConfig"] == "deploy/kind.yaml"
     assert profiles["multi-server"]["kindConfig"] == "deploy/kind-multi-server.yaml"
+    assert (
+        profiles["local-kind"]["kindEnvironmentDir"] == "deploy/environments/local-kind"
+    )
+    assert (
+        profiles["single-server"]["kindEnvironmentDir"]
+        == "deploy/environments/kind-single-server"
+    )
+    assert (
+        profiles["multi-server"]["kindEnvironmentDir"]
+        == "deploy/environments/kind-multi-server"
+    )
+    assert profiles["local-kind"]["instanceKustomizeDir"] == (
+        "deploy/instances/local-kind"
+    )
+    assert profiles["single-server"]["instanceKustomizeDir"] == (
+        "deploy/instances/single-server"
+    )
+    assert profiles["multi-server"]["instanceKustomizeDir"] == (
+        "deploy/instances/multi-server"
+    )
     assert profiles["local-kind"]["targetEnv"] == "tests/targets/local-kind.env"
     assert profiles["single-server"]["targetEnv"] == "tests/targets/single-server.env"
     assert profiles["multi-server"]["targetEnv"] == "tests/targets/multi-server.env"
     for profile in profiles.values():
+        assert "platformKustomizeDir" not in profile
+        assert "remotePlatformKustomizeDir" not in profile
         assert (ROOT / profile["kindConfig"]).is_file()
+        assert (ROOT / profile["kindEnvironmentDir"]).is_dir()
+        assert (ROOT / profile["instanceKustomizeDir"]).is_dir()
+        assert (ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml").is_file()
         assert (ROOT / profile["targetEnv"]).is_file()
 
 
@@ -90,12 +115,12 @@ def test_profile_shell_validation_checks_supported_profile_paths() -> None:
         )
 
 
-def test_kind_instance_overlays_allow_cluster_webhook_receiver() -> None:
+def test_kind_environments_allow_cluster_webhook_receiver() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for overlay in ["single-server-kind", "multi-server-kind"]:
-        tamoss = _render_tamoss(ROOT / "deploy/instances" / overlay)
+    for environment in ["kind-single-server", "kind-multi-server"]:
+        tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert (
             tamoss["spec"]["api"]["env"]["TAMOSS_WEBHOOK_ALLOWED_HOSTS"]
@@ -123,14 +148,78 @@ def test_canonical_profiles_do_not_default_to_localtest_domains() -> None:
         assert "tamoss.localtest.me" not in rendered
 
 
-def test_kind_profile_overlays_keep_localtest_domains() -> None:
+def test_kind_environments_keep_localtest_domains() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for overlay in ["single-server-kind", "multi-server-kind"]:
-        tamoss = _render_tamoss(ROOT / "deploy/instances" / overlay)
+    for environment in ["kind-single-server", "kind-multi-server"]:
+        tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert tamoss["spec"]["publicEndpoint"]["baseDomain"] == "tamoss.localtest.me"
+
+
+def test_kind_multi_server_platform_values_render_nodeport() -> None:
+    if shutil.which("helm") is None:
+        pytest.skip("helm is required for platform Helmfile checks")
+    if shutil.which("helmfile") is None:
+        pytest.skip("helmfile is required for platform Helmfile checks")
+
+    rendered = _render_platform(
+        ROOT / "deploy/environments/kind-multi-server/platform-values.yaml"
+    )
+    service = _resource(rendered, "Service", "traefik", "traefik")
+    websecure = next(
+        port for port in service["spec"]["ports"] if port["name"] == "websecure"
+    )
+
+    assert service["spec"]["type"] == "NodePort"
+    assert websecure["nodePort"] == 30443
+    assert (
+        _resource(rendered, "Secret", "authentik", "auth")["metadata"]["name"]
+        == "authentik"
+    )
+
+
+def test_profile_platform_values_enable_authentik_by_default() -> None:
+    registry = _load_yaml(ROOT / "deploy/profiles.yaml")
+    for profile in registry["profiles"]:
+        values = _load_yaml(
+            ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml"
+        )
+        assert values["authentik"]["enabled"] is True
+
+    for values_file in [
+        ROOT / "deploy/platform/values/local-kind.yaml",
+        ROOT / "deploy/platform/values/single-server-reference.yaml",
+        ROOT / "deploy/platform/values/multi-server-reference.yaml",
+    ]:
+        values = _load_yaml(values_file)
+        assert values["authentik"]["enabled"] is True
+
+
+def test_reference_platform_values_render_profile_authentik_host() -> None:
+    if shutil.which("helm") is None:
+        pytest.skip("helm is required for platform Helmfile checks")
+    if shutil.which("helmfile") is None:
+        pytest.skip("helmfile is required for platform Helmfile checks")
+
+    for values_file in [
+        ROOT / "deploy/platform/values/single-server-reference.yaml",
+        ROOT / "deploy/platform/values/multi-server-reference.yaml",
+    ]:
+        rendered = _render_platform(values_file)
+        auth_ingresses = [
+            item
+            for item in rendered
+            if item.get("kind") == "Ingress"
+            and item.get("metadata", {}).get("namespace") == "auth"
+        ]
+
+        assert len(auth_ingresses) == 1
+        assert (
+            auth_ingresses[0]["spec"]["rules"][0]["host"] == "auth.tamoss.example.com"
+        )
+        assert "localtest" not in yaml.safe_dump(auth_ingresses[0])
 
 
 def test_multi_server_topology_guard_requires_two_ready_nodes(tmp_path: Path) -> None:
@@ -170,6 +259,45 @@ def _render_tamoss(path: Path) -> dict[str, Any]:
         if item.get("kind") == "Tamoss":
             return item
     raise AssertionError(f"No Tamoss resource rendered from {path}")
+
+
+def _render_platform(values_path: Path) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        [
+            "helmfile",
+            "--file",
+            "helmfile.yaml.gotmpl",
+            "--state-values-file",
+            "values/defaults.yaml",
+            "--state-values-file",
+            str(values_path),
+            "template",
+            "--include-crds",
+        ],
+        cwd=ROOT / "deploy/platform",
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return [
+        item
+        for item in yaml.safe_load_all(result.stdout)
+        if isinstance(item, dict) and item.get("kind")
+    ]
+
+
+def _resource(
+    resources: list[dict[str, Any]], kind: str, name: str, namespace: str | None = None
+) -> dict[str, Any]:
+    for item in resources:
+        metadata = item.get("metadata", {})
+        if (
+            item.get("kind") == kind
+            and metadata.get("name") == name
+            and (namespace is None or metadata.get("namespace") == namespace)
+        ):
+            return item
+    raise AssertionError(f"No {kind}/{name} found")
 
 
 def _write_kubectl_stub(tmp_path: Path, output: str) -> None:

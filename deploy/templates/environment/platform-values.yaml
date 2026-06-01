@@ -1,0 +1,28 @@
+certManager:
+  enabled: true
+
+cnpg:
+  enabled: true
+
+rustfsOperator:
+  enabled: true
+
+authentik:
+  enabled: true
+  ingress:
+    host: auth.__DOMAIN__
+    tlsSecretName: authentik-public-tls
+
+traefik:
+  enabled: true
+  deployment:
+    replicas: 2
+  service:
+    spec:
+      type: LoadBalancer
+
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com
