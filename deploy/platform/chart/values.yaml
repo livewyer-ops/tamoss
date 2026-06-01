@@ -1,8 +1,20 @@
 certManager:
   enabled: false
 
+cert-manager:
+  namespace: cert-manager
+  fullnameOverride: cert-manager
+  crds:
+    enabled: true
+    keep: false
+
 cnpg:
   enabled: false
+  namespaceOverride: cnpg-system
+  nameOverride: cloudnative-pg
+  fullnameOverride: cnpg-controller-manager
+  crds:
+    create: true
 
 rustfsOperator:
   enabled: false
@@ -19,22 +31,72 @@ authentik:
     password: ""
     postgresPassword: ""
   ingress:
+    enabled: true
     host: auth.tamoss.localtest.me
     tlsSecretName: authentik-localtest-tls
 
+authentikChart:
+  namespaceOverride: auth
+  fullnameOverride: authentik
+  global:
+    namespaceOverride: auth
+    fullnameOverride: authentik
+  authentik:
+    enabled: true
+    existingSecret:
+      secretName: authentik
+    postgresql:
+      host: authentik-postgresql
+      name: authentik
+      user: authentik
+      port: 5432
+  postgresql:
+    enabled: true
+    namespaceOverride: auth
+    fullnameOverride: authentik-postgresql
+    auth:
+      username: authentik
+      database: authentik
+      existingSecret: authentik-postgresql
+      secretKeys:
+        adminPasswordKey: postgres-password
+        userPasswordKey: password
+  server:
+    ingress:
+      enabled: false
+  serviceAccount:
+    namespaceOverride: auth
+
 traefik:
   enabled: false
-  crds:
-    enabled: true
-  replicas: 2
+  namespaceOverride: traefik
+  fullnameOverride: traefik
+  deployment:
+    replicas: 2
   image:
     repository: traefik
     tag: v3.7.1
     pullPolicy: IfNotPresent
+  ingressClass:
+    enabled: true
+    name: traefik
+    isDefaultClass: false
+  providers:
+    kubernetesCRD:
+      enabled: true
+      allowEmptyServices: true
+      allowExternalNameServices: true
+    kubernetesIngress:
+      enabled: true
+      allowEmptyServices: true
+      allowExternalNameServices: true
   service:
-    type: LoadBalancer
-    nodePort: null
     annotations: {}
+    spec:
+      type: LoadBalancer
+
+traefikCrds:
+  enabled: true
 
 tls:
   mode: existing

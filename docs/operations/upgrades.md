@@ -46,6 +46,7 @@ If automation cannot call Task, keep the same source-controlled inputs and
 apply the rendered layers in the same order:
 
 ```bash
+helm dependency build ./deploy/platform/chart
 helm --kubeconfig "$KUBECONFIG" template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
   --values "deploy/environments/$TAMOSS_ENV/platform-values.yaml" \

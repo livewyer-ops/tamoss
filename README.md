@@ -83,6 +83,7 @@ before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
 The raw apply sequence is:
 
 ```bash
+helm dependency build ./deploy/platform/chart
 helm template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
   --values deploy/environments/<name>/platform-values.yaml \

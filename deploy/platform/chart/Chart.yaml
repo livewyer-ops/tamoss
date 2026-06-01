@@ -4,3 +4,22 @@ description: Reference platform prerequisites for TAMOSS environments.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+dependencies:
+  - name: cert-manager
+    version: v1.20.2
+    repository: https://charts.jetstack.io
+    condition: certManager.enabled
+  - name: cloudnative-pg
+    alias: cnpg
+    version: 0.28.2
+    repository: https://cloudnative-pg.github.io/charts
+    condition: cnpg.enabled
+  - name: traefik
+    version: 40.2.0
+    repository: https://traefik.github.io/charts
+    condition: traefik.enabled
+  - name: authentik
+    alias: authentikChart
+    version: 2026.2.3
+    repository: https://charts.goauthentik.io
+    condition: authentik.enabled

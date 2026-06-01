@@ -87,6 +87,7 @@ If automation cannot call Task, keep the same checked-in inputs and apply the
 same layers in order:
 
 ```bash
+helm dependency build ./deploy/platform/chart
 helm --kubeconfig "$KUBECONFIG" template tamoss-platform ./deploy/platform/chart \
   --namespace tamoss-platform \
   --values deploy/environments/<name>/platform-values.yaml \
@@ -106,12 +107,12 @@ instance is not ready, read status conditions before looking at individual pods.
 For Gateway API installs, also check `kubectl -n tams get httproute` and the
 `RoutingReady` and `HostnamesReady` conditions on the `Tamoss` resource.
 
-## Maintainer Platform Vendoring
+## Platform Inputs
 
 Runtime installs use the checked-in Helm platform chart plus checked-in
-Kustomize manifests for the operator and `Tamoss` resources. Maintainer-only
-vendor tasks refresh checked-in platform manifests from
-`deploy/platform/dependencies.yaml`. Normal installs do not apply remote URLs.
+Kustomize manifests for the operator and `Tamoss` resources. Helm chart
+dependencies are pinned by `deploy/platform/chart/Chart.lock` and are built
+before rendering by the Task workflows.
 
 See also:
 

@@ -30,6 +30,15 @@ def test_profile_registry_selects_kind_configurations() -> None:
         profiles["multi-server"]["kindEnvironmentDir"]
         == "deploy/environments/kind-multi-server"
     )
+    assert profiles["local-kind"]["instanceKustomizeDir"] == (
+        "deploy/instances/local-kind"
+    )
+    assert profiles["single-server"]["instanceKustomizeDir"] == (
+        "deploy/instances/single-server"
+    )
+    assert profiles["multi-server"]["instanceKustomizeDir"] == (
+        "deploy/instances/multi-server"
+    )
     assert profiles["local-kind"]["targetEnv"] == "tests/targets/local-kind.env"
     assert profiles["single-server"]["targetEnv"] == "tests/targets/single-server.env"
     assert profiles["multi-server"]["targetEnv"] == "tests/targets/multi-server.env"
@@ -38,6 +47,7 @@ def test_profile_registry_selects_kind_configurations() -> None:
         assert "remotePlatformKustomizeDir" not in profile
         assert (ROOT / profile["kindConfig"]).is_file()
         assert (ROOT / profile["kindEnvironmentDir"]).is_dir()
+        assert (ROOT / profile["instanceKustomizeDir"]).is_dir()
         assert (ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml").is_file()
         assert (ROOT / profile["targetEnv"]).is_file()
 

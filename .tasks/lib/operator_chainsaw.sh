@@ -20,9 +20,7 @@ task_operator_chainsaw_up() {
   local install_rustfs_operator="${CHAINSAW_INSTALL_RUSTFS_OPERATOR:-false}"
   local install_cnpg_operator="${CHAINSAW_INSTALL_CNPG_OPERATOR:-false}"
   local install_authentik_fixture="${CHAINSAW_INSTALL_AUTHENTIK_FIXTURE:-false}"
-  local rustfs_operator_kustomize_dir="${RUSTFS_OPERATOR_KUSTOMIZE_DIR:-deploy/platform/components/rustfs-operator}"
-  local cnpg_operator_kustomize_dir="${CNPG_OPERATOR_KUSTOMIZE_DIR:-deploy/platform/components/cnpg}"
-  local cert_manager_kustomize_dir="${CERT_MANAGER_KUSTOMIZE_DIR:-deploy/platform/components/cert-manager}"
+  local platform_chart_dir="${CHAINSAW_PLATFORM_CHART_DIR:-deploy/platform/chart}"
 
   mkdir -p "$(dirname "$kubeconfig")" reports
 
@@ -48,14 +46,11 @@ task_operator_chainsaw_up() {
   task_step "Operator Chainsaw: load API image" \
     kind load docker-image "$api_image" --name "$cluster"
 
-  task_operator_chainsaw_apply_optional_backends \
+  task_operator_chainsaw_apply_platform_prerequisites \
     "$kubeconfig" \
+    "$platform_chart_dir" \
     "$install_rustfs_operator" \
-    "$rustfs_operator_kustomize_dir" \
-    "$install_cnpg_operator" \
-    "$cnpg_operator_kustomize_dir"
-
-  task_operator_chainsaw_apply_cert_manager "$kubeconfig" "$cert_manager_kustomize_dir"
+    "$install_cnpg_operator"
   task_operator_chainsaw_apply_operator "$kubeconfig"
 
   if [ "$install_authentik_fixture" = "true" ]; then
@@ -83,41 +78,19 @@ task_operator_chainsaw_register_cleanup() {
   trap 'kind delete cluster --name "$TASK_OPERATOR_CHAINSAW_CLEANUP_CLUSTER" >/dev/null 2>&1 || true' EXIT
 }
 
-task_operator_chainsaw_apply_optional_backends() {
+task_operator_chainsaw_apply_platform_prerequisites() {
   local kubeconfig="$1"
-  local install_rustfs_operator="$2"
-  local rustfs_operator_kustomize_dir="$3"
+  local platform_chart_dir="$2"
+  local install_rustfs_operator="$3"
   local install_cnpg_operator="$4"
-  local cnpg_operator_kustomize_dir="$5"
 
-  if [ "$install_rustfs_operator" = "true" ]; then
-    kubectl --kubeconfig "$kubeconfig" apply --server-side -k "$rustfs_operator_kustomize_dir"
-    kubectl --kubeconfig "$kubeconfig" wait \
-      --for=condition=Established \
-      crd/tenants.rustfs.com \
-      --timeout=120s
-    kubectl --kubeconfig "$kubeconfig" -n rustfs-system rollout status \
-      deployment/rustfs-operator \
-      --timeout=180s
-  fi
+  task_step "Operator Chainsaw: build platform chart dependencies" \
+    helm dependency build "$platform_chart_dir"
 
-  if [ "$install_cnpg_operator" = "true" ]; then
-    kubectl --kubeconfig "$kubeconfig" apply --server-side -k "$cnpg_operator_kustomize_dir"
-    kubectl --kubeconfig "$kubeconfig" wait \
-      --for=condition=Established \
-      crd/clusters.postgresql.cnpg.io \
-      --timeout=120s
-    kubectl --kubeconfig "$kubeconfig" -n cnpg-system rollout status \
-      deployment/cnpg-controller-manager \
-      --timeout=180s
-  fi
-}
+  task_step "Operator Chainsaw: apply platform prerequisites" \
+    sh -c 'helm --kubeconfig "$1" template tamoss-platform "$2" --namespace tamoss-platform --set certManager.enabled=true --set cnpg.enabled="$3" --set rustfsOperator.enabled="$4" --set authentik.enabled=false --set traefik.enabled=false | kubectl --kubeconfig "$1" apply --server-side --force-conflicts -f -' \
+      sh "$kubeconfig" "$platform_chart_dir" "$install_cnpg_operator" "$install_rustfs_operator"
 
-task_operator_chainsaw_apply_cert_manager() {
-  local kubeconfig="$1"
-  local cert_manager_kustomize_dir="$2"
-
-  kubectl --kubeconfig "$kubeconfig" apply --server-side -k "$cert_manager_kustomize_dir"
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/certificates.cert-manager.io \
@@ -128,6 +101,26 @@ task_operator_chainsaw_apply_cert_manager() {
     deployment/cert-manager-cainjector \
     deployment/cert-manager-webhook \
     --timeout=180s
+
+  if [ "$install_cnpg_operator" = "true" ]; then
+    kubectl --kubeconfig "$kubeconfig" wait \
+      --for=condition=Established \
+      crd/clusters.postgresql.cnpg.io \
+      --timeout=120s
+    kubectl --kubeconfig "$kubeconfig" -n cnpg-system rollout status \
+      deployment/cnpg-controller-manager \
+      --timeout=180s
+  fi
+
+  if [ "$install_rustfs_operator" = "true" ]; then
+    kubectl --kubeconfig "$kubeconfig" wait \
+      --for=condition=Established \
+      crd/tenants.rustfs.com \
+      --timeout=120s
+    kubectl --kubeconfig "$kubeconfig" -n rustfs-system rollout status \
+      deployment/rustfs-operator \
+      --timeout=180s
+  fi
 }
 
 task_operator_chainsaw_apply_operator() {

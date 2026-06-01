@@ -15,7 +15,7 @@ profiles:
   - id: single-server
     kindConfig: deploy/kind.yaml
     kindEnvironmentDir: deploy/environments/kind-single-server
-    instanceKustomizeDir: deploy/instances/single-server-kind
+    instanceKustomizeDir: deploy/instances/single-server
     tamossName: tamoss-single-server
     targetEnv: tests/targets/single-server.env
     remoteEnvironment: true
@@ -23,7 +23,7 @@ profiles:
     # Multi-server Kind validation intentionally uses a multi-node cluster.
     kindConfig: deploy/kind-multi-server.yaml
     kindEnvironmentDir: deploy/environments/kind-multi-server
-    instanceKustomizeDir: deploy/instances/multi-server-kind
+    instanceKustomizeDir: deploy/instances/multi-server
     tamossName: tamoss-multi-server
     targetEnv: tests/targets/multi-server.env
     remoteEnvironment: true

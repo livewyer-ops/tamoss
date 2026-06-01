@@ -10,11 +10,37 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "cert-manager": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "namespace": { "type": "string", "minLength": 1 },
+        "fullnameOverride": { "type": "string", "minLength": 1 },
+        "crds": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "keep": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "cnpg": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean" }
+        "enabled": { "type": "boolean" },
+        "namespaceOverride": { "type": "string", "minLength": 1 },
+        "nameOverride": { "type": "string", "minLength": 1 },
+        "fullnameOverride": { "type": "string", "minLength": 1 },
+        "crds": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "create": { "type": "boolean" }
+          }
+        }
       }
     },
     "rustfsOperator": {
@@ -29,29 +55,54 @@
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
+        "secretKey": { "type": "string" },
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "username": { "type": "string", "minLength": 1 },
+            "email": { "type": "string", "minLength": 1 },
+            "password": { "type": "string" },
+            "token": { "type": "string" }
+          }
+        },
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "password": { "type": "string" },
+            "postgresPassword": { "type": "string" }
+          }
+        },
         "ingress": {
           "type": "object",
           "additionalProperties": true,
           "properties": {
+            "enabled": { "type": "boolean" },
             "host": { "type": "string", "minLength": 1 },
             "tlsSecretName": { "type": "string", "minLength": 1 }
           }
         }
       }
     },
+    "authentikChart": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "traefik": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
-        "crds": {
+        "namespaceOverride": { "type": "string", "minLength": 1 },
+        "fullnameOverride": { "type": "string", "minLength": 1 },
+        "deployment": {
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "enabled": { "type": "boolean" }
+            "replicas": { "type": "integer", "minimum": 0 }
           }
         },
-        "replicas": { "type": "integer", "minimum": 0 },
         "image": {
           "type": "object",
           "additionalProperties": true,
@@ -68,21 +119,29 @@
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "type": {
-              "type": "string",
-              "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
-            },
-            "nodePort": {
-              "type": ["integer", "null"],
-              "minimum": 30000,
-              "maximum": 32767
-            },
             "annotations": {
               "type": "object",
               "additionalProperties": { "type": "string" }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+                }
+              }
             }
           }
         }
+      }
+    },
+    "traefikCrds": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
       }
     },
     "tls": {

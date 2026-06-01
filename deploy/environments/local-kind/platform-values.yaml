@@ -12,10 +12,17 @@ authentik:
 
 traefik:
   enabled: true
-  replicas: 1
+  deployment:
+    replicas: 1
   service:
-    type: NodePort
-    nodePort: 30443
+    spec:
+      type: NodePort
+  ports:
+    web:
+      expose:
+        default: false
+    websecure:
+      nodePort: 30443
 
 tls:
   mode: selfSigned

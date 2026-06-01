@@ -142,6 +142,63 @@ task_env_values_enabled() {
   [ "$(yq -r "${query} // false" "$values_file")" = "true" ]
 }
 
+task_ensure_platform_chart_dependencies() {
+  local chart_dir="$1"
+
+  if [ "$(yq -r '(.dependencies // []) | length' "$chart_dir/Chart.yaml")" -gt 0 ]; then
+    task_step "Platform: build Helm chart dependencies" \
+      helm dependency build "$chart_dir"
+  fi
+}
+
+task_render_env_platform_chart() {
+  local kubeconfig="$1"
+  local release="$2"
+  local chart_dir="$3"
+  local namespace="$4"
+  local values_file="$5"
+  local rendered="$6"
+  local lookup_mode="${7:-client}"
+  local dry_run_arg=""
+
+  if [ "$lookup_mode" = "server" ]; then
+    dry_run_arg="--dry-run=server"
+  fi
+
+  task_step "Platform: render Helm chart" \
+    sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" $6 > "$7"' \
+      sh "$kubeconfig" "$release" "$chart_dir" "$namespace" "$values_file" "$dry_run_arg" "$rendered"
+}
+
+task_apply_platform_bootstrap_resources() {
+  local kubeconfig="$1"
+  local rendered="$2"
+  local bootstrap
+  local crd_names
+  local resource_names
+
+  bootstrap="$(mktemp)"
+  yq 'select(.kind == "CustomResourceDefinition" or .kind == "Namespace")' "$rendered" > "$bootstrap"
+  resource_names="$(yq -r 'select(.kind == "CustomResourceDefinition" or .kind == "Namespace") | .kind + "/" + .metadata.name' "$bootstrap" | sed '/^---$/d; /^$/d')"
+  if [ -z "$resource_names" ]; then
+    rm -f "$bootstrap"
+    return 0
+  fi
+
+  task_step "Platform: apply bootstrap resources" \
+    kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -f "$bootstrap"
+
+  crd_names="$(yq -r 'select(.kind == "CustomResourceDefinition") | .metadata.name' "$bootstrap" | sed '/^---$/d; /^$/d')"
+  if [ -n "$crd_names" ]; then
+    task_step "Platform: wait for CRDs" \
+      sh -c 'while IFS= read -r crd; do kubectl --kubeconfig "$1" wait --for=condition=Established "crd/${crd}" --timeout=120s; done' \
+        sh "$kubeconfig" <<EOF
+$crd_names
+EOF
+  fi
+  rm -f "$bootstrap"
+}
+
 task_apply_env_platform() {
   local kubeconfig="$1"
   local environment_dir="$2"
@@ -150,15 +207,36 @@ task_apply_env_platform() {
   local namespace="$5"
   local timeout="$6"
   local values_file="$environment_dir/platform-values.yaml"
+  local rendered
 
   if [ ! -f "$values_file" ]; then
     echo "Environment platform values $values_file were not found." >&2
     return 1
   fi
 
+  task_ensure_platform_chart_dependencies "$chart_dir"
+
+  rendered="$(mktemp)"
+  task_render_env_platform_chart \
+    "$kubeconfig" \
+    "$release" \
+    "$chart_dir" \
+    "$namespace" \
+    "$values_file" \
+    "$rendered"
+  task_apply_platform_bootstrap_resources "$kubeconfig" "$rendered"
+  task_render_env_platform_chart \
+    "$kubeconfig" \
+    "$release" \
+    "$chart_dir" \
+    "$namespace" \
+    "$values_file" \
+    "$rendered" \
+    server
+
   task_step "Platform: apply Helm-rendered platform" \
-    sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" apply --server-side --force-conflicts -f -' \
-      sh "$kubeconfig" "$release" "$chart_dir" "$namespace" "$values_file"
+    kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -f "$rendered"
+  rm -f "$rendered"
 
   task_wait_env_platform "$kubeconfig" "$values_file" "$timeout"
 }
@@ -175,6 +253,8 @@ task_delete_env_platform() {
     echo "Environment platform values $values_file were not found." >&2
     return 1
   fi
+
+  task_ensure_platform_chart_dependencies "$chart_dir"
 
   task_step "Platform: delete Helm-rendered platform" \
     sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" delete --ignore-not-found -f -' \
@@ -368,6 +448,8 @@ task_diff_env() {
     echo "Environment platform values $values_file were not found." >&2
     return 1
   fi
+
+  task_ensure_platform_chart_dependencies "$chart_dir"
 
   task_step "Platform: diff Helm-rendered platform" \
     sh -c 'helm --kubeconfig "$1" template "$2" "$3" --namespace "$4" --values "$5" | kubectl --kubeconfig "$1" diff -f - || true' \

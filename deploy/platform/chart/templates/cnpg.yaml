@@ -1,3 +1,0 @@
-{{- if .Values.cnpg.enabled }}
-{{ .Files.Get "files/cnpg/cnpg.yaml" }}
-{{- end }}

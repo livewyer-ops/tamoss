@@ -9,129 +9,26 @@ fi
 # shellcheck source=.tasks/lib/progress.sh
 . "$task_lib_dir/progress.sh"
 
-task_vendor_cert_manager_manifest() {
-  local dependencies_file="$1"
-  local version
+task_chart_dependency_version() {
+  local chart_file="$1"
+  local dependency="$2"
 
-  version="$(yq -r ".spec.certManager.version" "$dependencies_file")"
-  curl -fsSL "https://github.com/cert-manager/cert-manager/releases/download/${version}/cert-manager.yaml" \
-    > deploy/platform/components/cert-manager/cert-manager.yaml
-}
-
-task_vendor_cnpg_manifest() {
-  local dependencies_file="$1"
-  local version
-  local version_no_v
-
-  version="$(yq -r ".spec.cnpg.version" "$dependencies_file")"
-  version_no_v="${version#v}"
-  curl -fsSL "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/${version}/cnpg-${version_no_v}.yaml" \
-    > deploy/platform/components/cnpg/cnpg.yaml
-}
-
-task_vendor_authentik_manifest() {
-  local dependencies_file="$1"
-  local release="$2"
-  local chart_repo="$3"
-  local namespace="$4"
-  local values_file="$5"
-  local version
-
-  version="$(yq -r ".spec.authentik.version" "$dependencies_file")"
-  helm template "$release" authentik \
-    --repo "$chart_repo" \
-    --version "$version" \
-    --namespace "$namespace" \
-    --values "$values_file" \
-    > deploy/platform/components/authentik/kind/authentik.yaml
-}
-
-task_vendor_traefik_crds() {
-  local dependencies_file="$1"
-  local chart_version
-  local traefik_version
-
-  chart_version="$(yq -r ".spec.traefik.chartVersion" "$dependencies_file")"
-  traefik_version="$(yq -r ".spec.traefik.version" "$dependencies_file")"
-  {
-    printf "# Generated from traefik/traefik Helm chart %s for Traefik %s\n" "$chart_version" "$traefik_version"
-    helm show crds traefik/traefik --version "$chart_version" | awk '
-      BEGIN { RS="---\n"; ORS="" }
-      $0 ~ /name: (ingressroutes|ingressroutetcps|ingressrouteudps|middlewares|middlewaretcps|serverstransports|serverstransporttcps|tlsoptions|tlsstores|traefikservices)\.traefik\.io/ {
-        sub(/^---\n/, "", $0)
-        print "---\n" $0
-      }
-    '
-  } > deploy/platform/components/traefik/crds/traefik-crds.yaml
-}
-
-task_vendor_rustfs_operator_manifest() {
-  local dependencies_file="$1"
-  local rustfs_operator_dir="$2"
-  local release="$3"
-  local namespace="$4"
-  local ref
-  local image_tag
-  local repo
-
-  ref="$(yq -r ".spec.rustfsOperator.ref" "$dependencies_file")"
-  image_tag="$(yq -r ".spec.rustfsOperator.imageTag" "$dependencies_file")"
-  repo="$(yq -r ".spec.rustfsOperator.repository" "$dependencies_file")"
-  if [ ! -d "$rustfs_operator_dir/.git" ]; then
-    rm -rf "$rustfs_operator_dir"
-    git clone --depth=1 "$repo" "$rustfs_operator_dir"
-  fi
-  git -C "$rustfs_operator_dir" fetch --depth=1 origin "$ref"
-  git -C "$rustfs_operator_dir" checkout --detach FETCH_HEAD
-  cp "$rustfs_operator_dir/deploy/rustfs-operator/crds/tenant.yaml" \
-    deploy/platform/components/rustfs-operator/tenant-crd.yaml
-  helm template "$release" "$rustfs_operator_dir/deploy/rustfs-operator" \
-    --namespace "$namespace" \
-    --set console.enabled=false \
-    --set operator.image.tag="$image_tag" \
-    > deploy/platform/components/rustfs-operator/rustfs-operator.yaml
-}
-
-task_vendor_platform_manifests() {
-  local dependencies_file="$1"
-  local authentik_release="$2"
-  local authentik_chart_repo="$3"
-  local authentik_namespace="$4"
-  local authentik_values_file="$5"
-  local rustfs_operator_dir="$6"
-  local rustfs_operator_release="$7"
-  local rustfs_operator_namespace="$8"
-
-  task_step "vendor cert-manager manifest" \
-    task_vendor_cert_manager_manifest "$dependencies_file"
-  task_step "vendor CNPG manifest" \
-    task_vendor_cnpg_manifest "$dependencies_file"
-  task_step "vendor Authentik manifest" \
-    task_vendor_authentik_manifest \
-      "$dependencies_file" \
-      "$authentik_release" \
-      "$authentik_chart_repo" \
-      "$authentik_namespace" \
-      "$authentik_values_file"
-  task_step "vendor Traefik CRDs" \
-    task_vendor_traefik_crds "$dependencies_file"
-  task_step "vendor RustFS Operator manifest" \
-    task_vendor_rustfs_operator_manifest \
-      "$dependencies_file" \
-      "$rustfs_operator_dir" \
-      "$rustfs_operator_release" \
-      "$rustfs_operator_namespace"
+  yq -r ".dependencies[] | select((.alias // .name) == \"${dependency}\") | .version" "$chart_file"
 }
 
 task_check_platform_dependency_pins() {
   local dependencies_file="$1"
+  local chart_file="deploy/platform/chart/Chart.yaml"
+  local values_file="deploy/platform/chart/values.yaml"
   local cert_manager_version
+  local cert_manager_chart_version
   local traefik_version
   local traefik_chart_version
   local authentik_version
+  local authentik_chart_version
   local authentik_target_version
   local cnpg_version
-  local cnpg_image_tag
+  local cnpg_chart_version
   local rustfs_operator_tag
   local rustfs_version
   local expected_rustfs_image
@@ -139,35 +36,38 @@ task_check_platform_dependency_pins() {
   local compose_rustfs_image
 
   cert_manager_version="$(yq -r ".spec.certManager.version" "$dependencies_file")"
+  cert_manager_chart_version="$(yq -r ".spec.certManager.chartVersion" "$dependencies_file")"
   traefik_version="$(yq -r ".spec.traefik.version" "$dependencies_file")"
   traefik_chart_version="$(yq -r ".spec.traefik.chartVersion" "$dependencies_file")"
   authentik_version="$(yq -r ".spec.authentik.version" "$dependencies_file")"
+  authentik_chart_version="$(yq -r ".spec.authentik.chartVersion" "$dependencies_file")"
   authentik_target_version="$(printf '%s\n' "$authentik_version" | sed -E 's/^([0-9]+[.][0-9]+).*/\1/')"
   cnpg_version="$(yq -r ".spec.cnpg.version" "$dependencies_file")"
-  cnpg_image_tag="${cnpg_version#v}"
+  cnpg_chart_version="$(yq -r ".spec.cnpg.chartVersion" "$dependencies_file")"
   rustfs_operator_tag="$(yq -r ".spec.rustfsOperator.imageTag" "$dependencies_file")"
   rustfs_version="$(yq -r ".spec.rustfs.version" "$dependencies_file")"
   expected_rustfs_image="rustfs/rustfs:${rustfs_version}"
   compose_postgres_image="$(yq -r ".spec.compose.postgresImage" "$dependencies_file")"
   compose_rustfs_image="$(yq -r ".spec.compose.rustfsImage" "$dependencies_file")"
 
-  test -f "$(yq -r ".spec.certManager.manifest" "$dependencies_file")"
-  test -f "$(yq -r ".spec.cnpg.manifest" "$dependencies_file")"
-  test -f "$(yq -r ".spec.authentik.manifest" "$dependencies_file")"
+  test -f deploy/platform/chart/Chart.lock
+  test -f "$(yq -r ".spec.traefik.crdManifest" "$dependencies_file")"
   test -f "$(yq -r ".spec.rustfsOperator.manifest" "$dependencies_file")"
   test -f "$(yq -r ".spec.rustfsOperator.crdManifest" "$dependencies_file")"
-  rg -q "cert-manager-cainjector:${cert_manager_version}" deploy/platform/components/cert-manager/cert-manager.yaml
-  rg -q "cert-manager-controller:${cert_manager_version}" deploy/platform/components/cert-manager/cert-manager.yaml
-  rg -q "cert-manager-webhook:${cert_manager_version}" deploy/platform/components/cert-manager/cert-manager.yaml
-  rg -q "image: traefik:${traefik_version}" deploy/platform/components/traefik
+
+  test "$(task_chart_dependency_version "$chart_file" cert-manager)" = "$cert_manager_chart_version"
+  test "$cert_manager_version" = "$cert_manager_chart_version"
+  test "$(task_chart_dependency_version "$chart_file" traefik)" = "$traefik_chart_version"
+  test "$(task_chart_dependency_version "$chart_file" authentikChart)" = "$authentik_chart_version"
+  test "$authentik_version" = "$authentik_chart_version"
+  test "$(task_chart_dependency_version "$chart_file" cnpg)" = "$cnpg_chart_version"
+
+  test "$(yq -r ".traefik.image.tag" "$values_file")" = "$traefik_version"
   rg -q "Generated from traefik/traefik Helm chart ${traefik_chart_version} for Traefik ${traefik_version}" \
-    deploy/platform/components/traefik/crds/traefik-crds.yaml
-  rg -q "app.kubernetes.io/version: \"?${authentik_version}\"?" deploy/platform/components/authentik/kind/authentik.yaml
+    deploy/platform/chart/files/traefik/traefik-crds.yaml
   rg -q "TargetAuthentikVersion[[:space:]]*=[[:space:]]*\"${authentik_target_version}\"" \
     operator/internal/controller/auth/authentik/blueprint.go
-  rg -q "image: ghcr.io/cloudnative-pg/cloudnative-pg:${cnpg_image_tag}" deploy/platform/components/cnpg/cnpg.yaml
-  rg -q "image: .*rustfs/operator:${rustfs_operator_tag}" deploy/platform/components/rustfs-operator/rustfs-operator.yaml
-  test -f deploy/platform/components/rustfs-operator/tenant-crd.yaml
+  rg -q "image: .*rustfs/operator:${rustfs_operator_tag}" deploy/platform/chart/files/rustfs-operator/rustfs-operator.yaml
   rg -q "DefaultRustFSImage[[:space:]]*=[[:space:]]*\"${expected_rustfs_image}\"" \
     operator/internal/controller/defaults/images.go
   rg -Fq "image: ${compose_postgres_image}" deploy/compose/docker-compose.yaml

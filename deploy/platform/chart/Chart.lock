@@ -1,0 +1,15 @@
+dependencies:
+- name: cert-manager
+  repository: https://charts.jetstack.io
+  version: v1.20.2
+- name: cloudnative-pg
+  repository: https://cloudnative-pg.github.io/charts
+  version: 0.28.2
+- name: traefik
+  repository: https://traefik.github.io/charts
+  version: 40.2.0
+- name: authentik
+  repository: https://charts.goauthentik.io
+  version: 2026.2.3
+digest: sha256:894d65aad10175c4d19751a925ca46252316168986f90b5be23918a0a93a66cc
+generated: "2026-06-01T12:18:00.943067486+01:00"

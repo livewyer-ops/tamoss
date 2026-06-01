@@ -1,0 +1,8 @@
+{{- if .Values.authentik.enabled }}
+{{- $authentikChart := .Values.authentikChart | default dict -}}
+{{- $global := get $authentikChart "global" | default dict -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ default (default "auth" (get $global "namespaceOverride")) (get $authentikChart "namespaceOverride") | quote }}
+{{- end }}

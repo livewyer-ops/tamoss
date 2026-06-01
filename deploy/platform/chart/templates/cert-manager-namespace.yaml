@@ -1,0 +1,7 @@
+{{- if .Values.certManager.enabled }}
+{{- $certManagerChart := index .Values "cert-manager" | default dict -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ default "cert-manager" (get $certManagerChart "namespace") | quote }}
+{{- end }}

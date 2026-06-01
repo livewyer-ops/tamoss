@@ -1,0 +1,6 @@
+{{- if .Values.traefik.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ default "traefik" .Values.traefik.namespaceOverride | quote }}
+{{- end }}

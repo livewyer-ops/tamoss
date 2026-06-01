@@ -98,7 +98,6 @@ use stable `reports/junit-*.xml` names.
 | `task operator:e2e:chainsaw:focus SELECTOR='test.tamoss.io/domain=storage' KUBECONFIG=/path/to/kubeconfig` | Run a labelled Chainsaw slice. |
 | `task operator:e2e:chainsaw KUBECONFIG=/path/to/kubeconfig` | Run Chainsaw operator tests against an existing cluster. |
 | `task operator:e2e:chainsaw:up` | Run Chainsaw tests on a disposable Kind cluster. |
-| `task operator:platform:vendor` | Maintainer-only refresh of checked-in platform manifests from pinned dependency versions. |
 
 ### Helper Commands
 
