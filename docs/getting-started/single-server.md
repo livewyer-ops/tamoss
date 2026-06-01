@@ -33,6 +33,7 @@ $EDITOR deploy/environments/my-single-server/platform-values.yaml
 $EDITOR deploy/environments/my-single-server/tamoss-patch.yaml
 task env:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
+task env:summary ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 ```
 
 ## Configure

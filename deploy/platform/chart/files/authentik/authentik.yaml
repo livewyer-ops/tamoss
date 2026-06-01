@@ -90,8 +90,8 @@ metadata:
     helm.sh/chart: postgresql-16.7.27
 type: Opaque
 data:
-  postgres-password: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLXBvc3RncmVzLWFkbWlu"
-  password: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLXBvc3RncmVz"
+  postgres-password: "__AUTHENTIK_POSTGRES_ADMIN_PASSWORD_B64__"
+  password: "__AUTHENTIK_POSTGRES_PASSWORD_B64__"
   # We don't auto-generate LDAP password when it's not provided as we do for other passwords
 ---
 # Source: authentik/templates/secret.yaml
@@ -108,9 +108,10 @@ metadata:
     app.kubernetes.io/part-of: "authentik"
     app.kubernetes.io/version: "2026.2.3"
 data:  
-  AUTHENTIK_BOOTSTRAP_EMAIL: "YWRtaW5AdGFtb3NzLmxvY2FsdGVzdC5tZQ=="
-  AUTHENTIK_BOOTSTRAP_PASSWORD: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLWFkbWlu"
-  AUTHENTIK_BOOTSTRAP_TOKEN: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLWFwaS10b2tlbg=="
+  AUTHENTIK_BOOTSTRAP_EMAIL: "__AUTHENTIK_BOOTSTRAP_EMAIL_B64__"
+  AUTHENTIK_BOOTSTRAP_USERNAME: "__AUTHENTIK_BOOTSTRAP_USERNAME_B64__"
+  AUTHENTIK_BOOTSTRAP_PASSWORD: "__AUTHENTIK_BOOTSTRAP_PASSWORD_B64__"
+  AUTHENTIK_BOOTSTRAP_TOKEN: "__AUTHENTIK_BOOTSTRAP_TOKEN_B64__"
   AUTHENTIK_EMAIL__PORT: "NTg3"
   AUTHENTIK_EMAIL__TIMEOUT: "MzA="
   AUTHENTIK_EMAIL__USE_SSL: "ZmFsc2U="
@@ -125,10 +126,10 @@ data:
   AUTHENTIK_OUTPOSTS__CONTAINER_IMAGE_BASE: "Z2hjci5pby9nb2F1dGhlbnRpay8lKHR5cGUpczolKHZlcnNpb24pcw=="
   AUTHENTIK_POSTGRESQL__HOST: "YXV0aGVudGlrLXBvc3RncmVzcWw="
   AUTHENTIK_POSTGRESQL__NAME: "YXV0aGVudGlr"
-  AUTHENTIK_POSTGRESQL__PASSWORD: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLXBvc3RncmVz"
+  AUTHENTIK_POSTGRESQL__PASSWORD: "__AUTHENTIK_POSTGRES_PASSWORD_B64__"
   AUTHENTIK_POSTGRESQL__PORT: "NTQzMg=="
   AUTHENTIK_POSTGRESQL__USER: "YXV0aGVudGlr"
-  AUTHENTIK_SECRET_KEY: "dGFtb3NzLWtpbmQtYXV0aGVudGlrLXNlY3JldC1rZXktY2hhbmdlLW1l"
+  AUTHENTIK_SECRET_KEY: "__AUTHENTIK_SECRET_KEY_B64__"
   AUTHENTIK_WEB__PATH: "Lw=="
 ---
 # Source: authentik/charts/postgresql/templates/primary/configmap.yaml

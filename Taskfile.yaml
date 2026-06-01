@@ -128,9 +128,10 @@ tasks:
           DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
       - |
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then
-          task kind:summary \
+          task env:summary \
             KUBECONFIG="{{.KUBECONFIG}}" \
-            PROFILE_TARGET_ENV="{{.PROFILE_TARGET_ENV}}"
+            ENV_DIR="{{.PROFILE_KIND_ENVIRONMENT_DIR}}" \
+            TARGET_ENV="{{.PROFILE_TARGET_ENV}}"
         fi
 
   kind:demo:ingest:
@@ -142,63 +143,6 @@ tasks:
         . .tasks/lib/progress.sh
         task_step "Demo media: ingest playable media" \
           .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
-
-  kind:summary:
-    desc: "Local Kind: print access URLs, app credentials, API docs URL, and API token"
-    silent: true
-    cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/env.sh
-        task_print_kind_summary "{{.PROFILE_TARGET_ENV}}" "{{.KUBECONFIG}}"
-
-  k8s:init:
-    desc: "Deprecated: use task env:init"
-    silent: true
-    requires:
-      vars: [NAME, PROFILE, DOMAIN]
-    cmds:
-      - task: env:init
-        vars:
-          NAME: "{{.NAME}}"
-          PROFILE: "{{.PROFILE}}"
-          DOMAIN: "{{.DOMAIN}}"
-
-  k8s:apply:
-    desc: "Deprecated: use task env:apply"
-    silent: true
-    requires:
-      vars: [ENV, KUBECONFIG]
-    cmds:
-      - task: env:apply
-        vars:
-          ENV: "{{.ENV}}"
-          KUBECONFIG: "{{.KUBECONFIG}}"
-
-  k8s:wait:
-    desc: "Deprecated: use task env:wait"
-    silent: true
-    requires:
-      vars: [ENV, KUBECONFIG]
-    vars:
-      TIMEOUT: '{{default "15m" .TIMEOUT}}'
-    cmds:
-      - task: env:wait
-        vars:
-          ENV: "{{.ENV}}"
-          KUBECONFIG: "{{.KUBECONFIG}}"
-          TIMEOUT: "{{.TIMEOUT}}"
-
-  k8s:status:
-    desc: "Deprecated: use task env:status"
-    silent: true
-    requires:
-      vars: [ENV, KUBECONFIG]
-    cmds:
-      - task: env:status
-        vars:
-          ENV: "{{.ENV}}"
-          KUBECONFIG: "{{.KUBECONFIG}}"
 
   kind:down:
     desc: "Local Kind: delete the disposable Kind cluster and local runtime state"

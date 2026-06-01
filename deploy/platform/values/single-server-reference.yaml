@@ -8,7 +8,7 @@ rustfsOperator:
   enabled: true
 
 authentik:
-  enabled: false
+  enabled: true
   ingress:
     host: auth.tamoss.example.com
     tlsSecretName: authentik-public-tls

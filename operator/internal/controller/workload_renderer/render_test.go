@@ -621,7 +621,21 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 				if got := ingress.Spec.Rules[0].Host; got != "s3.example.com" {
 					t.Fatalf("expected S3 ingress host s3.example.com, got %q", got)
 				}
-				backend := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service
+				paths := ingress.Spec.Rules[0].HTTP.Paths
+				if len(paths) != 2 {
+					t.Fatalf("expected S3 ingress to expose console and API paths, got %#v", paths)
+				}
+				consoleBackend := paths[0].Backend.Service
+				if paths[0].Path != rustFSConsolePath ||
+					consoleBackend == nil ||
+					consoleBackend.Name != tt.wantService+"-console" ||
+					consoleBackend.Port.Name != rustFSConsoleServicePort {
+					t.Fatalf("expected RustFS console path to route to %s-console:%s, got %#v", tt.wantService, rustFSConsoleServicePort, paths[0])
+				}
+				backend := paths[1].Backend.Service
+				if paths[1].Path != "/" {
+					t.Fatalf("expected S3 API path /, got %q", paths[1].Path)
+				}
 				if backend == nil || backend.Name != tt.wantService || backend.Port.Name != "s3" {
 					t.Fatalf("expected S3 ingress backend %s:s3, got %#v", tt.wantService, backend)
 				}

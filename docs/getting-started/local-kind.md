@@ -36,12 +36,13 @@ task kind:up PROFILE=local-kind
    backend.
 
 The summary prints first-start lifecycle status, the app URL, app
-username/password, API docs URL, and API token.
+username/password, API docs URL, API token, OAuth client details, and storage
+credentials.
 
 To print the same access details and current Kubernetes status again:
 
 ```bash
-task kind:summary PROFILE=local-kind KUBECONFIG=tams.kubeconfig
+task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig
 ```
 
 ## Access

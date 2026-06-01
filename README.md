@@ -50,8 +50,8 @@ export PATH="$(aqua root-dir)/bin:$PATH"
 task kind:up PROFILE=local-kind
 ```
 
-The summary prints the app URL, app username/password, API docs URL, and API
-token. Then inspect the instance:
+The summary prints the app URL, app username/password, API docs URL, API token,
+OAuth client details, and storage credentials. Then inspect the instance:
 
 ```bash
 kubectl --kubeconfig tams.kubeconfig -n tams get tamoss,pods,svc,ingress

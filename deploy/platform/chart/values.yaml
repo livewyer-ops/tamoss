@@ -9,6 +9,15 @@ rustfsOperator:
 
 authentik:
   enabled: false
+  secretKey: ""
+  bootstrap:
+    username: akadmin
+    email: admin@tamoss.localtest.me
+    password: ""
+    token: ""
+  postgresql:
+    password: ""
+    postgresPassword: ""
   ingress:
     host: auth.tamoss.localtest.me
     tlsSecretName: authentik-localtest-tls

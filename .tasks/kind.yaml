@@ -167,6 +167,8 @@ tasks:
       - |
         set -euo pipefail
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then
-          . .tasks/lib/env.sh
-          task_print_kind_summary "{{.PROFILE_TARGET_ENV}}" "{{.KUBECONFIG}}"
+          task :env:summary \
+            KUBECONFIG="{{.KUBECONFIG}}" \
+            ENV_DIR="{{.PROFILE_KIND_ENVIRONMENT_DIR}}" \
+            TARGET_ENV="{{.PROFILE_TARGET_ENV}}"
         fi

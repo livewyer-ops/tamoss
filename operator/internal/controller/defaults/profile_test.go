@@ -258,6 +258,46 @@ func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
 	}
 }
 
+func TestSupportedProfilesDefaultToManagedAuthentik(t *testing.T) {
+	profiles := []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileLocalKind,
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+	}
+
+	for _, profile := range profiles {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{
+				ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+				Spec: tamossv1alpha1.TamossSpec{
+					Profile: profile,
+					PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+						BaseDomain: "tamoss.example.com",
+					},
+				},
+			}
+
+			Apply(tamoss)
+
+			if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+				t.Fatalf("expected Authentik Blueprint auth for %s, got %s", profile, got)
+			}
+			if !tamoss.Spec.Auth.RequiredForRuntime() {
+				t.Fatalf("expected auth to be required for %s", profile)
+			}
+			authentik := tamoss.Spec.Auth.AuthentikBlueprints
+			if authentik == nil ||
+				authentik.PlatformNamespace != "auth" ||
+				authentik.IssuerURL != "https://auth.tamoss.example.com" ||
+				authentik.InternalURL != "http://authentik-server.auth.svc.cluster.local" ||
+				authentik.APITokenSecretRef.Name != "authentik" ||
+				authentik.APITokenSecretRef.Key != "AUTHENTIK_BOOTSTRAP_TOKEN" {
+				t.Fatalf("unexpected Authentik defaults for %s: %#v", profile, authentik)
+			}
+		})
+	}
+}
+
 func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},

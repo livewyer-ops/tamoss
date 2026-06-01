@@ -14,7 +14,7 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment. `PROFILE=multi-server` uses a multi-node Kind cluster. |
-| `task kind:summary PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Print first-start lifecycle status, Local Kind access URLs, app credentials, API docs URL, and API token. |
+| `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
 | `task kind:e2e PROFILE=local-kind` | Recreate Kind, deploy the selected profile with the previous operator, run deployed checks, and finish with an in-place upgrade to the current operator. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
 | `task logs` | Show recent concise task logs from `.local/logs/task`. |
@@ -28,6 +28,7 @@ names or descriptions change.
 | `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helm platform render, TAMOSS operator, and selected environment overlay. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
 | `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
+| `task env:summary ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for the selected environment. |
 
 ### Additional Validation Commands
 

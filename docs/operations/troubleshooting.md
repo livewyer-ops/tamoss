@@ -76,7 +76,7 @@ Treat first start as one product lifecycle rather than disconnected pods:
 | Workloads | `Tamoss.status.replicas.{api,ui,worker}` | available replicas match desired replicas for enabled components. |
 | Routes | `Tamoss.status.conditions[RoutingReady]` | `True`, or external routing ownership when routes are not managed. |
 
-`task kind:summary` and the support bundle read these phases from Kubernetes
+`task env:summary` and the support bundle read these phases from Kubernetes
 status. When first start stops, inspect the first phase that is not ready,
 skipped, or externally managed before restarting pods or changing the CR.
 

@@ -44,6 +44,7 @@ $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
 task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:summary ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
 The platform layer installs the components enabled in

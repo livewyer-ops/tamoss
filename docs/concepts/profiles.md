@@ -16,6 +16,13 @@ those defaults.
 Profiles do not define tenant identity. In shared clusters, tenant boundaries
 come from Kubernetes namespaces and the `Tamoss` resources applied in them.
 
+All profiles default application authentication to managed Authentik. Omitting
+`spec.auth` selects `auth.providedBy: authentik-blueprints`, derives
+`https://auth.<baseDomain>` from `spec.publicEndpoint.baseDomain`, and expects
+the platform Authentik install in the `auth` namespace. Use an explicit
+`spec.auth.providedBy: external` or `spec.auth.providedBy: none` only when an
+environment intentionally opts out of the profile default.
+
 `deploy/profiles.yaml` is the profile registry used by Taskfile helpers. Each
 supported profile records its Kind environment composition, target environment
 file, and the Kind cluster config used for local validation.

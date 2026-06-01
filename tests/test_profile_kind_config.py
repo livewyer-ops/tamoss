@@ -165,21 +165,40 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
     assert _resource(rendered, "Namespace", "auth")["metadata"]["name"] == "auth"
 
 
-def test_reference_platform_values_do_not_render_localtest_authentik() -> None:
+def test_profile_platform_values_enable_authentik_by_default() -> None:
+    registry = _load_yaml(ROOT / "deploy/profiles.yaml")
+    for profile in registry["profiles"]:
+        values = _load_yaml(ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml")
+        assert values["authentik"]["enabled"] is True
+
+    for values_file in [
+        ROOT / "deploy/platform/values/local-kind.yaml",
+        ROOT / "deploy/platform/values/single-server-reference.yaml",
+        ROOT / "deploy/platform/values/multi-server-reference.yaml",
+    ]:
+        values = _load_yaml(values_file)
+        assert values["authentik"]["enabled"] is True
+
+
+def test_reference_platform_values_render_profile_authentik_host() -> None:
     if shutil.which("helm") is None:
         pytest.skip("helm is required for platform chart checks")
 
-    rendered = _render_platform(
-        ROOT / "deploy/platform/values/multi-server-reference.yaml"
-    )
-    auth_ingresses = [
-        item
-        for item in rendered
-        if item.get("kind") == "Ingress"
-        and item.get("metadata", {}).get("namespace") == "auth"
-    ]
+    for values_file in [
+        ROOT / "deploy/platform/values/single-server-reference.yaml",
+        ROOT / "deploy/platform/values/multi-server-reference.yaml",
+    ]:
+        rendered = _render_platform(values_file)
+        auth_ingresses = [
+            item
+            for item in rendered
+            if item.get("kind") == "Ingress"
+            and item.get("metadata", {}).get("namespace") == "auth"
+        ]
 
-    assert auth_ingresses == []
+        assert len(auth_ingresses) == 1
+        assert auth_ingresses[0]["spec"]["rules"][0]["host"] == "auth.tamoss.example.com"
+        assert "localtest" not in yaml.safe_dump(auth_ingresses[0])
 
 
 def test_multi_server_topology_guard_requires_two_ready_nodes(tmp_path: Path) -> None:
