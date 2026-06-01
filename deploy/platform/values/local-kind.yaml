@@ -1,0 +1,29 @@
+certManager:
+  enabled: true
+
+cnpg:
+  enabled: true
+
+rustfsOperator:
+  enabled: true
+
+authentik:
+  enabled: true
+
+traefik:
+  enabled: true
+  deployment:
+    replicas: 1
+  service:
+    spec:
+      type: NodePort
+  ports:
+    web:
+      expose:
+        default: false
+    websecure:
+      nodePort: 30443
+
+tls:
+  mode: selfSigned
+  issuerName: tamoss-selfsigned

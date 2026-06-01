@@ -29,33 +29,21 @@ jobs:
       - name: Git Checkout
         uses: actions/checkout@v6
         with:
+          fetch-depth: 2
           submodules: true
-
-      - name: Resolve tool versions
-        id: aqua-versions
-        run: |
-          echo "kind=$(python3 .github/scripts/aqua-version.py kubernetes-sigs/kind)" >> "$GITHUB_OUTPUT"
-          echo "kubectl=$(python3 .github/scripts/aqua-version.py kubernetes/kubectl)" >> "$GITHUB_OUTPUT"
-          echo "yq=$(python3 .github/scripts/aqua-version.py mikefarah/yq)" >> "$GITHUB_OUTPUT"
 
       - name: Install Task
         uses: ./.github/actions/setup-task
 
-      - name: Install Kind, kubectl, and yq
-        env:
-          KIND_VERSION: ${{ steps.aqua-versions.outputs.kind }}
-          KUBECTL_VERSION: ${{ steps.aqua-versions.outputs.kubectl }}
-          YQ_VERSION: ${{ steps.aqua-versions.outputs.yq }}
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-kind
+
+      - name: Show Kubernetes tool versions
         run: |
-          curl -fsSL -o kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64"
-          sudo install kind /usr/local/bin/kind
-          curl -fsSL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          sudo install kubectl /usr/local/bin/kubectl
-          curl -fsSL -o yq "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
-          sudo install yq /usr/local/bin/yq
           kind version
           kubectl version --client=true
-          yq --version
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7

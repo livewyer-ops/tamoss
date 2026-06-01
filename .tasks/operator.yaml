@@ -6,17 +6,7 @@ vars:
   PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
-  PLATFORM_KUSTOMIZE_DIR:
-    sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.PLATFORM_KUSTOMIZE_DIR}}" | grep -q . && printf "%s\n" "{{.PLATFORM_KUSTOMIZE_DIR}}" || task_profile_field "{{.PROFILE}}" platformKustomizeDir'
   PLATFORM_DEPENDENCIES_FILE: '{{default "deploy/platform/dependencies.yaml" .PLATFORM_DEPENDENCIES_FILE}}'
-  CERT_MANAGER_KUSTOMIZE_DIR: '{{default "deploy/platform/components/cert-manager" .CERT_MANAGER_KUSTOMIZE_DIR}}'
-  AUTHENTIK_CHART_REPO: '{{default "https://charts.goauthentik.io" .AUTHENTIK_CHART_REPO}}'
-  AUTHENTIK_NAMESPACE: '{{default "auth" .AUTHENTIK_NAMESPACE}}'
-  AUTHENTIK_RELEASE: '{{default "authentik" .AUTHENTIK_RELEASE}}'
-  AUTHENTIK_VALUES_FILE: '{{default "deploy/platform/components/authentik/kind/values.yaml" .AUTHENTIK_VALUES_FILE}}'
-  RUSTFS_OPERATOR_DIR: '{{default ".local/rustfs-operator" .RUSTFS_OPERATOR_DIR}}'
-  RUSTFS_OPERATOR_NAMESPACE: '{{default "rustfs-system" .RUSTFS_OPERATOR_NAMESPACE}}'
-  RUSTFS_OPERATOR_RELEASE: '{{default "rustfs-operator" .RUSTFS_OPERATOR_RELEASE}}'
   OPERATOR_NAMESPACE: '{{default "tamoss-system" .OPERATOR_NAMESPACE}}'
   OPERATOR_DEPLOYMENT: '{{default "operator-controller-manager" .OPERATOR_DEPLOYMENT}}'
   TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
@@ -228,6 +218,11 @@ tasks:
 
   e2e:chainsaw:up:
     silent: true
+    preconditions:
+      - sh: command -v helm
+        msg: "helm required"
+      - sh: command -v helmfile
+        msg: "helmfile required"
     vars:
       CHAINSAW_CLUSTER_NAME: '{{default "tamoss-chainsaw" .CHAINSAW_CLUSTER_NAME}}'
       KUBECONFIG: '{{default ".local/chainsaw.kubeconfig" .KUBECONFIG}}'
@@ -265,6 +260,13 @@ tasks:
       - task: e2e:chainsaw:up
         vars:
           CHAINSAW_SELECTOR: "{{.CHAINSAW_CI_SELECTOR}}"
+
+  e2e:chainsaw:smoke:up:
+    silent: true
+    cmds:
+      - task: e2e:chainsaw:up
+        vars:
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_SMOKE_SELECTOR}}"
 
   install-manifest:
     silent: true
@@ -310,57 +312,6 @@ tasks:
           OPERATOR_NAMESPACE: "{{.OPERATOR_NAMESPACE}}"
           OPERATOR_DEPLOYMENT: "{{.OPERATOR_DEPLOYMENT}}"
 
-  platform:apply:
-    desc: Apply platform bootstrap services for a TAMOSS profile
-    silent: true
-    requires:
-      vars: [KUBECONFIG]
-    preconditions:
-      - sh: command -v kubectl
-        msg: "kubectl required"
-      - sh: test -d "{{.CERT_MANAGER_KUSTOMIZE_DIR}}"
-        msg: "cert-manager kustomize dir {{.CERT_MANAGER_KUSTOMIZE_DIR}} not found"
-      - sh: test -d "{{.PLATFORM_KUSTOMIZE_DIR}}"
-        msg: "platform kustomize dir {{.PLATFORM_KUSTOMIZE_DIR}} not found"
-    cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/operator_k8s.sh
-        task_apply_operator_platform \
-          "{{.KUBECONFIG}}" \
-          "{{.CERT_MANAGER_KUSTOMIZE_DIR}}" \
-          "{{.PLATFORM_KUSTOMIZE_DIR}}" \
-          "{{.AUTHENTIK_NAMESPACE}}" \
-          "{{.RUSTFS_OPERATOR_NAMESPACE}}" \
-          "{{.RUSTFS_OPERATOR_RELEASE}}"
-
-  platform:vendor:
-    silent: true
-    preconditions:
-      - sh: command -v curl
-        msg: "curl required"
-      - sh: command -v helm
-        msg: "helm required"
-      - sh: command -v git
-        msg: "git required"
-      - sh: command -v yq
-        msg: "yq required"
-      - sh: test -f "{{.PLATFORM_DEPENDENCIES_FILE}}"
-        msg: "platform dependency record {{.PLATFORM_DEPENDENCIES_FILE}} not found"
-    cmds:
-      - |
-        set -euo pipefail
-        . .tasks/lib/operator_vendor.sh
-        task_vendor_platform_manifests \
-          "{{.PLATFORM_DEPENDENCIES_FILE}}" \
-          "{{.AUTHENTIK_RELEASE}}" \
-          "{{.AUTHENTIK_CHART_REPO}}" \
-          "{{.AUTHENTIK_NAMESPACE}}" \
-          "{{.AUTHENTIK_VALUES_FILE}}" \
-          "{{.RUSTFS_OPERATOR_DIR}}" \
-          "{{.RUSTFS_OPERATOR_RELEASE}}" \
-          "{{.RUSTFS_OPERATOR_NAMESPACE}}"
-
   platform:deps:check:
     silent: true
     preconditions:
@@ -373,7 +324,7 @@ tasks:
     cmds:
       - |
         set -euo pipefail
-        . .tasks/lib/operator_vendor.sh
+        . .tasks/lib/operator_platform.sh
         task_step "check platform dependency pins" \
           task_check_platform_dependency_pins "{{.PLATFORM_DEPENDENCIES_FILE}}"
 

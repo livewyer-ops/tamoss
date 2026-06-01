@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultHTTPTimeout         = 10 * time.Second
+	defaultHTTPTimeout         = 30 * time.Second
 	defaultMaxIdleConns        = 100
 	defaultMaxIdleConnsPerHost = 10
 	defaultIdleConnTimeout     = 90 * time.Second

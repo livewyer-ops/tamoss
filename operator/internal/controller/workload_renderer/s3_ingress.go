@@ -12,6 +12,12 @@ import (
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
+const (
+	rustFSConsolePath        = "/rustfs/console/"
+	rustFSConsoleServicePort = "http-console"
+	s3ServicePort            = "s3"
+)
+
 func renderS3PublicExposure(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	endpoint, serviceName, ok := managedS3PublicExposure(tamoss)
 	if !ok {
@@ -53,13 +59,23 @@ func parseS3PublicEndpoint(rawURL string) (*url.URL, bool) {
 }
 
 func s3PublicIngress(tamoss *tamossv1alpha1.Tamoss, endpoint tamossv1alpha1.S3PublicEndpointSpec, parsed *url.URL, serviceName string) client.Object {
-	path := networkingv1.HTTPIngressPath{
-		Path:     "/",
-		PathType: pathTypePtr(networkingv1.PathTypePrefix),
-		Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
-			Name: serviceName,
-			Port: networkingv1.ServiceBackendPort{Name: "s3"},
-		}},
+	paths := []networkingv1.HTTPIngressPath{
+		{
+			Path:     rustFSConsolePath,
+			PathType: pathTypePtr(networkingv1.PathTypePrefix),
+			Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
+				Name: serviceName + "-console",
+				Port: networkingv1.ServiceBackendPort{Name: rustFSConsoleServicePort},
+			}},
+		},
+		{
+			Path:     "/",
+			PathType: pathTypePtr(networkingv1.PathTypePrefix),
+			Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
+				Name: serviceName,
+				Port: networkingv1.ServiceBackendPort{Name: s3ServicePort},
+			}},
+		},
 	}
 	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,7 +90,7 @@ func s3PublicIngress(tamoss *tamossv1alpha1.Tamoss, endpoint tamossv1alpha1.S3Pu
 			Rules: []networkingv1.IngressRule{{
 				Host: parsed.Hostname(),
 				IngressRuleValue: networkingv1.IngressRuleValue{
-					HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{path}},
+					HTTP: &networkingv1.HTTPIngressRuleValue{Paths: paths},
 				},
 			}},
 		},

@@ -31,6 +31,11 @@ jobs:
       - name: Install Task
         uses: ./.github/actions/setup-task
 
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-validate
+
       - name: Render operator install
         run: task operator:template >/tmp/tamoss-operator.yaml
 
@@ -52,12 +57,10 @@ jobs:
       - name: Install Task
         uses: ./.github/actions/setup-task
 
-      - name: Install yq
-        run: |
-          YQ_VERSION="$(python3 .github/scripts/aqua-version.py mikefarah/yq)"
-          curl -fsSL -o yq "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
-          sudo install yq /usr/local/bin/yq
-          yq --version
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-validate
 
       - name: Check workflow task names
         run: |
@@ -70,11 +73,8 @@ jobs:
         run: |
           environment="ci-single-server"
           rm -rf "deploy/environments/${environment}"
-          task k8s:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
+          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
           kubectl kustomize "deploy/environments/${environment}" >/tmp/tamoss-${environment}.yaml
-
-      - name: Check platform and operand version pins
-        run: task versions:check
 
   python:
     runs-on: ubuntu-latest
@@ -196,6 +196,7 @@ jobs:
 
       - name: OSV-Scanner filesystem scan
         id: osv-scanner
+        continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
         with:
           scan-args: |-

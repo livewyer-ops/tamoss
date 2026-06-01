@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	defaultProbeTimeout = 5 * time.Second
+	defaultProbeTimeout        = 5 * time.Second
+	defaultAPIOperationTimeout = 30 * time.Second
 )
 
 type discoveryDocument struct {

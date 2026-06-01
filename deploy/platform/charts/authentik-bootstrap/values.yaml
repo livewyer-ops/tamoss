@@ -1,0 +1,27 @@
+authentik:
+  enabled: false
+  secretKey: ""
+  bootstrap:
+    username: akadmin
+    email: admin@tamoss.localtest.me
+    password: ""
+    token: ""
+  postgresql:
+    password: ""
+    postgresPassword: ""
+
+authentikChart:
+  namespaceOverride: auth
+  global:
+    namespaceOverride: auth
+  authentik:
+    existingSecret:
+      secretName: authentik
+    postgresql:
+      host: authentik-postgresql
+      name: authentik
+      user: authentik
+      port: 5432
+  postgresql:
+    auth:
+      existingSecret: authentik-postgresql

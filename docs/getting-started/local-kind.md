@@ -27,7 +27,8 @@ task kind:up PROFILE=local-kind
 
 1. Create or reuse the Kind cluster from `deploy/kind.yaml`.
 2. Build and load local API, UI, and operator images.
-3. Apply `deploy/platform/local-kind`.
+3. Apply the Helmfile-managed platform from
+   `deploy/environments/local-kind/platform-values.yaml`.
 4. Apply the TAMOSS operator from `deploy/operator/local`.
 5. Apply the `local-kind` instance overlay.
 6. Wait for `Tamoss/tamoss-kind` to report `Ready=True`.
@@ -35,12 +36,13 @@ task kind:up PROFILE=local-kind
    backend.
 
 The summary prints first-start lifecycle status, the app URL, app
-username/password, API docs URL, and API token.
+username/password, API docs URL, API token, OAuth client details, and storage
+credentials.
 
 To print the same access details and current Kubernetes status again:
 
 ```bash
-task kind:summary PROFILE=local-kind KUBECONFIG=tams.kubeconfig
+task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig
 ```
 
 ## Access

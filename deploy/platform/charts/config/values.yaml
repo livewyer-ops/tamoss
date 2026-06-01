@@ -1,0 +1,26 @@
+authentik:
+  enabled: false
+  ingress:
+    enabled: true
+    host: auth.tamoss.localtest.me
+    tlsSecretName: authentik-localtest-tls
+
+authentikChart:
+  namespaceOverride: auth
+  global:
+    namespaceOverride: auth
+
+tls:
+  mode: existing
+  issuerName: tamoss-public
+  acme:
+    email: ""
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretName: ""
+    http01:
+      ingressClassName: traefik
+
+clusterIssuer:
+  selfSigned:
+    enabled: false
+    name: tamoss-selfsigned

@@ -1,0 +1,127 @@
+certManager:
+  enabled: false
+
+platform:
+  namespace: tamoss-platform
+  timeoutSeconds: 900
+
+cert-manager:
+  namespace: cert-manager
+  fullnameOverride: cert-manager
+  crds:
+    enabled: true
+    keep: false
+
+cnpg:
+  enabled: false
+  namespaceOverride: cnpg-system
+  nameOverride: cloudnative-pg
+  fullnameOverride: cnpg-controller-manager
+  crds:
+    create: true
+
+rustfsOperator:
+  enabled: false
+  namespace: rustfs-system
+  image:
+    repository: rustfs/operator
+    tag: "0.0.1"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+authentik:
+  enabled: false
+  secretKey: ""
+  bootstrap:
+    username: akadmin
+    email: admin@tamoss.localtest.me
+    password: ""
+    token: ""
+  postgresql:
+    password: ""
+    postgresPassword: ""
+  ingress:
+    enabled: true
+    host: auth.tamoss.localtest.me
+    tlsSecretName: authentik-localtest-tls
+
+authentikChart:
+  namespaceOverride: auth
+  fullnameOverride: authentik
+  global:
+    namespaceOverride: auth
+    fullnameOverride: authentik
+  authentik:
+    enabled: true
+    existingSecret:
+      secretName: authentik
+    postgresql:
+      host: authentik-postgresql
+      name: authentik
+      user: authentik
+      port: 5432
+  postgresql:
+    enabled: true
+    namespaceOverride: auth
+    fullnameOverride: authentik-postgresql
+    auth:
+      username: authentik
+      database: authentik
+      existingSecret: authentik-postgresql
+      secretKeys:
+        adminPasswordKey: postgres-password
+        userPasswordKey: password
+  server:
+    ingress:
+      enabled: false
+  serviceAccount:
+    namespaceOverride: auth
+
+traefik:
+  enabled: false
+  namespaceOverride: traefik
+  fullnameOverride: traefik
+  deployment:
+    replicas: 2
+  image:
+    repository: traefik
+    tag: v3.7.1
+    pullPolicy: IfNotPresent
+  ingressClass:
+    enabled: true
+    name: traefik
+    isDefaultClass: false
+  providers:
+    kubernetesCRD:
+      enabled: true
+      allowEmptyServices: true
+      allowExternalNameServices: true
+    kubernetesIngress:
+      enabled: true
+      allowEmptyServices: true
+      allowExternalNameServices: true
+  service:
+    annotations: {}
+    spec:
+      type: LoadBalancer
+
+tls:
+  mode: existing
+  issuerName: tamoss-public
+  acme:
+    email: ""
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretName: ""
+    http01:
+      ingressClassName: traefik
+
+clusterIssuer:
+  selfSigned:
+    enabled: false
+    name: tamoss-selfsigned

@@ -30,11 +30,11 @@ spec:
               printf '%s' "$multi_render" | grep -q 'profile: multi-server'
               ! printf '%s' "$multi_render" | grep -q 'tamoss.localtest.me'
 
-              single_kind_render="$(kubectl kustomize ../../../../../deploy/instances/single-server-kind)"
+              single_kind_render="$(kubectl kustomize ../../../../../deploy/environments/kind-single-server)"
               printf '%s' "$single_kind_render" | grep -q 'profile: single-server'
               printf '%s' "$single_kind_render" | grep -q 'baseDomain: tamoss.localtest.me'
 
-              multi_kind_render="$(kubectl kustomize ../../../../../deploy/instances/multi-server-kind)"
+              multi_kind_render="$(kubectl kustomize ../../../../../deploy/environments/kind-multi-server)"
               printf '%s' "$multi_kind_render" | grep -q 'profile: multi-server'
               printf '%s' "$multi_kind_render" | grep -q 'baseDomain: tamoss.localtest.me'
               printf '%s' "$multi_kind_render" | grep -q 'RUSTFS_UNSAFE_BYPASS_DISK_CHECK'

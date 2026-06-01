@@ -22,6 +22,9 @@ func TestWorkerDeploymentRendersHealthCommandProbes(t *testing.T) {
 	assertProbeCommand(t, "readiness", container.ReadinessProbe, want)
 	assertProbeCommand(t, "liveness", container.LivenessProbe, want)
 	assertProbeCommand(t, "startup", container.StartupProbe, want)
+	assertProbeTimeout(t, "readiness", container.ReadinessProbe, 5)
+	assertProbeTimeout(t, "liveness", container.LivenessProbe, 10)
+	assertProbeTimeout(t, "startup", container.StartupProbe, 5)
 }
 
 func assertProbeCommand(t *testing.T, name string, probe *corev1.Probe, want []string) {
@@ -31,5 +34,12 @@ func assertProbeCommand(t *testing.T, name string, probe *corev1.Probe, want []s
 	}
 	if !reflect.DeepEqual(probe.Exec.Command, want) {
 		t.Fatalf("expected %s probe command %#v, got %#v", name, want, probe.Exec.Command)
+	}
+}
+
+func assertProbeTimeout(t *testing.T, name string, probe *corev1.Probe, want int32) {
+	t.Helper()
+	if probe == nil || probe.TimeoutSeconds != want {
+		t.Fatalf("expected %s probe timeout %d, got %#v", name, want, probe)
 	}
 }

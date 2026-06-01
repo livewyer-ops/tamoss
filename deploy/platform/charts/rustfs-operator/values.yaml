@@ -1,0 +1,14 @@
+enabled: false
+
+image:
+  repository: rustfs/operator
+  tag: "0.0.1"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

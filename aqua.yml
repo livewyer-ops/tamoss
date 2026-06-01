@@ -22,12 +22,31 @@ packages:
 
     # Kubernetes / deploy tooling
     - name: kubernetes-sigs/kind@v0.31.0 # .tasks/kind.yaml
+      tags:
+          - ci-kind
+          - ci-operator-chainsaw
     - name: kubernetes/kubectl@v1.35.0 # .tasks/kind.yaml (`kubectl wait pod ...`)
-    - name: helm/helm@v3.18.2 # .tasks/operator.yaml Authentik upstream Helm chart
+      tags:
+          - ci-kind
+          - ci-operator-chainsaw
+    - name: helm/helm@v4.2.0 # .tasks/operator.yaml and Helmfile platform releases
+      tags:
+          - ci-kind
+          - ci-operator-chainsaw
+    - name: helmfile/helmfile@v1.5.2 # deploy/platform/helmfile.yaml.gotmpl
+      tags:
+          - ci-kind
+          - ci-operator-chainsaw
     - name: kyverno/chainsaw@v0.2.15 # operator/test/chainsaw
+      tags:
+          - ci-operator-chainsaw
     - name: golang/go@go1.23.2 # operator/go.mod and controller builds
     - name: yannh/kubeconform@v0.6.7 # generated operator CRD/install manifest linting
+      tags:
+          - ci-operator-crd
     - name: stackrox/kube-linter@v0.8.3 # operator install manifest and pod security linting
+      tags:
+          - ci-operator-security
     - name: grafana/k6@v1.2.3 # tests/k6/* via .tasks/test.yaml
 
     # Cloud & storage
@@ -42,6 +61,12 @@ packages:
     # Linting / formatting / data
     - name: google/yamlfmt@v0.21.0 # .tasks/lint.yaml (lint:yamlfmt)
     - name: mikefarah/yq@v4.35.1 # .tasks/lib/profile.sh and platform dependency checks
+      tags:
+          - ci-kind
+          - ci-validate
+    - name: BurntSushi/ripgrep@14.1.1 # shell task checks and CI workflow validation
+      tags:
+          - ci-validate
     - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
     # nightly-slo, and src/scripts/
 

@@ -18,6 +18,7 @@ TASK_REFERENCE = re.compile(
     re.MULTILINE,
 )
 TASK_LISTING = re.compile(r"^\*\s+([^:\s]+(?::[^:\s]+)*):", re.MULTILINE)
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def test_documented_task_commands_are_supported_entry_points() -> None:
@@ -31,7 +32,7 @@ def test_documented_task_commands_are_supported_entry_points() -> None:
         check=True,
         text=True,
     )
-    available = set(TASK_LISTING.findall(result.stdout))
+    available = set(TASK_LISTING.findall(ANSI_ESCAPE.sub("", result.stdout)))
     missing = sorted(
         {
             command

@@ -92,7 +92,7 @@ func (c ManagedBlueprintClient) Reconcile(ctx context.Context, name, path string
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultProbeTimeout)
+		ctx, cancel = context.WithTimeout(ctx, defaultAPIOperationTimeout)
 		defer cancel()
 	}
 	existing, err := c.findByName(ctx, name)
@@ -131,7 +131,7 @@ func (c ManagedBlueprintClient) DeleteByName(ctx context.Context, name string) e
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultProbeTimeout)
+		ctx, cancel = context.WithTimeout(ctx, defaultAPIOperationTimeout)
 		defer cancel()
 	}
 	blueprint, err := c.findByName(ctx, name)

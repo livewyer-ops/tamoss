@@ -1,0 +1,29 @@
+name: Setup Aqua Tools
+description: Install aqua-managed CLI tools from aqua.yml.
+
+inputs:
+  tags:
+    description: Comma-separated aqua package tags to install.
+    required: false
+    default: ""
+  aqua_version:
+    description: aqua version used by aquaproj/aqua-installer.
+    required: false
+    default: v2.56.3
+
+runs:
+  using: composite
+  steps:
+    - name: Install aqua and tagged tools
+      if: ${{ inputs.tags != '' }}
+      uses: aquaproj/aqua-installer@v4.0.4
+      with:
+        aqua_version: ${{ inputs.aqua_version }}
+        aqua_opts: "-t ${{ inputs.tags }}"
+
+    - name: Install aqua links
+      if: ${{ inputs.tags == '' }}
+      uses: aquaproj/aqua-installer@v4.0.4
+      with:
+        aqua_version: ${{ inputs.aqua_version }}
+        aqua_opts: "-l"
