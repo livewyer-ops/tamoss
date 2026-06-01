@@ -199,6 +199,17 @@ jobs:
             echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve build version
+        id: build-version
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - name: Extract Git metadata
         id: meta
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6
@@ -240,6 +251,8 @@ jobs:
           push: ${{ env.PUSH_IMAGES == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.build-version.outputs.version }}
           platforms: "linux/amd64,linux/arm64"
           provenance: mode=max
           sbom: true

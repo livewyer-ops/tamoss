@@ -25,6 +25,7 @@ func renderWorkerDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		})
 	}
 	env = append(env, backendEnv(tamoss)...)
+	env = append(env, runtimeVersionEnv(tamoss)...)
 	env = append(env, literalEnv(tamoss.Spec.Worker.Env)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.Worker.WorkloadCommonSpec, tamoss)
 	deployment := deploymentFor(

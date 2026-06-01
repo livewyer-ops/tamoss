@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 )
 
 const (
@@ -105,6 +106,22 @@ func backendEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
 		{Name: "TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED", Value: "false"},
 		{Name: "TAMOSS_STORAGE_BACKEND_CREDENTIALS_FILE", Value: StorageBackendCredentialsFilePath()},
 	}
+}
+
+func runtimeVersionEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
+	version := tamossRuntimeVersion(tamoss)
+	return []corev1.EnvVar{
+		{Name: "TAMOSS_VERSION", Value: version},
+		{Name: "TAMOSS_SERVICE_VERSION", Value: version},
+		{Name: "TAMOSS_TAMS_API_VERSION", Value: defaults.DefaultTAMSAPIVersion},
+	}
+}
+
+func tamossRuntimeVersion(tamoss *tamossv1alpha1.Tamoss) string {
+	if tag := strings.TrimSpace(tamoss.Spec.API.Image.Tag); tag != "" {
+		return tag
+	}
+	return defaults.DefaultOperandTag
 }
 
 func StorageBackendCredentialsSecretName(tamoss *tamossv1alpha1.Tamoss) string {
