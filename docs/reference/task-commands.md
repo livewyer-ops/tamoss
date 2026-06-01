@@ -14,7 +14,7 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment. `PROFILE=multi-server` uses a multi-node Kind cluster. |
-| `task kind:summary PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Print first-start lifecycle status, Local Kind access URLs, app credentials, API docs URL, and API token. |
+| `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
 | `task kind:e2e PROFILE=local-kind` | Recreate Kind, deploy the selected profile with the previous operator, run deployed checks, and finish with an in-place upgrade to the current operator. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
 | `task logs` | Show recent concise task logs from `.local/logs/task`. |
@@ -23,10 +23,12 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task k8s:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment Kustomize overlay from checked-in templates. |
-| `task k8s:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply platform prerequisites, the TAMOSS operator, and the selected environment overlay. |
-| `task k8s:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
-| `task k8s:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
+| `task env:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. |
+| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
+| `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
+| `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
+| `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
+| `task env:summary ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for the selected environment. |
 
 ### Additional Validation Commands
 
@@ -96,7 +98,6 @@ use stable `reports/junit-*.xml` names.
 | `task operator:e2e:chainsaw:focus SELECTOR='test.tamoss.io/domain=storage' KUBECONFIG=/path/to/kubeconfig` | Run a labelled Chainsaw slice. |
 | `task operator:e2e:chainsaw KUBECONFIG=/path/to/kubeconfig` | Run Chainsaw operator tests against an existing cluster. |
 | `task operator:e2e:chainsaw:up` | Run Chainsaw tests on a disposable Kind cluster. |
-| `task operator:platform:vendor` | Maintainer-only refresh of checked-in platform manifests from pinned dependency versions. |
 
 ### Helper Commands
 

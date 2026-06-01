@@ -114,7 +114,7 @@ checkout still needs `task operator:test` to bootstrap them first.
 
 The envtest suite installs TAMOSS CRDs plus the provider CRDs it needs for typed
 or unstructured test resources: CNPG CRDs from
-`deploy/platform/components/cnpg/cnpg.yaml` and the RustFS Tenant CRD from
-`deploy/platform/components/rustfs-operator/tenant-crd.yaml`. Provider
+`operator/test/fixtures/cnpg-crds.yaml` and the RustFS Tenant CRD from
+`deploy/platform/charts/rustfs-operator/templates/tenant-crd.yaml`. Provider
 controllers are not started by envtest; tests that need provider status still
 simulate it explicitly.

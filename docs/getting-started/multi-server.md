@@ -39,16 +39,18 @@ For an existing cluster:
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:summary ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-The platform layer installs reference cert-manager, Traefik, Authentik, CNPG,
-and RustFS Operator components. The TAMOSS operator reconciles the instance
-resources selected by the `Tamoss` CR; it does not install those platform
-operators from inside a `Tamoss` reconcile.
+The platform layer installs the components enabled in
+`deploy/environments/my-prod/platform-values.yaml`. The TAMOSS operator
+reconciles the instance resources selected by the `Tamoss` CR; it does not
+install platform operators from inside a `Tamoss` reconcile.
 
 ## Operate
 
@@ -58,7 +60,9 @@ Use the multi-server profile as the baseline for production choices:
 - Review the profile defaults for pod security contexts, resource requests,
   PodDisruptionBudgets, pod anti-affinity, and NetworkPolicies before applying
   tenant-specific overrides.
-- Use public DNS names and trusted TLS certificates.
+- Use public DNS names and trusted TLS certificates. The default remote platform
+  values create `ClusterIssuer/tamoss-public` from `tls.mode: public`; set the
+  ACME email before applying.
 - Keep internal service URLs separate from public OAuth issuer and public S3
   URLs.
 - Confirm browser-facing S3 CORS permits the UI origin, `PUT`, and required

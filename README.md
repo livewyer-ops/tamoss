@@ -39,7 +39,7 @@ backend integrations.
 ## Quickstart
 
 **Prerequisites:** Docker, `curl`, `openssl`, and `git`. The rest of the toolchain
-(`task`, `kind`, `kubectl`, `helm`, `chainsaw`, …) is provisioned by `aqua install`.
+(`task`, `kind`, `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
 
 Use the local Kind profile first:
 
@@ -50,8 +50,8 @@ export PATH="$(aqua root-dir)/bin:$PATH"
 task kind:up PROFILE=local-kind
 ```
 
-The summary prints the app URL, app username/password, API docs URL, and API
-token. Then inspect the instance:
+The summary prints the app URL, app username/password, API docs URL, API token,
+OAuth client details, and storage credentials. Then inspect the instance:
 
 ```bash
 kubectl --kubeconfig tams.kubeconfig -n tams get tamoss,pods,svc,ingress
@@ -67,16 +67,34 @@ Open:
 The equivalent Kubernetes install shape is always:
 
 ```bash
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
-task k8s:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
+task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
+task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
-Remote environments are normal Kustomize overlays. The raw apply sequence is:
+Remote environments are composition roots: `platform-values.yaml` configures the
+Helmfile-managed platform releases, and the Kustomize overlay applies the
+`Tamoss` resources.
+Generated remote environments default to public ACME TLS through
+`ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
+before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
+`tls.mode: disabled` when TLS Secrets are supplied outside cert-manager.
+The raw apply sequence is:
 
 ```bash
-kubectl apply -k deploy/platform/<profile>
+(
+  cd deploy/platform
+  helmfile --kubeconfig "$KUBECONFIG" \
+    --file helmfile.yaml.gotmpl \
+    --state-values-file values/defaults.yaml \
+    --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
+    sync \
+    --sync-args "--server-side=true --rollback-on-failure" \
+    --wait \
+    --wait-for-jobs
+)
 kubectl apply --server-side -k deploy/operator
 kubectl apply -k deploy/environments/<name>
 ```
@@ -85,9 +103,9 @@ kubectl apply -k deploy/environments/<name>
 
 | Profile | Use when | Default backing services |
 | --- | --- | --- |
-| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | CNPG, RustFS Operator, Authentik, cert-manager, and Traefik on host port 443. |
-| `single-server` | You run one Kubernetes node or a small self-managed cluster. | CNPG and RustFS Operator with single-node durable defaults. |
-| `multi-server` | You run production-shaped self-managed Kubernetes. | Replicated workloads, CNPG, RustFS Operator, Authentik, cert-manager, and Traefik. |
+| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | Local reference platform with CNPG, RustFS Operator, Authentik, cert-manager, and Traefik on host port 443. |
+| `single-server` | You run one Kubernetes node or a small self-managed cluster. | Single-node workload topology; platform services are selected by the environment. |
+| `multi-server` | You run production-shaped self-managed Kubernetes. | Replicated workload topology; platform services are selected by the environment. |
 
 Use `multi-server` as the production reference profile. External PostgreSQL,
 S3-compatible storage, OAuth2/OIDC, and ingress providers can be used where the

@@ -28,21 +28,27 @@ For an existing cluster:
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task k8s:init NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
+task env:init NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-single-server/platform-values.yaml
 $EDITOR deploy/environments/my-single-server/tamoss-patch.yaml
-task k8s:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
+task env:summary ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 ```
 
 ## Configure
 
-Start from a generated environment overlay under `deploy/environments/<name>`.
-Set a public base domain unless you configure every public endpoint directly.
+Start from a generated environment composition under `deploy/environments/<name>`.
+Use `platform-values.yaml` to select platform components, and set a public base
+domain unless you configure every public endpoint directly.
 
 The operator derives `api`, `app`, `s3`, and `auth` hostnames from that base
-domain and applies profile defaults. Override normal `Tamoss` YAML fields
-directly in `tamoss-patch.yaml` when you need different resources, storage, or
-routing.
+domain and applies profile defaults. The remote profile defaults to
+`ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`, or
+switch `tls.mode` to `existing`/`disabled` when certificate ownership is outside
+the TAMOSS platform layer. Override normal `Tamoss` YAML fields directly in
+`tamoss-patch.yaml` when you need different provider ownership, resources,
+storage, or routing.
 
 See also:
 

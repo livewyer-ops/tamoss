@@ -16,9 +16,16 @@ those defaults.
 Profiles do not define tenant identity. In shared clusters, tenant boundaries
 come from Kubernetes namespaces and the `Tamoss` resources applied in them.
 
+All profiles default application authentication to managed Authentik. Omitting
+`spec.auth` selects `auth.providedBy: authentik-blueprints`, derives
+`https://auth.<baseDomain>` from `spec.publicEndpoint.baseDomain`, and expects
+the platform Authentik install in the `auth` namespace. Use an explicit
+`spec.auth.providedBy: external` or `spec.auth.providedBy: none` only when an
+environment intentionally opts out of the profile default.
+
 `deploy/profiles.yaml` is the profile registry used by Taskfile helpers. Each
-supported profile records its platform Kustomize path, local instance path,
-target environment file, and the Kind cluster config used for local validation.
+supported profile records its Kind environment composition, target environment
+file, and the Kind cluster config used for local validation.
 
 `local-kind` is a local test adapter. It creates a Kind cluster, loads local
 development images, uses `localtest.me`, and exists to validate the operator
@@ -29,7 +36,7 @@ Kind; it is not the remote install path.
 Running `task kind:up PROFILE=multi-server` validates the production reference
 profile on a disposable multi-node Kind cluster. That local harness exercises
 multi-node scheduling shape, but the production `multi-server` install path
-remains normal Kubernetes through the `k8s:*` tasks.
+remains normal Kubernetes through the `env:*` tasks.
 
 ## Security Defaults
 
@@ -83,6 +90,27 @@ The operator derives:
 Override a specific endpoint only when that endpoint must deviate from the
 standard shape.
 
+## TLS Defaults
+
+`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned` and local test TLS
+Secret names. `single-server` and `multi-server` default to
+`ClusterIssuer/tamoss-public` with public TLS Secret names. The matching
+platform values use `tls.mode: public` to render an ACME ClusterIssuer for
+remote environments:
+
+```yaml
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com
+```
+
+Environment compositions only need to override this when the cluster already
+provides cert-manager, a different ClusterIssuer name, or pre-created TLS
+Secrets. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
+instead of receiving the profile default.
+
 ## Local Profile Validation
 
 Run profiles one at a time on Kind:
@@ -99,8 +127,8 @@ Run the sequential profile gate:
 task kind:profiles:e2e
 ```
 
-The Kind-specific overlays, such as `deploy/platform/multi-server-kind`, are
-test adapters for local validation. They are not additional public profiles.
+The Kind-specific environments, such as `deploy/environments/kind-multi-server`,
+are test adapters for local validation. They are not additional public profiles.
 The `multi-server` local validation path also uses `deploy/kind-multi-server.yaml`
 so Kind creates one control-plane node and three worker nodes while keeping host
 HTTPS ingress on port 443.

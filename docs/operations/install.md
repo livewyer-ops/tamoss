@@ -1,21 +1,27 @@
 # Install
 
-TAMOSS installs through source-controlled Kustomize inputs. For existing
-clusters, create an environment overlay, edit the generated YAML, then apply it:
+TAMOSS installs through source-controlled environment inputs. For existing
+clusters, create an environment composition, edit the generated platform values
+and `Tamoss` YAML, then apply it:
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task k8s:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task k8s:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task k8s:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-The task workflow applies three ordered layers. The platform layer installs
-shared prerequisites. The operator layer installs the TAMOSS CRDs, controller,
-RBAC, and webhooks. The environment layer applies one or more namespaced
-`Tamoss` custom resources.
+The task workflow applies ordered layers. The platform layer uses
+`deploy/platform/helmfile.yaml.gotmpl` to install shared prerequisites as
+separate Helm releases, waits for the dependency operators, then applies
+TAMOSS-owned platform configuration through `deploy/platform/charts/config`.
+The platform state is built from `deploy/platform/values/defaults.yaml` plus the
+environment's `platform-values.yaml`. The operator layer installs the TAMOSS
+CRDs, controller, RBAC, and webhooks. The environment layer applies one or more
+namespaced `Tamoss` custom resources.
 
 For multiple tenant namespaces, install the platform and operator once, then
 apply namespace-local `Tamoss` and `StorageBackend` resources in each tenant
@@ -51,23 +57,50 @@ Supported profiles are:
 - `multi-server`
 
 When `PROFILE=single-server` or `PROFILE=multi-server` is used with `task kind:up`,
-the task uses Kind-compatible platform overlays while keeping the public
-instance profile name. `PROFILE=multi-server` also uses the checked-in
-multi-node Kind configuration so local validation has separate worker nodes; the
-remote install path still uses normal Kubernetes overlays.
+the task uses the matching Kind environment under `deploy/environments/` while
+keeping the public instance profile name. `PROFILE=multi-server` also uses the
+checked-in multi-node Kind configuration so local validation has separate worker
+nodes; the remote install path still uses normal environment compositions.
 
 ## Existing Cluster
 
-The generated environment is a normal Kustomize overlay. It starts from
-`deploy/instances/<profile>` and patches the `Tamoss` CR directly; there is no
-separate values file or renderer. Treat this overlay as the durable source of
-configuration for endpoint, provider, resource, replica, and routing changes.
+The generated environment is the composition root. `platform-values.yaml`
+selects which platform components Helm installs. The Kustomize overlay starts
+from `deploy/instances/<profile>` and patches the `Tamoss` CR directly. Treat
+both files as the durable source of configuration for provider ownership,
+endpoints, resources, replicas, and routing.
 
-If automation cannot call Task, keep the same checked-in Kustomize inputs and
-apply the same layers in order:
+Generated remote environments default to trusted public TLS. The platform Helmfile
+creates `ClusterIssuer/tamoss-public` when `tls.mode: public` is selected:
+
+```yaml
+tls:
+  mode: public
+  issuerName: tamoss-public
+  acme:
+    email: ops@example.com
+```
+
+Use `tls.mode: existing` when cert-manager and the ClusterIssuer are managed
+outside the TAMOSS platform layer. Use `tls.mode: disabled` when TLS Secrets are
+pre-created and cert-manager annotations should be omitted from explicit
+`Tamoss` ingress overrides.
+
+If automation cannot call Task, keep the same checked-in inputs and apply the
+same layers in order:
 
 ```bash
-kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/platform/<profile>
+(
+  cd deploy/platform
+  helmfile --kubeconfig "$KUBECONFIG" \
+    --file helmfile.yaml.gotmpl \
+    --state-values-file values/defaults.yaml \
+    --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
+    sync \
+    --sync-args "--server-side=true --rollback-on-failure" \
+    --wait \
+    --wait-for-jobs
+)
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ```
@@ -75,7 +108,7 @@ kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ## Expected Signals
 
 ```bash
-task k8s:status ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:status ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
 `Ready=True` on the `Tamoss` resource is the primary success signal. If the
@@ -83,11 +116,12 @@ instance is not ready, read status conditions before looking at individual pods.
 For Gateway API installs, also check `kubectl -n tams get httproute` and the
 `RoutingReady` and `HostnamesReady` conditions on the `Tamoss` resource.
 
-## Maintainer Platform Vendoring
+## Platform Inputs
 
-Runtime installs use checked-in Kustomize manifests. Maintainer-only vendor
-tasks refresh checked-in platform manifests from `deploy/platform/dependencies.yaml`.
-Normal installs do not run live chart installs and do not apply remote URLs.
+Runtime installs use the checked-in Helmfile platform state plus checked-in
+Kustomize manifests for the operator and `Tamoss` resources. Platform dependency
+versions are pinned in `deploy/platform/helmfile.yaml.gotmpl` and recorded in
+`deploy/platform/dependencies.yaml`.
 
 See also:
 
