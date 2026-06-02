@@ -215,6 +215,70 @@ def test_list_flows_can_include_timerange_compatibility_extension(
     assert_bbc_error(invalid.json())
 
 
+def test_empty_timerange_query_discovers_empty_flows_for_retention_cleanup(
+    client: TestClient,
+) -> None:
+    segmented_flow_id, _, _ = create_video_flow(client)
+    empty_flow_id, _, _ = create_video_flow(client)
+    register_segment(client, segmented_flow_id, timerange="[0:0_10:0)")
+
+    listed = client.get(
+        "/flows",
+        params={"timerange": "()", "include_timerange": "true"},
+    )
+
+    assert listed.status_code == 200
+    payload = {item["id"]: item for item in listed.json()}
+    assert set(payload) == {str(empty_flow_id)}
+    assert payload[str(empty_flow_id)]["timerange"] == "()"
+
+    head = client.head("/flows", params={"timerange": "()"})
+    assert head.status_code == 200
+
+
+def test_retention_tags_are_discoverable_with_tag_exists_filters(
+    client: TestClient,
+) -> None:
+    segment_retention_flow_id, _, _ = create_video_flow(
+        client,
+        tags={"segment_retention_offset": "3600:0"},
+    )
+    flow_retention_flow_id, _, _ = create_video_flow(
+        client,
+        tags={"flow_retention_offset": "86400:0"},
+    )
+    regular_flow_id, _, _ = create_video_flow(client)
+
+    segment_retention = client.get(
+        "/flows",
+        params={"tag_exists.segment_retention_offset": "true"},
+    )
+    flow_retention = client.get(
+        "/flows",
+        params={"tag_exists.flow_retention_offset": "true"},
+    )
+    no_segment_retention = client.get(
+        "/flows",
+        params={"tag_exists.segment_retention_offset": "false"},
+    )
+
+    assert segment_retention.status_code == 200
+    assert [item["id"] for item in segment_retention.json()] == [
+        str(segment_retention_flow_id)
+    ]
+    assert flow_retention.status_code == 200
+    assert [item["id"] for item in flow_retention.json()] == [
+        str(flow_retention_flow_id)
+    ]
+    assert no_segment_retention.status_code == 200
+    no_segment_retention_ids = {item["id"] for item in no_segment_retention.json()}
+    assert str(segment_retention_flow_id) not in no_segment_retention_ids
+    assert {
+        str(flow_retention_flow_id),
+        str(regular_flow_id),
+    } <= no_segment_retention_ids
+
+
 def test_collection_flows_include_child_timerange_compatibility_extension(
     client: TestClient,
 ) -> None:
@@ -512,6 +576,8 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     payload = listed.json()
     assert payload[0]["object_id"] == object_two
     assert payload[0]["object_timerange"] == "[100:0_110:0)"
+    assert payload[0]["sample_offset"] == 10
+    assert payload[0]["sample_count"] == 250
     assert payload[0]["get_urls"][0]["storage_id"] == str(PRIMARY_BACKEND_ID)
     assert payload[0]["get_urls"][0]["controlled"] is True
 

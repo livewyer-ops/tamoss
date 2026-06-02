@@ -201,6 +201,10 @@ class SegmentUseCases:
                 _has_controlled_instance(media_object)
                 and not existing_object_references
             ):
+                self._ensure_controlled_object_allocation_matches_flow(
+                    media_object,
+                    flow_id=flow.id,
+                )
                 self._ensure_controlled_object_uploaded(media_object)
             if existing_object_references:
                 if segment_post.get("object_timerange") is not None:
@@ -225,6 +229,7 @@ class SegmentUseCases:
 
         if media_object.first_referenced_by_flow is None:
             media_object.first_referenced_by_flow = flow.id
+        media_object.allocated_by_flow = None
         media_object.referenced_by_flows.add(flow.id)
         effective_object_timerange = object_timerange_from_segment_fields(
             timerange=str(segment_post["timerange"]),
@@ -288,6 +293,18 @@ class SegmentUseCases:
             media_object.bytes_written = metadata.content_length or 0
             return
         raise BadRequest("Bad request. Invalid Flow Segment JSON.")
+
+    def _ensure_controlled_object_allocation_matches_flow(
+        self, media_object: MediaObjectRecord, *, flow_id: UUID
+    ) -> None:
+        if (
+            media_object.allocated_by_flow is not None
+            and media_object.allocated_by_flow != flow_id
+        ):
+            raise BadRequest(
+                "Bad request. Allocated Object must be registered against the "
+                "Flow that requested its storage."
+            )
 
     def _ensure_segment_timerange_is_available(
         self, *, known_segments: list[SegmentRecord], timerange: str

@@ -24,7 +24,7 @@ dependencies = [
     "mediatimestamp>=5.2.0",
     "psycopg[binary,pool]>=3.1.0",
     "requests>=2.33.0",
-    "pyjwt[crypto]>=2.10.0",
+    "pyjwt[crypto]>=2.13.0",
     "pydantic-settings>=2.7.0",
 ]
 

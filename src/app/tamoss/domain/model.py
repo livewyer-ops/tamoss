@@ -262,6 +262,7 @@ class MediaObjectRecord:
     id: str
     timerange: str | None = None
     first_referenced_by_flow: UUID | None = None
+    allocated_by_flow: UUID | None = None
     referenced_by_flows: set[UUID] = field(default_factory=set)
     instances: list[ObjectInstance] = field(default_factory=list)
     key_frame_count: int | None = None
