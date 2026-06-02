@@ -154,6 +154,42 @@ def test_build_put_request_uses_flow_container_as_content_type(monkeypatch) -> N
     ]
 
 
+def test_presigned_put_urls_do_not_outlive_allocated_object_timeout(
+    monkeypatch,
+) -> None:
+    presign_calls: list[tuple[str, int]] = []
+
+    class FakeS3Client:
+        def generate_presigned_url(self, *args, **kwargs) -> str:
+            presign_calls.append((args[0], kwargs["ExpiresIn"]))
+            return f"https://storage.example.test/{args[0]}"
+
+    monkeypatch.setattr(
+        "tamoss.adapters.object_storage.boto3.client",
+        lambda *args, **kwargs: FakeS3Client(),
+    )
+
+    backend = _s3_backend()
+    storage = ConfiguredObjectStorage(
+        Settings(
+            auth_required=False,
+            min_object_timeout="300:0",
+            min_presigned_url_timeout="30:0",
+            s3_presign_ttl_seconds=3600,
+            storage_backend=_settings_backend(backend),
+        )
+    )
+
+    storage.build_put_request(
+        object_id="media/object.ts",
+        flow_container="video/mp2t",
+        backend=backend,
+    )
+    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+
+    assert presign_calls == [("put_object", 300), ("get_object", 3600)]
+
+
 def test_runtime_credentials_file_takes_precedence_over_persisted_credentials(
     monkeypatch,
     tmp_path,

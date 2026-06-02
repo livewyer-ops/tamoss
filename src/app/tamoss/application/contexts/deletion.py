@@ -209,7 +209,7 @@ class DeletionUseCases:
 
     def queue_stale_allocated_object_cleanups(self, *, max_objects: int = 50) -> int:
         before = utc_now() - timedelta(
-            seconds=_timestamp_duration_seconds(self.settings.min_object_timeout)
+            seconds=self.settings.min_object_timeout_seconds()
         )
         with self.repository.unit_of_work():
             media_objects = self.repository.list_unreferenced_objects_created_before(
@@ -241,11 +241,3 @@ def _has_controlled_instance(media_object: MediaObjectRecord) -> bool:
         instance.controlled and instance.storage_backend is not None
         for instance in media_object.instances
     )
-
-
-def _timestamp_duration_seconds(value: str) -> float:
-    try:
-        seconds, nanoseconds = value.split(":", 1)
-        return int(seconds) + (int(nanoseconds) / 1_000_000_000)
-    except (TypeError, ValueError) as exc:
-        raise BadRequest("Bad request. Invalid service object timeout.") from exc

@@ -14,6 +14,13 @@ from tamoss.settings import Settings, read_secret_file
         ("TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED", "sometimes", "boolean"),
         ("TAMOSS_OAUTH2_ISSUER", "auth.example.test", "TAMOSS_OAUTH2_ISSUER"),
         ("TAMOSS_S3_ENDPOINT", "objects.internal", "TAMOSS_S3_ENDPOINT"),
+        ("TAMOSS_MIN_OBJECT_TIMEOUT", "299:0", "min_object_timeout"),
+        (
+            "TAMOSS_MIN_PRESIGNED_URL_TIMEOUT",
+            "29:0",
+            "min_presigned_url_timeout",
+        ),
+        ("TAMOSS_S3_PRESIGN_TTL", "29", "TAMOSS_S3_PRESIGN_TTL"),
     ],
 )
 def test_settings_reject_invalid_runtime_env(
@@ -123,6 +130,39 @@ def test_disabled_oauth_accepts_empty_operator_url_env(
 
 def test_storage_backend_registration_is_disabled_by_default() -> None:
     assert Settings().storage_backend_registration_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {"min_presigned_url_timeout": "301:0"},
+            "min_presigned_url_timeout must be less than or equal to",
+        ),
+        (
+            {
+                "min_object_timeout": "300:500000000",
+            },
+            "min_object_timeout must be a whole-second",
+        ),
+    ],
+)
+def test_settings_reject_timeout_contracts(
+    kwargs: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        Settings(**kwargs)
+
+
+def test_settings_caps_presigned_put_ttl_at_object_timeout() -> None:
+    settings = Settings(
+        min_object_timeout="300:0",
+        min_presigned_url_timeout="30:0",
+        s3_presign_ttl_seconds=3600,
+    )
+
+    assert settings.min_object_timeout_seconds() == 300
+    assert settings.presigned_put_ttl_seconds() == 300
 
 
 def test_default_versions_are_not_placeholders() -> None:

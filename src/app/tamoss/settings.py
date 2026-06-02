@@ -8,6 +8,7 @@ from typing import Annotated, overload
 from urllib.parse import quote, urlparse
 from uuid import UUID
 
+from mediatimestamp import Timestamp
 from pydantic import (
     BaseModel,
     Field,
@@ -22,6 +23,9 @@ from tamoss.version import BBC_TAMS_API_VERSION, TAMOSS_VERSION
 
 DEFAULT_TAMOSS_S3_STORAGE_BACKEND_ID = UUID("f1ab5b54-9703-42ed-b181-11ba1c794a7f")
 DEFAULT_WORKER_LEASE_SECONDS = 300
+NANOSECONDS_PER_SECOND = 1_000_000_000
+MIN_OBJECT_TIMEOUT_SECONDS = 300
+MIN_PRESIGNED_URL_TIMEOUT_SECONDS = 30
 
 _OAUTH2_JWT_ALGORITHMS = frozenset(
     {
@@ -221,8 +225,14 @@ class Settings(BaseSettings):
         default=10,
         validation_alias="TAMOSS_DATABASE_POOL_MAX_SIZE",
     )
-    min_object_timeout: str = "300:0"
-    min_presigned_url_timeout: str = "30:0"
+    min_object_timeout: str = Field(
+        default="300:0",
+        validation_alias="TAMOSS_MIN_OBJECT_TIMEOUT",
+    )
+    min_presigned_url_timeout: str = Field(
+        default="30:0",
+        validation_alias="TAMOSS_MIN_PRESIGNED_URL_TIMEOUT",
+    )
     s3_presign_ttl_seconds: int = Field(
         default=3600,
         validation_alias="TAMOSS_S3_PRESIGN_TTL",
@@ -441,6 +451,41 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_timeout_contract(self) -> Settings:
+        min_object_timeout = _timestamp_duration_seconds(
+            self.min_object_timeout,
+            setting_name="min_object_timeout",
+        )
+        min_presigned_url_timeout = _timestamp_duration_seconds(
+            self.min_presigned_url_timeout,
+            setting_name="min_presigned_url_timeout",
+        )
+        if min_object_timeout < MIN_OBJECT_TIMEOUT_SECONDS:
+            raise ValueError("min_object_timeout must be at least 300:0")
+        if min_presigned_url_timeout < MIN_PRESIGNED_URL_TIMEOUT_SECONDS:
+            raise ValueError("min_presigned_url_timeout must be at least 30:0")
+        if min_presigned_url_timeout > min_object_timeout:
+            raise ValueError(
+                "min_presigned_url_timeout must be less than or equal to "
+                "min_object_timeout"
+            )
+        if self.s3_presign_ttl_seconds < min_presigned_url_timeout:
+            raise ValueError(
+                "TAMOSS_S3_PRESIGN_TTL must be greater than or equal to "
+                "min_presigned_url_timeout"
+            )
+        return self
+
+    def min_object_timeout_seconds(self) -> int:
+        return _timestamp_duration_seconds(
+            self.min_object_timeout,
+            setting_name="min_object_timeout",
+        )
+
+    def presigned_put_ttl_seconds(self) -> int:
+        return min(self.s3_presign_ttl_seconds, self.min_object_timeout_seconds())
+
     def api_token_value(self) -> str | None:
         return (
             read_secret_file(
@@ -554,3 +599,16 @@ def _require_url(name: str, value: str | None) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"{name} must be an absolute http(s) URL")
     return candidate
+
+
+def _timestamp_duration_seconds(value: str, *, setting_name: str) -> int:
+    try:
+        nanoseconds = int(Timestamp.from_str(value).to_nanosec())
+    except Exception as exc:
+        raise ValueError(f"{setting_name} must be a valid TAMS timestamp") from exc
+    if nanoseconds < 0:
+        raise ValueError(f"{setting_name} must not be negative")
+    seconds, remainder = divmod(nanoseconds, NANOSECONDS_PER_SECOND)
+    if remainder:
+        raise ValueError(f"{setting_name} must be a whole-second TAMS timestamp")
+    return seconds
