@@ -48,6 +48,7 @@ class MediaObjectRow(TypedDict, total=False):
     id: str
     timerange: str | None
     first_referenced_by_flow: str | None
+    allocated_by_flow: str | None
     referenced_by_flows: list[str]
     instances: list[ObjectInstanceRow]
     key_frame_count: int | None

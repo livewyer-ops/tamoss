@@ -78,6 +78,13 @@ def test_storage_allocation_and_object_instance_lifecycle(
     assert segment.status_code == 400
 
     upload_allocated_object(client, object_id)
+    other_flow_id, _, _ = create_video_flow(client)
+
+    wrong_flow_segment = client.post(
+        f"/flows/{other_flow_id}/segments",
+        json=segment_payload(object_id),
+    )
+    assert wrong_flow_segment.status_code == 400
 
     segment = client.post(
         f"/flows/{flow_id}/segments",
@@ -111,6 +118,12 @@ def test_storage_allocation_and_object_instance_lifecycle(
     )
     assert non_verbose.status_code == 200
     assert set(non_verbose.json()["get_urls"][0]) == {"url", "label", "presigned"}
+
+    reused = client.post(
+        f"/flows/{other_flow_id}/segments",
+        json=segment_payload(object_id),
+    )
+    assert reused.status_code == 201
 
     uncontrolled = client.post(
         f"/objects/{quote(object_id, safe='')}/instances",

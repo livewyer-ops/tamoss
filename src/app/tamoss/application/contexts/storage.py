@@ -77,6 +77,7 @@ class StorageUseCases:
                     if self._reserve_allocated_object(
                         object_id=object_id,
                         backend=backend,
+                        flow_id=flow_id,
                     ):
                         object_ids.append(object_id)
             else:
@@ -84,6 +85,7 @@ class StorageUseCases:
                     if not self._reserve_allocated_object(
                         object_id=object_id,
                         backend=backend,
+                        flow_id=flow_id,
                     ):
                         raise BadRequest(
                             "One or more supplied object_ids already exist."
@@ -106,10 +108,10 @@ class StorageUseCases:
         return allocations
 
     def _reserve_allocated_object(
-        self, *, object_id: str, backend: StorageBackend
+        self, *, object_id: str, backend: StorageBackend, flow_id: UUID
     ) -> bool:
         self._validate_storage_object_id(object_id)
-        media_object = MediaObjectRecord(id=object_id)
+        media_object = MediaObjectRecord(id=object_id, allocated_by_flow=flow_id)
         media_object.instances.append(
             ObjectInstance(
                 storage_backend=backend,

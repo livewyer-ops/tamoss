@@ -35,6 +35,18 @@ obligations:
     tests:
       - tests/adapters/bbc/test_flows_sources_and_segments.py::test_flow_collection_projects_to_source_collection_and_collected_by
 
+  - id: flows.empty-timerange-discovery
+    source: bbc-appnote:0019-implementing-retention-management
+    requirement: Empty TimeRange flow queries discover Flows with no Segments for retention cleanup workflows.
+    tests:
+      - tests/adapters/bbc/test_flows_sources_and_segments.py::test_empty_timerange_query_discovers_empty_flows_for_retention_cleanup
+
+  - id: retention.tag-discovery-primitives
+    source: bbc-appnote:0019-implementing-retention-management
+    requirement: Retention workers can discover segment and flow retention tags using tag_exists filters.
+    tests:
+      - tests/adapters/bbc/test_flows_sources_and_segments.py::test_retention_tags_are_discoverable_with_tag_exists_filters
+
   - id: segments.bulk-create
     source: bbc-adr:0029-bulk-flow-segments
     requirement: Segment registration accepts single and bulk bodies and reports per-segment failures.
@@ -55,9 +67,21 @@ obligations:
     tests:
       - tests/adapters/bbc/test_flows_sources_and_segments.py::test_segment_registration_derives_object_timerange_from_ts_offset
 
+  - id: segments.deprecated-sample-fields
+    source: bbc-adr:0036-specifying-partial-segment-usage
+    requirement: Deprecated sample_offset and sample_count fields remain stored and returned when supplied.
+    tests:
+      - tests/adapters/bbc/test_flows_sources_and_segments.py::test_segments_accept_bbc_bodies_and_emit_paging_headers
+
   - id: objects.instances.lifecycle
     source: bbc-adr:0038-improved-storage-management
     requirement: Controlled and uncontrolled object instances are managed from the object boundary.
+    tests:
+      - tests/adapters/bbc/test_storage_objects_and_deletion.py::test_storage_allocation_and_object_instance_lifecycle
+
+  - id: objects.instances.first-registration-flow-match
+    source: bbc-appnote:0018-multiple-flows-referencing-the-same-object
+    requirement: Allocated controlled Objects can only be first registered against the Flow that requested storage, then may be reused by other Flows.
     tests:
       - tests/adapters/bbc/test_storage_objects_and_deletion.py::test_storage_allocation_and_object_instance_lifecycle
 
@@ -73,6 +97,12 @@ obligations:
     requirement: Object instance updates are visible to every segment that references the same media object.
     tests:
       - tests/adapters/bbc/test_storage_objects_and_deletion.py::test_object_instance_updates_are_visible_to_all_reused_object_segments
+
+  - id: objects.instances.stale-allocation-cleanup
+    source: bbc-adr:0044-signalling-timeouts
+    requirement: Stale allocated controlled Objects are cleaned up after min_object_timeout, including stored bytes.
+    tests:
+      - tests/adapters/bbc/test_storage_objects_and_deletion.py::test_worker_cleans_up_stale_allocated_controlled_object
 
   - id: get-urls.filtering
     source: bbc-adr:0023-filter-segment-get-urls

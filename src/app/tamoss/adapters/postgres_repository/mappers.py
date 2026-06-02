@@ -93,6 +93,7 @@ def _media_object_from_record(
         id=record["id"],
         timerange=record.get("timerange"),
         first_referenced_by_flow=_optional_uuid(record.get("first_referenced_by_flow")),
+        allocated_by_flow=_optional_uuid(record.get("allocated_by_flow")),
         referenced_by_flows={
             UUID(flow_id) for flow_id in record.get("referenced_by_flows", [])
         },
@@ -391,6 +392,9 @@ def _media_object_to_record(media_object: MediaObjectRecord) -> JsonRecord:
         "timerange": media_object.timerange,
         "first_referenced_by_flow": str(media_object.first_referenced_by_flow)
         if media_object.first_referenced_by_flow
+        else None,
+        "allocated_by_flow": str(media_object.allocated_by_flow)
+        if media_object.allocated_by_flow
         else None,
         "referenced_by_flows": [
             str(flow_id)
