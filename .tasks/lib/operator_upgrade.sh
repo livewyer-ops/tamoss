@@ -26,6 +26,9 @@ task_operator_upgrade_previous_config_dir() {
 task_operator_upgrade_prepare_previous() {
   local previous_ref="${TAMOSS_OPERATOR_PREVIOUS_REF:-HEAD^}"
   local previous_image
+  local previous_version="${TAMOSS_OPERATOR_PREVIOUS_VERSION:-0.0.1}"
+  local previous_schema_version="${TAMOSS_OPERATOR_PREVIOUS_SCHEMA_VERSION:-$previous_version}"
+  local previous_tams_api_version="${TAMOSS_OPERATOR_PREVIOUS_TAMS_API_VERSION:-8.0}"
   local workdir="${TAMOSS_OPERATOR_UPGRADE_WORKDIR:-.local/operator-upgrade}"
   local previous_source="$workdir/previous-source"
   local previous_config_dir
@@ -44,7 +47,9 @@ task_operator_upgrade_prepare_previous() {
   if [ -z "${TAMOSS_OPERATOR_PREVIOUS_IMAGE:-}" ]; then
     task_step "Operator upgrade: build previous operator image" \
       docker build \
-        --build-arg VERSION="${TAMOSS_OPERATOR_PREVIOUS_VERSION:-0.0.1}" \
+        --build-arg VERSION="$previous_version" \
+        --build-arg SCHEMA_VERSION="$previous_schema_version" \
+        --build-arg TAMS_API_VERSION="$previous_tams_api_version" \
         -t "$previous_image" \
         -f "$previous_source/operator/Dockerfile" \
         "$previous_source"

@@ -23,13 +23,15 @@ task_operator_chainsaw_up() {
   local install_cnpg_operator="${CHAINSAW_INSTALL_CNPG_OPERATOR:-false}"
   local install_authentik_fixture="${CHAINSAW_INSTALL_AUTHENTIK_FIXTURE:-false}"
   local platform_helmfile="${CHAINSAW_PLATFORM_HELMFILE:-deploy/platform/helmfile.yaml.gotmpl}"
+  local schema_version="${SCHEMA_VERSION:-$version}"
+  local tams_api_version="${TAMS_API_VERSION:-8.0}"
 
   mkdir -p "$(dirname "$kubeconfig")" reports
 
   task_operator_chainsaw_register_cleanup "$cluster" "$keep_cluster"
 
   task_step "Operator Chainsaw: build operator image" \
-    make -C operator docker-build IMG="$operator_image" SCHEMA_VERSION="$version"
+    make -C operator docker-build IMG="$operator_image" VERSION="$version" SCHEMA_VERSION="$schema_version" TAMS_API_VERSION="$tams_api_version"
   docker tag "$operator_image" "$chainsaw_image"
 
   task_step "Operator Chainsaw: build API image" \

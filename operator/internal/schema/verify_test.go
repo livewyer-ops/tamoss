@@ -11,6 +11,12 @@ func TestSchemaVersionDefaultsToDevelopmentMarker(t *testing.T) {
 	}
 }
 
+func TestSupportedTAMSAPIVersionDefaultsTo80(t *testing.T) {
+	if SupportedTAMSAPIVersion != "8.0" {
+		t.Fatalf("expected default TAMS API compatibility version %q, got %q", "8.0", SupportedTAMSAPIVersion)
+	}
+}
+
 func TestValidateVersionRejectsPlaceholders(t *testing.T) {
 	for _, version := range []string{"", "0.0.0", "v0.0.0"} {
 		if err := ValidateVersion(version); err == nil {
@@ -34,5 +40,24 @@ func TestIsSupportedStartingVersion(t *testing.T) {
 	}
 	if IsSupportedStartingVersion("unknown") {
 		t.Fatal("unknown schema version should not be supported")
+	}
+}
+
+func TestIsSupportedStartingVersionAcceptsPreviousRevision(t *testing.T) {
+	currentVersion := SchemaVersion
+	previousVersion := PreviousSupportedSchemaVersion
+	defer func() {
+		SchemaVersion = currentVersion
+		PreviousSupportedSchemaVersion = previousVersion
+	}()
+
+	SchemaVersion = "8.1.0-oss1"
+	PreviousSupportedSchemaVersion = "8.0.0-oss1"
+
+	if !IsSupportedStartingVersion("8.0.0-oss1") {
+		t.Fatal("previous supported schema revision should be accepted")
+	}
+	if IsSupportedStartingVersion("7.9.0-oss1") {
+		t.Fatal("unsupported previous schema revision should be rejected")
 	}
 }

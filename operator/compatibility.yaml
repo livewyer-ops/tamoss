@@ -1,0 +1,24 @@
+{
+  "releases": [
+    {
+      "version": "8.0.0-oss1",
+      "tamsAPI": "8.0",
+      "schemaRevision": "8.0.0-oss1",
+      "upgrade": {
+        "class": "FreshInstall",
+        "from": []
+      }
+    },
+    {
+      "version": "8.1.0-oss1",
+      "tamsAPI": "8.1",
+      "schemaRevision": "8.0.0-oss1",
+      "upgrade": {
+        "class": "APIOnly",
+        "from": [
+          "8.0.0-oss1"
+        ]
+      }
+    }
+  ]
+}

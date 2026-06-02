@@ -45,11 +45,11 @@ jobs:
               ;;
           esac
 
-      - name: Extract version from tag
+      - name: Resolve release metadata
         id: version
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/release-metadata.py "${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Verify release assets are current
         run: |

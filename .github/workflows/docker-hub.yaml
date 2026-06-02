@@ -42,16 +42,18 @@ jobs:
             echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve build version
+      - name: Resolve operator build metadata
         id: build-version
         shell: bash
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
+            python3 .github/scripts/release-metadata.py "${version}" >> "$GITHUB_OUTPUT"
           else
-            version="dev"
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
+            echo "tams_api=8.0" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Extract Git metadata
         id: meta
@@ -97,6 +99,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.build-version.outputs.version }}
+            SCHEMA_VERSION=${{ steps.build-version.outputs.schema_revision }}
+            TAMS_API_VERSION=${{ steps.build-version.outputs.tams_api }}
           platforms: "linux/amd64,linux/arm64"
           provenance: mode=max
           sbom: true
