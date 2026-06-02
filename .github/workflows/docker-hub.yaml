@@ -222,10 +222,13 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
+            python3 .github/scripts/release-metadata.py "${version}" >> "$GITHUB_OUTPUT"
           else
-            version="dev"
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
+            echo "previous_schema_revision=" >> "$GITHUB_OUTPUT"
+            echo "tams_api=8.0" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Extract Git metadata
         id: meta
@@ -270,6 +273,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.build-version.outputs.version }}
+            SCHEMA_VERSION=${{ steps.build-version.outputs.schema_revision }}
+            PREVIOUS_SCHEMA_VERSION=${{ steps.build-version.outputs.previous_schema_revision }}
+            TAMS_API_VERSION=${{ steps.build-version.outputs.tams_api }}
           platforms: "linux/amd64,linux/arm64"
           provenance: mode=max
           sbom: true

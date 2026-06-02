@@ -2,6 +2,7 @@
 FROM python:3.11.14-alpine3.22
 
 ARG VERSION=tamoss-dev
+ARG TAMS_API_VERSION=8.0
 
 LABEL "org.opencontainers.image.authors"="LiveWyer"
 LABEL "org.opencontainers.image.description"="TAMOSS API server"
@@ -18,7 +19,8 @@ EXPOSE 8000
 ENV PYTHONPATH=/app/app \
   UV_CACHE_DIR=/tmp/uv-cache \
   TAMOSS_VERSION=${VERSION} \
-  TAMOSS_SERVICE_VERSION=${VERSION}
+  TAMOSS_SERVICE_VERSION=${VERSION} \
+  TAMOSS_TAMS_API_VERSION=${TAMS_API_VERSION}
 
 COPY --chown=1001:1001 src/app ./app
 
