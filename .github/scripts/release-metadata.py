@@ -88,6 +88,7 @@ def emit_release_metadata(
     version: str, releases: list[dict[str, Any]], path: Path
 ) -> None:
     validate_releases(releases, path, verbose=False)
+    releases_by_version = {str(item.get("version")): item for item in releases}
 
     release = None
     for item in releases:
@@ -102,9 +103,22 @@ def emit_release_metadata(
     if not isinstance(upgrade_from, list):
         fail(f"release {version} upgrade.from must be a list")
 
+    previous_schema_revisions = {
+        required_string(
+            releases_by_version[str(item)], "schemaRevision", path, str(item)
+        )
+        for item in upgrade_from
+    }
+    if len(previous_schema_revisions) > 1:
+        fail(
+            f"release {version} upgrade.from references multiple schema revisions: "
+            f"{', '.join(sorted(previous_schema_revisions))}"
+        )
+
     metadata = {
         "version": release.get("version"),
         "schema_revision": release.get("schemaRevision"),
+        "previous_schema_revision": next(iter(previous_schema_revisions), ""),
         "tams_api": release.get("tamsAPI"),
         "upgrade_class": upgrade.get("class", ""),
         "upgrade_from": ",".join(str(item) for item in upgrade_from),

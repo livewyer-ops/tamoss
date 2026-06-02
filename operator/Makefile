@@ -10,8 +10,9 @@ IMG ?= livewyer/tamoss-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.29.x
 SCHEMA_VERSION ?= $(VERSION)
+PREVIOUS_SCHEMA_VERSION ?=
 TAMS_API_VERSION ?= 8.0
-GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION)
+GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=$(PREVIOUS_SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -102,6 +103,7 @@ docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg SCHEMA_VERSION=$(SCHEMA_VERSION) \
+		--build-arg PREVIOUS_SCHEMA_VERSION=$(PREVIOUS_SCHEMA_VERSION) \
 		--build-arg TAMS_API_VERSION=$(TAMS_API_VERSION) \
 		-t ${IMG} -f Dockerfile ..
 
