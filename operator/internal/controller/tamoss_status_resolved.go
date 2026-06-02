@@ -76,7 +76,7 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 		Versions: tamossv1alpha1.ResolvedVersionStatus{
 			Schema:  schemabundle.SchemaVersion,
 			Tamoss:  resolvedRuntimeVersion(tamoss),
-			TAMSAPI: defaults.DefaultTAMSAPIVersion,
+			TAMSAPI: schemabundle.SupportedTAMSAPIVersion,
 		},
 	}
 	if tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG && tamoss.Spec.Backends.DB.CNPG != nil {

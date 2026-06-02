@@ -5,6 +5,8 @@ set: [errexit, nounset, pipefail]
 vars:
   PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
+  SCHEMA_VERSION: '{{default .VERSION (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+  TAMS_API_VERSION: '{{default "8.0" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   PLATFORM_DEPENDENCIES_FILE: '{{default "deploy/platform/dependencies.yaml" .PLATFORM_DEPENDENCIES_FILE}}'
   OPERATOR_NAMESPACE: '{{default "tamoss-system" .OPERATOR_NAMESPACE}}'
@@ -41,7 +43,7 @@ tasks:
         set -euo pipefail
         . .tasks/lib/progress.sh
         task_step "{{.STEP_LABEL}}" \
-          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" SCHEMA_VERSION="{{.VERSION}}"
+          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}"
 
   test:
     silent: true
