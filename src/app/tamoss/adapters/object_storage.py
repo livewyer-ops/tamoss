@@ -269,7 +269,7 @@ class ConfiguredObjectStorage:
                 "Key": object_id,
                 "ContentType": content_type,
             },
-            ExpiresIn=self._settings.s3_presign_ttl_seconds,
+            ExpiresIn=self._settings.presigned_put_ttl_seconds(),
         )
 
     def _presign_get_url(self, *, backend: StorageBackend, object_id: str) -> str:
