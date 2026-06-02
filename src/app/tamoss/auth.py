@@ -10,14 +10,109 @@ from typing import Any
 
 import jwt
 from fastapi import Request
+from fastapi.routing import APIRoute
 from jwt import InvalidTokenError, PyJWKClientError
+from starlette.routing import Match
 
-from tamoss.errors import Unauthorized
+from tamoss.errors import Forbidden, Unauthorized
 from tamoss.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 _JWKS_CLIENTS: dict[str, jwt.PyJWKClient] = {}
 _JWKS_LOCK = RLock()
+
+_ADMIN_SCOPE = "admin"
+_READ_SCOPE = "read"
+_WRITE_SCOPE = "write"
+_DELETE_SCOPE = "delete"
+_ANY_API_SCOPE = frozenset({_ADMIN_SCOPE, _READ_SCOPE, _WRITE_SCOPE, _DELETE_SCOPE})
+_READ_API_SCOPE = frozenset({_ADMIN_SCOPE, _READ_SCOPE})
+_WRITE_API_SCOPE = frozenset({_ADMIN_SCOPE, _WRITE_SCOPE})
+_DELETE_API_SCOPE = frozenset({_ADMIN_SCOPE, _DELETE_SCOPE})
+_ADMIN_API_SCOPE = frozenset({_ADMIN_SCOPE})
+
+OAUTH2_ROUTE_SCOPE_GROUPS: dict[tuple[str, str], frozenset[str]] = {
+    ("GET", "/"): _ANY_API_SCOPE,
+    ("HEAD", "/"): _ANY_API_SCOPE,
+    ("GET", "/service"): _ANY_API_SCOPE,
+    ("HEAD", "/service"): _ANY_API_SCOPE,
+    ("POST", "/service"): _ADMIN_API_SCOPE,
+    ("GET", "/service/storage-backends"): _ANY_API_SCOPE,
+    ("HEAD", "/service/storage-backends"): _ANY_API_SCOPE,
+    ("GET", "/service/webhooks"): _READ_API_SCOPE,
+    ("HEAD", "/service/webhooks"): _READ_API_SCOPE,
+    ("POST", "/service/webhooks"): _WRITE_API_SCOPE,
+    ("GET", "/service/webhooks/{webhookId}"): _READ_API_SCOPE,
+    ("HEAD", "/service/webhooks/{webhookId}"): _READ_API_SCOPE,
+    ("PUT", "/service/webhooks/{webhookId}"): _WRITE_API_SCOPE,
+    ("DELETE", "/service/webhooks/{webhookId}"): _WRITE_API_SCOPE,
+    ("GET", "/flow-delete-requests"): _DELETE_API_SCOPE,
+    ("HEAD", "/flow-delete-requests"): _DELETE_API_SCOPE,
+    ("GET", "/flow-delete-requests/{request_id}"): _DELETE_API_SCOPE,
+    ("HEAD", "/flow-delete-requests/{request_id}"): _DELETE_API_SCOPE,
+    ("GET", "/sources"): _READ_API_SCOPE,
+    ("HEAD", "/sources"): _READ_API_SCOPE,
+    ("GET", "/sources/{sourceId}"): _READ_API_SCOPE,
+    ("HEAD", "/sources/{sourceId}"): _READ_API_SCOPE,
+    ("GET", "/sources/{sourceId}/label"): _READ_API_SCOPE,
+    ("HEAD", "/sources/{sourceId}/label"): _READ_API_SCOPE,
+    ("PUT", "/sources/{sourceId}/label"): _WRITE_API_SCOPE,
+    ("DELETE", "/sources/{sourceId}/label"): _WRITE_API_SCOPE,
+    ("GET", "/sources/{sourceId}/description"): _READ_API_SCOPE,
+    ("HEAD", "/sources/{sourceId}/description"): _READ_API_SCOPE,
+    ("PUT", "/sources/{sourceId}/description"): _WRITE_API_SCOPE,
+    ("DELETE", "/sources/{sourceId}/description"): _WRITE_API_SCOPE,
+    ("GET", "/sources/{sourceId}/tags"): _READ_API_SCOPE,
+    ("HEAD", "/sources/{sourceId}/tags"): _READ_API_SCOPE,
+    ("GET", "/sources/{sourceId}/tags/{name:path}"): _READ_API_SCOPE,
+    ("HEAD", "/sources/{sourceId}/tags/{name:path}"): _READ_API_SCOPE,
+    ("PUT", "/sources/{sourceId}/tags/{name:path}"): _WRITE_API_SCOPE,
+    ("DELETE", "/sources/{sourceId}/tags/{name:path}"): _WRITE_API_SCOPE,
+    ("GET", "/flows"): _READ_API_SCOPE,
+    ("HEAD", "/flows"): _READ_API_SCOPE,
+    ("GET", "/flows/{flowId}"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}"): _DELETE_API_SCOPE,
+    ("GET", "/flows/{flowId}/flow_collection"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/flow_collection"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/flow_collection"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/flow_collection"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/label"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/label"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/label"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/label"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/description"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/description"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/description"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/description"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/avg_bit_rate"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/avg_bit_rate"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/avg_bit_rate"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/avg_bit_rate"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/max_bit_rate"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/max_bit_rate"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/max_bit_rate"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/max_bit_rate"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/read_only"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/read_only"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/read_only"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/tags"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/tags"): _READ_API_SCOPE,
+    ("GET", "/flows/{flowId}/tags/{name:path}"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/tags/{name:path}"): _READ_API_SCOPE,
+    ("PUT", "/flows/{flowId}/tags/{name:path}"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/tags/{name:path}"): _WRITE_API_SCOPE,
+    ("POST", "/flows/{flowId}/storage"): _WRITE_API_SCOPE,
+    ("GET", "/flows/{flowId}/segments"): _READ_API_SCOPE,
+    ("HEAD", "/flows/{flowId}/segments"): _READ_API_SCOPE,
+    ("POST", "/flows/{flowId}/segments"): _WRITE_API_SCOPE,
+    ("DELETE", "/flows/{flowId}/segments"): _DELETE_API_SCOPE,
+    ("GET", "/objects/{objectId:path}"): _READ_API_SCOPE,
+    ("HEAD", "/objects/{objectId:path}"): _READ_API_SCOPE,
+    ("POST", "/objects/{objectId:path}/instances"): _WRITE_API_SCOPE,
+    ("DELETE", "/objects/{objectId:path}/instances"): _WRITE_API_SCOPE,
+}
 
 
 @dataclass(frozen=True)
@@ -57,6 +152,34 @@ def identify_request(request: Request) -> Identity:
     if not isinstance(settings, Settings):
         settings = get_settings()
     return authenticate_request(request, settings)
+
+
+def authorize_request(request: Request, identity: Identity, settings: Settings) -> None:
+    if identity.method != "bearer-oauth2":
+        return
+    if not identity.scopes:
+        if settings.oauth2_allow_unscoped_full_access:
+            return
+        raise Forbidden(
+            "Forbidden. OAuth2 token is missing a required TAMOSS API scope."
+        )
+
+    route = _matched_api_route(request)
+    if route is None:
+        return
+
+    route_key = (request.method.upper(), route.path)
+    scope_groups = OAUTH2_ROUTE_SCOPE_GROUPS.get(route_key)
+    if scope_groups is None:
+        raise Forbidden(
+            "Forbidden. OAuth2 route scope is not configured for this API route."
+        )
+
+    required_scopes = _oauth2_scope_names(settings, scope_groups)
+    if identity.scopes.isdisjoint(required_scopes):
+        raise Forbidden(
+            "Forbidden. OAuth2 token is missing a required TAMOSS API scope."
+        )
 
 
 def unauthorized_headers(settings: Settings) -> dict[str, str]:
@@ -164,10 +287,6 @@ def _validate_oauth2_bearer_token(token: str, settings: Settings) -> dict[str, A
     if not isinstance(claims, dict):
         raise InvalidTokenError("JWT claims must be an object")
 
-    required_scopes = set(settings.oauth2_required_scopes)
-    token_scopes = _token_scopes(claims)
-    if required_scopes and not required_scopes.issubset(token_scopes):
-        raise InvalidTokenError("JWT is missing required scopes")
     return claims
 
 
@@ -224,6 +343,29 @@ def _claim_subject(claims: dict[str, Any]) -> str:
         if isinstance(value, str) and value:
             return value
     return "oauth2-client"
+
+
+def _matched_api_route(request: Request) -> APIRoute | None:
+    for route in request.app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        match, _child_scope = route.matches(request.scope)
+        if match == Match.FULL:
+            return route
+    return None
+
+
+def _oauth2_scope_names(
+    settings: Settings,
+    scope_groups: frozenset[str],
+) -> frozenset[str]:
+    scope_names = {
+        _ADMIN_SCOPE: settings.oauth2_admin_scope,
+        _READ_SCOPE: settings.oauth2_read_scope,
+        _WRITE_SCOPE: settings.oauth2_write_scope,
+        _DELETE_SCOPE: settings.oauth2_delete_scope,
+    }
+    return frozenset(scope_names[scope_group] for scope_group in scope_groups)
 
 
 def _configured_token_matches(candidate: str, settings: Settings) -> bool:

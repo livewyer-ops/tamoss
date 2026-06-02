@@ -1,6 +1,10 @@
 package v1alpha1
 
-import "testing"
+import (
+	"testing"
+
+	"k8s.io/utils/ptr"
+)
 
 func TestExternalBackendConnectionsRemainSupported(t *testing.T) {
 	db := DBBackendSpec{
@@ -53,5 +57,14 @@ func TestBundledBlocksDoNotInferManagedProvider(t *testing.T) {
 	}
 	if got := s3.Provider(); got != S3BackendProvidedByExternal {
 		t.Fatalf("expected bundled S3 block to stop inferring a provider, got %s", got)
+	}
+}
+
+func TestAuthSpecAllowsUnscopedOAuth2FullAccessDefault(t *testing.T) {
+	if !(AuthSpec{}).AllowsUnscopedOAuth2FullAccess() {
+		t.Fatal("expected omitted OAuth2 unscoped access policy to default true")
+	}
+	if (AuthSpec{OAuth2AllowUnscopedFullAccess: ptr.To(false)}).AllowsUnscopedOAuth2FullAccess() {
+		t.Fatal("expected explicit OAuth2 unscoped access policy false to be preserved")
 	}
 }

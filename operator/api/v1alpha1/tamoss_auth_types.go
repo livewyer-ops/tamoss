@@ -16,9 +16,10 @@ type AuthSpec struct {
 	//+kubebuilder:default=true
 	Required bool `json:"required,omitempty"`
 	//+kubebuilder:default=false
-	TrustForwardAuthHeaders bool                     `json:"trustForwardAuthHeaders,omitempty"`
-	External                *AuthExternalSpec        `json:"external,omitempty"`
-	AuthentikBlueprints     *AuthentikBlueprintsSpec `json:"authentikBlueprints,omitempty"`
+	TrustForwardAuthHeaders       bool                     `json:"trustForwardAuthHeaders,omitempty"`
+	OAuth2AllowUnscopedFullAccess *bool                    `json:"oauth2AllowUnscopedFullAccess,omitempty"`
+	External                      *AuthExternalSpec        `json:"external,omitempty"`
+	AuthentikBlueprints           *AuthentikBlueprintsSpec `json:"authentikBlueprints,omitempty"`
 }
 
 type AuthExternalSpec struct {
@@ -27,11 +28,10 @@ type AuthExternalSpec struct {
 
 type OAuth2Spec struct {
 	//+kubebuilder:default=false
-	Enabled        bool     `json:"enabled,omitempty"`
-	Issuer         string   `json:"issuer,omitempty"`
-	JWKSURI        string   `json:"jwksUri,omitempty"`
-	Audience       string   `json:"audience,omitempty"`
-	RequiredScopes []string `json:"requiredScopes,omitempty"`
+	Enabled  bool   `json:"enabled,omitempty"`
+	Issuer   string `json:"issuer,omitempty"`
+	JWKSURI  string `json:"jwksUri,omitempty"`
+	Audience string `json:"audience,omitempty"`
 	//+kubebuilder:default={RS256}
 	Algorithms              []string                          `json:"algorithms,omitempty"`
 	ClientCredentialsSecret OAuth2ClientCredentialsSecretSpec `json:"clientCredentialsSecret,omitempty"`

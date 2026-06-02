@@ -24,10 +24,20 @@ from tamoss.api.routes import (
     webhooks,
 )
 from tamoss.application.use_cases import TamossUseCases
-from tamoss.auth import authenticate_request, unauthorized_headers, warm_oauth2_jwks
+from tamoss.auth import (
+    authenticate_request,
+    authorize_request,
+    unauthorized_headers,
+    warm_oauth2_jwks,
+)
 from tamoss.bootstrap import StartupConfigurationError, create_use_cases
 from tamoss.contract.openapi import load_public_openapi
-from tamoss.errors import Unauthorized, error_payload, register_error_handlers
+from tamoss.errors import (
+    TamossError,
+    Unauthorized,
+    error_payload,
+    register_error_handlers,
+)
 from tamoss.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -90,12 +100,22 @@ def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
         if _auth_is_skipped(request):
             return await call_next(request)
         try:
-            await anyio.to_thread.run_sync(authenticate_request, request, settings)
-        except Unauthorized as exc:
+            identity = await anyio.to_thread.run_sync(
+                authenticate_request,
+                request,
+                settings,
+            )
+            authorize_request(request, identity, settings)
+        except TamossError as exc:
+            headers = (
+                unauthorized_headers(settings)
+                if isinstance(exc, Unauthorized)
+                else None
+            )
             return JSONResponse(
                 status_code=exc.status_code,
                 content=error_payload(exc.error_type, exc.detail),
-                headers=unauthorized_headers(settings),
+                headers=headers,
             )
         return await call_next(request)
 
