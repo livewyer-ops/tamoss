@@ -124,6 +124,10 @@ func (a AuthSpec) RequiredForRuntime() bool {
 	return a.Required
 }
 
+func (a AuthSpec) AllowsUnscopedOAuth2FullAccess() bool {
+	return boolValue(a.OAuth2AllowUnscopedFullAccess, true)
+}
+
 func (a AuthSpec) OAuth2Config(namespace, name string) OAuth2Spec {
 	switch a.Provider() {
 	case AuthProvidedByExternal:

@@ -15,9 +15,6 @@ spec:
         issuer: https://auth.example.test/application/o/tamoss/
         jwksUri: https://auth.example.test/application/o/tamoss/jwks/
         audience: tamoss
-        requiredScopes:
-          - openid
-          - profile
         algorithms:
           - RS256
         clientCredentialsSecret:

@@ -185,9 +185,25 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias="TAMOSS_OAUTH2_ALGORITHMS",
     )
-    oauth2_required_scopes: Annotated[list[str], NoDecode] = Field(
-        default_factory=list,
-        validation_alias="TAMOSS_OAUTH2_REQUIRED_SCOPES",
+    oauth2_allow_unscoped_full_access: bool = Field(
+        default=True,
+        validation_alias="TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS",
+    )
+    oauth2_admin_scope: str = Field(
+        default="tams-api/admin",
+        validation_alias="TAMOSS_OAUTH2_ADMIN_SCOPE",
+    )
+    oauth2_read_scope: str = Field(
+        default="tams-api/read",
+        validation_alias="TAMOSS_OAUTH2_READ_SCOPE",
+    )
+    oauth2_write_scope: str = Field(
+        default="tams-api/write",
+        validation_alias="TAMOSS_OAUTH2_WRITE_SCOPE",
+    )
+    oauth2_delete_scope: str = Field(
+        default="tams-api/delete",
+        validation_alias="TAMOSS_OAUTH2_DELETE_SCOPE",
     )
     oauth2_jwks_cache_seconds: int = Field(
         default=300,
@@ -318,7 +334,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "oauth2_algorithms",
-        "oauth2_required_scopes",
         "webhook_allowed_hosts",
         mode="before",
     )
@@ -328,6 +343,22 @@ class Settings(BaseSettings):
             return []
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator(
+        "oauth2_admin_scope",
+        "oauth2_read_scope",
+        "oauth2_write_scope",
+        "oauth2_delete_scope",
+        mode="before",
+    )
+    @classmethod
+    def validate_oauth2_api_scope_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            scope_name = value.strip()
+            if not scope_name:
+                raise ValueError("OAuth2 API scope names must not be blank")
+            return scope_name
         return value
 
     @field_validator(

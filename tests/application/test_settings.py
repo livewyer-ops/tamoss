@@ -111,7 +111,6 @@ def test_disabled_oauth_accepts_empty_operator_url_env(
     monkeypatch.setenv("TAMOSS_OAUTH2_ISSUER", "")
     monkeypatch.setenv("TAMOSS_OAUTH2_JWKS_URI", "")
     monkeypatch.setenv("TAMOSS_OAUTH2_AUDIENCE", "")
-    monkeypatch.setenv("TAMOSS_OAUTH2_REQUIRED_SCOPES", "")
     monkeypatch.setenv("TAMOSS_OAUTH2_ALGORITHMS", "")
 
     settings = Settings()
@@ -119,7 +118,7 @@ def test_disabled_oauth_accepts_empty_operator_url_env(
     assert settings.oauth2_enabled is False
     assert settings.oauth2_issuer is None
     assert settings.oauth2_jwks_uri is None
-    assert settings.oauth2_required_scopes == []
+    assert settings.oauth2_allow_unscoped_full_access is True
 
 
 def test_storage_backend_registration_is_disabled_by_default() -> None:

@@ -144,16 +144,24 @@ func withStorageBackendCredentialsVolume(spec tamossv1alpha1.WorkloadCommonSpec,
 
 func authEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
 	oauth2 := tamoss.Spec.Auth.OAuth2Config(tamoss.Namespace, tamoss.Name)
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		{Name: "TAMOSS_AUTH_REQUIRED", Value: fmt.Sprintf("%t", tamoss.Spec.Auth.RequiredForRuntime())},
 		{Name: "TAMOSS_TRUST_FORWARD_AUTH_HEADERS", Value: fmt.Sprintf("%t", tamoss.Spec.Auth.TrustForwardAuthHeaders)},
 		{Name: "TAMOSS_OAUTH2_ENABLED", Value: fmt.Sprintf("%t", oauth2.Enabled)},
 		{Name: "TAMOSS_OAUTH2_ISSUER", Value: oauth2.Issuer},
 		{Name: "TAMOSS_OAUTH2_JWKS_URI", Value: oauth2.JWKSURI},
 		{Name: "TAMOSS_OAUTH2_AUDIENCE", Value: oauth2.Audience},
-		{Name: "TAMOSS_OAUTH2_REQUIRED_SCOPES", Value: strings.Join(oauth2.RequiredScopes, ",")},
+		// TODO: deprecated compatibility shim; remove in the next planned workload-rollout release.
+		{Name: "TAMOSS_OAUTH2_REQUIRED_SCOPES", Value: ""},
 		{Name: "TAMOSS_OAUTH2_ALGORITHMS", Value: strings.Join(oauth2.Algorithms, ",")},
 	}
+	if tamoss.Spec.Auth.OAuth2AllowUnscopedFullAccess != nil {
+		env = append(env, corev1.EnvVar{
+			Name:  "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS",
+			Value: fmt.Sprintf("%t", tamoss.Spec.Auth.AllowsUnscopedOAuth2FullAccess()),
+		})
+	}
+	return env
 }
 
 func secretKeyEnv(name, secretName, key string) corev1.EnvVar {

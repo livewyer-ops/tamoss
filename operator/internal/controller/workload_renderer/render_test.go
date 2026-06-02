@@ -1,6 +1,7 @@
 package workload_renderer
 
 import (
+	"slices"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -425,6 +426,9 @@ func TestRenderAuthentikOAuthCredentialSecret(t *testing.T) {
 		if envValue(container.Env, "TAMOSS_OAUTH2_JWKS_URI") != "http://authentik.auth.svc:9000/application/o/tamoss-tams-example/jwks/" {
 			t.Fatalf("%s should use internal JWKS URI, got %#v", name, container.Env)
 		}
+		if hasEnv(container.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") {
+			t.Fatalf("%s should rely on the API default for OAuth2 unscoped access, got %#v", name, container.Env)
+		}
 	}
 
 	worker := deploymentByName(t, objects, "example-worker")
@@ -433,12 +437,33 @@ func TestRenderAuthentikOAuthCredentialSecret(t *testing.T) {
 	}
 }
 
+func TestAuthEnvPreservesLegacyDefaultOrder(t *testing.T) {
+	tamoss := rendererFixture()
+
+	got := envNames(authEnv(tamoss))
+	want := []string{
+		"TAMOSS_AUTH_REQUIRED",
+		"TAMOSS_TRUST_FORWARD_AUTH_HEADERS",
+		"TAMOSS_OAUTH2_ENABLED",
+		"TAMOSS_OAUTH2_ISSUER",
+		"TAMOSS_OAUTH2_JWKS_URI",
+		"TAMOSS_OAUTH2_AUDIENCE",
+		"TAMOSS_OAUTH2_REQUIRED_SCOPES",
+		"TAMOSS_OAUTH2_ALGORITHMS",
+	}
+
+	if !slices.Equal(got, want) {
+		t.Fatalf("unexpected default auth env order:\ngot  %#v\nwant %#v", got, want)
+	}
+}
+
 func TestRenderExternalOAuthCredentialSecret(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Worker.Enabled = ptr.To(true)
 	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{
-		ProvidedBy: tamossv1alpha1.AuthProvidedByExternal,
-		Required:   true,
+		ProvidedBy:                    tamossv1alpha1.AuthProvidedByExternal,
+		Required:                      true,
+		OAuth2AllowUnscopedFullAccess: ptr.To(false),
 		External: &tamossv1alpha1.AuthExternalSpec{
 			OAuth2: tamossv1alpha1.OAuth2Spec{
 				Enabled:    true,
@@ -464,6 +489,9 @@ func TestRenderExternalOAuthCredentialSecret(t *testing.T) {
 		}
 		if envValue(container.Env, "TAMOSS_OAUTH2_ENABLED") != "true" {
 			t.Fatalf("%s should enable OAuth2, got %#v", name, container.Env)
+		}
+		if envValue(container.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") != "false" {
+			t.Fatalf("%s should render strict OAuth2 unscoped access, got %#v", name, container.Env)
 		}
 	}
 
@@ -854,6 +882,14 @@ func envValue(env []corev1.EnvVar, name string) string {
 		}
 	}
 	return ""
+}
+
+func envNames(env []corev1.EnvVar) []string {
+	names := make([]string, 0, len(env))
+	for _, item := range env {
+		names = append(names, item.Name)
+	}
+	return names
 }
 
 func hasSecretKeyEnv(env []corev1.EnvVar, name, secretName, key string) bool {

@@ -3,9 +3,12 @@ from __future__ import annotations
 import base64
 
 import pytest
+import tamoss.auth as auth_module
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
+from tamoss.auth import Identity
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.memory_repository import FakeTamossRepository
@@ -189,6 +192,171 @@ def test_bbc_static_token_file_reloads_without_restarting_client(tmp_path) -> No
         )
 
 
+def test_oauth2_route_scopes_are_enforced_independently_of_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+    with _oauth_client(
+        monkeypatch,
+        {
+            "admin-token": {"tams-api/admin"},
+            "read-token": {"tams-api/read"},
+            "write-token": {"tams-api/write"},
+            "delete-token": {"tams-api/delete"},
+        },
+    ) as client:
+        read_service = client.get("/service", headers=_bearer("read-token"))
+        read_write_response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=_bearer("read-token"),
+        )
+        write_response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=_bearer("write-token"),
+        )
+        write_delete_response = client.delete(
+            f"/flows/{flow_id}",
+            headers=_bearer("write-token"),
+        )
+        delete_response = client.delete(
+            f"/flows/{flow_id}",
+            headers=_bearer("delete-token"),
+        )
+        admin_service = client.get("/service", headers=_bearer("admin-token"))
+
+    assert read_service.status_code == 200
+    assert read_write_response.status_code == 403
+    assert read_write_response.json()["type"] == "forbidden"
+    assert write_response.status_code != 403
+    assert write_delete_response.status_code == 403
+    assert delete_response.status_code != 403
+    assert admin_service.status_code == 200
+
+
+def test_oauth2_scope_names_are_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _auth_settings(
+        api_token=None,
+        basic_auth_password=None,
+        oauth2_enabled=True,
+        oauth2_read_scope="provider/read",
+    )
+
+    with _oauth_client(
+        monkeypatch,
+        {
+            "default-read-token": {"tams-api/read"},
+            "provider-read-token": {"provider/read"},
+        },
+        settings,
+    ) as client:
+        default_response = client.get(
+            "/service",
+            headers=_bearer("default-read-token"),
+        )
+        provider_response = client.get(
+            "/service",
+            headers=_bearer("provider-read-token"),
+        )
+
+    assert default_response.status_code == 403
+    assert provider_response.status_code == 200
+
+
+def test_oauth2_token_without_scope_claim_keeps_full_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+
+    with _oauth_client(monkeypatch, {"no-scope-token": set()}) as client:
+        service_response = client.get("/service", headers=_bearer("no-scope-token"))
+        write_response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=_bearer("no-scope-token"),
+        )
+        delete_response = client.delete(
+            f"/flows/{flow_id}",
+            headers=_bearer("no-scope-token"),
+        )
+
+    assert service_response.status_code == 200
+    assert write_response.status_code != 403
+    assert delete_response.status_code != 403
+
+
+def test_oauth2_unscoped_full_access_can_be_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _auth_settings(
+        api_token=None,
+        basic_auth_password=None,
+        oauth2_enabled=True,
+        oauth2_allow_unscoped_full_access=False,
+    )
+
+    with _oauth_client(monkeypatch, {"no-scope-token": set()}, settings) as client:
+        response = client.get("/service", headers=_bearer("no-scope-token"))
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_oauth2_authorization_default_denies_unmapped_api_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _oauth_client(monkeypatch, {"admin-token": {"tams-api/admin"}})
+
+    @client.app.get("/unmapped-test-route")
+    def unmapped_test_route() -> dict[str, bool]:
+        return {"ok": True}
+
+    with client:
+        response = client.get(
+            "/unmapped-test-route",
+            headers=_bearer("admin-token"),
+        )
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_oauth2_scope_policy_covers_tamoss_api_routes() -> None:
+    route_exemptions = {
+        "/healthz",
+        "/readyz",
+    }
+    client = _auth_client()
+
+    missing = []
+    for route in client.app.routes:
+        if not isinstance(route, APIRoute) or route.path in route_exemptions:
+            continue
+        missing.extend(
+            f"{method} {route.path}"
+            for method in sorted((route.methods or set()) - {"OPTIONS"})
+            if (method, route.path) not in auth_module.OAUTH2_ROUTE_SCOPE_GROUPS
+        )
+
+    assert missing == []
+
+
+def test_static_token_authentication_keeps_full_access_without_oauth_scopes() -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+
+    with _auth_client() as client:
+        response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=_bearer(API_TOKEN),
+        )
+
+    assert response.status_code != 403
+
+
 def _auth_client(settings: Settings | None = None) -> TestClient:
     settings = settings or _auth_settings()
     storage_backend = settings.storage_backend_record()
@@ -199,6 +367,36 @@ def _auth_client(settings: Settings | None = None) -> TestClient:
         settings=settings,
     )
     return TestClient(create_app(settings, use_cases=use_cases))
+
+
+def _oauth_client(
+    monkeypatch: pytest.MonkeyPatch,
+    scopes_by_token: dict[str, set[str]],
+    settings: Settings | None = None,
+) -> TestClient:
+    def fake_bearer_identity(token: str, _settings: Settings) -> Identity | None:
+        scopes = scopes_by_token.get(token)
+        if scopes is None:
+            return None
+        return Identity(
+            subject=f"oauth2:{token}",
+            method="bearer-oauth2",
+            scopes=frozenset(scopes),
+        )
+
+    monkeypatch.setattr(auth_module, "_bearer_identity", fake_bearer_identity)
+    return _auth_client(
+        settings
+        or _auth_settings(
+            api_token=None,
+            basic_auth_password=None,
+            oauth2_enabled=True,
+        )
+    )
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _auth_settings(**overrides: object) -> Settings:

@@ -212,7 +212,6 @@ func externalAuthConfigured(external *tamossv1alpha1.AuthExternalSpec) bool {
 		oauth2.Issuer != "" ||
 		oauth2.JWKSURI != "" ||
 		oauth2.Audience != "" ||
-		len(oauth2.RequiredScopes) > 0 ||
 		oauth2.ClientCredentialsSecret.ExistingSecret != ""
 }
 

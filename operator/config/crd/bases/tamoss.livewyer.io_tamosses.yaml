@@ -4049,12 +4049,10 @@ spec:
                             type: string
                           jwksUri:
                             type: string
-                          requiredScopes:
-                            items:
-                              type: string
-                            type: array
                         type: object
                     type: object
+                  oauth2AllowUnscopedFullAccess:
+                    type: boolean
                   providedBy:
                     default: external
                     enum:
