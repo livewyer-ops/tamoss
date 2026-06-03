@@ -108,6 +108,8 @@ class SourceUseCases:
     ) -> str:
         value = getattr(self.get_source(source_id), property_name)
         if value is None:
+            if property_name == "label":
+                return ""
             raise NotFound("The requested Source property does not exist.")
         if not isinstance(value, str):
             raise BadRequest("Bad request. Invalid Source property value.")

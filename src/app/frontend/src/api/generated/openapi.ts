@@ -1943,7 +1943,7 @@ export interface components {
             get_urls?: (components["schemas"]["storage-backend"] & {
                 /** @description Storage Backend identifier */
                 storage_id?: components["schemas"]["uuid"];
-                /** @description A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint */
+                /** @description A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint. This URL SHOULD support the inclusion of checksums in headers as supported by advertised Storage Backend product. See AppNote 0048 for more details. */
                 url: string;
                 /** @description If `true`, this URL is pre-signed. If this parameter is unset, the URL is NOT pre-signed. The presigned URL SHALL remain valid for the timeframe advertised in [`min_presigned_url_timeout` at the `/service`](#/operations/GET_service) endpoint, which is subject to a specified minimum (see service endpoint schema). */
                 presigned?: boolean;
@@ -2063,7 +2063,7 @@ export interface components {
         };
         /**
          * Media Bucket Object Store
-         * @description Gives information on storage for Media Objects. This schema is for the `http_object_store` Storage Backend type which provides URLs for storing Media Objects in object store buckets, and is the only Storage Backend type currently implemented.
+         * @description Gives information on storage for Media Objects. This schema is for the `http_object_store` Storage Backend type which provides URLs for storing Media Objects in object store buckets, and is the only Storage Backend type currently implemented.  URLs SHOULD support the inclusion of checksums in headers as supported by advertised Storage Backend product. See AppNote 0048 for more details.
          */
         "flow-storage": {
             /** @description List of information for identifying and uploading Media Objects */
@@ -3218,7 +3218,7 @@ export interface operations {
                     "application/json": string;
                 };
             };
-            /** @description The requested Source does not exist, or does not have a label set. */
+            /** @description The requested Source does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3322,7 +3322,7 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["trait_resource_info_head_200"];
-            /** @description The requested Source does not exist, or does not have a label set. */
+            /** @description The requested Source does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3338,7 +3338,7 @@ export interface operations {
                 source_id?: components["schemas"]["uuid"];
                 /** @description Filter on Flows that overlap the given timerange. An empty timerange returns Flows with no content. */
                 timerange?: components["schemas"]["timerange"];
-                /** @description TAMOSS extension. Include each listed Flow's computed content timerange in the response. */
+                /** @description Third-party compatibility extension. Include each listed Flow's computed content timerange in the response. */
                 include_timerange?: boolean;
                 /** @description Filter on Flow format. */
                 format?: components["schemas"]["content-format"];
@@ -3647,7 +3647,7 @@ export interface operations {
                 source_id?: components["schemas"]["uuid"];
                 /** @description Filter on Flows that overlap the given timerange. */
                 timerange?: components["schemas"]["timerange"];
-                /** @description TAMOSS extension. Include each listed Flow's computed content timerange in the response. */
+                /** @description Third-party compatibility extension. Include each listed Flow's computed content timerange in the response. */
                 include_timerange?: boolean;
                 /** @description Filter on Flow format. */
                 format?: components["schemas"]["content-format"];
@@ -4265,7 +4265,7 @@ export interface operations {
                     "application/json": string;
                 };
             };
-            /** @description The requested Flow does not exist, or does not have a label set. */
+            /** @description The requested Flow does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4369,7 +4369,7 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["trait_resource_info_head_200"];
-            /** @description The requested Flow does not exist, or does not have a label set. */
+            /** @description The requested Flow does not exist. */
             404: {
                 headers: {
                     [name: string]: unknown;

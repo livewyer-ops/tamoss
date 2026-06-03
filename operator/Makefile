@@ -11,7 +11,7 @@ IMG ?= livewyer/tamoss-operator:v$(VERSION)
 ENVTEST_K8S_VERSION = 1.29.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
-TAMS_API_VERSION ?= 8.0
+TAMS_API_VERSION ?= 8.1
 GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=$(PREVIOUS_SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)

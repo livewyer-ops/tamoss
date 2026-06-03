@@ -1221,7 +1221,7 @@ class GetUrl(StorageBackend):
     url: Annotated[
         str,
         Field(
-            description="A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint"
+            description="A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint. This URL SHOULD support the inclusion of checksums in headers as supported by advertised Storage Backend product. See AppNote 0048 for more details."
         ),
     ]
     presigned: Annotated[

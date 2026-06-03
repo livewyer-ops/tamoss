@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 from collections.abc import Iterator
 from urllib.parse import unquote, urlparse
@@ -10,9 +12,19 @@ import pytest
 import requests
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from fastapi.testclient import TestClient
 from tamoss.adapters.object_storage import ConfiguredObjectStorage
+from tamoss.app import create_app
+from tamoss.application.use_cases import TamossUseCases
 from tamoss.domain.model import StorageBackend
 from tamoss.settings import Settings, StorageBackendSettings
+
+from tests.adapters.bbc.support import (
+    allocate_objects,
+    create_video_flow,
+    segment_payload,
+)
+from tests.support.memory_repository import FakeTamossRepository
 
 pytestmark = pytest.mark.needs_s3
 
@@ -48,6 +60,29 @@ def object_storage(
         storage_backend=_settings_backend(s3_backend),
     )
     return ConfiguredObjectStorage(settings)
+
+
+@pytest.fixture()
+def s3_api_client(s3_backend: StorageBackend) -> Iterator[TestClient]:
+    settings = Settings(
+        auth_required=False,
+        public_base_url="http://testserver",
+        s3_presign_ttl_seconds=120,
+        s3_connect_timeout_seconds=2,
+        s3_read_timeout_seconds=2,
+        storage_backend=_settings_backend(s3_backend),
+    )
+    object_storage = ConfiguredObjectStorage(settings)
+    app = create_app(
+        settings,
+        use_cases=TamossUseCases(
+            repository=FakeTamossRepository(s3_backend),
+            object_storage=object_storage,
+            settings=settings,
+        ),
+    )
+    with TestClient(app) as client:
+        yield client
 
 
 def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
@@ -87,6 +122,62 @@ def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
     get_response = requests.get(presigned_get_url["url"], timeout=5)
     assert get_response.status_code == 200
     assert get_response.content == body
+
+
+@pytest.mark.parametrize(
+    ("checksum_header", "checksum_algorithm"),
+    [
+        ("Content-MD5", "md5"),
+        ("x-amz-checksum-sha256", "sha256"),
+    ],
+)
+def test_s3_presigned_put_allows_storage_checksum_headers(
+    s3_api_client: TestClient,
+    checksum_header: str,
+    checksum_algorithm: str,
+) -> None:
+    flow_id, _, _ = create_video_flow(s3_api_client)
+    object_id = f"bbc/adapter/{uuid4()}/checksum.ts"
+    bad_object_id = f"bbc/adapter/{uuid4()}/bad-checksum.ts"
+    body = b"tamoss checksum passthrough\n"
+
+    allocation = allocate_objects(s3_api_client, flow_id, [object_id])[0]
+    put_url = allocation["put_url"]
+    headers = dict(put_url["headers"])
+    headers[checksum_header] = _checksum(body, checksum_algorithm)
+
+    put_response = requests.put(
+        put_url["url"],
+        data=body,
+        headers=headers,
+        timeout=5,
+    )
+    assert put_response.status_code in {200, 201, 204}, put_response.text
+
+    registered = s3_api_client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(object_id),
+    )
+    assert registered.status_code == 201, registered.text
+
+    bad_allocation = allocate_objects(s3_api_client, flow_id, [bad_object_id])[0]
+    bad_put_url = bad_allocation["put_url"]
+    bad_headers = dict(bad_put_url["headers"])
+    bad_headers[checksum_header] = _checksum(b"different body", checksum_algorithm)
+
+    bad_put_response = requests.put(
+        bad_put_url["url"],
+        data=body,
+        headers=bad_headers,
+        timeout=5,
+    )
+    assert bad_put_response.status_code not in {200, 201, 204}
+
+    missing_object = s3_api_client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(bad_object_id, "[10:0_20:0)"),
+    )
+    assert missing_object.status_code == 400
 
 
 def test_s3_write_read_and_delete_are_scoped_to_configured_backend(
@@ -138,6 +229,11 @@ def _settings_backend(backend: StorageBackend) -> StorageBackendSettings:
         access_key=backend.access_key,
         secret_key=backend.secret_key,
     )
+
+
+def _checksum(body: bytes, algorithm: str) -> str:
+    digest = hashlib.new(algorithm, body).digest()
+    return base64.b64encode(digest).decode("ascii")
 
 
 def _client(backend: StorageBackend):

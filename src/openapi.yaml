@@ -25,7 +25,7 @@ info:
     the Storage Backend type in use appropriately.
 
     '
-  version: '8.0'
+  version: '8.1'
   contact:
     name: BBC R&D - Cloud-Fit Production Team
     email: cloudfit-opensource@rd.bbc.co.uk
@@ -41,7 +41,7 @@ servers:
   variables:
     version:
       description: API version
-      default: v8.0
+      default: v8.1
 security:
 - bearer_token_auth: []
 - basic_auth: []
@@ -970,8 +970,7 @@ paths:
         '200':
           $ref: '#/components/responses/trait_resource_info_head_200'
         '404':
-          description: The requested Source does not exist, or does not have a label
-            set.
+          description: The requested Source does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     get:
@@ -992,8 +991,7 @@ paths:
               schema:
                 type: string
         '404':
-          description: The requested Source does not exist, or does not have a label
-            set.
+          description: The requested Source does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     put:
@@ -1783,8 +1781,7 @@ paths:
         '200':
           $ref: '#/components/responses/trait_resource_info_head_200'
         '404':
-          description: The requested Flow does not exist, or does not have a label
-            set.
+          description: The requested Flow does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     get:
@@ -1805,8 +1802,7 @@ paths:
               schema:
                 type: string
         '404':
-          description: The requested Flow does not exist, or does not have a label
-            set.
+          description: The requested Flow does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     put:

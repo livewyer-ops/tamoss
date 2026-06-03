@@ -110,6 +110,12 @@ obligations:
     tests:
       - tests/adapters/bbc/test_storage_objects_and_deletion.py::test_get_url_filters_apply_to_objects_and_segments
 
+  - id: storage.checksum-header-passthrough
+    source: bbc-adr:0048-media-integrity
+    requirement: Presigned PUT URLs allow storage-backed checksum headers and the backend rejects checksum mismatches.
+    tests:
+      - tests/adapters/storage/test_configured_object_storage.py::test_s3_presigned_put_allows_storage_checksum_headers
+
   - id: deletion.reference-cleanup
     source: bbc-adr:0004-content-deletion
     requirement: Deletion removes only unreferenced segments, flow/source metadata, and object storage.
