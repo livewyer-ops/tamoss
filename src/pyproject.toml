@@ -48,6 +48,7 @@ dev = [
     "types-PyYAML",
     "playwright>=1.59.0",
     "datamodel-code-generator[ruff]>=0.58.0",
+    "httpx2>=2.3.0",
 ]
 
 [tool.setuptools]
@@ -177,13 +178,14 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = [".git", ".venv", "venv", "build", "dist"]
 markers = [
-    "bbc: BBC TAMS v8.1 contract or semantic obligation",
-    "e2e: Deployed BBC-facing black-box checks",
+    "tams_conformance: TAMS API, ADR, or AppNote conformance requirement",
+    "tamoss_extension: TAMOSS compatibility or operational extension outside core TAMS conformance",
+    "tamoss_security: TAMOSS authentication, authorisation, or hardening policy",
+    "e2e: Deployed TAMS-facing black-box checks",
     "needs_db: Requires live PostgreSQL endpoint",
     "needs_media: Requires local media tooling or containerized media fixture checks",
     "needs_s3: Requires real S3/RustFS endpoint",
     "operator_kind: Opt-in zero-to-ready Kind install through the operator",
-    "operator_upgrade: In-place Kind operator upgrade test",
     "smoke: Fast deployed product and operator confidence checks",
     "slow: Takes >10 seconds to complete",
     "architecture: Static architecture and repository shape checks",

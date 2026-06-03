@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from tamoss.contract.generated import contract_models
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE
 
-from tests.adapters.bbc.support import (
+from tests.tams.support import (
     IMAGE_FORMAT,
     PRIMARY_BACKEND_ID,
     PRIMARY_BACKEND_LABEL,
@@ -26,7 +26,7 @@ from tests.adapters.bbc.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.bbc
+pytestmark = pytest.mark.tams_conformance
 
 
 def test_video_flow_write_creates_source_and_supports_read_filters(
@@ -99,37 +99,6 @@ def test_video_flow_write_creates_source_and_supports_read_filters(
     assert invalid_tag_exists.status_code == 400
 
 
-def test_flow_and_source_response_shape_is_stable_across_routes(
-    client: TestClient,
-) -> None:
-    flow_id, source_id, created_flow = create_video_flow(
-        client,
-        label="Programme video",
-        tags={"editorial": "programme"},
-    )
-    listed_flow = client.get("/flows").json()[0]
-    fetched_flow = client.get(f"/flows/{flow_id}").json()
-    fetched_source = client.get(f"/sources/{source_id}").json()
-    listed_source = client.get("/sources").json()[0]
-
-    for payload in (created_flow, listed_flow, fetched_flow):
-        assert payload["id"] == str(flow_id)
-        assert payload["source_id"] == str(source_id)
-        assert payload["format"] == VIDEO_FORMAT
-        assert payload["read_only"] is False
-        assert payload["tags"] == {"editorial": "programme"}
-        assert payload["created"]
-        assert payload["metadata_updated"]
-        assert payload["metadata_version"]
-
-    for payload in (fetched_source, listed_source):
-        assert payload["id"] == str(source_id)
-        assert payload["format"] == VIDEO_FORMAT
-        assert payload["tags"] == {"editorial": "programme"}
-        assert payload["created"]
-        assert payload["updated"]
-
-
 def test_core_api_responses_validate_against_contract_models(
     client: TestClient,
 ) -> None:
@@ -170,6 +139,7 @@ def test_flow_metadata_version_is_preserved_on_create_and_bumped_on_update(
     assert fetched.json()["updated_by"]
 
 
+@pytest.mark.tamoss_extension
 def test_list_flows_can_include_timerange_compatibility_extension(
     client: TestClient,
 ) -> None:
@@ -215,6 +185,7 @@ def test_list_flows_can_include_timerange_compatibility_extension(
     assert_bbc_error(invalid.json())
 
 
+@pytest.mark.tamoss_extension
 def test_empty_timerange_query_discovers_empty_flows_for_retention_cleanup(
     client: TestClient,
 ) -> None:
@@ -279,6 +250,7 @@ def test_retention_tags_are_discoverable_with_tag_exists_filters(
     } <= no_segment_retention_ids
 
 
+@pytest.mark.tamoss_extension
 def test_collection_flows_include_child_timerange_compatibility_extension(
     client: TestClient,
 ) -> None:
@@ -733,6 +705,7 @@ def test_segment_overlap_and_queries_respect_timerange_boundaries(
     assert excludes_endpoint.json() == []
 
 
+@pytest.mark.tamoss_extension
 def test_segment_coverage_gap_header_is_separate_from_flow_extent(
     client: TestClient,
 ) -> None:

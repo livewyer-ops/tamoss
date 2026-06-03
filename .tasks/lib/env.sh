@@ -182,7 +182,17 @@ task_platform_helmfile() {
   local timeout="$4"
   shift 4
   local timeout_seconds
+  local helm_bin helmfile_bin
   local cwd kubeconfig_abs values_abs helmfile_dir helmfile_name
+
+  helmfile_bin="$(task_resolve_aqua_binary helmfile)" || {
+    echo "helmfile required; run aqua install or add helmfile to PATH" >&2
+    return 127
+  }
+  helm_bin="$(task_resolve_aqua_binary helm)" || {
+    echo "helm required; run aqua install or add helm to PATH" >&2
+    return 127
+  }
 
   cwd="$(pwd)"
   case "$kubeconfig" in
@@ -196,7 +206,8 @@ task_platform_helmfile() {
   timeout_seconds="$(task_timeout_to_seconds "$timeout")"
   (
     cd "$helmfile_dir"
-    helmfile \
+    "$helmfile_bin" \
+      --helm-binary "$helm_bin" \
       --kubeconfig "$kubeconfig_abs" \
       --file "$helmfile_name" \
       --state-values-file values/defaults.yaml \

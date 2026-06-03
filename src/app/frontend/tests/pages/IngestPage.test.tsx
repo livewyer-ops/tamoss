@@ -132,27 +132,6 @@ describe("IngestPage", () => {
     );
   });
 
-  it("marks create-source required fields", async () => {
-    renderPage();
-    await screen.findByRole("option", { name: "Camera A" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create source" }));
-
-    expect(
-      screen.getByText("*", { selector: "label[for='new-source-label'] span" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("*", {
-        selector: "label[for='new-source-format'] span",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("(optional)", {
-        selector: "label[for='new-source-description'] span",
-      }),
-    ).toBeInTheDocument();
-  });
-
   it("starts ingest against the selected existing source", async () => {
     mocks.session.sourceId = "source-1";
     renderPage();

@@ -28,13 +28,11 @@ task_green() {
 
 task_resolve_aqua_binary() {
   bin="${1:?task_resolve_aqua_binary requires a binary name}"
-  if command -v "$bin" >/dev/null 2>&1; then
-    printf '%s' "$bin"
-  elif command -v aqua >/dev/null 2>&1; then
-    printf 'aqua exec -- %s' "$bin"
-  else
-    return 1
+  if command -v aqua >/dev/null 2>&1 && aqua which "$bin" >/dev/null 2>&1; then
+    aqua which "$bin"
+    return
   fi
+  command -v "$bin"
 }
 
 task_log_slug() {

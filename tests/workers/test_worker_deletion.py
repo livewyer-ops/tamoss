@@ -12,7 +12,7 @@ from tamoss import worker
 from tamoss.application.contexts import deletion_processor
 from tamoss.domain.model import StorageBackend, utc_now
 
-from tests.adapters.bbc.support import (
+from tests.tams.support import (
     create_video_flow,
     register_segment,
     segment_payload,

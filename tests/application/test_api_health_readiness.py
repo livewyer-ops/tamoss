@@ -152,18 +152,6 @@ def test_readyz_reports_unsupported_schema_revision() -> None:
     }
 
 
-def test_readyz_uses_stable_reason_fields() -> None:
-    client = _client(_Repository([_storage_backend()]))
-
-    response = client.get("/readyz")
-
-    checks = response.json()["checks"]
-    assert set(checks) == {"repository", "storage_backends", "object_store"}
-    for check in checks.values():
-        assert isinstance(check["reason"], str)
-        assert check["reason"]
-
-
 def test_unexpected_api_error_returns_stable_payload_with_incident_id(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

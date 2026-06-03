@@ -55,7 +55,7 @@ jobs:
         with:
           paths: reports/junit-py-fast.xml
 
-  bbc-contract:
+  tams-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -78,25 +78,25 @@ jobs:
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
 
-      - name: Run BBC OpenAPI contract tests
-        run: task test:contract:bbc
+      - name: Run TAMS OpenAPI contract tests
+        run: task test:tams:contract
 
-      - name: Upload BBC contract reports
+      - name: Upload TAMS contract reports
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: bbc-contract-reports-${{ github.run_id }}
+          name: tams-contract-reports-${{ github.run_id }}
           path: reports/**
           retention-days: 30
           if-no-files-found: warn
 
-      - name: BBC contract summary
+      - name: TAMS contract summary
         uses: test-summary/action@v2
         if: always()
         with:
           paths: reports/junit-*.xml
 
-  bbc-semantics:
+  tams-semantics:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -119,19 +119,19 @@ jobs:
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
 
-      - name: Run BBC semantic workflow tests
-        run: task test:semantics:bbc
+      - name: Run TAMS semantic workflow tests
+        run: task test:tams:semantics
 
-      - name: Upload BBC semantic reports
+      - name: Upload TAMS semantic reports
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: bbc-semantics-reports-${{ github.run_id }}
+          name: tams-semantics-reports-${{ github.run_id }}
           path: reports/**
           retention-days: 30
           if-no-files-found: warn
 
-      - name: BBC semantic summary
+      - name: TAMS semantic summary
         uses: test-summary/action@v2
         if: always()
         with:

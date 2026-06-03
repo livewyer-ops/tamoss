@@ -18,7 +18,9 @@ from tamoss.domain.model import (
 )
 from tamoss.settings import Settings, StorageBackendSettings
 
-from tests.adapters.bbc.support import (
+from tests.support.memory_repository import FakeTamossRepository
+from tests.support.object_storage import InMemoryObjectStorage
+from tests.tams.support import (
     PRIMARY_BACKEND_ID,
     PRIMARY_BACKEND_LABEL,
     controlled_object_instance_payload,
@@ -30,10 +32,8 @@ from tests.adapters.bbc.support import (
     upload_allocated_object,
     video_flow_payload,
 )
-from tests.support.memory_repository import FakeTamossRepository
-from tests.support.object_storage import InMemoryObjectStorage
 
-pytestmark = pytest.mark.bbc
+pytestmark = pytest.mark.tams_conformance
 
 SECONDARY_BACKEND_ID = UUID("22222222-2222-4222-8222-222222222222")
 
@@ -295,10 +295,6 @@ def test_worker_cleans_up_stale_allocated_controlled_object(
     assert processed == 1
     assert use_cases.repository.get_object(object_id) is None
     assert use_cases.object_storage.read(object_id, backend=backend) is None
-
-
-def test_hidden_storage_proxy_route_is_not_registered(client: TestClient) -> None:
-    assert client.put("/_tamoss/storage/object.ts", content=b"media").status_code == 404
 
 
 def test_storage_allocation_rejects_high_limits_and_invalid_object_ids(

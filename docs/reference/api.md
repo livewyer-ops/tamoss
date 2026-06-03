@@ -1,6 +1,6 @@
 # API Reference
 
-TAMOSS implements the BBC TAMS v8.0 API. The upstream specification is the core
+TAMOSS implements the BBC TAMS v8.1 API. The upstream specification is the core
 contract for sources, flows, flow segments, tags, storage backends, webhooks,
 objects, and deletion workflows.
 

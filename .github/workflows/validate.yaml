@@ -114,14 +114,14 @@ jobs:
       - name: Verify OpenAPI reproducibility
         run: task openapi:check
 
-      - name: Generate BBC inventory report
-        run: task test:bbc:inventory
+      - name: Generate TAMS conformance inventory report
+        run: task test:tams:inventory
 
-      - name: Upload BBC inventory report
+      - name: Upload TAMS conformance inventory report
         uses: actions/upload-artifact@v7
         with:
-          name: bbc-inventory-report
-          path: reports/bbc-inventory.md
+          name: tams-conformance-inventory-report
+          path: reports/tams-conformance-inventory.md
           if-no-files-found: error
 
   python-strict-mypy:

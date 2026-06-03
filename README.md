@@ -6,10 +6,10 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
-[![BBC TAMS v8.0](https://img.shields.io/badge/BBC%20TAMS-v8.0-green)](https://github.com/bbc/tams)
+[![BBC TAMS v8.1](https://img.shields.io/badge/BBC%20TAMS-v8.1-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the
-[BBC TAMS v8.0 API specification](https://github.com/bbc/tams). It installs as
+[BBC TAMS v8.1 API specification](https://github.com/bbc/tams). It installs as
 an operator-driven product with three supported infrastructure profiles:
 `local-kind`, `single-server`, and `multi-server`.
 
@@ -19,7 +19,7 @@ backend integrations.
 
 ## Features
 
-- **TAMS-compatible media store**: Implements the BBC TAMS v8.0 API for working
+- **TAMS-compatible media store**: Implements the BBC TAMS v8.1 API for working
   with sources, flows, flow segments, tags, storage backends, webhooks, and
   deletion workflows.
 - **Operator-managed runtime**: Reconciles API, worker, UI, schema migration,
@@ -138,8 +138,7 @@ task check
 For deployed confidence:
 
 ```bash
-task kind:up PROFILE=local-kind
-task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
+task kind:test PROFILE=local-kind
 ```
 
 See [Development Workflow](docs/development/contributing.md) and
@@ -159,5 +158,5 @@ See [Development Workflow](docs/development/contributing.md) and
 
 Licensed under the [Apache License 2.0](LICENSE).
 
-This project implements the BBC TAMS v8.0 specification. See
+This project implements the BBC TAMS v8.1 specification. See
 [src/vendor/bbc-tams/](src/vendor/bbc-tams/) for upstream license information.

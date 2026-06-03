@@ -22,4 +22,4 @@ jobs:
       artifact-name: nightly-e2e-reports-${{ github.run_id }}
       retention-days: 90
       summary-title: Nightly E2E Results
-      summary-description: Nightly run recreates Kind, executes deployed BBC-facing pytest E2E through ingress, and validates an in-place operator upgrade. See junit reports in the uploaded artifact.
+      summary-description: Nightly run recreates Kind and executes deployed TAMS/product pytest E2E through ingress. See junit reports in the uploaded artifact.

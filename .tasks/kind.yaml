@@ -103,10 +103,6 @@ tasks:
         . .tasks/lib/kind.sh
         task_step "Local Kind: delete existing cluster" \
           task_kind_delete_cluster "{{.PROJECT_NAME}}"
-      - |
-        set -euo pipefail
-        . .tasks/lib/operator_upgrade.sh
-        task_operator_upgrade_prepare_previous
       - task: :kind:create
         vars:
           PROFILE: "{{.PROFILE}}"
@@ -120,25 +116,16 @@ tasks:
         set -euo pipefail
         . .tasks/lib/kind.sh
         task_kind_validate_profile_topology "{{.PROFILE}}" "{{.KUBECONFIG}}"
-      - |
-        set -euo pipefail
-        . .tasks/lib/kind.sh
-        . .tasks/lib/operator_upgrade.sh
-        task_step "Local Kind: load previous TAMOSS operator image" \
-          kind load docker-image "$(task_operator_upgrade_previous_image)" --name "{{.PROJECT_NAME}}"
       - task: :env:platform:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - |
-        set -euo pipefail
-        . .tasks/lib/progress.sh
-        . .tasks/lib/operator_upgrade.sh
-        task_step "Operator upgrade: install previous operator" \
-          task_operator_upgrade_apply_operator \
-            "{{.KUBECONFIG}}" \
-            "$(task_operator_upgrade_previous_config_dir)" \
-            "$(task_operator_upgrade_previous_image)"
+      - task: :operator:apply
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: :operator:restart
+        vars:
+          KUBECONFIG: "{{.KUBECONFIG}}"
       - task: :env:instance:apply
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -156,14 +143,6 @@ tasks:
         vars:
           PROFILE: "{{.PROFILE}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-      - |
-        set -euo pipefail
-        . .tasks/lib/operator_upgrade.sh
-        task_operator_upgrade_validate_existing_cluster \
-          "{{.KUBECONFIG}}" \
-          "{{.OPERATOR_IMAGE}}" \
-          "tams" \
-          "{{.PROFILE_TAMOSS_NAME}}"
       - |
         set -euo pipefail
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then

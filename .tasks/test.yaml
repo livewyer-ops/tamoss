@@ -10,40 +10,85 @@ env:
 vars:
   PYTEST: 'uv run --project src pytest -c src/pyproject.toml -q --no-header --tb=short'
   PYTEST_COLLECT: 'uv run --project src pytest -c src/pyproject.toml --no-header --tb=short'
-  BBC_TEST_DIR: tests/adapters/bbc
+  TAMS_CONFORMANCE_DIR: tests/tams/conformance
+  TAMS_INTEGRATION_DIR: tests/tams/integration
+  TAMS_DEPLOYED_DIR: tests/tams/deployed
+  TAMS_CONFORMANCE_MARK: "tams_conformance and not tamoss_extension and not tamoss_security"
 
 tasks:
-  # In-process BBC gates validate the FastAPI app without external services.
-  contract:bbc:
-    aliases: [contract]
+  # TAMS gates validate the contract separately from TAMOSS extensions.
+  tams:contract:
     silent: true
     cmds:
       - task: :dev:submodules
       - mkdir -p reports
-      - printf 'test py.bbc.contract\n'
+      - printf 'test py.tams.contract\n'
       - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/openapi-parity.txt
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_openapi_contract.py -m bbc -ra --junitxml=reports/junit-py-bbc-contract.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_openapi_contract.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
 
-  semantics:bbc:
-    aliases: [semantics]
+  tams:semantics:
     silent: true
     cmds:
       - mkdir -p reports
-      - printf 'test py.bbc.semantics\n'
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/test_service_and_metadata.py {{.BBC_TEST_DIR}}/test_authentication.py {{.BBC_TEST_DIR}}/test_flows_sources_and_segments.py {{.BBC_TEST_DIR}}/test_storage_objects_and_deletion.py {{.BBC_TEST_DIR}}/test_webhooks.py -m bbc -ra --junitxml=reports/junit-py-bbc-semantics.xml"
+      - printf 'test py.tams.semantics\n'
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_service_and_metadata.py {{.TAMS_CONFORMANCE_DIR}}/test_flows_sources_and_segments.py {{.TAMS_CONFORMANCE_DIR}}/test_storage_objects_and_deletion.py {{.TAMS_CONFORMANCE_DIR}}/test_webhooks.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
 
-  bbc:
+  tams:integration:
+    silent: true
+    vars:
+      DB_URL: '{{default "postgresql://tams:tams@127.0.0.1:55432/tams" .TAMOSS_TEST_DB_URL}}'
+      S3_ENDPOINT: '{{default "http://127.0.0.1:9000" (default (env "TAMOSS_TEST_S3_ENDPOINT") (env "TAMOSS_S3_ENDPOINT"))}}'
+      S3_ACCESS_KEY: '{{default "rustfsadmin" (default (env "BUCKET_USER") (env "TAMOSS_S3_ACCESS_KEY"))}}'
+      S3_SECRET_KEY: '{{default "rustfsadmin" (default (env "BUCKET_PASSWORD") (env "TAMOSS_S3_SECRET_KEY"))}}'
+    env:
+      TAMOSS_TEST_DB_URL: "{{.DB_URL}}"
+      TAMOSS_TEST_S3_ENDPOINT: "{{.S3_ENDPOINT}}"
+      TAMOSS_TEST_S3_ACCESS_KEY: "{{.S3_ACCESS_KEY}}"
+      TAMOSS_TEST_S3_SECRET_KEY: "{{.S3_SECRET_KEY}}"
+    cmds:
+      - mkdir -p reports
+      - printf 'test py.tams.integration\n'
+      - |
+        uv run --project src python - <<'PY'
+        import os
+        import boto3
+        import psycopg
+        from botocore.config import Config
+
+        with psycopg.connect(os.environ["TAMOSS_TEST_DB_URL"], connect_timeout=2):
+            pass
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=os.environ["TAMOSS_TEST_S3_ENDPOINT"],
+            aws_access_key_id=os.environ["TAMOSS_TEST_S3_ACCESS_KEY"],
+            aws_secret_access_key=os.environ["TAMOSS_TEST_S3_SECRET_KEY"],
+            region_name="us-east-1",
+            config=Config(s3={"addressing_style": "path"}, connect_timeout=2, read_timeout=2),
+        )
+        client.list_buckets()
+        PY
+      - "{{.PYTEST}} {{.TAMS_INTEGRATION_DIR}} -m 'tams_conformance and needs_db and needs_s3' -ra --junitxml=reports/junit-py-tams-integration.xml"
+
+  tams:conformance:
     silent: true
     cmds:
-      - task: contract:bbc
-      - task: semantics:bbc
+      - task: tams:contract
+      - task: tams:semantics
+      - task: tams:integration
+
+  tams:
+    desc: "Validation: run local TAMS conformance with real Postgres/RustFS checks"
+    silent: true
+    cmds:
+      - task: tams:conformance
 
   fast:
     silent: true
     cmds:
       - mkdir -p reports
       - printf 'test py.fast\n'
-      - "{{.PYTEST}} tests/adapters/bbc tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not operator_upgrade and not slow' -ra --junitxml=reports/junit-py-fast.xml"
+      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
 
   application:
     silent: true
@@ -52,24 +97,43 @@ tasks:
       - printf 'test py.application\n'
       - "{{.PYTEST}} tests/application/ -ra --junitxml=reports/junit-py-application.xml"
 
-  bbc:inventory:
+  tams:inventory:
     silent: true
     cmds:
       - mkdir -p reports
       - |
         {
-          printf '# BBC Test Inventory\n\n'
-          printf 'Generated by `task test:bbc:inventory`.\n\n'
+          printf '# TAMS Conformance Test Inventory\n\n'
+          printf 'Generated by `task test:tams:inventory`.\n\n'
           printf '## Test Directory\n\n'
-          printf '%s\n\n' '- `{{.BBC_TEST_DIR}}`'
+          printf '%s\n\n' '- `{{.TAMS_CONFORMANCE_DIR}}`'
+          printf '%s\n\n' '- `{{.TAMS_INTEGRATION_DIR}}`'
+          printf '%s\n\n' '- `{{.TAMS_DEPLOYED_DIR}}`'
           printf '## Test Files\n\n'
-          find '{{.BBC_TEST_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
+          find '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
             | sort \
             | sed 's#^#- `#; s#$#`#'
           printf '\n## Collected Tests\n\n```text\n'
-          {{.PYTEST_COLLECT}} '{{.BBC_TEST_DIR}}' -m bbc --collect-only -q
+          {{.PYTEST_COLLECT}} '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -m '{{.TAMS_CONFORMANCE_MARK}}' --collect-only -q
           printf '```\n'
-        } > reports/bbc-inventory.md
+        } > reports/tams-conformance-inventory.md
+
+  tams:deployed:
+    silent: true
+    vars:
+      PROFILE: '{{default "local-kind" .PROFILE}}'
+      TARGET_FILE:
+        sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TARGET_FILE}}" | grep -q . && printf "%s\n" "{{.TARGET_FILE}}" || task_profile_field "{{.PROFILE}}" targetEnv'
+    env:
+      KUBECONFIG: '{{default "" .KUBECONFIG}}'
+    preconditions:
+      - sh: test -f {{.TARGET_FILE}}
+        msg: "test target {{.TARGET_FILE}} not found"
+    cmds:
+      - mkdir -p reports
+      - printf 'test py.tams.deployed.{{.PROFILE}}\n'
+      - task: deployed:setup
+      - "{{.PYTEST}} {{.TAMS_DEPLOYED_DIR}} -m 'tams_conformance and e2e' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-py-tams-deployed-{{.PROFILE}}.xml"
 
   # Adapter gates require live external dependencies.
   adapters:
@@ -136,13 +200,13 @@ tasks:
       - printf 'test py.workers\n'
       - "{{.PYTEST}} tests/workers/ -m worker -ra --junitxml=reports/junit-py-workers.xml"
 
-  coverage:
+  tams:coverage:
     silent: true
     cmds:
       - mkdir -p reports
       - rm -f .coverage reports/coverage.xml
-      - printf 'test py.bbc.coverage\n'
-      - "{{.PYTEST}} {{.BBC_TEST_DIR}}/ --cov=src/app/tamoss --cov-append --cov-report= --junitxml=reports/junit-py-bbc-coverage.xml"
+      - printf 'test py.tams.coverage\n'
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/ --cov=src/app/tamoss --cov-append --cov-report= --junitxml=reports/junit-py-tams-coverage.xml"
       - uv run --project src coverage xml -o reports/coverage.xml
       - uv run --project src coverage html -d reports/coverage-html
       - uv run --project src coverage report
@@ -196,6 +260,11 @@ tasks:
       TARGET_FILE:
         sh: '. .tasks/lib/profile.sh; printf "%s\n" "{{.TARGET_FILE}}" | grep -q . && printf "%s\n" "{{.TARGET_FILE}}" || task_profile_field "{{.PROFILE}}" targetEnv'
     cmds:
+      - task: tams:deployed
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          TARGET_FILE: "{{.TARGET_FILE}}"
+          KUBECONFIG: '{{default "" (default (env "KUBECONFIG") .KUBECONFIG)}}'
       - task: smoke:deployed
         vars:
           PROFILE: "{{.PROFILE}}"
@@ -221,7 +290,7 @@ tasks:
       - task: deployed:setup
       - "{{.PYTEST}} tests/e2e/ -m 'e2e and smoke' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-smoke-{{.PROFILE}}.xml"
 
-  deployed:
+  product:deployed:
     silent: true
     vars:
       PROFILE: '{{default "local-kind" .PROFILE}}'
@@ -236,4 +305,4 @@ tasks:
       - mkdir -p reports
       - printf 'test e2e.deployed.{{.PROFILE}}\n'
       - task: deployed:setup
-      - "{{.PYTEST}} tests/e2e/ -m 'e2e and not operator_kind and not operator_upgrade' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-deployed-{{.PROFILE}}.xml"
+      - "{{.PYTEST}} tests/e2e/ -m 'e2e and not operator_kind' --target-env {{.TARGET_FILE}} -ra --junitxml=reports/junit-e2e-deployed-{{.PROFILE}}.xml"

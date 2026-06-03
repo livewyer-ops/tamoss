@@ -6,7 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.adapters.bbc.support import (
+from tests.support.fixtures import load_json_fixture
+from tests.tams.support import (
     PRIMARY_BACKEND_ID,
     PRIMARY_BACKEND_LABEL,
     flow_collection_item,
@@ -15,9 +16,8 @@ from tests.adapters.bbc.support import (
     video_flow_payload,
     webhook_payload,
 )
-from tests.support.fixtures import load_json_fixture
 
-pytestmark = pytest.mark.bbc
+pytestmark = pytest.mark.tams_conformance
 
 
 def test_webhook_registration_lifecycle_hides_secret_material(
@@ -105,6 +105,7 @@ def test_webhook_configuration_rejects_malformed_urls(client: TestClient) -> Non
         assert response.status_code == 400
 
 
+@pytest.mark.tamoss_security
 def test_webhook_configuration_rejects_restricted_targets(
     client: TestClient,
 ) -> None:
@@ -120,6 +121,7 @@ def test_webhook_configuration_rejects_restricted_targets(
         assert response.status_code == 400
 
 
+@pytest.mark.tamoss_security
 def test_webhook_configuration_accepts_allowlisted_private_target(
     tamoss_app: FastAPI,
     client: TestClient,

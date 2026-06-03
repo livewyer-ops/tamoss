@@ -1,1 +1,1 @@
-"""Deployed BBC-facing end-to-end tests."""
+"""Deployed product end-to-end tests."""

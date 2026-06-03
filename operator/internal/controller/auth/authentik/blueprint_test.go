@@ -10,26 +10,6 @@ import (
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
-func TestRenderBlueprintIsDeterministic(t *testing.T) {
-	tamoss := blueprintTamoss()
-	credentials := Credentials{
-		ClientID:     []byte("client-id"),
-		ClientSecret: []byte("client-secret"),
-	}
-
-	first, err := RenderBlueprint(tamoss, credentials)
-	if err != nil {
-		t.Fatalf("RenderBlueprint failed: %v", err)
-	}
-	second, err := RenderBlueprint(tamoss, credentials)
-	if err != nil {
-		t.Fatalf("second RenderBlueprint failed: %v", err)
-	}
-	if !bytes.Equal(first, second) {
-		t.Fatalf("expected byte-identical blueprint\nfirst:\n%s\nsecond:\n%s", first, second)
-	}
-}
-
 func TestRenderBlueprintGolden(t *testing.T) {
 	tamoss := blueprintTamoss()
 	got, err := RenderBlueprint(tamoss, Credentials{

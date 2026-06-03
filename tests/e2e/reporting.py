@@ -3,9 +3,11 @@ from __future__ import annotations
 import pytest
 
 _E2E_CHECK_IDS = {
-    "test_deployed_default_install_has_playable_demo_media": "e2e api.demo-media",
+    "test_deployed_default_install_has_playable_demo_media": (
+        "tams deployed.demo-media"
+    ),
     "test_deployed_storage_object_lifecycle_and_async_delete": (
-        "e2e api.storage-object-lifecycle"
+        "tams deployed.storage-object-lifecycle"
     ),
     "test_deployed_rejects_duplicate_controlled_object_instance": (
         "e2e api.duplicate-controlled-object"
@@ -28,9 +30,6 @@ _E2E_CHECK_IDS = {
     "test_deployed_ui_playback_preview_buffers_demo_media": "e2e ui.playback-preview",
     "test_operator_kind_zero_to_ready_api_ingest_and_ui_load": (
         "e2e operator.kind-install"
-    ),
-    "test_operator_upgrade_preserves_workload_pods_and_observes_generation": (
-        "e2e operator.upgrade"
     ),
 }
 

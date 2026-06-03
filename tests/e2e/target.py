@@ -16,12 +16,16 @@ from tests.support.paths import REPO_ROOT
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--target-env",
-        action="store",
-        default=os.getenv("TAMOSS_E2E_TARGET_ENV"),
-        help="Path to a deployed TAMOSS target env file.",
-    )
+    try:
+        parser.addoption(
+            "--target-env",
+            action="store",
+            default=os.getenv("TAMOSS_E2E_TARGET_ENV"),
+            help="Path to a deployed TAMOSS target env file.",
+        )
+    except ValueError as exc:
+        if "--target-env" not in str(exc):
+            raise
 
 
 @pytest.fixture(scope="session")

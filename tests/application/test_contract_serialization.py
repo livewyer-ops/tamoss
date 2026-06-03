@@ -5,7 +5,7 @@ from uuid import uuid4
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
 
-from tests.adapters.bbc.support import (
+from tests.tams.support import (
     segment_payload,
     storage_allocation_payload,
     video_flow_payload,

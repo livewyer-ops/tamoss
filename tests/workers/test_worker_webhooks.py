@@ -12,8 +12,8 @@ from tamoss import worker
 from tamoss.application import webhooks as webhooking
 from tamoss.domain.model import utc_now
 
-from tests.adapters.bbc.support import video_flow_payload
 from tests.support.fixtures import load_json_fixture
+from tests.tams.support import video_flow_payload
 from tests.workers.support import WebhookResponse, only_delivery, route_worker_to_app
 
 pytestmark = pytest.mark.worker

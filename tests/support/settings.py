@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tamoss.settings import Settings, StorageBackendSettings
 
-from tests.adapters.bbc.support import PRIMARY_BACKEND_ID, PRIMARY_BACKEND_LABEL
+from tests.tams.support import PRIMARY_BACKEND_ID, PRIMARY_BACKEND_LABEL
 
 
 def bbc_parity_settings(**overrides: object) -> Settings:

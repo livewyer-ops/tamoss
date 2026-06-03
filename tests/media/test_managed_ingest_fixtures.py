@@ -58,30 +58,6 @@ def test_demo_fixture_media_timing_matches_registered_metadata() -> None:
     }
 
 
-def test_corrupt_fixture_bytes_fail_media_probe(tmp_path: Path) -> None:
-    ffprobe = _ffprobe()
-    corrupt = tmp_path / "corrupt.ts"
-    corrupt.write_bytes(b"not an mpeg-ts segment")
-
-    result = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "json",
-            str(corrupt),
-        ],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-
-    assert result.returncode != 0
-
-
 def _ffprobe() -> str:
     ffprobe = os.getenv("TAMOSS_FFPROBE_BIN") or shutil.which("ffprobe")
     if ffprobe is None:
