@@ -29,6 +29,7 @@ vars:
 
 tasks:
   build:
+    desc: "Operator: build the manager binary"
     dir: operator
     cmds:
       - make build
@@ -46,6 +47,7 @@ tasks:
           make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}"
 
   test:
+    desc: "Operator: run unit and envtest suites"
     silent: true
     dir: operator
     cmds:
@@ -66,7 +68,6 @@ tasks:
       - uv run --project src pytest -c src/pyproject.toml tests/e2e/test_operator_kind_install.py -m operator_kind -ra --junitxml=reports/junit-e2e-operator-kind.xml
 
   e2e:chainsaw:
-    desc: "Operations: run the full Chainsaw e2e suite (all Kind-target tiers) against the current cluster"
     silent: true
     requires:
       vars: [KUBECONFIG]
@@ -461,7 +462,6 @@ tasks:
         task_uninstall_operator "{{.KUBECONFIG}}" "{{.OPERATOR_KUSTOMIZE_DIR}}"
 
   instance:apply:
-    desc: Apply the target Tamoss custom resource
     silent: true
     requires:
       vars: [KUBECONFIG]

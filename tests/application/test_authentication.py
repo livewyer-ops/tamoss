@@ -14,7 +14,7 @@ from tamoss.settings import Settings, StorageBackendSettings
 from tests.support.memory_repository import FakeTamossRepository
 from tests.support.object_storage import InMemoryObjectStorage
 
-pytestmark = pytest.mark.bbc
+pytestmark = pytest.mark.tamoss_security
 
 API_TOKEN = "bbc-token"
 BASIC_USERNAME = "bbc-user"

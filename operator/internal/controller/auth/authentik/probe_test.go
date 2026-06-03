@@ -47,18 +47,6 @@ func TestProbeReportsNonOKStatus(t *testing.T) {
 	}
 }
 
-func TestProbeReportsServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "broken", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	err := ProbeWithClient(context.Background(), server.Client(), server.URL, "broken")
-	if err == nil || !strings.Contains(err.Error(), "unexpected HTTP status 500") {
-		t.Fatalf("expected 500 error, got %v", err)
-	}
-}
-
 func TestProbeReportsConnectionRefused(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := server.URL

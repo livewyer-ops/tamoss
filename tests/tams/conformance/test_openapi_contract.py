@@ -5,10 +5,10 @@ from types import ModuleType
 import pytest
 from fastapi import FastAPI
 
-from tests.adapters.bbc.support import BBC_API_SPEC_PATH, REPO_ROOT
 from tests.support.paths import load_python_module
+from tests.tams.support import BBC_API_SPEC_PATH, REPO_ROOT
 
-pytestmark = pytest.mark.bbc
+pytestmark = pytest.mark.tams_conformance
 
 
 def test_runtime_openapi_has_bbc_operation_parity(tamoss_app: FastAPI) -> None:
@@ -75,6 +75,7 @@ def test_runtime_openapi_documents_tag_filter_and_path_shapes(
         assert {parameter["name"] for parameter in get_parameters} >= {"name"}
 
 
+@pytest.mark.tamoss_extension
 def test_runtime_openapi_distinguishes_core_and_compatibility_timerange_parameters(
     tamoss_app: FastAPI,
 ) -> None:
@@ -115,6 +116,7 @@ def test_runtime_openapi_uses_bbc_error_response_codes(tamoss_app: FastAPI) -> N
         assert status_code in schema["paths"][path][method]["responses"]
 
 
+@pytest.mark.tamoss_extension
 def test_runtime_openapi_documents_tamoss_error_payload(tamoss_app: FastAPI) -> None:
     schema = tamoss_app.openapi()
 
@@ -125,6 +127,7 @@ def test_runtime_openapi_documents_tamoss_error_payload(tamoss_app: FastAPI) -> 
     }
 
 
+@pytest.mark.tamoss_extension
 def test_runtime_openapi_distinguishes_tamoss_and_tams_versions(
     tamoss_app: FastAPI,
 ) -> None:

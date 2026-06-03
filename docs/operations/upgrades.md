@@ -13,8 +13,8 @@ overlay changes in order.
    `Upgradeable=True`.
 
 For local validation, `task kind:e2e PROFILE=local-kind` creates a fresh Kind
-cluster, proves the deployed API/UI workflows, then upgrades the same cluster
-from the previous operator image to the current operator image.
+cluster with the current operator image and proves the deployed TAMS API/UI
+workflows.
 
 ## Sequence
 

@@ -19,7 +19,7 @@ PostgreSQL and S3 ports.
 
 ```bash
 task kind:up PROFILE=local-kind
-task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
+task kind:test PROFILE=local-kind
 ```
 
 Use this when changes affect Kubernetes manifests, operator behavior, ingress,
@@ -34,17 +34,15 @@ task operator:manifests
 task operator:template
 ```
 
-Run Chainsaw tests for operator semantics:
+Run the normal operator gate:
 
 ```bash
-task operator:e2e:chainsaw:render
-task operator:e2e:chainsaw:smoke KUBECONFIG=/path/to/kubeconfig
-task operator:e2e:chainsaw:ci:up
+task operator:test
 ```
 
-Use `task operator:e2e:chainsaw:focus -- <case-name-or-regex>` for one
-scenario, or `task operator:e2e:chainsaw:focus SELECTOR='test.tamoss.io/domain=storage'`
-for a labelled slice.
+Use the detailed Chainsaw tasks only when changing operator reconciliation or
+lifecycle behaviour. Those commands are documented in
+`operator/test/chainsaw/README.md`.
 
 Keep changes small and provable. A commit means the current iteration is ready
 to build on.

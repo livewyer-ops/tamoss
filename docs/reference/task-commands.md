@@ -16,7 +16,8 @@ names or descriptions change.
 | `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment. `PROFILE=multi-server` uses a multi-node Kind cluster. |
 | `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
-| `task kind:e2e PROFILE=local-kind` | Recreate Kind, deploy the selected profile with the previous operator, run deployed checks, and finish with an in-place upgrade to the current operator. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
+| `task kind:test PROFILE=local-kind` | Create or reuse Kind, deploy the selected profile, and run deployed TAMS/product checks. |
+| `task kind:e2e PROFILE=local-kind` | Recreate Kind from scratch, deploy the selected profile with the current operator, and run deployed TAMS/product checks. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
 | `task logs` | Show recent concise task logs from `.local/logs/task`. |
 
 ### Remote Kubernetes Commands
@@ -35,11 +36,11 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Run deployed checks against an existing target without creating a cluster; first run syncs Python test dependencies and installs Playwright Chromium. |
-| `task kind:profiles:e2e` | Run `local-kind`, `single-server`, and `multi-server` e2e sequentially on one Kind cluster name; each profile recreates the cluster with its configured Kind topology. |
+| `task test:tams:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Run deployed TAMS conformance checks against an existing target without creating a cluster. |
 | `task test:media:fixtures` | Validate managed-ingest fixture timing with containerized `ffprobe`. |
 
 Validation commands print compact suite labels such as `test frontend.unit` and
-deployed checks such as `e2e api.storage-object-lifecycle`. JUnit artifacts
+deployed checks such as `tams deployed.storage-object-lifecycle`. JUnit artifacts
 use stable `reports/junit-*.xml` names.
 
 ## Maintainer Workflows
@@ -56,12 +57,15 @@ use stable `reports/junit-*.xml` names.
 | `task test:smoke` | Run deployed API/UI smoke and verify the operator Chainsaw smoke labels. |
 | `task lint` | Lint Python and frontend code. |
 | `task security:audit` | Run local security audits. |
-| `task test` | Run the fast local Python and frontend subset. |
 
 ### Quality and Contract Commands
 
 | Command | Purpose |
 | --- | --- |
+| `task test:tams` | Run local TAMS conformance, including real Postgres/RustFS integration checks. |
+| `task test:tams:conformance` | Alias for the complete local TAMS conformance gate. |
+| `task test:tams:inventory` | Generate the current TAMS conformance inventory report. |
+| `task test:tams:coverage` | Generate backend coverage over the TAMS conformance tests. |
 | `task lint:mypy` | Run Python mypy checks. |
 | `task lint:ruff:lint` | Check Python import order and formatting. |
 | `task lint:ruff:fix` | Fix Python import order and formatting. |
@@ -87,17 +91,9 @@ use stable `reports/junit-*.xml` names.
 | `task operator:monitoring:template` | Render the optional Prometheus Operator monitoring overlay. |
 | `task operator:monitoring:check` | Validate base and monitoring overlay renders. |
 | `task operator:support-bundle KUBECONFIG=/path/to/kubeconfig TAMOSS_NAMESPACE=tams TAMOSS_NAME=tamoss-kind` | Collect a redacted Kubernetes diagnostic bundle. |
-| `task operator:e2e:chainsaw:labels` | Verify every Chainsaw scenario has supported execution labels. |
-| `task operator:e2e:chainsaw:render` | Run render-only Chainsaw tests without a Kubernetes cluster. |
-| `task operator:e2e:chainsaw:smoke KUBECONFIG=/path/to/kubeconfig` | Run the Kind-backed Chainsaw smoke slice against an existing cluster. |
-| `task operator:e2e:chainsaw:ci KUBECONFIG=/path/to/kubeconfig` | Run the pull-request Chainsaw slice against an existing cluster. |
-| `task operator:e2e:chainsaw:ci:up` | Create a disposable Kind cluster and run the labelled Chainsaw CI slice. |
-| `task operator:e2e:chainsaw:nightly KUBECONFIG=/path/to/kubeconfig` | Run extended Kind-backed Chainsaw coverage. |
-| `task operator:e2e:chainsaw:release KUBECONFIG=/path/to/kubeconfig` | Run release-labelled Chainsaw checks. |
-| `task operator:e2e:chainsaw:deployed KUBECONFIG=/path/to/kubeconfig` | Run read-only Chainsaw checks against an already-installed TAMOSS cluster. |
-| `task operator:e2e:chainsaw:focus SELECTOR='test.tamoss.io/domain=storage' KUBECONFIG=/path/to/kubeconfig` | Run a labelled Chainsaw slice. |
-| `task operator:e2e:chainsaw KUBECONFIG=/path/to/kubeconfig` | Run Chainsaw operator tests against an existing cluster. |
-| `task operator:e2e:chainsaw:up` | Run Chainsaw tests on a disposable Kind cluster. |
+
+Detailed Chainsaw commands are CI/operator-maintainer tools and are documented
+in `operator/test/chainsaw/README.md`.
 
 ### Helper Commands
 

@@ -48,14 +48,14 @@ task dev
 Full local Kubernetes stack (used for integration sign-off):
 
 ```bash
-task up PROFILE=local-kind  # create Kind, apply the operator, apply the Tamoss CR
-task down    # tear it down
+task kind:up PROFILE=local-kind
+task kind:down
 ```
 
 Mental model: **dev = speed, Kind = confidence, remote = release
 validation.** Develop against `task dev`; gate merges against
-`task up PROFILE=local-kind` plus `task e2e PROFILE=local-kind`; use the remote
-cluster only for final rollout checks.
+`task kind:test PROFILE=local-kind`; use the remote cluster only for final
+rollout checks.
 
 ### Operator development
 
@@ -71,11 +71,10 @@ task operator:test
 task operator:manifests
 ```
 
-Run operator semantics e2e tests with the chainsaw Task entries. Use
-`task operator:e2e:chainsaw` against an existing `KUBECONFIG`,
-`task operator:e2e:chainsaw:up` for a disposable Kind cluster from scratch, and
-`task operator:e2e:chainsaw:focus -- <test-name>` for one case. The test
-layout and contribution workflow are documented in
+Use `task operator:test` for the normal operator gate. The detailed Chainsaw
+commands are CI/operator-maintainer tools; use them when changing reconciliation
+semantics or lifecycle behaviour. The test layout and contribution workflow are
+documented in
 [`operator/test/chainsaw/README.md`](operator/test/chainsaw/README.md).
 
 Work in `src/app/` normally does not require Go. Install the aqua toolchain
@@ -86,18 +85,23 @@ before touching the operator so `go`, `kubeconform`, and
 
 Test code lives under `tests/`, organised by what it tests:
 
-- `tests/adapters/bbc/` — maintained in-process BBC contract and semantic tests.
-- `tests/e2e/` — deployed black-box BBC workflow checks against Kind or a
+- `tests/tams/conformance/` — maintained in-process TAMS contract and semantic tests.
+- `tests/tams/integration/` — focused TAMS checks that need real Postgres and S3/RustFS.
+- `tests/tams/deployed/` — deployed TAMS conformance checks against Kind or a
   remote target file.
+- `tests/e2e/` — deployed product API/UI checks against Kind or a remote target
+  file.
 
 Run the compatibility gates that block merges:
 
 ```bash
-task test:contract:bbc  # BBC v8.0 OpenAPI/path/status parity
-task test:semantics:bbc # BBC resource lifecycle and workflow semantics
-task test:bbc           # both BBC gates above
-task test               # fast local Python and frontend subset
+task test      # fast local Python and frontend subset
+task test:tams # local TAMS conformance, including real Postgres/RustFS checks
 ```
+
+Run `task deps` before `task test:tams` when local Postgres and RustFS are not
+already running. Use `task test:tams:contract`, `task test:tams:semantics`, or
+`task test:tams:integration` only when you need a narrower CI-style slice.
 
 Other focused suites:
 
@@ -107,32 +111,33 @@ task test:adapters:postgres # Postgres repository persistence checks
 task test:adapters:storage  # configured object-storage checks
 task test:workers           # asynchronous deletion and webhook workers
 task test:frontend # frontend unit/component suite
-task test:coverage # backend coverage report over the BBC gates
+task test:tams:coverage # backend coverage report over the TAMS gates
 ```
 
 End-to-end (Kind + deploy + deployed ingress tests):
 
 ```bash
-task e2e
+task kind:test PROFILE=local-kind
 task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
 ```
 
-The local `task e2e` path is intentionally broader than the CI Kind workflow:
-it runs the BBC in-process gates and then the deployed ingress suite. CI splits
-those checks into backend, frontend, and Kind workflows.
+`task kind:test` creates or reuses the local Kind cluster, deploys the selected
+profile, and runs deployed checks. `task e2e:deployed` runs the same deployed
+checks against an existing target file.
 
 Test markers in use:
 
-- `bbc` — BBC TAMS v8.0 contract or semantic obligation.
-- `e2e` — deployed BBC-facing black-box checks.
+- `tams_conformance` — TAMS API, ADR, or AppNote conformance requirement.
+- `tamoss_extension` — TAMOSS compatibility or operational extension outside core TAMS conformance.
+- `tamoss_security` — TAMOSS authentication, authorisation, or hardening policy.
+- `e2e` — deployed TAMS-facing black-box checks.
 - `needs_db` — requires a live PostgreSQL endpoint.
 - `needs_s3` — requires a real S3/RustFS endpoint.
-- `regression` — fixture-sensitive tests, excluded from the BBC suite.
 - `slow` — takes >10s to complete.
 - `smoke` — fast high-confidence subset.
 - `worker` — asynchronous deletion and webhook processing checks.
 
-Prefer adding new BBC-facing behavior coverage under the contract or semantic
+Prefer adding new TAMS-facing behaviour coverage under the contract or semantic
 task that matches the failure mode. Add deployed checks only when the behavior
 requires a real ingress, browser, object store, or worker deployment.
 
@@ -142,8 +147,11 @@ requires a real ingress, browser, object store, or worker deployment.
   cases, domain records, adapters, auth, settings, and worker entry points.
 - **OpenAPI contract**: `src/openapi.yaml`, rebuilt from the vendored BBC spec.
   Runtime implementation lives under `src/app/tamoss/`.
-- **Tests**: maintained TAMOSS BBC parity tests live under
-  `tests/adapters/bbc/` and deployed black-box flows under `tests/e2e/`.
+- **Tests**: maintained TAMS conformance tests live under
+  `tests/tams/conformance/`, focused DB/S3 conformance tests under
+  `tests/tams/integration/`, deployed TAMS checks under
+  `tests/tams/deployed/`, and deployed product API/UI checks under
+  `tests/e2e/`.
 - **Database**: canonical SQL assets live under
   `src/app/tamoss/db/migrations/assets/`; Alembic applies those files at
   runtime.
@@ -161,7 +169,7 @@ git submodule update --init --recursive
 Do not use `git submodule update --remote` during routine setup. To
 move to a newer BBC tag or commit, check out the desired commit inside
 `src/vendor/bbc-tams/`, run `task openapi:check` and
-`task test:bbc`, then commit the submodule gitlink together with any
+`task test:tams`, then commit the submodule gitlink together with any
 resulting `src/openapi.yaml` change.
 
 ## Pull requests
@@ -173,8 +181,8 @@ git fetch upstream && git rebase upstream/main
 uv run --project src pre-commit run --all-files
 task check
 task security:audit
-task test:bbc
-task e2e                                 # if your change touches
+task test:tams
+task kind:test PROFILE=local-kind        # if your change touches
                                          # deployment, storage, or IO
 ```
 

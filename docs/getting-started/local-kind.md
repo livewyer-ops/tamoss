@@ -84,8 +84,8 @@ Use the broader local gate when you want a clean rebuild and test run:
 task kind:e2e PROFILE=local-kind
 ```
 
-This deletes and recreates the local Kind cluster, runs the deployed checks,
-and finishes with an in-place operator upgrade check on the same cluster.
+This deletes and recreates the local Kind cluster, deploys the current operator,
+and runs the deployed TAMS/product checks.
 
 ## Cleanup
 

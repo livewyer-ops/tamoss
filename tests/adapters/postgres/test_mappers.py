@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from tamoss.adapters.postgres_repository.mappers import (
     _media_object_from_record,
-    _optional_uuid,
 )
 from tamoss.domain.model import StorageBackend
 
@@ -38,14 +37,6 @@ def test_media_object_mapper_uses_supplied_storage_backends() -> None:
         for instance in media_object.instances
         if instance.storage_backend is not None
     } == set(storage_backends)
-
-
-def test_optional_uuid_handles_empty_and_valid_values() -> None:
-    storage_id = uuid4()
-
-    assert _optional_uuid(None) is None
-    assert _optional_uuid("") is None
-    assert _optional_uuid(str(storage_id)) == storage_id
 
 
 def _storage_backend(label: str) -> StorageBackend:

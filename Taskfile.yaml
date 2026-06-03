@@ -183,8 +183,22 @@ tasks:
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
 
+  kind:test:
+    desc: "Local Kind validation: deploy the selected profile and run deployed checks"
+    silent: true
+    cmds:
+      - task: kind:up
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          PROJECT_NAME: "{{.PROJECT_NAME}}"
+          KIND_CONFIG: "{{.KIND_CONFIG}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: e2e:deployed
+        vars:
+          PROFILE: "{{.PROFILE}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+
   kind:profiles:e2e:
-    desc: "Local Kind validation: run local-kind, single-server, and multi-server e2e sequentially"
     silent: true
     vars:
       PROFILE_CLUSTER_NAME: '{{default "tamoss-profile-e2e" .PROFILE_CLUSTER_NAME}}'
@@ -200,9 +214,14 @@ tasks:
     silent: true
     cmds:
       - task: profile:validate
-      - task: test:deployed
+      - task: test:tams:deployed
         vars:
-          DEPLOY_ENV: "{{.PROFILE}}"
+          PROFILE: "{{.PROFILE}}"
+          TARGET_FILE: "{{.PROFILE_TARGET_ENV}}"
+          KUBECONFIG: "{{.KUBECONFIG}}"
+      - task: test:product:deployed
+        vars:
+          PROFILE: "{{.PROFILE}}"
           TARGET_FILE: "{{.PROFILE_TARGET_ENV}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
 

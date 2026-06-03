@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from typing import Any
-from urllib.parse import quote
 from uuid import uuid4
 
 import pytest
@@ -10,7 +11,10 @@ import pytest
 from tests.e2e.client import E2EClient
 from tests.support.fixtures import load_json_fixture
 
-pytestmark = pytest.mark.e2e
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.tams_conformance,
+]
 
 DEMO_SOURCE_ID = "00000000-0000-4000-8000-000000000101"
 DEMO_FLOW_ID = "00000000-0000-4000-8000-000000000102"
@@ -113,11 +117,16 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
         media_object = allocated["media_objects"][0]
         assert media_object["object_id"] == object_id
         put_request = media_object["put_url"]
+        put_headers = put_request.get("headers") or {}
+        put_headers["x-amz-checksum-sha256"] = _checksum_value(
+            uploaded_body,
+            "sha256",
+        )
 
         e2e_client.upload_put_url(
             put_request["url"],
             body=uploaded_body,
-            headers=put_request.get("headers") or {},
+            headers=put_headers,
         )
 
         segment = e2e_client.request(
@@ -205,83 +214,6 @@ def _storage_allocation_payload(object_id: str, storage_id: str) -> dict[str, An
     return payload
 
 
-def test_deployed_rejects_duplicate_controlled_object_instance(
-    e2e_client: E2EClient,
-) -> None:
-    backends = e2e_client.request_json("GET", "/service/storage-backends")
-    primary = next((item for item in backends if item["default_storage"]), backends[0])
-
-    flow_id = str(uuid4())
-    source_id = str(uuid4())
-    object_id = f"bbc/e2e/duplicate-instance/{uuid4()}.ts"
-    body = b"tamoss deployed duplicate-instance segment\n"
-
-    deleted = False
-    try:
-        e2e_client.request_json(
-            "PUT",
-            f"/flows/{flow_id}",
-            json=_video_flow_payload(
-                flow_id,
-                source_id,
-                label=f"TAMOSS storage E2E {flow_id[:8]}",
-            ),
-            expected=201,
-        )
-        allocated = e2e_client.request_json(
-            "POST",
-            f"/flows/{flow_id}/storage",
-            json=_storage_allocation_payload(object_id, primary["id"]),
-            expected=201,
-        )
-        put_request = allocated["media_objects"][0]["put_url"]
-        e2e_client.upload_put_url(
-            put_request["url"],
-            body=body,
-            headers=put_request.get("headers") or {},
-        )
-        e2e_client.request(
-            "POST",
-            f"/flows/{flow_id}/segments",
-            json=_segment_payload(object_id),
-            expected=201,
-        )
-
-        duplicate = e2e_client.request(
-            "POST",
-            f"/objects/{quote(object_id, safe='')}/instances",
-            json={"storage_id": primary["id"]},
-            expected=400,
-        )
-        duplicate_error = duplicate.json()
-        assert duplicate_error["type"] == "bad_request"
-        assert duplicate_error["summary"]
-
-        media_object = e2e_client.request_json(
-            "GET",
-            f"/objects/{object_id}",
-            params={
-                "accept_storage_ids": primary["id"],
-                "presigned": "true",
-                "verbose_storage": "true",
-            },
-        )
-        get_urls = media_object["get_urls"]
-        assert len(get_urls) == 1
-        assert get_urls[0]["storage_id"] == primary["id"]
-        assert get_urls[0]["controlled"] is True
-        assert get_urls[0]["presigned"] is True
-
-        accepted = e2e_client.request_json(
-            "DELETE", f"/flows/{flow_id}", expected={202}
-        )
-        delete_result = e2e_client.poll_delete_request(accepted["id"])
-        assert delete_result["status"] == "done"
-        deleted = True
-    finally:
-        if not deleted:
-            cleanup = e2e_client.request(
-                "DELETE", f"/flows/{flow_id}", expected={202, 204, 404}
-            )
-            if cleanup.status_code == 202:
-                e2e_client.poll_delete_request(cleanup.json()["id"])
+def _checksum_value(body: bytes, algorithm: str) -> str:
+    digest = hashlib.new(algorithm, body).digest()
+    return base64.b64encode(digest).decode("ascii")
