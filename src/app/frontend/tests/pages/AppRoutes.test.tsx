@@ -59,7 +59,7 @@ const mocks = vi.hoisted(() => {
   const service = {
     name: "TAMOSS",
     type: "urn:x-tamoss:service",
-    api_version: "8.0",
+    api_version: "8.1",
     service_version: "1.0.0",
     event_stream_mechanisms: [{ name: "webhooks" }],
   };

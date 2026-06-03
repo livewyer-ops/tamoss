@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-BBC_TAMS_API_VERSION = "8.0"
+BBC_TAMS_API_VERSION = "8.1"
 DEVELOPMENT_VERSION = "tamoss-dev"
 
 

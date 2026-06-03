@@ -2,7 +2,7 @@
 FROM python:3.11.14-alpine3.22
 
 ARG VERSION=tamoss-dev
-ARG TAMS_API_VERSION=8.0
+ARG TAMS_API_VERSION=8.1
 
 LABEL "org.opencontainers.image.authors"="LiveWyer"
 LABEL "org.opencontainers.image.description"="TAMOSS API server"

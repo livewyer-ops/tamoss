@@ -24,7 +24,7 @@ task_operator_chainsaw_up() {
   local install_authentik_fixture="${CHAINSAW_INSTALL_AUTHENTIK_FIXTURE:-false}"
   local platform_helmfile="${CHAINSAW_PLATFORM_HELMFILE:-deploy/platform/helmfile.yaml.gotmpl}"
   local schema_version="${SCHEMA_VERSION:-$version}"
-  local tams_api_version="${TAMS_API_VERSION:-8.0}"
+  local tams_api_version="${TAMS_API_VERSION:-8.1}"
 
   mkdir -p "$(dirname "$kubeconfig")" reports
 

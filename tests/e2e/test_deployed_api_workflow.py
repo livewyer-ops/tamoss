@@ -77,7 +77,7 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
     e2e_client: E2EClient,
 ) -> None:
     service = e2e_client.request_json("GET", "/service")
-    assert service["api_version"] == "8.0"
+    assert service["api_version"] == "8.1"
     assert {"name": "webhooks"} in service["event_stream_mechanisms"]
 
     backends = e2e_client.request_json("GET", "/service/storage-backends")

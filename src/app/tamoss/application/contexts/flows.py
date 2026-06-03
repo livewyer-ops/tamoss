@@ -316,6 +316,8 @@ class FlowUseCases:
             return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
+            if property_name == "label":
+                return ""
             raise NotFound("The requested Flow property does not exist.")
         if property_name in {"label", "description"}:
             if not isinstance(value, str):

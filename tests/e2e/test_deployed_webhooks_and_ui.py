@@ -142,7 +142,7 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     assert proxied["status"] == 200
     assert "application/json" in proxied["contentType"]
     proxied_service = json.loads(proxied["body"])
-    assert proxied_service["api_version"] == "8.0"
+    assert proxied_service["api_version"] == "8.1"
     assert {"name": "webhooks"} in proxied_service["event_stream_mechanisms"]
 
 
@@ -288,7 +288,7 @@ def _assert_bearer_token_grants_service_access(
         verify=e2e_target.verify_tls,
     )
     assert api_response.status_code == 200, api_response.text
-    assert api_response.json()["api_version"] == "8.0"
+    assert api_response.json()["api_version"] == "8.1"
 
 
 @pytest.mark.smoke

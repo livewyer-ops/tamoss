@@ -34,7 +34,7 @@ describe("TamossApiClient", () => {
 
   describe("getService", () => {
     it("fetches service information", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.0" };
+      const serviceData = { name: "Test TAMS", api_version: "8.1" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = createClient();
@@ -52,7 +52,7 @@ describe("TamossApiClient", () => {
     });
 
     it("resolves relative API bases against the current origin", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.0" };
+      const serviceData = { name: "Test TAMS", api_version: "8.1" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = new TamossApiClient("/api");
@@ -274,7 +274,7 @@ describe("TamossApiClient", () => {
 
   describe("authorization", () => {
     it("sends Bearer token in Authorization header when token is set", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.0" };
+      const serviceData = { name: "Test TAMS", api_version: "8.1" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = new TamossApiClient("https://api.example.com", "my-token");
@@ -290,7 +290,7 @@ describe("TamossApiClient", () => {
     });
 
     it("does not send Authorization header when token is empty", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.0" };
+      const serviceData = { name: "Test TAMS", api_version: "8.1" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = new TamossApiClient("https://api.example.com", "");

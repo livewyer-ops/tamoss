@@ -177,7 +177,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = [".git", ".venv", "venv", "build", "dist"]
 markers = [
-    "bbc: BBC TAMS v8.0 contract or semantic obligation",
+    "bbc: BBC TAMS v8.1 contract or semantic obligation",
     "e2e: Deployed BBC-facing black-box checks",
     "needs_db: Requires live PostgreSQL endpoint",
     "needs_media: Requires local media tooling or containerized media fixture checks",

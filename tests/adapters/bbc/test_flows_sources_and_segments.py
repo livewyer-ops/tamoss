@@ -383,7 +383,8 @@ def test_flow_and_source_property_endpoints_round_trip(client: TestClient) -> No
     flow_label_delete = client.delete(f"/flows/{flow_id}/label")
     assert flow_label_delete.status_code == 204
     missing_flow_label = client.get(f"/flows/{flow_id}/label")
-    assert missing_flow_label.status_code == 404
+    assert missing_flow_label.status_code == 200
+    assert missing_flow_label.json() == ""
 
     flow_description = client.put(f"/flows/{flow_id}/description", json="described")
     assert flow_description.status_code == 204
@@ -416,6 +417,11 @@ def test_flow_and_source_property_endpoints_round_trip(client: TestClient) -> No
     source_label_head = client.head(f"/sources/{source_id}/label")
     assert source_label_head.status_code == 200
     assert source_label_head.content == b""
+    source_label_delete = client.delete(f"/sources/{source_id}/label")
+    assert source_label_delete.status_code == 204
+    missing_source_label = client.get(f"/sources/{source_id}/label")
+    assert missing_source_label.status_code == 200
+    assert missing_source_label.json() == ""
     source_description = client.put(
         f"/sources/{source_id}/description", json="source description"
     )
