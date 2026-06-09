@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import Request
 
 from tamoss.application.contexts.deletion import DeletionUseCases
@@ -11,6 +13,14 @@ from tamoss.application.contexts.sources import SourceUseCases
 from tamoss.application.contexts.storage import StorageUseCases
 from tamoss.application.contexts.webhooks import WebhookUseCases
 from tamoss.application.use_cases import TamossUseCases
+from tamoss.errors import BadRequest
+
+
+async def require_json_body(request: Request) -> None:
+    try:
+        json.loads(await request.body())
+    except (UnicodeDecodeError, ValueError):
+        raise BadRequest("Bad request. Body must be valid JSON.") from None
 
 
 def get_use_cases(request: Request) -> TamossUseCases:

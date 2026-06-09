@@ -101,8 +101,11 @@ def validate_webhook_configuration(
 ) -> None:
     validate_webhook_url(data.get("url"), egress_policy=egress_policy)
     validate_api_key_header_name(data.get("api_key_name"))
-    events = _list_of_strings(data.get("events"))
-    if not events or any(event not in VALID_WEBHOOK_EVENTS for event in events):
+    events_value = data.get("events")
+    if not isinstance(events_value, list):
+        raise ValueError("Unsupported webhook event")
+    events = _list_of_strings(events_value)
+    if any(event not in VALID_WEBHOOK_EVENTS for event in events):
         raise ValueError("Unsupported webhook event")
 
 

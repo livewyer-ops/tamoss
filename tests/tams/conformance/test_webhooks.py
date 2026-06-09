@@ -421,3 +421,11 @@ def test_webhook_source_collection_filter_matches_child_events(
         str(parent_source_id)
     ]
     assert deliveries[1].payload["event"]["flow"]["id"] == str(child_flow_id)
+
+
+def test_webhook_registration_accepts_empty_event_list(client: TestClient) -> None:
+    """bbc-id: semantic.webhooks.empty_event_list_is_valid"""
+    body = webhook_payload(url="https://webhooks.example.test/empty", events=[])
+    created = client.post("/service/webhooks", json=body)
+    assert created.status_code == 201
+    assert created.json()["events"] == []

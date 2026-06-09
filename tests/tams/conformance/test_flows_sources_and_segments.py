@@ -718,3 +718,100 @@ def test_segment_coverage_gap_header_is_separate_from_flow_extent(
     assert listed.status_code == 200
     assert listed.headers["x-paging-timerange"] == "[0:0_30:0)"
     assert listed.headers["x-tamoss-coverage-gaps"] == "[10:0_20:0)"
+
+
+def test_read_only_flow_rejects_writes_with_403(client: TestClient) -> None:
+    """bbc-id: semantic.flow.read_only_write_rejection"""
+    flow_id, _source_id, payload = create_video_flow(client)
+
+    assert client.put(f"/flows/{flow_id}/read_only", json=True).status_code == 204
+    assert client.get(f"/flows/{flow_id}/read_only").json() is True
+
+    rejected = {
+        "put_flow": client.put(f"/flows/{flow_id}", json=payload),
+        "put_description": client.put(f"/flows/{flow_id}/description", json="mutated"),
+        "put_tag": client.put(f"/flows/{flow_id}/tags/probe", json="x"),
+        "post_storage": client.post(
+            f"/flows/{flow_id}/storage",
+            json=storage_allocation_payload([f"bbc/{uuid4()}.ts"]),
+        ),
+        "delete_segments": client.delete(f"/flows/{flow_id}/segments"),
+        "delete_flow": client.delete(f"/flows/{flow_id}"),
+    }
+    for name, response in rejected.items():
+        assert response.status_code == 403, name
+        assert_bbc_error(response.json(), "forbidden")
+
+    assert client.put(f"/flows/{flow_id}/read_only", json=False).status_code == 204
+    assert client.delete(f"/flows/{flow_id}").status_code in {202, 204}
+
+
+def test_unset_label_and_description_read_as_empty_strings(
+    client: TestClient,
+) -> None:
+    """bbc-id: semantic.flow.unset_string_properties_are_readable"""
+    flow_id = uuid4()
+    source_id = uuid4()
+    payload = video_flow_payload(flow_id, source_id)
+    payload.pop("label", None)
+    payload.pop("description", None)
+    assert client.put(f"/flows/{flow_id}", json=payload).status_code == 201
+
+    for path in (
+        f"/flows/{flow_id}/label",
+        f"/flows/{flow_id}/description",
+        f"/sources/{source_id}/label",
+        f"/sources/{source_id}/description",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.json() == "", path
+
+
+def test_flow_put_with_mismatched_body_id_returns_404(client: TestClient) -> None:
+    """bbc-id: semantic.flow.path_id_authoritative"""
+    payload = video_flow_payload(uuid4(), uuid4())
+    response = client.put(f"/flows/{uuid4()}", json=payload)
+    assert response.status_code == 404
+    assert_bbc_error(response.json(), "not_found")
+    assert response.json()["summary"] == "The requested Flow ID in the path is invalid."
+
+
+def test_string_property_put_rejects_non_json_bodies(client: TestClient) -> None:
+    """bbc-id: semantic.flow.property_bodies_must_be_json"""
+    flow_id, source_id, _ = create_video_flow(client)
+    for path in (
+        f"/flows/{flow_id}/label",
+        f"/flows/{flow_id}/description",
+        f"/flows/{flow_id}/tags/probe",
+        f"/sources/{source_id}/label",
+        f"/sources/{source_id}/description",
+        f"/sources/{source_id}/tags/probe",
+    ):
+        for content_type in ("text/plain", "application/x-www-form-urlencoded"):
+            response = client.put(
+                path,
+                content=b"test this",
+                headers={"Content-Type": content_type},
+            )
+            assert response.status_code == 400, (path, content_type)
+            assert_bbc_error(response.json(), "bad_request")
+
+
+def test_unset_numeric_flow_properties_read_as_null(client: TestClient) -> None:
+    """bbc-id: semantic.flow.unset_numeric_properties_are_readable
+
+    The spec reserves the 404 on these endpoints for a missing Flow and
+    defines no unset form for the integer properties, so an existing Flow
+    without a bit rate reads back as 200 null.
+    """
+    flow_id = uuid4()
+    payload = video_flow_payload(flow_id, uuid4())
+    payload.pop("avg_bit_rate", None)
+    payload.pop("max_bit_rate", None)
+    assert client.put(f"/flows/{flow_id}", json=payload).status_code == 201
+
+    for name in ("avg_bit_rate", "max_bit_rate"):
+        response = client.get(f"/flows/{flow_id}/{name}")
+        assert response.status_code == 200, name
+        assert response.json() is None, name
