@@ -44,7 +44,7 @@ _OAUTH2_JWT_ALGORITHMS = frozenset(
 )
 
 
-class ConfigurationError(ValueError):
+class SecretFileError(ValueError):
     pass
 
 
@@ -133,7 +133,6 @@ class Settings(BaseSettings):
         default=TAMOSS_VERSION,
         validation_alias="TAMOSS_SERVICE_VERSION",
     )
-    public_base_url: str = "http://testserver"
     auth_required: bool = Field(
         default=False,
         validation_alias="TAMOSS_AUTH_REQUIRED",
@@ -554,7 +553,7 @@ def read_secret_file(
             return handle.read().strip()
     except OSError as exc:
         if required:
-            raise ConfigurationError(f"{setting_name} is not readable: {path}") from exc
+            raise SecretFileError(f"{setting_name} is not readable: {path}") from exc
         return None
 
 

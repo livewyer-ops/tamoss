@@ -97,7 +97,6 @@ def real_storage_client(
 ) -> Iterator[TestClient]:
     settings = Settings(
         auth_required=False,
-        public_base_url="http://testserver",
         s3_presign_ttl_seconds=120,
         s3_connect_timeout_seconds=2,
         s3_read_timeout_seconds=2,

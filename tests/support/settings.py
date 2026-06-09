@@ -8,7 +8,6 @@ from tests.tams.support import PRIMARY_BACKEND_ID, PRIMARY_BACKEND_LABEL
 def bbc_parity_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "auth_required": False,
-        "public_base_url": "http://testserver",
         "service_name": "TAMOSS BBC parity",
         "service_description": "BBC API parity test instance",
         "service_version": "tamoss-bbc-parity",

@@ -326,7 +326,6 @@ def test_storage_allocation_rejects_high_limits_and_invalid_object_ids(
 def test_uncontrolled_instance_label_cannot_reuse_controlled_url_labels() -> None:
     settings = Settings(
         auth_required=False,
-        public_base_url="http://testserver",
         storage_backend=StorageBackendSettings(
             id=PRIMARY_BACKEND_ID,
             label="example.primary:s3:media",
@@ -454,7 +453,6 @@ def test_uncontrolled_only_object_cannot_be_copied_to_controlled_storage(
 def test_controlled_object_copy_is_advertised_after_worker_completion() -> None:
     settings = Settings(
         auth_required=False,
-        public_base_url="http://testserver",
         storage_backend=StorageBackendSettings(
             id=PRIMARY_BACKEND_ID,
             label=PRIMARY_BACKEND_LABEL,
@@ -547,7 +545,6 @@ def test_controlled_object_copy_failure_waits_for_claim_lease(
 ) -> None:
     settings = Settings(
         auth_required=False,
-        public_base_url="http://testserver",
         storage_backend=StorageBackendSettings(
             id=PRIMARY_BACKEND_ID,
             label=PRIMARY_BACKEND_LABEL,

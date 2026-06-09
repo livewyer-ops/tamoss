@@ -577,27 +577,6 @@ class FlowUseCases:
                 payload[field_name] = existing.data[field_name]
         return payload
 
-    def referenced_flows_matching_tags(
-        self,
-        media_object: MediaObjectRecord,
-        tag_values: dict[str, set[str]],
-        tag_exists: dict[str, bool],
-    ) -> list[UUID]:
-        flow_ids: list[UUID] = []
-        page: str | None = None
-        while True:
-            flow_page = self.referenced_flows_matching_tags_page(
-                media_object,
-                tag_values,
-                tag_exists,
-                page=page,
-                limit=1000,
-            )
-            flow_ids.extend(flow_page.items)
-            if flow_page.next_page is None:
-                return flow_ids
-            page = flow_page.next_page
-
     def referenced_flows_matching_tags_page(
         self,
         media_object: MediaObjectRecord,
