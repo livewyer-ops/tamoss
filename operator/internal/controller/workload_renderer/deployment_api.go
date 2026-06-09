@@ -27,7 +27,7 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			spec,
 			image(tamoss.Spec.API.Image.Repository, tamoss.Spec.API.Image.Tag),
 			tamoss.Spec.API.Image.PullPolicy,
-			[]string{"/bin/uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", fmt.Sprintf("%d", apiPort)},
+			[]string{"/bin/uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", fmt.Sprintf("%d", apiPort), "--proxy-headers", "--forwarded-allow-ips", "*"},
 			env,
 			envFromSecrets(tamoss, tamoss.Spec.Secrets.APIToken.Generate, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, oauth2CredentialsSecretName(tamoss), tamoss.Spec.API.EnvFrom),
 			[]corev1.ContainerPort{{Name: "http", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP}},

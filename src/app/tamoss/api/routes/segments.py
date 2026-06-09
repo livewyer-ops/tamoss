@@ -26,9 +26,18 @@ from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
 from tamoss.domain.model import SegmentRecord
 from tamoss.domain.timeranges import finite_normalized_timerange_bounds
-from tamoss.errors import BadRequest, error_payload
+from tamoss.errors import BadRequest, NotFound, error_payload
 
 router = APIRouter(tags=["FlowSegments"])
+
+
+def _flow_id_or_404(value: str, message: str) -> UUID:
+    # The spec documents only 404 for this path parameter, so malformed
+    # Flow IDs resolve to 404 rather than the 400 used elsewhere.
+    try:
+        return UUID(value)
+    except ValueError:
+        raise NotFound(message) from None
 
 
 @router.get(
@@ -46,7 +55,7 @@ router = APIRouter(tags=["FlowSegments"])
     },
 )
 def list_segments(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id_path: Annotated[str, Path(alias="flowId")],
     request: Request,
     response: Response,
     object_id: str | None = None,
@@ -61,6 +70,7 @@ def list_segments(
     limit: int | None = Query(default=None, gt=0),
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
+    flow_id = _flow_id_or_404(flow_id_path, "The Flow ID in the path is invalid.")
     validate_query_params(
         request,
         {
@@ -126,10 +136,11 @@ def list_segments(
     },
 )
 def post_segments(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id_path: Annotated[str, Path(alias="flowId")],
     body: contract_models.FlowSegmentPost | list[contract_models.FlowSegmentPost],
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
+    flow_id = _flow_id_or_404(flow_id_path, "The requested Flow does not exist.")
     segment_body = (
         [contract_dump(segment) for segment in body]
         if isinstance(body, list)
@@ -179,12 +190,15 @@ def post_segments(
     },
 )
 def delete_segments(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id_path: Annotated[str, Path(alias="flowId")],
     request: Request,
     timerange: str | None = None,
     object_id: str | None = None,
     deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
+    flow_id = _flow_id_or_404(
+        flow_id_path, "The requested Flow ID in the path is invalid."
+    )
     validate_query_params(request, {"timerange", "object_id"})
     identity = identify_request(request)
     delete_request = deletion.delete_segments(

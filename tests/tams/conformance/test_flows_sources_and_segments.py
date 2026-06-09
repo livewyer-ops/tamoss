@@ -815,3 +815,24 @@ def test_unset_numeric_flow_properties_read_as_null(client: TestClient) -> None:
         response = client.get(f"/flows/{flow_id}/{name}")
         assert response.status_code == 200, name
         assert response.json() is None, name
+
+
+def test_malformed_flow_id_in_segments_path_returns_404(client: TestClient) -> None:
+    """bbc-id: semantic.segments.malformed_flow_id_is_404
+
+    The segments path documents only 404 for the Flow ID path parameter,
+    so malformed IDs resolve to 404 rather than 400.
+    """
+    listed = client.get("/flows/not-a-uuid/segments")
+    assert listed.status_code == 404
+    assert_bbc_error(listed.json(), "not_found")
+    assert listed.json()["summary"] == "The Flow ID in the path is invalid."
+
+    posted = client.post(
+        "/flows/not-a-uuid/segments",
+        json=segment_payload("bbc/never-registered.ts"),
+    )
+    assert posted.status_code == 404
+
+    deleted = client.delete("/flows/not-a-uuid/segments")
+    assert deleted.status_code == 404
