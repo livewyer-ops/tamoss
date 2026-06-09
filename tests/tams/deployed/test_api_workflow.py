@@ -90,7 +90,7 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
 
     flow_id = str(uuid4())
     source_id = str(uuid4())
-    object_id = f"bbc/e2e/{uuid4()}.ts"
+    object_id = f"bbc-e2e-{uuid4()}.ts"
     uploaded_body = b"tamoss deployed e2e segment\n"
     flow_payload = _video_flow_payload(
         flow_id,
@@ -117,11 +117,12 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
         media_object = allocated["media_objects"][0]
         assert media_object["object_id"] == object_id
         put_request = media_object["put_url"]
-        put_headers = put_request.get("headers") or {}
-        put_headers["x-amz-checksum-sha256"] = _checksum_value(
-            uploaded_body,
-            "sha256",
-        )
+        put_headers = _put_url_headers(put_request)
+        if e2e_client.target.upload_checksum_header:
+            put_headers["x-amz-checksum-sha256"] = _checksum_value(
+                uploaded_body,
+                "sha256",
+            )
 
         e2e_client.upload_put_url(
             put_request["url"],
@@ -137,12 +138,18 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
         )
         assert segment.status_code == 201
 
+        # Label-based get_url negotiation is exercised only when the target's
+        # default backend advertises a label.
+        accept_params: dict[str, str] = {}
+        if default_backend.get("label"):
+            accept_params["accept_get_urls"] = default_backend["label"]
+
         segments = e2e_client.request(
             "GET",
             f"/flows/{flow_id}/segments",
             params={
                 "limit": "1",
-                "accept_get_urls": default_backend["label"],
+                **accept_params,
                 "accept_storage_ids": default_backend["id"],
                 "presigned": "true",
                 "verbose_storage": "true",
@@ -159,7 +166,7 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
             "GET",
             f"/objects/{object_id}",
             params={
-                "accept_get_urls": default_backend["label"],
+                **accept_params,
                 "accept_storage_ids": default_backend["id"],
                 "presigned": "true",
                 "verbose_storage": "true",
@@ -212,6 +219,14 @@ def _storage_allocation_payload(object_id: str, storage_id: str) -> dict[str, An
     payload["object_ids"] = [object_id]
     payload["storage_id"] = storage_id
     return payload
+
+
+def _put_url_headers(put_url: dict[str, Any]) -> dict[str, str]:
+    headers = dict(put_url.get("headers") or {})
+    content_type = put_url.get("content-type") or put_url.get("content_type")
+    if content_type and not any(name.lower() == "content-type" for name in headers):
+        headers["Content-Type"] = str(content_type)
+    return headers
 
 
 def _checksum_value(body: bytes, algorithm: str) -> str:
