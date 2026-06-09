@@ -11,10 +11,12 @@ from tamoss.application import webhooks as webhooking
 from tamoss.application.contexts.flows import (
     ensure_flow_writable,
     query_timerange,
+    require_flow,
 )
 from tamoss.application.contexts.object_get_urls import objects_get_urls
 from tamoss.application.contexts.objects import (
     append_uncontrolled_instance,
+    reserved_storage_labels,
     validate_uncontrolled_instance_append,
 )
 from tamoss.contract.generated import contract_models
@@ -31,7 +33,7 @@ from tamoss.domain.timeranges import (
     parse_timestamp,
     timerange_union_strings,
 )
-from tamoss.errors import BadRequest, NotFound
+from tamoss.errors import BadRequest
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import (
     FlowLookupRepository,
@@ -88,7 +90,7 @@ class SegmentUseCases:
     def _register_segments_locked(
         self, *, flow_id: UUID, segment_posts: list[dict[str, Any]]
     ) -> list[SegmentWriteResult]:
-        flow = self._get_flow(flow_id)
+        flow = require_flow(self.flow_repository, flow_id)
         ensure_flow_writable(flow)
         if not flow.container:
             return [
@@ -98,11 +100,7 @@ class SegmentUseCases:
                 for _ in segment_posts
             ]
 
-        reserved_get_url_labels = {
-            backend.label
-            for backend in self.repository.list_storage_backends()
-            if backend.label
-        }
+        reserved_get_url_labels = reserved_storage_labels(self.repository)
         results = [SegmentWriteResult() for _ in segment_posts]
         candidates: list[tuple[int, dict[str, Any], SegmentTimerangeBounds]] = []
         for index, segment_post in enumerate(segment_posts):
@@ -368,12 +366,6 @@ class SegmentUseCases:
             presigned=presigned,
             verbose_storage=verbose_storage,
         )
-
-    def _get_flow(self, flow_id: UUID) -> FlowRecord:
-        flow = self.flow_repository.get_flow(flow_id)
-        if flow is None:
-            raise NotFound("The requested Flow does not exist.")
-        return flow
 
 
 def _has_controlled_instance(media_object: MediaObjectRecord) -> bool:

@@ -4,8 +4,9 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID, uuid4
 
+from tamoss.application.contexts.flows import ensure_flow_writable, require_flow
 from tamoss.domain.model import MediaObjectRecord, ObjectInstance, StorageBackend
-from tamoss.errors import BadRequest, Forbidden, NotFound
+from tamoss.errors import BadRequest
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import FlowLookupRepository, StorageRepository
 from tamoss.settings import Settings
@@ -33,14 +34,8 @@ class StorageUseCases:
     def allocate_flow_storage(
         self, *, flow_id: UUID, request: Mapping[str, Any]
     ) -> list[dict[str, object]]:
-        flow = self.flow_repository.get_flow(flow_id)
-        if flow is None:
-            raise NotFound("The requested Flow does not exist.")
-        if flow.read_only:
-            raise Forbidden(
-                "Forbidden. You do not have permission to modify this Flow. "
-                "It may be marked read-only."
-            )
+        flow = require_flow(self.flow_repository, flow_id)
+        ensure_flow_writable(flow)
         if not flow.container:
             raise BadRequest("Bad request. The Flow 'container' is not set.")
         limit = request.get("limit")

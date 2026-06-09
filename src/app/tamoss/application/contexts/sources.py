@@ -123,20 +123,16 @@ class SourceUseCases:
             raise BadRequest("Bad request. Invalid Source property value.")
         source = self.get_source(source_id)
         setattr(source, property_name, value)
-        source.metadata_updated = utc_now()
-        self.repository.save_source(source)
-        webhooking.publish_source_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="sources/updated",
-            source=source,
-        )
+        self._save_and_publish(source)
 
     def delete_source_property(
         self, source_id: UUID, property_name: SourcePropertyName
     ) -> None:
         source = self.get_source(source_id)
         setattr(source, property_name, None)
+        self._save_and_publish(source)
+
+    def _save_and_publish(self, source: SourceRecord) -> None:
         source.metadata_updated = utc_now()
         self.repository.save_source(source)
         webhooking.publish_source_event(
@@ -160,23 +156,9 @@ class SourceUseCases:
             raise BadRequest("Bad request. Invalid Source tag value.")
         source = self.get_source(source_id)
         source.tags[name] = value
-        source.metadata_updated = utc_now()
-        self.repository.save_source(source)
-        webhooking.publish_source_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="sources/updated",
-            source=source,
-        )
+        self._save_and_publish(source)
 
     def delete_source_tag(self, source_id: UUID, name: str) -> None:
         source = self.get_source(source_id)
         source.tags.pop(name, None)
-        source.metadata_updated = utc_now()
-        self.repository.save_source(source)
-        webhooking.publish_source_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="sources/updated",
-            source=source,
-        )
+        self._save_and_publish(source)

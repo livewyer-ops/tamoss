@@ -17,9 +17,11 @@ from tamoss.domain.model import (
 from tamoss.domain.pagination import Page
 from tamoss.errors import BadRequest, NotFound
 from tamoss.ports.repositories import WebhookRepository
-from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings
-
-DEFAULT_WORKER_ID = "tamoss-worker"
+from tamoss.settings import (
+    DEFAULT_WORKER_ID,
+    DEFAULT_WORKER_LEASE_SECONDS,
+    Settings,
+)
 
 
 class WebhookUseCases:

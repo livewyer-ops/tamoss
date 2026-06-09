@@ -26,6 +26,7 @@ from tamoss.domain.timeranges import normalized_timerange_bounds
 from tamoss.errors import BadRequest, Forbidden, NotFound
 from tamoss.ports.repositories import (
     FlowCollectionRepository,
+    FlowLookupRepository,
     FlowRepository,
     WebhookEventRepository,
 )
@@ -141,6 +142,13 @@ def ensure_flow_writable(flow: FlowRecord) -> None:
             "Forbidden. You do not have permission to modify this Flow. "
             "It may be marked read-only."
         )
+
+
+def require_flow(repository: FlowLookupRepository, flow_id: UUID) -> FlowRecord:
+    flow = repository.get_flow(flow_id)
+    if flow is None:
+        raise NotFound("The requested Flow does not exist.")
+    return flow
 
 
 def unlink_flow_collection_references(
@@ -275,9 +283,7 @@ class FlowUseCases:
     def get_flow(
         self, flow_id: UUID, *, include_collected_by: bool = False
     ) -> FlowRecord:
-        flow = self.repository.get_flow(flow_id)
-        if flow is None:
-            raise NotFound("The requested Flow does not exist.")
+        flow = require_flow(self.repository, flow_id)
         if include_collected_by:
             return self._flow_with_collected_by(flow)
         return flow
@@ -296,6 +302,9 @@ class FlowUseCases:
         flow = self.get_flow(flow_id)
         ensure_flow_writable(flow)
         self._replace_flow_collection(flow, collection)
+        self._save_and_publish(flow, identity)
+
+    def _save_and_publish(self, flow: FlowRecord, identity: Identity | None) -> None:
         touch_flow_metadata(flow, identity=identity)
         self.repository.save_flow(flow)
         webhooking.publish_flow_event(
@@ -352,14 +361,7 @@ class FlowUseCases:
                 raise BadRequest("Bad request. Invalid Flow read_only value.")
             flow.read_only = value
         flow.data[property_name] = value
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+        self._save_and_publish(flow, identity)
 
     def delete_flow_property(
         self,
@@ -371,14 +373,7 @@ class FlowUseCases:
         flow = self.get_flow(flow_id)
         ensure_flow_writable(flow)
         flow.data.pop(property_name, None)
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+        self._save_and_publish(flow, identity)
 
     def get_flow_tags(self, flow_id: UUID) -> dict[str, TagValue]:
         return self.get_flow(flow_id).tags
@@ -403,14 +398,7 @@ class FlowUseCases:
         ensure_flow_writable(flow)
         flow.tags[name] = value
         flow.data["tags"] = flow.tags
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+        self._save_and_publish(flow, identity)
 
     def delete_flow_tag(
         self,
@@ -423,14 +411,7 @@ class FlowUseCases:
         ensure_flow_writable(flow)
         flow.tags.pop(name, None)
         flow.data["tags"] = flow.tags
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+        self._save_and_publish(flow, identity)
 
     def _replace_flow_collection(
         self, flow: FlowRecord, collection: list[dict[str, Any]] | None
@@ -474,11 +455,8 @@ class FlowUseCases:
         supplied_fields = supplied_fields or set(flow)
         flow_collection_supplied = "flow_collection" in supplied_fields
         existing = self.repository.get_flow(flow_id)
-        if existing is not None and existing.read_only:
-            raise Forbidden(
-                "Forbidden. You do not have permission to modify this Flow. "
-                "It may be marked read-only."
-            )
+        if existing is not None:
+            ensure_flow_writable(existing)
 
         data = dict(flow)
         tags_supplied = "tags" in data

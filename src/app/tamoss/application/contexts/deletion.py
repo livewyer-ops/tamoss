@@ -8,12 +8,12 @@ from tamoss.application import webhooks as webhooking
 from tamoss.application.contexts import deletion_processor
 from tamoss.application.contexts.flows import (
     ensure_flow_writable,
+    require_flow,
     unlink_flow_collection_references,
 )
 from tamoss.auth import Identity
 from tamoss.domain.model import (
     DeletionRequestRecord,
-    FlowRecord,
     MediaObjectRecord,
     utc_now,
 )
@@ -21,9 +21,11 @@ from tamoss.domain.segments import segment_delete_filter
 from tamoss.errors import BadRequest, NotFound
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import DeletionRepository, WebhookEventRepository
-from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings
-
-DEFAULT_WORKER_ID = "tamoss-worker"
+from tamoss.settings import (
+    DEFAULT_WORKER_ID,
+    DEFAULT_WORKER_LEASE_SECONDS,
+    Settings,
+)
 
 
 class DeletionUseCases:
@@ -59,7 +61,7 @@ class DeletionUseCases:
     def delete_flow(
         self, *, flow_id: UUID, identity: Identity
     ) -> DeletionRequestRecord | None:
-        flow = self._get_flow(flow_id)
+        flow = require_flow(self.repository, flow_id)
         ensure_flow_writable(flow)
         delete_filter = segment_delete_filter(
             flow_id=flow_id,
@@ -98,7 +100,7 @@ class DeletionUseCases:
         object_id: str | None,
         identity: Identity,
     ) -> DeletionRequestRecord | None:
-        flow = self._get_flow(flow_id)
+        flow = require_flow(self.repository, flow_id)
         ensure_flow_writable(flow)
         try:
             delete_filter = segment_delete_filter(
@@ -228,12 +230,6 @@ class DeletionUseCases:
                 self.repository.delete_object(media_object.id)
                 queued += 1
         return queued
-
-    def _get_flow(self, flow_id: UUID) -> FlowRecord:
-        flow = self.repository.get_flow(flow_id)
-        if flow is None:
-            raise NotFound("The requested Flow does not exist.")
-        return flow
 
 
 def _has_controlled_instance(media_object: MediaObjectRecord) -> bool:
