@@ -12,6 +12,7 @@ from tamoss.api.presenters import (
     with_page_headers,
 )
 from tamoss.api.query_params import tag_filter_parameters, validate_query_params
+from tamoss.api.routes.scalar_properties import register_scalar_property_routes
 from tamoss.application.contexts.sources import SourceUseCases
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
@@ -89,118 +90,41 @@ def get_source(
     )
 
 
-@router.get(
-    "/sources/{sourceId}/label",
-    responses={404: {"description": "The requested Source does not exist."}},
-)
-@router.head(
-    "/sources/{sourceId}/label",
-    responses={404: {"description": "The requested Source does not exist."}},
-)
-def get_source_label(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    request: Request,
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    label = sources.get_source_property(source_id, "label")
-    if head := head_response(request):
-        return head
-    return label
+def _register_source_property_routes(property_name: str) -> None:
+    not_found = {"description": "The requested Source does not exist."}
+    register_scalar_property_routes(
+        router,
+        path=f"/sources/{{sourceId}}/{property_name}",
+        path_alias="sourceId",
+        name=f"source_{property_name}",
+        use_cases_dependency=get_source_use_cases,
+        body_param=property_name,
+        body_type=str,
+        body=Body(...),
+        get_value=lambda sources, source_id: sources.get_source_property(
+            source_id, property_name
+        ),
+        set_value=lambda sources, source_id, value, _request: (
+            sources.set_source_property(source_id, property_name, value)
+        ),
+        delete_value=lambda sources, source_id, _request: (
+            sources.delete_source_property(source_id, property_name)
+        ),
+        read_responses={404: not_found},
+        put_responses={
+            400: {"description": "Bad request."},
+            403: {"description": "Forbidden."},
+            404: not_found,
+        },
+        delete_responses={
+            403: {"description": "Forbidden."},
+            404: not_found,
+        },
+    )
 
 
-@router.put(
-    "/sources/{sourceId}/label",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Source does not exist."},
-    },
-)
-def put_source_label(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    label: str = Body(...),
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Response:
-    sources.set_source_property(source_id, "label", label)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/sources/{sourceId}/label",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Source does not exist."},
-    },
-)
-def delete_source_label(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    request: Request,
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    sources.delete_source_property(source_id, "label")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/sources/{sourceId}/description",
-    responses={404: {"description": "The requested Source does not exist."}},
-)
-@router.head(
-    "/sources/{sourceId}/description",
-    responses={404: {"description": "The requested Source does not exist."}},
-)
-def get_source_description(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    request: Request,
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    description = sources.get_source_property(source_id, "description")
-    if head := head_response(request):
-        return head
-    return description
-
-
-@router.put(
-    "/sources/{sourceId}/description",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Source does not exist."},
-    },
-)
-def put_source_description(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    description: str = Body(...),
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Response:
-    sources.set_source_property(source_id, "description", description)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/sources/{sourceId}/description",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Source does not exist."},
-    },
-)
-def delete_source_description(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
-    request: Request,
-    sources: SourceUseCases = Depends(get_source_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    sources.delete_source_property(source_id, "description")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+_register_source_property_routes("label")
+_register_source_property_routes("description")
 
 
 @router.get(

@@ -17,6 +17,7 @@ from tamoss.api.presenters import (
     with_page_headers,
 )
 from tamoss.api.query_params import tag_filter_parameters, validate_query_params
+from tamoss.api.routes.scalar_properties import register_scalar_property_routes
 from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
@@ -254,315 +255,83 @@ def delete_flow_collection(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get(
-    "/flows/{flowId}/label",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-@router.head(
-    "/flows/{flowId}/label",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-def get_flow_label(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    label = flows.get_flow_property(flow_id, "label")
-    if head := head_response(request):
-        return head
-    return label
+def _register_flow_property_routes(
+    property_name: str,
+    *,
+    body_param: str,
+    body_type: type,
+    body: Any,
+    include_delete: bool = True,
+    put_forbidden_description: str = "Forbidden.",
+) -> None:
+    def set_value(
+        flows: FlowUseCases, flow_id: UUID, value: Any, request: Request
+    ) -> None:
+        flows.set_flow_property(
+            flow_id,
+            property_name,  # type: ignore[arg-type]
+            value,
+            identity=identify_request(request),
+        )
 
+    def delete_value(flows: FlowUseCases, flow_id: UUID, request: Request) -> None:
+        flows.delete_flow_property(
+            flow_id,
+            property_name,  # type: ignore[arg-type]
+            identity=identify_request(request),
+        )
 
-@router.put(
-    "/flows/{flowId}/label",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow does not exist."},
-    },
-)
-def put_flow_label(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    label: str = Body(...),
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    flows.set_flow_property(
-        flow_id,
-        "label",
-        label,
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/flows/{flowId}/label",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow ID in the path is invalid."},
-    },
-)
-def delete_flow_label(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    flows.delete_flow_property(flow_id, "label", identity=identify_request(request))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/flows/{flowId}/description",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-@router.head(
-    "/flows/{flowId}/description",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-def get_flow_description(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    description = flows.get_flow_property(flow_id, "description")
-    if head := head_response(request):
-        return head
-    return description
-
-
-@router.put(
-    "/flows/{flowId}/description",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow does not exist."},
-    },
-)
-def put_flow_description(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    description: str = Body(...),
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    flows.set_flow_property(
-        flow_id,
-        "description",
-        description,
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/flows/{flowId}/description",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow ID in the path is invalid."},
-    },
-)
-def delete_flow_description(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    flows.delete_flow_property(
-        flow_id,
-        "description",
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/flows/{flowId}/avg_bit_rate",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-@router.head(
-    "/flows/{flowId}/avg_bit_rate",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-def get_flow_avg_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    avg_bit_rate = flows.get_flow_property(flow_id, "avg_bit_rate")
-    if head := head_response(request):
-        return head
-    return avg_bit_rate
-
-
-@router.put(
-    "/flows/{flowId}/avg_bit_rate",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow does not exist."},
-    },
-)
-def put_flow_avg_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    value: int = Body(..., ge=0),
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    flows.set_flow_property(
-        flow_id,
-        "avg_bit_rate",
-        value,
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/flows/{flowId}/avg_bit_rate",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow ID in the path is invalid."},
-    },
-)
-def delete_flow_avg_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    flows.delete_flow_property(
-        flow_id,
-        "avg_bit_rate",
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/flows/{flowId}/max_bit_rate",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-@router.head(
-    "/flows/{flowId}/max_bit_rate",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-def get_flow_max_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    max_bit_rate = flows.get_flow_property(flow_id, "max_bit_rate")
-    if head := head_response(request):
-        return head
-    return max_bit_rate
-
-
-@router.put(
-    "/flows/{flowId}/max_bit_rate",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow does not exist."},
-    },
-)
-def put_flow_max_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    value: int = Body(..., ge=0),
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    flows.set_flow_property(
-        flow_id,
-        "max_bit_rate",
-        value,
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete(
-    "/flows/{flowId}/max_bit_rate",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        403: {"description": "Forbidden."},
-        404: {"description": "The requested Flow ID in the path is invalid."},
-    },
-)
-def delete_flow_max_bit_rate(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    validate_query_params(request, set())
-    flows.delete_flow_property(
-        flow_id,
-        "max_bit_rate",
-        identity=identify_request(request),
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/flows/{flowId}/read_only",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-@router.head(
-    "/flows/{flowId}/read_only",
-    responses={404: {"description": "The requested Flow does not exist."}},
-)
-def get_flow_read_only(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Any:
-    validate_query_params(request, set())
-    read_only = flows.get_flow_property(flow_id, "read_only")
-    if head := head_response(request):
-        return head
-    return read_only
-
-
-@router.put(
-    "/flows/{flowId}/read_only",
-    dependencies=[Depends(require_json_body)],
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        400: {"description": "Bad request."},
-        403: {
-            "description": "Forbidden. You do not have permission to modify this Flow."
+    register_scalar_property_routes(
+        router,
+        path=f"/flows/{{flowId}}/{property_name}",
+        path_alias="flowId",
+        name=f"flow_{property_name}",
+        use_cases_dependency=get_flow_use_cases,
+        body_param=body_param,
+        body_type=body_type,
+        body=body,
+        get_value=lambda flows, flow_id: flows.get_flow_property(
+            flow_id, property_name
+        ),
+        set_value=set_value,
+        delete_value=delete_value if include_delete else None,
+        read_responses={404: {"description": "The requested Flow does not exist."}},
+        put_responses={
+            400: {"description": "Bad request."},
+            403: {"description": put_forbidden_description},
+            404: {"description": "The requested Flow does not exist."},
         },
-        404: {"description": "The requested Flow does not exist."},
-    },
-)
-def put_flow_read_only(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
-    request: Request,
-    read_only: bool = Body(...),
-    flows: FlowUseCases = Depends(get_flow_use_cases),
-) -> Response:
-    flows.set_flow_property(
-        flow_id,
-        "read_only",
-        read_only,
-        identity=identify_request(request),
+        delete_responses={
+            403: {"description": "Forbidden."},
+            404: {"description": "The requested Flow ID in the path is invalid."},
+        }
+        if include_delete
+        else None,
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+_register_flow_property_routes(
+    "label", body_param="label", body_type=str, body=Body(...)
+)
+_register_flow_property_routes(
+    "description", body_param="description", body_type=str, body=Body(...)
+)
+_register_flow_property_routes(
+    "avg_bit_rate", body_param="value", body_type=int, body=Body(..., ge=0)
+)
+_register_flow_property_routes(
+    "max_bit_rate", body_param="value", body_type=int, body=Body(..., ge=0)
+)
+_register_flow_property_routes(
+    "read_only",
+    body_param="read_only",
+    body_type=bool,
+    body=Body(...),
+    include_delete=False,
+    put_forbidden_description=(
+        "Forbidden. You do not have permission to modify this Flow."
+    ),
+)
 
 
 @router.get(

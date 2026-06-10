@@ -14,7 +14,18 @@ from tamoss.domain.model import (
 )
 from tamoss.errors import BadRequest, NotFound
 from tamoss.ports.object_storage import ObjectStorage
-from tamoss.ports.repositories import ObjectCleanupRepository, ObjectRepository
+from tamoss.ports.repositories import (
+    ObjectCleanupRepository,
+    ObjectRepository,
+    StorageBackendRepository,
+)
+
+
+def reserved_storage_labels(repository: StorageBackendRepository) -> set[str]:
+    """Storage backend labels reserved for service-controlled instances."""
+    return {
+        backend.label for backend in repository.list_storage_backends() if backend.label
+    }
 
 
 class ObjectUseCases:
@@ -170,12 +181,7 @@ class ObjectUseCases:
     ) -> None:
         if not label or not url or not _is_http_url(url):
             raise BadRequest("Bad request. Invalid request JSON.")
-        reserved_labels = {
-            backend.label
-            for backend in self.repository.list_storage_backends()
-            if backend.label
-        }
-        if label in reserved_labels:
+        if label in reserved_storage_labels(self.repository):
             raise BadRequest("Bad request. Invalid request JSON.")
         try:
             append_uncontrolled_instance(

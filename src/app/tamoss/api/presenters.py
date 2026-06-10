@@ -57,24 +57,11 @@ def storage_backend_response(backend: StorageBackend) -> JsonPayload:
     )
 
 
-def source_response(
-    source: SourceRecord,
-    *,
-    source_collection: list[dict[str, object]] | None = None,
-    collected_by: list[UUID] | None = None,
-) -> JsonPayload:
-    return source_payload(
-        source,
-        source_collection=source_collection,
-        collected_by=collected_by,
-    )
-
-
 def source_response_with_relationships(
     source: SourceRecord, *, relationships: dict[UUID, SourceRelationships]
 ) -> JsonPayload:
     relationship = relationships.get(source.id)
-    return source_response(
+    return source_payload(
         source,
         source_collection=relationship.source_collection if relationship else None,
         collected_by=relationship.collected_by if relationship else None,

@@ -22,6 +22,7 @@ from tamoss.domain.model import StorageBackend
 from tamoss.version import BBC_TAMS_API_VERSION, TAMOSS_VERSION
 
 DEFAULT_TAMOSS_S3_STORAGE_BACKEND_ID = UUID("f1ab5b54-9703-42ed-b181-11ba1c794a7f")
+DEFAULT_WORKER_ID = "tamoss-worker"
 DEFAULT_WORKER_LEASE_SECONDS = 300
 NANOSECONDS_PER_SECOND = 1_000_000_000
 MIN_OBJECT_TIMEOUT_SECONDS = 300
@@ -43,7 +44,7 @@ _OAUTH2_JWT_ALGORITHMS = frozenset(
 )
 
 
-class ConfigurationError(ValueError):
+class SecretFileError(ValueError):
     pass
 
 
@@ -132,7 +133,6 @@ class Settings(BaseSettings):
         default=TAMOSS_VERSION,
         validation_alias="TAMOSS_SERVICE_VERSION",
     )
-    public_base_url: str = "http://testserver"
     auth_required: bool = Field(
         default=False,
         validation_alias="TAMOSS_AUTH_REQUIRED",
@@ -553,7 +553,7 @@ def read_secret_file(
             return handle.read().strip()
     except OSError as exc:
         if required:
-            raise ConfigurationError(f"{setting_name} is not readable: {path}") from exc
+            raise SecretFileError(f"{setting_name} is not readable: {path}") from exc
         return None
 
 
