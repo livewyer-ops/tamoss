@@ -49,7 +49,7 @@ func (r *StorageBackendReconciler) reconcileStorageBackendBucket(ctx context.Con
 	if err := controllerutil.SetControllerReference(storageBackend, desiredState, r.Scheme); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
-	if _, err := applyCanonicalObject(ctx, r.Client, desiredState); err != nil {
+	if _, err := applyManagedObject(ctx, r.Client, desiredState); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
 	return storageBackendReconcileResult{Ready: true, Reason: operatorstatus.ReasonBucketReady, Message: "RustFS bucket has been created"}, nil
@@ -71,7 +71,7 @@ func (r *StorageBackendReconciler) reconcileExternalStorageBackendReference(ctx 
 	if err := controllerutil.SetControllerReference(storageBackend, desiredState, r.Scheme); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
-	if _, err := applyCanonicalObject(ctx, r.Client, desiredState); err != nil {
+	if _, err := applyManagedObject(ctx, r.Client, desiredState); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
 	return storageBackendReconcileResult{Ready: true, Reason: operatorstatus.ReasonBucketReady, Message: "External object-store metadata has been accepted"}, nil

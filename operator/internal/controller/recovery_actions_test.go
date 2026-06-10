@@ -26,7 +26,7 @@ func TestSchemaRetryClearsTerminalFailureAndDeletesFailedJob(t *testing.T) {
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "")
 	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()), tamoss.Namespace)
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss, state, job).Build()
+	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, job).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
@@ -62,7 +62,7 @@ func TestSchemaRetryDuplicateAnnotationDoesNotResetAgain(t *testing.T) {
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "retry-1")
 	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()), tamoss.Namespace)
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss, state, job).Build()
+	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, job).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
@@ -85,7 +85,7 @@ func TestSchemaRetryRepeatedFailureStartsNewAttemptCount(t *testing.T) {
 	state := terminalSchemaState(tamoss, "")
 	jobName := tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName())
 	failed := failedJobFixture(jobName, tamoss.Namespace)
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss, state, failed).Build()
+	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, failed).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
 	if _, err := controller.Reconcile(ctx, tamoss); err != nil {
@@ -126,7 +126,7 @@ func TestSchemaRetryConsumedMarkerSurvivesSuccessState(t *testing.T) {
 	state := terminalSchemaState(tamoss, "retry-1")
 	jobName := tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName())
 	succeeded := succeededJobFixture(jobName, tamoss.Namespace)
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss, state, succeeded).Build()
+	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, succeeded).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
@@ -156,7 +156,7 @@ func TestGeneratedAPITokenRotationReplacesTokenAndAnnotatesRollout(t *testing.T)
 	}
 	recorder := record.NewFakeRecorder(10)
 	reconciler := &TamossReconciler{
-		Client:   fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 		Recorder: recorder,
 	}
 	secret, apiDeployment, uiDeployment := apiTokenObjects(tamoss)
@@ -191,7 +191,7 @@ func TestGeneratedAPITokenRotationDuplicateValueKeepsToken(t *testing.T) {
 		Data: map[string][]byte{apiTokenKey: []byte("stable-token")},
 	}
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 	}
 	secret, _, _ := apiTokenObjects(tamoss)
 
