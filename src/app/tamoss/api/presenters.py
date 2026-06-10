@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import Request, Response
@@ -86,7 +87,11 @@ def webhook_response(webhook: WebhookRecord) -> JsonPayload:
     )
 
 
-def deletion_request_response(request: DeletionRequestRecord) -> JsonPayload:
+def deletion_request_response(
+    request: DeletionRequestRecord,
+    *,
+    retention_seconds: int = 0,
+) -> JsonPayload:
     return contract_dump(
         contract_models.DeletionRequest(
             id=str(request.id),
@@ -97,10 +102,23 @@ def deletion_request_response(request: DeletionRequestRecord) -> JsonPayload:
             created=request.created,
             created_by=request.created_by,
             updated=request.updated,
+            expiry=_deletion_request_expiry(request, retention_seconds),
             status=request.status,
             error=normalize_error_payload(request.error),
         )
     )
+
+
+def _deletion_request_expiry(
+    request: DeletionRequestRecord,
+    retention_seconds: int,
+) -> datetime | None:
+    # Completed requests are removed by the worker retention purge; surface
+    # that window through the spec's optional expiry field so clients know
+    # how long the record remains queryable.
+    if retention_seconds <= 0 or request.status != "done":
+        return None
+    return request.updated + timedelta(seconds=retention_seconds)
 
 
 def deletion_request_accepted_response(
