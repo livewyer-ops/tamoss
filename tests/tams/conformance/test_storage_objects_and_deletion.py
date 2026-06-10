@@ -23,6 +23,7 @@ from tests.support.object_storage import InMemoryObjectStorage
 from tests.tams.support import (
     PRIMARY_BACKEND_ID,
     PRIMARY_BACKEND_LABEL,
+    assert_bbc_error,
     controlled_object_instance_payload,
     create_video_flow,
     external_object_instance,
@@ -863,3 +864,10 @@ def _payload_get_urls(endpoint_name: str, payload: object) -> list[dict[str, obj
         return payload[0]["get_urls"]
     assert isinstance(payload, dict)
     return payload["get_urls"]
+
+
+def test_delete_request_id_is_an_opaque_string(client: TestClient) -> None:
+    """bbc-id: semantic.deletion.request_id_opaque_string"""
+    response = client.get("/flow-delete-requests/not-a-uuid")
+    assert response.status_code == 404
+    assert_bbc_error(response.json(), "not_found")

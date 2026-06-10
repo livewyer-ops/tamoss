@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_source_use_cases
+from tamoss.api.dependencies import get_source_use_cases, require_json_body
 from tamoss.api.presenters import (
     head_response,
     source_response_with_relationships,
@@ -111,6 +111,7 @@ def get_source_label(
 
 @router.put(
     "/sources/{sourceId}/label",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -167,6 +168,7 @@ def get_source_description(
 
 @router.put(
     "/sources/{sourceId}/description",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -244,6 +246,7 @@ def get_source_tag(
 
 @router.put(
     "/sources/{sourceId}/tags/{name:path}",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},

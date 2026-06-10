@@ -310,15 +310,18 @@ class FlowUseCases:
 
     def get_flow_property(
         self, flow_id: UUID, property_name: FlowPropertyName
-    ) -> str | int | bool:
+    ) -> str | int | bool | None:
         flow = self.get_flow(flow_id)
         if property_name == "read_only":
             return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
-            if property_name == "label":
+            # Unset properties are readable once the Flow exists: empty string
+            # for the string properties, null for the numeric ones (the spec
+            # reserves 404 for a missing Flow and defines no unset form).
+            if property_name in {"label", "description"}:
                 return ""
-            raise NotFound("The requested Flow property does not exist.")
+            return None
         if property_name in {"label", "description"}:
             if not isinstance(value, str):
                 raise BadRequest("Bad request. Invalid Flow property value.")
@@ -467,7 +470,7 @@ class FlowUseCases:
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
         if UUID(str(flow.get("id"))) != flow_id:
-            raise BadRequest("Bad request. Invalid Flow JSON.")
+            raise NotFound("The requested Flow ID in the path is invalid.")
         supplied_fields = supplied_fields or set(flow)
         flow_collection_supplied = "flow_collection" in supplied_fields
         existing = self.repository.get_flow(flow_id)
@@ -503,6 +506,7 @@ class FlowUseCases:
                 id=source_id,
                 format=format_value,
                 label=data.get("label"),
+                description=data.get("description"),
                 tags=replacement_tags,
             )
             source_was_created = True

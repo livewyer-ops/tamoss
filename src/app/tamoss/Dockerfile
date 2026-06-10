@@ -29,4 +29,4 @@ RUN --mount=type=bind,source=src/pyproject.toml,target=/app/pyproject.toml \
   --mount=type=bind,source=src/README.md,target=/app/README.md \
   uv sync --frozen --no-dev
 
-CMD ["uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

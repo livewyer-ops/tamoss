@@ -13,7 +13,7 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment. `PROFILE=multi-server` uses a multi-node Kind cluster. |
+| `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment unless `KIND_DEMO_INGEST=false` is set. `PROFILE=multi-server` uses a multi-node Kind cluster. |
 | `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
 | `task kind:test PROFILE=local-kind` | Create or reuse Kind, deploy the selected profile, and run deployed TAMS/product checks. |

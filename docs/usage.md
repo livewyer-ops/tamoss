@@ -51,7 +51,8 @@ curl -k -H "Authorization: Bearer $TAMOSS_TOKEN" \
 ## Ingest Helper
 
 `task kind:up` creates one tiny playable demo ingest without requiring local media
-conversion tools. The demo segment is registered with probe-derived
+conversion tools. Set `KIND_DEMO_INGEST=false` when you need a clean validation
+target with no seeded flow/source. The demo segment is registered with probe-derived
 `object_timerange`, `ts_offset`, `last_duration`, and `key_frame_count`
 metadata. Browser-managed ingest also probes finalized MPEG-TS segments before
 registering them, so registered segment timeranges come from measured media

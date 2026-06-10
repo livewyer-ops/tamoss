@@ -5,7 +5,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_deletion_use_cases, get_flow_use_cases
+from tamoss.api.dependencies import (
+    get_deletion_use_cases,
+    get_flow_use_cases,
+    require_json_body,
+)
 from tamoss.api.presenters import (
     deletion_request_accepted_response,
     flow_response,
@@ -272,6 +276,7 @@ def get_flow_label(
 
 @router.put(
     "/flows/{flowId}/label",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -334,6 +339,7 @@ def get_flow_description(
 
 @router.put(
     "/flows/{flowId}/description",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -400,6 +406,7 @@ def get_flow_avg_bit_rate(
 
 @router.put(
     "/flows/{flowId}/avg_bit_rate",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -466,6 +473,7 @@ def get_flow_max_bit_rate(
 
 @router.put(
     "/flows/{flowId}/max_bit_rate",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -532,6 +540,7 @@ def get_flow_read_only(
 
 @router.put(
     "/flows/{flowId}/read_only",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},
@@ -599,6 +608,7 @@ def get_flow_tag(
 
 @router.put(
     "/flows/{flowId}/tags/{name:path}",
+    dependencies=[Depends(require_json_body)],
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         400: {"description": "Bad request."},

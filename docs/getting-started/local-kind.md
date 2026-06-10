@@ -33,11 +33,17 @@ task kind:up PROFILE=local-kind
 5. Apply the `local-kind` instance overlay.
 6. Wait for `Tamoss/tamoss-kind` to report `Ready=True`.
 7. Ingest one tiny playable demo segment through the deployed API and storage
-   backend.
+   backend, unless `KIND_DEMO_INGEST=false` is set.
 
 The summary prints first-start lifecycle status, the app URL, app
 username/password, API docs URL, API token, OAuth client details, and storage
 credentials.
+
+For a clean API validation target with no seeded demo flow/source:
+
+```bash
+task kind:up PROFILE=local-kind KIND_DEMO_INGEST=false
+```
 
 To print the same access details and current Kubernetes status again:
 

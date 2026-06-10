@@ -28,6 +28,9 @@ class E2EClient:
         last_error: str | None = None
         while time.monotonic() < deadline:
             try:
+                if self.target.readiness_mode == "service":
+                    self.request("GET", "/service", expected={200})
+                    return
                 health = self.request("GET", "/healthz", expected={200}, auth=False)
                 ready = self.request("GET", "/readyz", expected={200}, auth=False)
                 service = self.request("GET", "/service", expected={200})

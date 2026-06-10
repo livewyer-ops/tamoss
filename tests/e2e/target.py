@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import subprocess
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +63,8 @@ class E2ETarget:
     oauth_issuer_url: str
     oauth_client_id: str
     oauth_client_secret: str | None
+    readiness_mode: str
+    upload_checksum_header: bool
     timeout_seconds: float = 10.0
 
     @classmethod
@@ -134,6 +137,12 @@ class E2ETarget:
                 namespace=oauth_secret_namespace,
                 enabled=oauth2_enabled,
             ),
+            readiness_mode=_readiness_mode(
+                values.get("TEST_TAMOSS_READINESS_MODE", "tamoss")
+            ),
+            upload_checksum_header=_env_bool(
+                values.get("TEST_TAMOSS_UPLOAD_CHECKSUM_HEADER", "true")
+            ),
             timeout_seconds=float(values.get("TEST_TIMEOUT_SECONDS", "10")),
         )
 
@@ -186,18 +195,61 @@ def _source_path(line: str, *, relative_to: Path) -> Path | None:
 
 def _load_token(values: dict[str, str]) -> str | None:
     if values.get("TEST_TAMOSS_TOKEN"):
-        return values["TEST_TAMOSS_TOKEN"]
+        return _normalize_token(values["TEST_TAMOSS_TOKEN"])
+    if values.get("TEST_TAMOSS_TOKEN_COMMAND"):
+        try:
+            completed = subprocess.run(
+                values["TEST_TAMOSS_TOKEN_COMMAND"],
+                check=False,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            raise pytest.UsageError(
+                "TEST_TAMOSS_TOKEN_COMMAND timed out after 30 seconds."
+            ) from None
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()[-500:]
+            raise pytest.UsageError(
+                "TEST_TAMOSS_TOKEN_COMMAND failed with exit code "
+                f"{completed.returncode}: {stderr}"
+            )
+        # The last stdout line wins so the command may emit progress output.
+        token = completed.stdout.strip().splitlines()[-1] if completed.stdout else ""
+        if not token:
+            raise pytest.UsageError("TEST_TAMOSS_TOKEN_COMMAND did not print a token.")
+        return _normalize_token(token)
     secret_name = values.get("TEST_TAMOSS_TOKEN_SECRET")
     if not secret_name:
         return None
     namespace = values.get("TEST_TAMOSS_NAMESPACE", "tams")
     kubeconfig = values.get("KUBECONFIG") or os.getenv("KUBECONFIG")
-    return load_secret_value(
-        kubeconfig=kubeconfig,
-        namespace=namespace,
-        secret_name=secret_name,
-        key="TAMOSS_API_TOKEN",
+    return _normalize_token(
+        load_secret_value(
+            kubeconfig=kubeconfig,
+            namespace=namespace,
+            secret_name=secret_name,
+            key="TAMOSS_API_TOKEN",
+        )
     )
+
+
+def _normalize_token(value: str) -> str:
+    token = value.strip()
+    if token.lower().startswith("bearer "):
+        return token[7:].strip()
+    return token
+
+
+def _readiness_mode(value: str) -> str:
+    mode = value.strip().lower()
+    if mode not in {"tamoss", "service"}:
+        raise pytest.UsageError(
+            "TEST_TAMOSS_READINESS_MODE must be 'tamoss' or 'service'."
+        )
+    return mode
 
 
 def _load_auth_password(

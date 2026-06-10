@@ -13,6 +13,7 @@ vars:
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  KIND_DEMO_INGEST: '{{default "true" (default (env "KIND_DEMO_INGEST") .KIND_DEMO_INGEST)}}'
   KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
   TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
   PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
@@ -84,7 +85,7 @@ tasks:
       - task: operator:platform:deps:check
 
   kind:up:
-    desc: "Local Kind: build images, create or reuse Kind, apply the selected Tamoss instance, and ingest playable demo media"
+    desc: "Local Kind: build images, create or reuse Kind, apply the selected Tamoss instance, and optionally ingest playable demo media"
     silent: true
     cmds:
       - task: init
@@ -126,6 +127,7 @@ tasks:
           KUBECONFIG: "{{.KUBECONFIG}}"
           PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
           DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+          KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
       - |
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then
           task env:summary \
@@ -141,8 +143,12 @@ tasks:
       - |
         set -euo pipefail
         . .tasks/lib/progress.sh
-        task_step "Demo media: ingest playable media" \
-          .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
+        if [ "{{.KIND_DEMO_INGEST}}" = "false" ]; then
+          task_step "Demo media: skip playable media ingest" true
+        else
+          task_step "Demo media: ingest playable media" \
+            .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
+        fi
 
   kind:down:
     desc: "Local Kind: delete the disposable Kind cluster and local runtime state"
@@ -182,6 +188,7 @@ tasks:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
+          KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
 
   kind:test:
     desc: "Local Kind validation: deploy the selected profile and run deployed checks"
@@ -193,6 +200,7 @@ tasks:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
+          KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
       - task: e2e:deployed
         vars:
           PROFILE: "{{.PROFILE}}"
