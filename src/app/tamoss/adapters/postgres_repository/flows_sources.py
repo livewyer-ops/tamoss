@@ -44,12 +44,12 @@ class PostgresFlowSourceMixin:
         requested_ids = list(dict.fromkeys(flow_ids))
         if not requested_ids:
             return []
-        # Containment (@>) per child id keeps this satisfiable by a GIN index on
-        # the flow_collection expression instead of hydrating every flow row.
+        # Containment (@>) per child id is satisfiable by the GIN index on the
+        # flow_collection expression; the expression must stay identical to
+        # idx_tamoss_flows_flow_collection for the planner to use it. A
+        # missing flow_collection key yields NULL, which excludes the row.
         clause = sql.SQL(" OR ").join(
-            sql.SQL(
-                "COALESCE(flow.record->'data'->'flow_collection', '[]'::jsonb) @> %s"
-            )
+            sql.SQL("(flow.record->'data'->'flow_collection') @> %s")
             for _ in requested_ids
         )
         params = [Jsonb([{"id": str(flow_id)}]) for flow_id in requested_ids]
