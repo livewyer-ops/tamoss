@@ -1,0 +1,5 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-api
+(spec.template.spec.containers[0].resources.limits.memory): 512Mi

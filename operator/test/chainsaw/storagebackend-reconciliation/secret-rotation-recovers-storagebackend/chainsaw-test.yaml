@@ -1,0 +1,60 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: secret-rotation-recovers-storagebackend
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply storage backend with absent credentials secret
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - apply:
+            file: resources/archive-storagebackend.yaml
+        - assert:
+            file: assert/archive-storagebackend-missing-secret.yaml
+            timeout: 2m
+        - assert:
+            file: assert/missing-secret-event.yaml
+            timeout: 1m
+    # Creating the credentials Secret is the only action in this step. No
+    # reconcile-tamoss.sh tick or annotation nudge is allowed here: the
+    # StorageBackend must be re-enqueued by the controller itself once the
+    # Secret exists.
+    - name: create credentials secret and observe recovery
+      try:
+        - apply:
+            file: resources/rotated-rustfs-auth-secret.yaml
+        - assert:
+            file: assert/archive-storagebackend-ready.yaml
+            timeout: 5m
+    # Automatic cleanup deletes later-step resources first, which would remove
+    # the credentials Secret while the StorageBackend finalizer still needs it
+    # for deprovisioning. Delete the StorageBackend here while the Secret
+    # exists so cleanup stays inside its budget.
+    - name: remove storage backend while credentials exist
+      try:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              name: archive
+            timeout: 3m
