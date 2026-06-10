@@ -314,6 +314,13 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="TAMOSS_WEBHOOK_DELIVERY_CONCURRENCY",
     )
+    # Retention for terminal queue rows (done webhook deliveries, delete
+    # requests, cleanups, copies); 0 disables purging.
+    worker_queue_retention_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        ge=0,
+        validation_alias="TAMOSS_WORKER_QUEUE_RETENTION_SECONDS",
+    )
     webhook_allow_private_targets: bool = Field(
         default=False,
         validation_alias="TAMOSS_WEBHOOK_ALLOW_PRIVATE_TARGETS",

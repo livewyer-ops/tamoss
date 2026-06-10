@@ -3,6 +3,7 @@ from __future__ import annotations
 # mypy: disable-error-code=attr-defined
 # Focused store methods run with repository-owned connection and mapper state.
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -35,6 +36,16 @@ from tamoss.domain.model import (
 from tamoss.domain.pagination import Page, resolve_page_window
 
 _EMPTY_SQL = sql.SQL("")
+
+# Terminal rows are kept for observability but never read by claim queries;
+# without retention the queue tables (webhook deliveries especially: one row
+# per event per webhook) grow without bound.
+_PURGEABLE_QUEUE_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("tamoss_webhook_deliveries", ("done", "dead")),
+    ("tamoss_delete_requests", ("done",)),
+    ("tamoss_object_cleanups", ("done",)),
+    ("tamoss_object_copies", ("done",)),
+)
 
 
 class PostgresQueueMixin:
@@ -521,6 +532,37 @@ class PostgresQueueMixin:
                     "updated": copy.updated,
                 },
             )
+
+    def purge_finished_worker_records(self, *, older_than: datetime, limit: int) -> int:
+        if limit < 1:
+            return 0
+        purged = 0
+        with self._connect() as conn, conn.cursor() as cur:
+            for table_name, statuses in _PURGEABLE_QUEUE_TABLES:
+                cur.execute(
+                    sql.SQL(
+                        """
+                        WITH target AS (
+                            SELECT id
+                            FROM {table}
+                            WHERE status = ANY(%(statuses)s::text[])
+                              AND updated_at < %(older_than)s
+                            LIMIT %(limit)s
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        DELETE FROM {table} AS finished
+                        USING target
+                        WHERE finished.id = target.id
+                        """
+                    ).format(table=sql.Identifier(table_name)),
+                    {
+                        "statuses": list(statuses),
+                        "older_than": older_than,
+                        "limit": limit,
+                    },
+                )
+                purged += cur.rowcount or 0
+        return purged
 
     def claim_object_copies(
         self, *, worker_id: str, limit: int, lease_seconds: int

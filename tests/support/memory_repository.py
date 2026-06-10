@@ -385,6 +385,30 @@ class FakeTamossRepository:
             self._objects[media_object.id] = media_object
             return True
 
+    def purge_finished_worker_records(self, *, older_than: datetime, limit: int) -> int:
+        purged = 0
+        with self._lock:
+            stores: tuple[tuple[dict, set[str]], ...] = (
+                (self._webhook_deliveries, {"done", "dead"}),
+                (self._delete_requests, {"done"}),
+                (self._object_cleanups, {"done"}),
+                (self._object_copies, {"done"}),
+            )
+            for store, statuses in stores:
+                for key in list(store.keys()):
+                    if purged >= limit:
+                        return purged
+                    record = store[key]
+                    updated = getattr(record, "updated", None)
+                    if (
+                        record.status in statuses
+                        and updated is not None
+                        and updated < older_than
+                    ):
+                        del store[key]
+                        purged += 1
+        return purged
+
     def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
         created: set[str] = set()
         with self._lock:
