@@ -38,12 +38,18 @@ jobs:
       - name: Build operator
         run: task operator:build
 
+      - name: Lint operator
+        run: task operator:lint
+
       - name: Test operator
         run: task operator:test
 
+      - name: Validate operator compatibility metadata
+        run: python3 .github/scripts/release-metadata.py --validate
+
       - name: Check generated manifests
         run: |
-          task operator:manifests
+          make -C operator generate manifests
           task operator:install-manifest
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum deploy/operator/install.yaml
 
