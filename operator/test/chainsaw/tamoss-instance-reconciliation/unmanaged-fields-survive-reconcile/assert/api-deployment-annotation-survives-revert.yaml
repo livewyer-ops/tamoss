@@ -1,0 +1,9 @@
+# The managed memory limit reverting proves a reconcile applied the canonical
+# Deployment; the third-party annotation must still be present afterwards.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-api
+  annotations:
+    example.com/keep: "true"
+(spec.template.spec.containers[0].resources.limits.memory): 512Mi

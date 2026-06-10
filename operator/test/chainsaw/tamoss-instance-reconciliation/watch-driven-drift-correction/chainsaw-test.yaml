@@ -1,0 +1,51 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: watch-driven-drift-correction
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: instance
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply instance
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - assert:
+            file: ../../fixtures/assert/tamoss-all-components-ready.yaml
+    # Unlike out-of-band-edits-are-reverted, this step never calls
+    # reconcile-tamoss.sh: the mutation alone must enqueue a reconcile through
+    # the operator's owned-resource watches.
+    - name: mutate managed deployment without a reconcile nudge
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              set -eu
+              # chainsaw-script: applies out-of-band drift to a managed resource so native assertions can verify watch-driven correction.
+              kubectl -n "$NAMESPACE" patch deployment tamoss-api --type=json \
+                -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
+        - assert:
+            file: assert/api-deployment-restored.yaml
+            timeout: 3m
+        - assert:
+            file: assert/drift-corrected-event.yaml
+            timeout: 1m
