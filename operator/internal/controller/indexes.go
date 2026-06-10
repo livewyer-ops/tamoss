@@ -27,20 +27,22 @@ func listStorageBackendsForTamoss(ctx context.Context, c client.Client, namespac
 	return nil
 }
 
-func listStorageBackendsByCredentialSecret(ctx context.Context, c client.Client, namespace, secretName string, list *tamossv1alpha1.StorageBackendList) error {
-	if err := c.List(ctx, list, client.InNamespace(namespace)); err != nil {
-		return err
+// storageBackendCredentialsSecretIndex is a field index on the resolved
+// credentials Secret name so Secret events map to StorageBackends with an
+// indexed lookup instead of listing and filtering every StorageBackend.
+const storageBackendCredentialsSecretIndex = ".spec.credentials.existingSecret"
+
+func storageBackendCredentialsSecretIndexValue(obj client.Object) []string {
+	storageBackend, ok := obj.(*tamossv1alpha1.StorageBackend)
+	if !ok {
+		return nil
 	}
-	filtered := list.Items[:0]
-	for _, storageBackend := range list.Items {
-		spec := storageBackend.Spec
-		spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
-		if spec.Credentials.ExistingSecret == secretName {
-			filtered = append(filtered, storageBackend)
-		}
+	spec := storageBackend.Spec
+	spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
+	if spec.Credentials.ExistingSecret == "" {
+		return nil
 	}
-	list.Items = filtered
-	return nil
+	return []string{spec.Credentials.ExistingSecret}
 }
 
 func tamossManagedLabelSelector(tamoss *tamossv1alpha1.Tamoss) client.MatchingLabels {
