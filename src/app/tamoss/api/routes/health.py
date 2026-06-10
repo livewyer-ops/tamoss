@@ -85,7 +85,7 @@ def readyz(
 def _readiness_cache_ttl(request: Request) -> float:
     settings = getattr(request.app.state, "tamoss_settings", None)
     if isinstance(settings, Settings):
-        return settings.readiness_cache_ttl_seconds
+        return float(settings.readiness_cache_ttl_seconds)
     return 0.0
 
 
