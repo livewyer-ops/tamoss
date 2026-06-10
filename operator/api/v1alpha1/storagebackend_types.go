@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type StorageBackendProvider string
@@ -113,7 +114,10 @@ type StorageBackendList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&StorageBackend{}, &StorageBackendList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &StorageBackend{}, &StorageBackendList{})
+		return nil
+	})
 }
 
 func (s *StorageBackendSpec) ApplyDefaults(namespace, name string) {

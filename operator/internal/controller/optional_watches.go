@@ -37,10 +37,10 @@ type optionalWatchRegistrar struct {
 
 func optionalTamossWatchPolicies() []optionalWatchPolicy {
 	return []optionalWatchPolicy{
-		{name: "cnpg-cluster", gvr: operatordiscovery.CNPGClustersGVR, gvk: cnpgv1.GroupVersion.WithKind("Cluster"), object: &cnpgv1.Cluster{}, list: &cnpgv1.ClusterList{}},
-		{name: "cnpg-scheduledbackup", gvr: operatordiscovery.CNPGScheduledBackupsGVR, gvk: cnpgv1.GroupVersion.WithKind("ScheduledBackup"), object: &cnpgv1.ScheduledBackup{}, list: &cnpgv1.ScheduledBackupList{}},
+		{name: "cnpg-cluster", gvr: operatordiscovery.CNPGClustersGVR, gvk: cnpgv1.SchemeGroupVersion.WithKind("Cluster"), object: &cnpgv1.Cluster{}, list: &cnpgv1.ClusterList{}},
+		{name: "cnpg-scheduledbackup", gvr: operatordiscovery.CNPGScheduledBackupsGVR, gvk: cnpgv1.SchemeGroupVersion.WithKind("ScheduledBackup"), object: &cnpgv1.ScheduledBackup{}, list: &cnpgv1.ScheduledBackupList{}},
 		{name: "rustfs-tenant", gvr: operatordiscovery.RustFSTenantsGVR, gvk: rustfs.TenantGVK, object: rustfs.NewTenant(), list: rustfs.NewTenantList()},
-		{name: "gateway-httproute", gvr: operatordiscovery.GatewayHTTPRoutesGVR, gvk: gatewayv1.SchemeGroupVersion.WithKind("HTTPRoute"), object: &gatewayv1.HTTPRoute{}, list: &gatewayv1.HTTPRouteList{}},
+		{name: "gateway-httproute", gvr: operatordiscovery.GatewayHTTPRoutesGVR, gvk: httpRouteGVK, object: &gatewayv1.HTTPRoute{}, list: &gatewayv1.HTTPRouteList{}},
 	}
 }
 

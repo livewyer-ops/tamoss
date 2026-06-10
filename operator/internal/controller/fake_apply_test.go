@@ -16,7 +16,7 @@ import (
 func fakeApplyInterceptor() interceptor.Funcs {
 	return interceptor.Funcs{
 		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-			if patch != client.Apply {
+			if patch != client.Apply { //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
 				return c.Patch(ctx, obj, patch, opts...)
 			}
 			live := obj.DeepCopyObject().(client.Object)

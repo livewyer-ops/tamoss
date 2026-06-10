@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -104,11 +105,13 @@ func (r *TamossReconciler) emitImagePullEvents(ctx context.Context, tamoss *tamo
 			r.recordWarning(
 				tamoss,
 				operatorstatus.ReasonImagePullFailed,
-				"Pod %s container %s is waiting with %s: %s",
-				pod.Name,
-				status.Name,
-				reason,
-				status.State.Waiting.Message,
+				fmt.Sprintf(
+					"Pod %s container %s is waiting with %s: %s",
+					pod.Name,
+					status.Name,
+					reason,
+					status.State.Waiting.Message,
+				),
 			)
 		}
 	}

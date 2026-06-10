@@ -91,13 +91,13 @@ func (r *TamossReconciler) observedBackupPolicy(ctx context.Context, tamoss *tam
 		status = backupPolicyStatusWithCluster(status, cluster)
 		return condition, status, nil
 	}
-	if backupFailureNewerThanSuccess(cluster.Status.LastFailedBackup, cluster.Status.LastSuccessfulBackup) {
+	if backupFailureNewerThanSuccess(cluster.Status.LastFailedBackup, cluster.Status.LastSuccessfulBackup) { //nolint:staticcheck // CNPG deprecates these fields for backup plugins only; this operator configures the in-tree barman object store, which still populates them.
 		condition := backupPolicyCondition(tamoss.Generation, metav1.ConditionFalse, operatorstatus.ReasonBackupPolicyFailed, fmt.Sprintf("CNPG Cluster %s reports a backup failure newer than the latest successful backup", cluster.Name))
 		status := backupPolicyStatus(tamoss, condition)
 		status = backupPolicyStatusWithCluster(status, cluster)
 		return condition, status, nil
 	}
-	if cluster.Status.LastSuccessfulBackup == "" && cluster.Status.FirstRecoverabilityPoint == "" && scheduled.Status.LastScheduleTime == nil {
+	if cluster.Status.LastSuccessfulBackup == "" && cluster.Status.FirstRecoverabilityPoint == "" && scheduled.Status.LastScheduleTime == nil { //nolint:staticcheck // CNPG deprecates these fields for backup plugins only; this operator configures the in-tree barman object store, which still populates them.
 		condition := backupPolicyCondition(tamoss.Generation, metav1.ConditionFalse, operatorstatus.ReasonBackupPolicyPending, fmt.Sprintf("CNPG ScheduledBackup %s exists but no successful backup has been observed yet", scheduled.Name))
 		status := backupPolicyStatus(tamoss, condition)
 		status = backupPolicyStatusWithCluster(status, cluster)
@@ -138,6 +138,7 @@ func backupPolicyStatus(tamoss *tamossv1alpha1.Tamoss, condition metav1.Conditio
 	return status
 }
 
+//nolint:staticcheck // CNPG deprecates these fields for backup plugins only; this operator configures the in-tree barman object store, which still populates them.
 func backupPolicyStatusWithCluster(status tamossv1alpha1.BackupPolicyStatus, cluster *cnpgv1.Cluster) tamossv1alpha1.BackupPolicyStatus {
 	status.LastSuccessfulBackup = cluster.Status.LastSuccessfulBackup
 	status.LastFailedBackup = cluster.Status.LastFailedBackup

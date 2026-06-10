@@ -82,7 +82,7 @@ func TestAssessHTTPRoutePendingWithoutParentStatus(t *testing.T) {
 }
 
 func TestIsKubernetesNoMatchErrorRecognizesMissingOptionalResource(t *testing.T) {
-	err := &meta.NoKindMatchError{GroupKind: gatewayv1.SchemeGroupVersion.WithKind("HTTPRoute").GroupKind()}
+	err := &meta.NoKindMatchError{GroupKind: httpRouteGVK.GroupKind()}
 	if !isKubernetesNoMatchError(err) {
 		t.Fatalf("expected missing HTTPRoute resource error to be treated as a no-match error")
 	}

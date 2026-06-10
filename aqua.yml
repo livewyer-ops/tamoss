@@ -21,7 +21,7 @@ packages:
     - name: cli/cli@v2.72.0 # gh CLI for PR/issue management from dev machines
 
     # Kubernetes / deploy tooling
-    - name: kubernetes-sigs/kind@v0.31.0 # .tasks/kind.yaml
+    - name: kubernetes-sigs/kind@v0.32.0 # .tasks/kind.yaml
       tags:
           - ci-kind
           - ci-operator-chainsaw
@@ -40,7 +40,7 @@ packages:
     - name: kyverno/chainsaw@v0.2.15 # operator/test/chainsaw
       tags:
           - ci-operator-chainsaw
-    - name: golang/go@go1.23.2 # operator/go.mod and controller builds
+    - name: golang/go@go1.26.4 # operator/go.mod and controller builds
     - name: yannh/kubeconform@v0.6.7 # generated operator CRD/install manifest linting
       tags:
           - ci-operator-crd

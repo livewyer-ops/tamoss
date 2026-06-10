@@ -8,10 +8,12 @@ import (
 	"time"
 
 	k8sdiscovery "k8s.io/client-go/discovery"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	crmanager "sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsfilters "sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -62,14 +64,23 @@ func newOperatorManager(
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: tlsOpts,
 	})
+	metricsOptions := metricsserver.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		TLSOpts:       tlsOpts,
+	}
+	if secureMetrics {
+		// Protect the metrics endpoint with TokenReview authentication and
+		// SubjectAccessReview authorisation, matching the current kubebuilder
+		// scaffold. The shipped deployment serves metrics insecurely on
+		// localhost behind kube-rbac-proxy, so this only takes effect when
+		// --metrics-secure is set explicitly.
+		metricsOptions.FilterProvider = metricsfilters.WithAuthenticationAndAuthorization
+	}
 	return ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Cache:  cacheOptions,
-		Metrics: metricsserver.Options{
-			BindAddress:   metricsAddr,
-			SecureServing: secureMetrics,
-			TLSOpts:       tlsOpts,
-		},
+		Scheme:                        scheme,
+		Cache:                         cacheOptions,
+		Metrics:                       metricsOptions,
 		WebhookServer:                 webhookServer,
 		HealthProbeBindAddress:        probeAddr,
 		LeaderElection:                enableLeaderElection,
@@ -106,7 +117,7 @@ func setupControllers(
 	tamossReconciler := &controller.TamossReconciler{
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
-		Recorder:                    mgr.GetEventRecorderFor("tamoss-controller"),
+		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
 		WatchNamespaces:             watchNamespaces,
 		Discovery:                   dependencyDiscovery,
 		DependencyProbeInterval:     dependencyProbeInterval,
@@ -126,9 +137,16 @@ func setupControllers(
 	return (&controller.StorageBackendReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
-		Recorder:        mgr.GetEventRecorderFor("storagebackend-controller"),
+		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
 		WatchNamespaces: watchNamespaces,
 	}).SetupWithManager(mgr)
+}
+
+// eventRecorderFor returns a core/v1 event recorder. The controllers and
+// their tests are built around record.EventRecorder; migrating to the
+// events API is deliberately out of scope for this toolchain upgrade.
+func eventRecorderFor(mgr ctrl.Manager, name string) record.EventRecorder {
+	return mgr.GetEventRecorderFor(name)
 }
 
 func registerDeleteProtectionWebhooks(mgr ctrl.Manager) {

@@ -35,6 +35,10 @@ import (
 const (
 	tamossFinalizer = "tamoss.livewyer.io/finalizer"
 
+	// tamossAppName is the default app.kubernetes.io/name label value for
+	// resources the operator manages.
+	tamossAppName = "tamoss"
+
 	defaultAuthentikProbeInterval         = 30 * time.Second
 	defaultDependencyProbeInterval        = 5 * time.Minute
 	defaultFinalizerPollInterval          = 2 * time.Second
@@ -82,7 +86,7 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 		phaseRecorded = true
 	}
 	defer func() {
-		recordControllerReconcile("tamoss", result, err, time.Since(start))
+		recordControllerReconcile(tamossAppName, result, err, time.Since(start))
 	}()
 	defer func() {
 		if err != nil && tamoss != nil && tamoss.Spec.HTTPRoute.Enabled && isKubernetesNoMatchError(err) {
@@ -163,7 +167,7 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		recordPhase(operatorstatus.PhaseIgnored)
 		return nil, stopReconcile(ctrl.Result{}), nil
 	}
-	if !tamoss.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !tamoss.DeletionTimestamp.IsZero() {
 		recordPhase(operatorstatus.PhaseFinalizing)
 		result, err := r.finalizeTamoss(ctx, tamoss)
 		return nil, stopReconcile(result), err
@@ -406,8 +410,8 @@ func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, o
 	)
 }
 
-func (r *TamossReconciler) recordWarning(tamoss *tamossv1alpha1.Tamoss, reason, message string, args ...interface{}) {
-	operatorstatus.EmitWarningEvent(r.Recorder, &r.WarningEvents, tamoss, reason, message, args...)
+func (r *TamossReconciler) recordWarning(tamoss *tamossv1alpha1.Tamoss, reason, message string) {
+	operatorstatus.EmitWarningEvent(r.Recorder, &r.WarningEvents, tamoss, reason, message)
 }
 
 func (r *TamossReconciler) recordRecoveryEvent(tamoss *tamossv1alpha1.Tamoss, event *recoveryActionEvent) {
