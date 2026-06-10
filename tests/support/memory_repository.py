@@ -163,6 +163,25 @@ class FakeTamossRepository:
         with self._lock:
             return list(self._flows.values())
 
+    def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
+        with self._lock:
+            return [
+                flow for flow in self._flows.values() if flow.source_id == source_id
+            ]
+
+    def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]:
+        requested_ids = set(flow_ids)
+        with self._lock:
+            flows = list(self._flows.values())
+        return [
+            flow
+            for flow in flows
+            if any(
+                flow_collections.collection_child_id(item) in requested_ids
+                for item in flow_collections.flow_collection(flow)
+            )
+        ]
+
     def list_flows_page(
         self,
         *,

@@ -194,6 +194,23 @@ def webhook_matches(
     )
 
 
+def active_webhooks_for_event(
+    repository: WebhookEventRepository,
+    event_type: str,
+) -> list[WebhookRecord]:
+    """Active webhooks subscribed to the event type.
+
+    Publishing call sites use this to skip event-context queries and payload
+    construction entirely when nothing would be delivered.
+    """
+    return [
+        webhook
+        for webhook in repository.list_webhooks()
+        if webhook.status in {"created", "started"}
+        and event_type in _list_of_strings(webhook.data.get("events"))
+    ]
+
+
 def publish_webhook_event(
     *,
     repository: WebhookEventRepository,
@@ -203,15 +220,19 @@ def publish_webhook_event(
     source: SourceRecord | None,
     flow_collected_by_ids: list[str],
     source_collected_by_ids: list[str],
+    webhooks: list[WebhookRecord] | None = None,
 ) -> list[WebhookDeliveryRecord]:
     event_timestamp = utc_now()
     flow_ids = [str(flow.id)] if flow is not None else []
     source_ids = [str(source.id)] if source is not None else []
     deliveries: list[WebhookDeliveryRecord] = []
 
-    for webhook in repository.list_webhooks():
-        if webhook.status not in {"created", "started"}:
-            continue
+    candidates = (
+        webhooks
+        if webhooks is not None
+        else active_webhooks_for_event(repository, event_type)
+    )
+    for webhook in candidates:
         if not webhook_matches(
             webhook.data,
             event_type=event_type,
@@ -256,6 +277,9 @@ def _publish_flow_webhook_event(
     flow: FlowRecord,
     event_factory: FlowWebhookEventFactory,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, event_type)
+    if not webhooks:
+        return []
     source, collected_by_ids, source_collected_ids = flow_event_context(
         resource_repository, flow
     )
@@ -267,6 +291,7 @@ def _publish_flow_webhook_event(
         source=source,
         flow_collected_by_ids=collected_by_ids,
         source_collected_by_ids=source_collected_ids,
+        webhooks=webhooks,
     )
 
 
@@ -353,6 +378,9 @@ def publish_source_event(
     event_type: str,
     source: SourceRecord,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, event_type)
+    if not webhooks:
+        return []
     relationship = resource_repository.source_relationships_for([source.id]).get(
         source.id
     )
@@ -372,6 +400,7 @@ def publish_source_event(
         source=source,
         flow_collected_by_ids=[],
         source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        webhooks=webhooks,
     )
 
 
@@ -381,6 +410,9 @@ def publish_source_deleted(
     resource_repository: WebhookResourceRepository,
     source: SourceRecord,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, "sources/deleted")
+    if not webhooks:
+        return []
     return publish_webhook_event(
         repository=repository,
         event_type="sources/deleted",
@@ -389,6 +421,7 @@ def publish_source_deleted(
         source=source,
         flow_collected_by_ids=[],
         source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        webhooks=webhooks,
     )
 
 
@@ -449,15 +482,15 @@ def flow_event_context(
     repository: WebhookResourceRepository,
     flow: FlowRecord,
 ) -> tuple[SourceRecord | None, list[str], list[str]]:
-    flows = repository.list_flows()
     source = (
         repository.get_source(flow.source_id) if flow.source_id is not None else None
     )
-    collected_by_ids = collected_by_by_flow_id(flows).get(flow.id, [])
+    parents = repository.list_flows_collecting([flow.id])
+    collected_by_ids = collected_by_by_flow_id(parents).get(flow.id, [])
     return (
         source,
         collected_by_ids,
-        source_collected_by_ids_from_flows(flows, source),
+        source_collected_by_ids(repository, source),
     )
 
 
@@ -465,26 +498,20 @@ def source_collected_by_ids(
     repository: WebhookResourceRepository,
     source: SourceRecord | None,
 ) -> list[str]:
-    return source_collected_by_ids_from_flows(repository.list_flows(), source)
-
-
-def source_collected_by_ids_from_flows(
-    flows: list[FlowRecord],
-    source: SourceRecord | None,
-) -> list[str]:
     if source is None:
         return []
-    flows_by_id = {flow.id: flow for flow in flows}
+    child_ids = {flow.id for flow in repository.list_flows_by_source(source.id)}
+    if not child_ids:
+        return []
     collected_by: list[str] = []
-    for parent_flow in flows_by_id.values():
+    for parent_flow in repository.list_flows_collecting(child_ids):
         if parent_flow.source_id is None:
             continue
         for item in flow_collection(parent_flow):
             child_flow_id = collection_child_id(item)
             if child_flow_id is None or collection_role(item) is None:
                 continue
-            child_flow = flows_by_id.get(child_flow_id)
-            if child_flow is None or child_flow.source_id != source.id:
+            if child_flow_id not in child_ids:
                 continue
             source_id = str(parent_flow.source_id)
             if source_id not in collected_by:

@@ -32,6 +32,41 @@ class PostgresFlowSourceMixin:
             cur.execute("SELECT record FROM tamoss_flows ORDER BY id")
             return [_flow_from_record(row[0]) for row in cur.fetchall()]
 
+    def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT record FROM tamoss_flows WHERE source_id = %s ORDER BY id",
+                (source_id,),
+            )
+            return [_flow_from_record(row[0]) for row in cur.fetchall()]
+
+    def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]:
+        requested_ids = list(dict.fromkeys(flow_ids))
+        if not requested_ids:
+            return []
+        # Containment (@>) per child id keeps this satisfiable by a GIN index on
+        # the flow_collection expression instead of hydrating every flow row.
+        clause = sql.SQL(" OR ").join(
+            sql.SQL(
+                "COALESCE(flow.record->'data'->'flow_collection', '[]'::jsonb) @> %s"
+            )
+            for _ in requested_ids
+        )
+        params = [Jsonb([{"id": str(flow_id)}]) for flow_id in requested_ids]
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    """
+                    SELECT flow.record
+                    FROM tamoss_flows AS flow
+                    WHERE {}
+                    ORDER BY flow.id
+                    """
+                ).format(clause),
+                params,
+            )
+            return [_flow_from_record(row[0]) for row in cur.fetchall()]
+
     def list_flows_page(
         self,
         *,

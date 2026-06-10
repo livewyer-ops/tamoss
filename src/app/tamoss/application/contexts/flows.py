@@ -155,7 +155,7 @@ def unlink_flow_collection_references(
     repository: FlowCollectionRepository,
     flow: FlowRecord,
 ) -> None:
-    for parent in repository.list_flows():
+    for parent in repository.list_flows_collecting([flow.id]):
         if parent.id == flow.id:
             continue
         collection = flow_collection(parent)
@@ -595,7 +595,7 @@ class FlowUseCases:
         )
 
     def _flow_with_collected_by(self, flow: FlowRecord) -> FlowRecord:
-        collected_by_ids = collected_by_by_flow_id(self.repository.list_flows()).get(
-            flow.id, []
-        )
+        collected_by_ids = collected_by_by_flow_id(
+            self.repository.list_flows_collecting([flow.id])
+        ).get(flow.id, [])
         return flow_with_collected_by(flow, collected_by_ids)
