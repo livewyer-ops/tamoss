@@ -12,13 +12,11 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/resource"
 )
@@ -140,37 +138,10 @@ func normalizeJSONValue(value interface{}) interface{} {
 	}
 }
 
+// ensureTypeMeta stamps the scheme-resolved GroupVersionKind onto obj so that
+// server-side apply patches always carry apiVersion and kind.
 func ensureTypeMeta(obj client.Object) {
-	switch typed := obj.(type) {
-	case *appsv1.Deployment:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"}
-	case *autoscalingv2.HorizontalPodAutoscaler:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "autoscaling/v2", Kind: "HorizontalPodAutoscaler"}
-	case *batchv1.Job:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"}
-	case *corev1.ConfigMap:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"}
-	case *corev1.PersistentVolumeClaim:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"}
-	case *corev1.Service:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}
-	case *corev1.ServiceAccount:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"}
-	case *networkingv1.Ingress:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "Ingress"}
-	case *networkingv1.NetworkPolicy:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"}
-	case *policyv1.PodDisruptionBudget:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: "policy/v1", Kind: "PodDisruptionBudget"}
-	case *gatewayv1.HTTPRoute:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: gatewayv1.GroupVersion.String(), Kind: "HTTPRoute"}
-	case *cnpgv1.Cluster:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: cnpgv1.GroupVersion.String(), Kind: "Cluster"}
-	case *cnpgv1.ScheduledBackup:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: cnpgv1.GroupVersion.String(), Kind: "ScheduledBackup"}
-	case *tamossv1alpha1.StorageBackend:
-		typed.TypeMeta = metav1.TypeMeta{APIVersion: tamossv1alpha1.GroupVersion.String(), Kind: "StorageBackend"}
-	}
+	obj.GetObjectKind().SetGroupVersionKind(canonicalObjectGVK(obj))
 }
 
 func copyCanonicalFields(live, desired client.Object) bool {

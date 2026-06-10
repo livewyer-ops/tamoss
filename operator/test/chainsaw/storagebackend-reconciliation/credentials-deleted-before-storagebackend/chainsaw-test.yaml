@@ -1,0 +1,55 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: credentials-deleted-before-storagebackend
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: destructive
+    test.tamoss.io/provider: rustfs
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply storage backend with credentials secret
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: ../../fixtures/tamoss-external.yaml
+        - apply:
+            file: resources/doomed-rustfs-auth-secret.yaml
+        - apply:
+            file: resources/archive-storagebackend.yaml
+        - assert:
+            file: assert/archive-storagebackend-ready.yaml
+            timeout: 5m
+    # Deleting the credentials Secret BEFORE the StorageBackend must not
+    # error-loop the finalizer: bucket deprovisioning is best effort and the
+    # finalizer has to come off promptly without the Secret.
+    - name: delete credentials secret then storage backend
+      try:
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: doomed-rustfs-auth
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              name: archive
+            timeout: 30s
+        - assert:
+            file: assert/bucket-deletion-skipped-event.yaml
+            timeout: 1m

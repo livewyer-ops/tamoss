@@ -279,7 +279,7 @@ func TestStorageBackendEventsAreEmittedAndDeduped(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "archive", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionReady, false, operatorstatus.ReasonMissingSecret, "Required credentials Secret archive-s3 was not found")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionReady, false, operatorstatus.ReasonMissingSecret, "Required credentials Secret archive-s3 was not found")
 
 	reconciler.recordStorageBackendEvents(original, updated)
 	reconciler.recordStorageBackendEvents(original, updated)
@@ -300,7 +300,7 @@ func TestStorageBackendBucketCreatedEvent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "archive", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionBucketReady, true, operatorstatus.ReasonBucketReady, "StorageBackend bucket is ready")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionBucketReady, true, operatorstatus.ReasonBucketReady, "StorageBackend bucket is ready")
 
 	reconciler.recordStorageBackendEvents(original, updated)
 
@@ -358,7 +358,7 @@ func TestStorageBackendCredentialSecretWatchMapsToReferencingBackends(t *testing
 	scheme := storageBackendTestScheme(t)
 	storageBackend := storageBackendFixture()
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(storageBackend).Build(),
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
 		Scheme: scheme,
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "archive-s3", Namespace: "media"}}
@@ -375,7 +375,7 @@ func TestStorageBackendCredentialSecretWatchIgnoresUnreferencedSecrets(t *testin
 	scheme := storageBackendTestScheme(t)
 	storageBackend := storageBackendFixture()
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(storageBackend).Build(),
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
 		Scheme: scheme,
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "unreferenced", Namespace: "media"}}

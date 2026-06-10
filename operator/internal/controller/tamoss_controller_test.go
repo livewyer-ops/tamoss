@@ -897,7 +897,7 @@ var _ = Describe("Tamoss Controller", func() {
 			makeSchemaReady(ctx, controllerReconciler, typeNamespacedName, resourceName)
 			instance = &tamossv1alpha1.Tamoss{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, instance)).To(Succeed())
-			operatorstatus.SetConditionBool(&instance.Status.Conditions, operatorstatus.ConditionReady, true, "AllComponentsReady", "All components are ready")
+			operatorstatus.SetConditionBool(&instance.Status.Conditions, instance.Generation, operatorstatus.ConditionReady, true, "AllComponentsReady", "All components are ready")
 			Expect(k8sClient.Status().Update(ctx, instance)).To(Succeed())
 
 			apiDeployment := &appsv1.Deployment{}
@@ -1140,7 +1140,6 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(state.Data[schemaStateFixturesKey]).To(Equal("true"))
 		})
 	})
-
 })
 
 func minimalTamossSpec() tamossv1alpha1.TamossSpec {

@@ -51,6 +51,7 @@ const (
 	ReasonBucketCreationFailed                  = "BucketCreationFailed"
 	ReasonBucketDeletionComplete                = "BucketDeletionComplete"
 	ReasonBucketDeletionRetrying                = "BucketDeletionRetrying"
+	ReasonBucketDeletionSkipped                 = "BucketDeletionSkipped"
 	ReasonBucketReady                           = "BucketReady"
 	ReasonCNPGClusterReady                      = "CNPGClusterReady"
 	ReasonCNPGSecretKeyMissing                  = "CNPGSecretKeyMissing"

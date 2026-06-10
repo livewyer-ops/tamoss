@@ -7,26 +7,28 @@ import (
 
 const MessageReconciliationActive = "Reconciliation is active"
 
-func SetConditionBool(conditions *[]metav1.Condition, conditionType string, ok bool, reason, message string) {
+func SetConditionBool(conditions *[]metav1.Condition, generation int64, conditionType string, ok bool, reason, message string) {
 	status := metav1.ConditionFalse
 	if ok {
 		status = metav1.ConditionTrue
 	}
-	SetConditionStatus(conditions, conditionType, status, reason, message)
+	SetConditionStatus(conditions, generation, conditionType, status, reason, message)
 }
 
-func SetConditionStatus(conditions *[]metav1.Condition, conditionType string, status metav1.ConditionStatus, reason, message string) {
+func SetConditionStatus(conditions *[]metav1.Condition, generation int64, conditionType string, status metav1.ConditionStatus, reason, message string) {
 	meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    conditionType,
-		Status:  status,
-		Reason:  reason,
-		Message: message,
+		Type:               conditionType,
+		Status:             status,
+		ObservedGeneration: generation,
+		Reason:             reason,
+		Message:            message,
 	})
 }
 
-func SetReconciliationActive(conditions *[]metav1.Condition) {
+func SetReconciliationActive(conditions *[]metav1.Condition, generation int64) {
 	SetConditionBool(
 		conditions,
+		generation,
 		ConditionPaused,
 		false,
 		ReasonReconciliationActive,

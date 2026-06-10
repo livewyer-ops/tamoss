@@ -28,11 +28,11 @@ func (r *TamossReconciler) reconcileHTTPRouteInputGate(ctx context.Context, tamo
 func (r *TamossReconciler) updateHTTPRouteInputStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, message string) error {
 	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
 		tamoss.Status.Phase = operatorstatus.PhaseDegraded
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, "Schema reconciliation is blocked by routing configuration")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionHostnamesReady, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
-		setActiveBlockedConditions(&tamoss.Status.Conditions, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message, "Reconciliation is blocked by routing configuration")
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, "Schema reconciliation is blocked by routing configuration")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionHostnamesReady, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
+		setActiveBlockedConditions(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message, "Reconciliation is blocked by routing configuration")
 		return nil
 	}})
 }

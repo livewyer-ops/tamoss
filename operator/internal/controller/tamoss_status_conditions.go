@@ -47,5 +47,5 @@ func setUpgradeStatus(tamoss *tamossv1alpha1.Tamoss, phase string, upgradeable m
 		Reason:  reason,
 		Message: message,
 	}
-	operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionUpgradeable, upgradeable, reason, message)
+	operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionUpgradeable, upgradeable, reason, message)
 }

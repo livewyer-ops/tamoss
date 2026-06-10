@@ -25,6 +25,7 @@ func TestStorageBackendCredentialSecretRequestsFilterReferencingBackends(t *test
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(storageBackend, other).
+			WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).
 			Build(),
 		Scheme: scheme,
 	}

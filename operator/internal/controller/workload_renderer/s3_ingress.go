@@ -7,6 +7,7 @@ import (
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -62,7 +63,7 @@ func s3PublicIngress(tamoss *tamossv1alpha1.Tamoss, endpoint tamossv1alpha1.S3Pu
 	paths := []networkingv1.HTTPIngressPath{
 		{
 			Path:     rustFSConsolePath,
-			PathType: pathTypePtr(networkingv1.PathTypePrefix),
+			PathType: ptr.To(networkingv1.PathTypePrefix),
 			Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
 				Name: serviceName + "-console",
 				Port: networkingv1.ServiceBackendPort{Name: rustFSConsoleServicePort},
@@ -70,7 +71,7 @@ func s3PublicIngress(tamoss *tamossv1alpha1.Tamoss, endpoint tamossv1alpha1.S3Pu
 		},
 		{
 			Path:     "/",
-			PathType: pathTypePtr(networkingv1.PathTypePrefix),
+			PathType: ptr.To(networkingv1.PathTypePrefix),
 			Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
 				Name: serviceName,
 				Port: networkingv1.ServiceBackendPort{Name: s3ServicePort},

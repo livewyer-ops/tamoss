@@ -232,9 +232,9 @@ func gatewayAPIUnavailableResult() routingStatusResult {
 	}
 }
 
-func setRoutingConditions(conditions *[]metav1.Condition, result routingStatusResult) {
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionRoutingReady, result.Ready, result.Reason, result.Message)
-	operatorstatus.SetConditionStatus(conditions, operatorstatus.ConditionHostnamesReady, result.HostnameStatus, result.HostnameReason, result.HostnameMessage)
+func setRoutingConditions(conditions *[]metav1.Condition, generation int64, result routingStatusResult) {
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionRoutingReady, result.Ready, result.Reason, result.Message)
+	operatorstatus.SetConditionStatus(conditions, generation, operatorstatus.ConditionHostnamesReady, result.HostnameStatus, result.HostnameReason, result.HostnameMessage)
 }
 
 func isKubernetesNoMatchError(err error) bool {

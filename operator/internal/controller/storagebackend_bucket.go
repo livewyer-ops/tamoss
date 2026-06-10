@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/backend/rustfs"
@@ -80,6 +81,14 @@ func (r *StorageBackendReconciler) reconcileStorageBackendBucketDeletion(ctx con
 	target := storageBackendBucketDeleteTarget(spec)
 	credentials, err := r.storageBackendBucketCredentials(ctx, storageBackend.Namespace, spec)
 	if err != nil {
+		// Bucket deletion is best effort: a credentials Secret that was
+		// deleted before the StorageBackend must not block finalisation.
+		if apierrors.IsNotFound(err) {
+			message := fmt.Sprintf("Credentials Secret %s was not found; skipping best-effort bucket deletion for %s", spec.Credentials.ExistingSecret, spec.BucketName)
+			log.FromContext(ctx).Info("skipping StorageBackend bucket deletion during finalisation", "secret", spec.Credentials.ExistingSecret, "bucket", spec.BucketName)
+			operatorstatus.EmitWarningEvent(r.Recorder, &r.WarningEvents, storageBackend, operatorstatus.ReasonBucketDeletionSkipped, message)
+			return storageBackendReconcileResult{Ready: true, Reason: operatorstatus.ReasonBucketDeletionSkipped, Message: message}, nil
+		}
 		return storageBackendReconcileResult{}, err
 	}
 	if err := r.bucketClient().Delete(ctx, target, credentials); err != nil {
