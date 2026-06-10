@@ -47,7 +47,7 @@ type TamossReconciler struct {
 	Client                      client.Client
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
-	WatchNamespaces             map[string]struct{}
+	WatchNamespaces             WatchNamespaceSet
 	Discovery                   *operatordiscovery.Manager
 	AuthentikPlatformNamespaces *authentik.PlatformNamespacePolicy
 	AuthentikProbeInterval      time.Duration
@@ -159,7 +159,7 @@ func (r *TamossReconciler) loadTamoss(ctx context.Context, key client.ObjectKey)
 }
 
 func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, recordPhase func(string)) (*tamossv1alpha1.Tamoss, reconcileControl, error) {
-	if !r.namespaceAllowed(tamoss.Namespace) {
+	if !r.WatchNamespaces.Allows(tamoss.Namespace) {
 		log.FromContext(ctx).Info("ignoring Tamoss outside configured watch scope", "namespace", tamoss.Namespace)
 		recordPhase(operatorstatus.PhaseIgnored)
 		return nil, stopReconcile(ctrl.Result{}), nil
@@ -391,14 +391,6 @@ func shortestPositiveDuration(current, candidate time.Duration) time.Duration {
 		return candidate
 	}
 	return current
-}
-
-func (r *TamossReconciler) namespaceAllowed(namespace string) bool {
-	if len(r.WatchNamespaces) == 0 {
-		return true
-	}
-	_, ok := r.WatchNamespaces[namespace]
-	return ok
 }
 
 func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, obj client.Object, paths []string) {

@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	k8stesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -39,13 +40,7 @@ func TestOptionalOwnedPruneDeletesNoLongerDesiredObjects(t *testing.T) {
 		Scheme: scheme,
 	}
 
-	err := reconciler.pruneOptionalOwnedObjects(
-		ctx,
-		tamoss,
-		map[string]struct{}{},
-		client.InNamespace(tamoss.Namespace),
-		tamossManagedLabelSelector(tamoss),
-	)
+	err := reconciler.pruneOwnedObjects(ctx, tamoss, map[string]struct{}{})
 	if err != nil {
 		t.Fatalf("expected provider prune to succeed: %v", err)
 	}
@@ -79,13 +74,7 @@ func TestOptionalOwnedPruneDeletesDisabledBackupPolicy(t *testing.T) {
 		Scheme: scheme,
 	}
 
-	err := reconciler.pruneOptionalOwnedObjects(
-		ctx,
-		tamoss,
-		desired,
-		client.InNamespace(tamoss.Namespace),
-		tamossManagedLabelSelector(tamoss),
-	)
+	err := reconciler.pruneOwnedObjects(ctx, tamoss, desired)
 	if err != nil {
 		t.Fatalf("expected provider prune to succeed: %v", err)
 	}
@@ -121,13 +110,7 @@ func TestOptionalOwnedPruneKeepsDesiredObjects(t *testing.T) {
 		Scheme: scheme,
 	}
 
-	err := reconciler.pruneOptionalOwnedObjects(
-		ctx,
-		tamoss,
-		desired,
-		client.InNamespace(tamoss.Namespace),
-		tamossManagedLabelSelector(tamoss),
-	)
+	err := reconciler.pruneOwnedObjects(ctx, tamoss, desired)
 	if err != nil {
 		t.Fatalf("expected provider prune to succeed: %v", err)
 	}
@@ -157,13 +140,7 @@ func TestOptionalOwnedPruneCleansUpManagedResourcesAfterExternalProviderSwitch(t
 		Scheme: scheme,
 	}
 
-	err := reconciler.pruneOptionalOwnedObjects(
-		ctx,
-		current,
-		map[string]struct{}{},
-		client.InNamespace(current.Namespace),
-		tamossManagedLabelSelector(current),
-	)
+	err := reconciler.pruneOwnedObjects(ctx, current, map[string]struct{}{})
 	if err != nil {
 		t.Fatalf("expected provider prune to succeed: %v", err)
 	}
@@ -199,6 +176,9 @@ func TestOptionalOwnedObjectListsSkipKnownAbsentOptionalCRDs(t *testing.T) {
 func providerPruneScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
 	if err := tamossv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add tamoss scheme: %v", err)
 	}

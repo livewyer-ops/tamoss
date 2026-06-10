@@ -19,22 +19,42 @@ import (
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
-func (r *TamossReconciler) pruneOwnedObjects(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}) error {
-	match := tamossManagedLabelSelector(tamoss)
-	listOptions := []client.ListOption{client.InNamespace(tamoss.Namespace), match}
+// tamossOwnedList pairs a managed-object list with whether its CRD may be
+// absent from the cluster, in which case no-match errors are tolerated.
+type tamossOwnedList struct {
+	list            client.ObjectList
+	tolerateNoMatch bool
+}
 
+// tamossOwnedLists enumerates every list of objects the operator manages for
+// a Tamoss: the built-in kinds, the Traefik Middleware CRD, and any optional
+// provider CRDs that are installed.
+func (r *TamossReconciler) tamossOwnedLists(ctx context.Context) []tamossOwnedList {
+	lists := []tamossOwnedList{}
 	for _, policy := range tamossManagedResourcePolicies() {
-		if err := pruneTamossOwnedList(ctx, r.Client, tamoss, desired, policy.list); err != nil {
-			return err
-		}
+		lists = append(lists, tamossOwnedList{list: policy.list})
 	}
+	lists = append(lists, tamossOwnedList{list: traefikMiddlewareList(), tolerateNoMatch: true})
+	for _, list := range r.optionalOwnedObjectLists(ctx) {
+		lists = append(lists, tamossOwnedList{list: list, tolerateNoMatch: true})
+	}
+	return lists
+}
+
+func traefikMiddlewareList() *unstructured.UnstructuredList {
 	middlewares := &unstructured.UnstructuredList{}
 	middlewares.SetGroupVersionKind(schema.GroupVersionKind{Group: "traefik.io", Version: "v1alpha1", Kind: "MiddlewareList"})
-	if err := pruneList(ctx, r.Client, tamoss, desired, middlewares, listOptions...); err != nil && !meta.IsNoMatchError(err) {
-		return err
-	}
-	if err := r.pruneOptionalOwnedObjects(ctx, tamoss, desired, listOptions...); err != nil {
-		return err
+	return middlewares
+}
+
+func (r *TamossReconciler) pruneOwnedObjects(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}) error {
+	for _, owned := range r.tamossOwnedLists(ctx) {
+		if err := pruneTamossOwnedList(ctx, r.Client, tamoss, desired, owned.list); err != nil {
+			if owned.tolerateNoMatch && isKubernetesNoMatchError(err) {
+				continue
+			}
+			return err
+		}
 	}
 	return nil
 }
@@ -98,43 +118,10 @@ func (r *TamossReconciler) deleteOwnedStorageBackends(ctx context.Context, tamos
 }
 
 func (r *TamossReconciler) ownedObjectsRemain(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
-	match := tamossManagedLabelSelector(tamoss)
-	listOptions := []client.ListOption{client.InNamespace(tamoss.Namespace), match}
-	for _, policy := range tamossManagedResourcePolicies() {
-		remaining, err := ownedObjectsRemainInTamossOwnedList(ctx, r.Client, tamoss, policy.list)
-		if err != nil || remaining {
-			return remaining, err
-		}
-	}
-	middlewares := &unstructured.UnstructuredList{}
-	middlewares.SetGroupVersionKind(schema.GroupVersionKind{Group: "traefik.io", Version: "v1alpha1", Kind: "MiddlewareList"})
-	remaining, err := ownedObjectsRemainInList(ctx, r.Client, tamoss, middlewares, listOptions...)
-	if err != nil && meta.IsNoMatchError(err) {
-		return false, nil
-	}
-	if err != nil || remaining {
-		return remaining, err
-	}
-	return r.optionalOwnedObjectsRemain(ctx, tamoss, listOptions...)
-}
-
-func (r *TamossReconciler) pruneOptionalOwnedObjects(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}, listOptions ...client.ListOption) error {
-	for _, list := range r.optionalOwnedObjectLists(ctx) {
-		if err := pruneList(ctx, r.Client, tamoss, desired, list, listOptions...); err != nil {
-			if isKubernetesNoMatchError(err) {
-				continue
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *TamossReconciler) optionalOwnedObjectsRemain(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, listOptions ...client.ListOption) (bool, error) {
-	for _, list := range r.optionalOwnedObjectLists(ctx) {
-		remaining, err := ownedObjectsRemainInList(ctx, r.Client, tamoss, list, listOptions...)
+	for _, owned := range r.tamossOwnedLists(ctx) {
+		remaining, err := ownedObjectsRemainInTamossOwnedList(ctx, r.Client, tamoss, owned.list)
 		if err != nil {
-			if isKubernetesNoMatchError(err) {
+			if owned.tolerateNoMatch && isKubernetesNoMatchError(err) {
 				continue
 			}
 			return false, err
@@ -165,13 +152,6 @@ func (r *TamossReconciler) optionalResourceCRDPresent(ctx context.Context, gvr s
 	return known && present
 }
 
-func ownedObjectsRemainInList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, list client.ObjectList, opts ...client.ListOption) (bool, error) {
-	if err := c.List(ctx, list, opts...); err != nil {
-		return false, err
-	}
-	return ownedObjectsRemainInLoadedList(tamoss, list)
-}
-
 func ownedObjectsRemainInTamossOwnedList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, list client.ObjectList) (bool, error) {
 	if err := listTamossOwnedObjects(ctx, c, tamoss, list); err != nil {
 		return false, err
@@ -191,13 +171,6 @@ func ownedObjectsRemainInLoadedList(tamoss *tamossv1alpha1.Tamoss, list client.O
 		}
 	}
 	return false, nil
-}
-
-func pruneList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}, list client.ObjectList, opts ...client.ListOption) error {
-	if err := c.List(ctx, list, opts...); err != nil {
-		return err
-	}
-	return pruneLoadedList(ctx, c, tamoss, desired, list)
 }
 
 func pruneTamossOwnedList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}, list client.ObjectList) error {

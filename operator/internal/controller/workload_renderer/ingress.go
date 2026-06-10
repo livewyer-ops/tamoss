@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -37,7 +38,7 @@ func ingressFor(tamoss *tamossv1alpha1.Tamoss, component, serviceName string, sp
 	if len(paths) == 0 {
 		paths = []networkingv1.HTTPIngressPath{{
 			Path:     "/",
-			PathType: pathTypePtr(networkingv1.PathTypePrefix),
+			PathType: ptr.To(networkingv1.PathTypePrefix),
 		}}
 	}
 	for i := range paths {
@@ -53,7 +54,7 @@ func ingressFor(tamoss *tamossv1alpha1.Tamoss, component, serviceName string, sp
 			paths[i].Backend.Service.Port.Number = defaultPort
 		}
 		if paths[i].PathType == nil {
-			paths[i].PathType = pathTypePtr(networkingv1.PathTypePrefix)
+			paths[i].PathType = ptr.To(networkingv1.PathTypePrefix)
 		}
 	}
 	ingress := &networkingv1.Ingress{
@@ -145,7 +146,7 @@ func authentikOutpostIngress(tamoss *tamossv1alpha1.Tamoss) client.Object {
 	servicePort := authentik.OutpostServicePort(port)
 	path := networkingv1.HTTPIngressPath{
 		Path:     "/outpost.goauthentik.io/",
-		PathType: pathTypePtr(networkingv1.PathTypePrefix),
+		PathType: ptr.To(networkingv1.PathTypePrefix),
 		Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
 			Name: tamoss.ResourceName("authentik-outpost"),
 			Port: networkingv1.ServiceBackendPort{Name: servicePort.Name},
@@ -190,10 +191,6 @@ func appendAnnotationValue(existing, value string) string {
 		}
 	}
 	return existing + "," + value
-}
-
-func pathTypePtr(pathType networkingv1.PathType) *networkingv1.PathType {
-	return &pathType
 }
 
 func emptyStringNil(value string) *string {

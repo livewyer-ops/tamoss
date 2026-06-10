@@ -30,6 +30,20 @@ type storageBackendStatusInput struct {
 	Diagnostic    *storageBackendDiagnosticResult
 }
 
+// storageBackendStageStatusInput fills the fields that are constant for a
+// not-yet-ready stage so call sites only describe bucket readiness and the
+// stage outcome.
+func storageBackendStageStatusInput(spec tamossv1alpha1.StorageBackendSpec, bucketReady bool, result storageBackendReconcileResult) storageBackendStatusInput {
+	return storageBackendStatusInput{
+		BucketReady: bucketReady,
+		Reason:      result.Reason,
+		Message:     result.Message,
+		Degraded:    result.Degraded,
+		BackendID:   spec.ID,
+		BucketName:  spec.BucketName,
+	}
+}
+
 func (r *StorageBackendReconciler) updateStorageBackendStatus(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, input storageBackendStatusInput) (ctrl.Result, error) {
 	original := storageBackend.DeepCopy()
 	storageBackend.Status.ObservedGeneration = storageBackend.Generation
