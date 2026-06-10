@@ -61,16 +61,18 @@ def test_webhook_delivery_blocks_redirect_to_private_target(
         status_code = 302
         headers: ClassVar[dict[str, str]] = {"Location": "http://127.0.0.1/internal"}
 
-    def post(*_args: object, **kwargs: object) -> RedirectResponse:
-        post_calls.append(kwargs)
-        return RedirectResponse()
+    class RecordingSession:
+        def post(self, *_args: object, **kwargs: object) -> RedirectResponse:
+            post_calls.append(kwargs)
+            return RedirectResponse()
 
     monkeypatch.setattr(
         webhooks,
         "_resolve_host_addresses",
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
-    monkeypatch.setattr(webhooks.requests, "post", post)
+    recording_session = RecordingSession()
+    monkeypatch.setattr(webhooks, "_http_session", lambda: recording_session)
 
     with pytest.raises(webhooks.WebhookEgressError, match="restricted"):
         webhooks.send_webhook_delivery(

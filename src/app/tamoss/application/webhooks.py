@@ -3,13 +3,17 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from urllib.parse import ParseResult, urljoin, urlparse
 from uuid import uuid4
 
 import requests
 from requests import Response
+from requests.adapters import HTTPAdapter
 
 from tamoss.application.contexts.object_get_urls import objects_get_urls
 from tamoss.contract.payloads import (
@@ -77,6 +81,37 @@ _METADATA_HOSTNAMES = {
     "metadata.google.internal",
 }
 _WEBHOOK_CREDENTIAL_REF = "webhook.api_key_value"
+
+# Webhook receivers are contacted continuously (per-segment events), so
+# deliveries share one keepalive-pooled session instead of paying a TCP and
+# TLS handshake per callback. Pool sizes bound concurrent connections per
+# worker process and must cover the delivery concurrency setting.
+_HTTP_POOL_CONNECTIONS = 32
+_HTTP_POOL_MAXSIZE = 128
+
+# Egress validation resolves receiver hostnames repeatedly (twice per
+# delivery attempt); a short TTL cache absorbs that without materially
+# changing rebinding exposure, since the post-validation connect resolves
+# independently either way.
+_DNS_CACHE_TTL_SECONDS = 30.0
+_DNS_CACHE_MAX_ENTRIES = 1024
+_dns_cache_lock = threading.Lock()
+_dns_cache: dict[
+    tuple[str, int],
+    tuple[float, list[ipaddress.IPv4Address | ipaddress.IPv6Address]],
+] = {}
+
+
+@lru_cache(maxsize=1)
+def _http_session() -> requests.Session:
+    session = requests.Session()
+    adapter = HTTPAdapter(
+        pool_connections=_HTTP_POOL_CONNECTIONS,
+        pool_maxsize=_HTTP_POOL_MAXSIZE,
+    )
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 @dataclass(frozen=True)
@@ -536,7 +571,7 @@ def send_webhook_delivery(
 ) -> requests.Response:
     url = str(webhook["url"])
     validate_webhook_url(url, egress_policy=egress_policy)
-    response = requests.post(
+    response = _http_session().post(
         url,
         headers=webhook_headers(webhook),
         json=payload,
@@ -696,6 +731,12 @@ def _resolve_host_addresses(
     hostname: str,
     port: int,
 ) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    cache_key = (hostname, port)
+    now = time.monotonic()
+    with _dns_cache_lock:
+        cached = _dns_cache.get(cache_key)
+        if cached is not None and now - cached[0] < _DNS_CACHE_TTL_SECONDS:
+            return list(cached[1])
     try:
         address_info = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except OSError:
@@ -709,4 +750,8 @@ def _resolve_host_addresses(
         address = _ip_address(str(sockaddr[0]))
         if address is not None and address not in addresses:
             addresses.append(address)
+    with _dns_cache_lock:
+        if len(_dns_cache) >= _DNS_CACHE_MAX_ENTRIES:
+            _dns_cache.clear()
+        _dns_cache[cache_key] = (now, list(addresses))
     return addresses

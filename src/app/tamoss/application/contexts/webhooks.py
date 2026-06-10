@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -123,16 +124,23 @@ class WebhookUseCases:
         worker_id: str = DEFAULT_WORKER_ID,
         lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS,
     ) -> int:
-        processed = 0
         deliveries = self.repository.claim_webhook_deliveries(
             worker_id=worker_id,
             limit=max_deliveries,
             lease_seconds=lease_seconds,
         )
-        for delivery in deliveries:
-            self.process_webhook_delivery(delivery.id)
-            processed += 1
-        return processed
+        if not deliveries:
+            return 0
+        # Sends are network-bound and independent rows; bounded concurrency
+        # stops one slow or black-holed receiver stalling the whole batch.
+        max_workers = min(self.settings.webhook_delivery_concurrency, len(deliveries))
+        if max_workers <= 1:
+            for delivery in deliveries:
+                self._process_claimed_delivery(delivery)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                list(executor.map(self._process_claimed_delivery, deliveries))
+        return len(deliveries)
 
     def process_webhook_delivery(
         self, delivery_id: UUID
@@ -140,6 +148,11 @@ class WebhookUseCases:
         delivery = self.repository.get_webhook_delivery(delivery_id)
         if delivery is None:
             return None
+        return self._process_claimed_delivery(delivery)
+
+    def _process_claimed_delivery(
+        self, delivery: WebhookDeliveryRecord
+    ) -> WebhookDeliveryRecord | None:
         if delivery.status not in {"pending", "started"}:
             return delivery
 

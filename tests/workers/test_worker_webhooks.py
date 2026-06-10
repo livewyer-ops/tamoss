@@ -166,15 +166,13 @@ def test_webhook_workers_split_active_leases_without_duplicate_delivery(
     }
     assert len(delivery_ids) == 2
 
-    def hold_webhook_claim(delivery_id: UUID):
-        delivery = use_cases.repository.get_webhook_delivery(delivery_id)
-        assert delivery is not None
+    def hold_webhook_claim(delivery):
         claimed.append((delivery.id, delivery.claimed_by))
         return delivery
 
     monkeypatch.setattr(
         use_cases.webhooks,
-        "process_webhook_delivery",
+        "_process_claimed_delivery",
         hold_webhook_claim,
     )
 

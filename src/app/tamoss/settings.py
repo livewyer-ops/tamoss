@@ -296,6 +296,11 @@ class Settings(BaseSettings):
         default=5,
         validation_alias="TAMOSS_WORKER_MAX_ATTEMPTS",
     )
+    webhook_delivery_concurrency: int = Field(
+        default=8,
+        ge=1,
+        validation_alias="TAMOSS_WEBHOOK_DELIVERY_CONCURRENCY",
+    )
     webhook_allow_private_targets: bool = Field(
         default=False,
         validation_alias="TAMOSS_WEBHOOK_ALLOW_PRIVATE_TARGETS",
