@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, TypedDict
 
-JsonRecord: TypeAlias = dict[str, Any]
-RecordDateTime: TypeAlias = datetime | str | None
-DatabaseRow: TypeAlias = Sequence[Any]
-PostgresCursor: TypeAlias = Any
+type JsonRecord = dict[str, Any]
+type RecordDateTime = datetime | str | None
+type DatabaseRow = Sequence[Any]
+type PostgresCursor = Any
 
 
 class StorageBackendRow(TypedDict, total=False):

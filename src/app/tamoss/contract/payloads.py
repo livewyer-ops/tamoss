@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 from uuid import UUID
 
 from tamoss.contract.generated import contract_models
@@ -9,7 +9,6 @@ from tamoss.contract.serialization import contract_dump
 from tamoss.domain.model import FlowRecord, SourceRecord
 
 JsonPayload = dict[str, Any]
-_PayloadValue = TypeVar("_PayloadValue")
 
 
 def flow_payload(flow: FlowRecord, *, timerange: str | None = None) -> JsonPayload:
@@ -60,11 +59,11 @@ def source_payload(
     )
 
 
-def without_none(
-    payload: Mapping[str, _PayloadValue | None],
-) -> dict[str, _PayloadValue]:
+def without_none[PayloadValue](
+    payload: Mapping[str, PayloadValue | None],
+) -> dict[str, PayloadValue]:
     return {
-        key: cast(_PayloadValue, value)
+        key: cast(PayloadValue, value)
         for key, value in payload.items()
         if value is not None
     }

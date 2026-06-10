@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11.14-alpine3.22
+FROM python:3.14.5-alpine3.22
 
 ARG VERSION=tamoss-dev
 ARG TAMS_API_VERSION=8.1
@@ -16,8 +16,10 @@ USER 1001:1001
 
 EXPOSE 8000
 
-ENV PYTHONPATH=/app/app \
+ENV HOME=/tmp \
+  PYTHONPATH=/app/app \
   UV_CACHE_DIR=/tmp/uv-cache \
+  UV_PYTHON_DOWNLOADS=never \
   TAMOSS_VERSION=${VERSION} \
   TAMOSS_SERVICE_VERSION=${VERSION} \
   TAMOSS_TAMS_API_VERSION=${TAMS_API_VERSION}

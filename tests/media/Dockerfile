@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11.14-slim-bookworm
+FROM python:3.14.5-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /uvx /bin/
 

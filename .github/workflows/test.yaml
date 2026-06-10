@@ -32,7 +32,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.14
 
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
@@ -73,7 +73,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.14
 
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
@@ -114,7 +114,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.14
 
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
@@ -155,7 +155,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.14
 
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev
@@ -196,7 +196,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.14
 
       - name: Install the project
         run: uv sync --project src --locked --all-extras --dev

@@ -6,14 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "tamoss"
 version = "1.0.0"
 description = "TAMOSS API implementation for the BBC TAMS API"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.14,<3.15"
 readme = "README.md"
 license = "Apache-2.0"
 keywords = ["OpenAPI", "Time Addressable Media Open Source Store", "TAMOSS", "BBC TAMS API"]
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "alembic>=1.17.0",
@@ -131,9 +131,21 @@ exclude = [
     "app/tamoss/contract/generated",
 ]
 
+[tool.ruff.per-file-target-version]
+# Keep multi-exception handlers parenthesized. Ruff's Python 3.14 formatter
+# otherwise applies PEP 758's new unparenthesized form.
+"app/tamoss/api/dependencies.py" = "py313"
+"app/tamoss/app.py" = "py313"
+"app/tamoss/auth.py" = "py313"
+"app/tamoss/storage_credentials.py" = "py313"
+"src/app/tamoss/api/dependencies.py" = "py313"
+"src/app/tamoss/app.py" = "py313"
+"src/app/tamoss/auth.py" = "py313"
+"src/app/tamoss/storage_credentials.py" = "py313"
+
 [tool.mypy]
 # Base mypy settings for the hand-authored TAMOSS runtime.
-python_version = "3.11"
+python_version = "3.14"
 ignore_missing_imports = true
 explicit_package_bases = true
 namespace_packages = true

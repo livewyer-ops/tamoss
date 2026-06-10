@@ -58,7 +58,7 @@ def generate_contract_models(
             "--output-model-type",
             "pydantic_v2.BaseModel",
             "--target-python-version",
-            "3.11",
+            "3.14",
             "--use-annotated",
             "--field-constraints",
             "--use-union-operator",

@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Generic, TypeVar
 
 from tamoss.errors import BadRequest
 
-T = TypeVar("T")
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
 
 
 @dataclass(frozen=True)
-class Page(Generic[T]):
+class Page[T]:
     items: list[T]
     limit: int
     next_page: str | None = None
@@ -43,7 +41,7 @@ def resolve_page_window(*, page: str | None, limit: int | None) -> PageWindow:
     return PageWindow(offset=offset, limit=resolved_limit)
 
 
-def page_sequence(
+def page_sequence[T](
     items: Sequence[T], *, page: str | None, limit: int | None
 ) -> Page[T]:
     window = resolve_page_window(page=page, limit=limit)
