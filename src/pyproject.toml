@@ -41,7 +41,7 @@ dev = [
     "polyfactory>=2.14.0",
     "faker>=20.0.0",
     "ruff==0.15.5",
-    "bandit[toml]>=1.7.5",
+    "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
     "mypy>=1.13.0",
     "types-requests",
