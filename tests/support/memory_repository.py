@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timedelta
 from threading import RLock
-from typing import TypeVar
 from uuid import UUID
 
 from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
@@ -41,7 +40,6 @@ WorkerRecord = (
     | ObjectCleanupRecord
     | ObjectCopyRecord
 )
-WorkerRecordT = TypeVar("WorkerRecordT", bound=WorkerRecord)
 
 
 class FakeTamossRepository:
@@ -734,7 +732,7 @@ class FakeTamossRepository:
             )
 
 
-def _claim_worker_records(
+def _claim_worker_records[WorkerRecordT: WorkerRecord](
     records: Iterable[WorkerRecordT],
     *,
     statuses: set[str],

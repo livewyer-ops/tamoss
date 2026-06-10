@@ -3,7 +3,7 @@ from __future__ import annotations
 # mypy: disable-error-code=attr-defined
 # Focused store methods run with repository-owned connection and mapper state.
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any
 from uuid import UUID
 
 from psycopg import sql
@@ -34,7 +34,6 @@ from tamoss.domain.model import (
 )
 from tamoss.domain.pagination import Page, resolve_page_window
 
-_T = TypeVar("_T")
 _EMPTY_SQL = sql.SQL("")
 
 
@@ -541,7 +540,7 @@ class PostgresQueueMixin:
             )
 
 
-def _claim_worker_records(
+def _claim_worker_records[T](
     cur: Any,
     *,
     table_name: str,
@@ -551,10 +550,10 @@ def _claim_worker_records(
     limit: int,
     lease_seconds: int,
     state_column: str,
-    mapper: Callable[[Any], _T],
+    mapper: Callable[[Any], T],
     touch_column: str | None = None,
     candidate_filter: sql.SQL = _EMPTY_SQL,
-) -> list[_T]:
+) -> list[T]:
     alias_identifier = sql.Identifier(alias)
     touch_sql = (
         sql.SQL("{column} = NOW(),").format(column=sql.Identifier(touch_column))
