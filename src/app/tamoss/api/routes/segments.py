@@ -23,7 +23,6 @@ from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
-from tamoss.contract.serialization import contract_dump
 from tamoss.domain.model import SegmentRecord
 from tamoss.domain.timeranges import finite_normalized_timerange_bounds
 from tamoss.errors import BadRequest, NotFound, error_payload
@@ -141,23 +140,20 @@ def post_segments(
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
     flow_id = _flow_id_or_404(flow_id_path, "The requested Flow does not exist.")
-    segment_body = (
-        [contract_dump(segment) for segment in body]
-        if isinstance(body, list)
-        else contract_dump(body)
-    )
-    if isinstance(segment_body, list):
+    # The validated models are handed to the use case directly so the payload
+    # is not re-validated against the contract a second time.
+    if isinstance(body, list):
         failed: list[contract_models.FailedSegment] = []
         for segment, result in zip(
-            segment_body,
-            segments.register_segments(flow_id=flow_id, segment_posts=segment_body),
+            body,
+            segments.register_segments(flow_id=flow_id, segment_posts=body),
             strict=True,
         ):
             if result.error:
                 failed.append(
                     contract_models.FailedSegment(
-                        object_id=segment["object_id"],
-                        timerange=segment["timerange"],
+                        object_id=segment.object_id,
+                        timerange=segment.timerange,
                         error=error_payload("TAMSError", result.error),
                     )
                 )
@@ -170,7 +166,7 @@ def post_segments(
             )
         return Response(status_code=status.HTTP_201_CREATED)
 
-    result = segments.register_segment(flow_id=flow_id, segment_post=segment_body)
+    result = segments.register_segment(flow_id=flow_id, segment_post=body)
     if result.error:
         raise BadRequest(result.error)
     return Response(status_code=status.HTTP_201_CREATED)

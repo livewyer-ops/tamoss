@@ -211,7 +211,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert all(result.error is None for result in results)
     assert repository.list_segments_overlapping_calls == 1
     assert repository.lock_flow_segments_calls == 1
-    assert repository.get_objects_calls == 1
+    # One bounded lookup before the transaction (controlled-object upload
+    # verification, keeping S3 round-trips outside the flow lock) and one
+    # authoritative lookup inside it.
+    assert repository.get_objects_calls == 2
     assert repository.save_registered_segments_calls == 1
     assert repository.list_segments_calls == 0
     assert repository.get_object_calls == 0

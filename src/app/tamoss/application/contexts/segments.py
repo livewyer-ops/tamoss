@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
+from mediatimestamp import TimeRange
 from pydantic import ValidationError
 
 from tamoss.application import webhooks as webhooking
@@ -20,6 +22,7 @@ from tamoss.application.contexts.objects import (
     validate_uncontrolled_instance_append,
 )
 from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SegmentRecord, utc_now
 from tamoss.domain.pagination import Page, page_sequence
@@ -48,6 +51,12 @@ class SegmentWriteResult:
     error: str | None = None
 
 
+type SegmentPostInput = dict[str, Any] | contract_models.FlowSegmentPost
+
+# Sentinel distinguishing "no pre-check performed" from "object missing".
+_UNCHECKED = object()
+
+
 class SegmentUseCases:
     repository: SegmentRepository
     object_storage: ObjectStorage
@@ -68,19 +77,29 @@ class SegmentUseCases:
         self.webhook_repository = webhook_repository
 
     def register_segment(
-        self, *, flow_id: UUID, segment_post: dict[str, Any]
+        self, *, flow_id: UUID, segment_post: SegmentPostInput
     ) -> SegmentWriteResult:
         return self.register_segments(flow_id=flow_id, segment_posts=[segment_post])[0]
 
     def register_segments(
-        self, *, flow_id: UUID, segment_posts: list[dict[str, Any]]
+        self, *, flow_id: UUID, segment_posts: Sequence[SegmentPostInput]
     ) -> list[SegmentWriteResult]:
+        # Posts arriving as already-validated contract models (the API route)
+        # keep their model so payload validation is not repeated downstream.
+        posts: list[tuple[dict[str, Any], contract_models.FlowSegmentPost | None]] = [
+            (contract_dump(post), post)
+            if isinstance(post, contract_models.FlowSegmentPost)
+            else (post, None)
+            for post in segment_posts
+        ]
+        upload_checks = self._verify_controlled_uploads(payload for payload, _ in posts)
         try:
             with self.repository.unit_of_work():
                 self.repository.lock_flow_segments(flow_id)
                 return self._register_segments_locked(
                     flow_id=flow_id,
-                    segment_posts=segment_posts,
+                    segment_posts=posts,
+                    upload_checks=upload_checks,
                 )
         except SegmentOverlapError:
             return [
@@ -88,7 +107,13 @@ class SegmentUseCases:
             ]
 
     def _register_segments_locked(
-        self, *, flow_id: UUID, segment_posts: list[dict[str, Any]]
+        self,
+        *,
+        flow_id: UUID,
+        segment_posts: list[
+            tuple[dict[str, Any], contract_models.FlowSegmentPost | None]
+        ],
+        upload_checks: dict[str, int | None],
     ) -> list[SegmentWriteResult]:
         flow = require_flow(self.flow_repository, flow_id)
         ensure_flow_writable(flow)
@@ -103,18 +128,19 @@ class SegmentUseCases:
         reserved_get_url_labels = reserved_storage_labels(self.repository)
         results = [SegmentWriteResult() for _ in segment_posts]
         candidates: list[tuple[int, dict[str, Any], SegmentTimerangeBounds]] = []
-        for index, segment_post in enumerate(segment_posts):
+        for index, (payload, model) in enumerate(segment_posts):
             try:
                 candidate_timerange = validate_segment_payload(
-                    segment_post,
+                    payload,
                     reserved_get_url_labels=reserved_get_url_labels,
+                    model=model,
                 )
             except ValueError:
                 results[index] = SegmentWriteResult(
                     error="Bad request. Invalid Flow Segment JSON."
                 )
                 continue
-            candidates.append((index, segment_post, candidate_timerange))
+            candidates.append((index, payload, candidate_timerange))
 
         if not candidates:
             return results
@@ -123,6 +149,10 @@ class SegmentUseCases:
             flow_id=flow_id,
             timeranges=(timerange for _, _, timerange in candidates),
         )
+        known_timeranges = [
+            parse_timerange(segment.timerange, field_name="timerange", finite=True)
+            for segment in known_segments
+        ]
         media_objects_by_id = self.repository.get_objects(
             str(segment_post["object_id"]) for _, segment_post, _ in candidates
         )
@@ -131,16 +161,19 @@ class SegmentUseCases:
 
         for index, segment_post, _ in candidates:
             try:
-                segment, media_object = self._prepare_segment_registration_or_raise(
-                    flow=flow,
-                    segment_post=segment_post,
-                    known_segments=known_segments,
-                    media_objects_by_id=media_objects_by_id,
+                segment, media_object, candidate_range = (
+                    self._prepare_segment_registration_or_raise(
+                        flow=flow,
+                        segment_post=segment_post,
+                        known_timeranges=known_timeranges,
+                        media_objects_by_id=media_objects_by_id,
+                        upload_checks=upload_checks,
+                    )
                 )
             except BadRequest as exc:
                 results[index] = SegmentWriteResult(error=exc.detail)
                 continue
-            known_segments.append(segment)
+            known_timeranges.append(candidate_range)
             accepted_segments.append(segment)
             updated_media_objects[media_object.id] = media_object
             results[index] = SegmentWriteResult(segment=segment)
@@ -169,16 +202,52 @@ class SegmentUseCases:
 
         return results
 
+    def _verify_controlled_uploads(
+        self, payloads: Iterable[dict[str, Any]]
+    ) -> dict[str, int | None]:
+        """Pre-verify uploaded content for controlled objects.
+
+        Runs before the registration transaction so the S3 round-trip does not
+        extend the per-flow lock hold time or pin a pool connection. Maps
+        object_id to the uploaded content length, or None when the content is
+        missing. Objects whose state changes before the lock is taken fall
+        back to a live check inside the transaction.
+        """
+        object_ids = {
+            str(payload["object_id"])
+            for payload in payloads
+            if isinstance(payload, dict) and payload.get("object_id") is not None
+        }
+        if not object_ids:
+            return {}
+        results: dict[str, int | None] = {}
+        for media_object in self.repository.get_objects(object_ids).values():
+            if media_object.referenced_by_flows:
+                continue
+            for instance in media_object.instances:
+                if not instance.controlled or instance.storage_backend is None:
+                    continue
+                metadata = self.object_storage.object_metadata(
+                    media_object.id,
+                    backend=instance.storage_backend,
+                )
+                results[media_object.id] = (
+                    (metadata.content_length or 0) if metadata is not None else None
+                )
+                break
+        return results
+
     def _prepare_segment_registration_or_raise(
         self,
         *,
         flow: FlowRecord,
         segment_post: dict[str, Any],
-        known_segments: list[SegmentRecord],
+        known_timeranges: list[TimeRange],
         media_objects_by_id: dict[str, MediaObjectRecord],
-    ) -> tuple[SegmentRecord, MediaObjectRecord]:
-        self._ensure_segment_timerange_is_available(
-            known_segments=known_segments,
+        upload_checks: dict[str, int | None],
+    ) -> tuple[SegmentRecord, MediaObjectRecord, TimeRange]:
+        candidate_range = self._ensure_segment_timerange_is_available(
+            known_timeranges=known_timeranges,
             timerange=str(segment_post["timerange"]),
         )
 
@@ -203,7 +272,7 @@ class SegmentUseCases:
                     media_object,
                     flow_id=flow.id,
                 )
-                self._ensure_controlled_object_uploaded(media_object)
+                self._ensure_controlled_object_uploaded(media_object, upload_checks)
             if existing_object_references:
                 if segment_post.get("object_timerange") is not None:
                     raise BadRequest("Bad request. Invalid Flow Segment JSON.")
@@ -274,11 +343,20 @@ class SegmentUseCases:
             sample_count=segment_post.get("sample_count"),
             key_frame_count=segment_post.get("key_frame_count"),
         )
-        return segment, media_object
+        return segment, media_object, candidate_range
 
     def _ensure_controlled_object_uploaded(
-        self, media_object: MediaObjectRecord
+        self,
+        media_object: MediaObjectRecord,
+        upload_checks: dict[str, int | None],
     ) -> None:
+        cached = upload_checks.get(media_object.id, _UNCHECKED)
+        if cached is not _UNCHECKED:
+            if cached is None:
+                raise BadRequest("Bad request. Controlled object content is missing.")
+            assert isinstance(cached, int)
+            media_object.bytes_written = cached
+            return
         for instance in media_object.instances:
             if not instance.controlled or instance.storage_backend is None:
                 continue
@@ -305,21 +383,17 @@ class SegmentUseCases:
             )
 
     def _ensure_segment_timerange_is_available(
-        self, *, known_segments: list[SegmentRecord], timerange: str
-    ) -> None:
+        self, *, known_timeranges: list[TimeRange], timerange: str
+    ) -> TimeRange:
         candidate = parse_timerange(
             timerange,
             field_name="timerange",
             finite=True,
         )
-        for segment in known_segments:
-            existing = parse_timerange(
-                segment.timerange,
-                field_name="timerange",
-                finite=True,
-            )
+        for existing in known_timeranges:
             if not candidate.intersect_with(existing).is_empty():
                 raise BadRequest(SEGMENT_OVERLAP_MESSAGE)
+        return candidate
 
     def list_segments(
         self,
@@ -373,14 +447,22 @@ def _has_controlled_instance(media_object: MediaObjectRecord) -> bool:
 
 
 def validate_segment_payload(
-    payload: dict[str, Any], *, reserved_get_url_labels: set[str] | None = None
+    payload: dict[str, Any],
+    *,
+    reserved_get_url_labels: set[str] | None = None,
+    model: contract_models.FlowSegmentPost | None = None,
 ) -> SegmentTimerangeBounds:
-    try:
-        segment = contract_models.FlowSegmentPost.model_validate(payload)
-    except ValidationError as exc:
-        raise ValueError(
-            "segment payload does not match the BBC TAMS contract"
-        ) from exc
+    if model is not None:
+        # The API route already validated the body against the contract;
+        # re-validating the dumped payload would repeat the same work.
+        segment = model
+    else:
+        try:
+            segment = contract_models.FlowSegmentPost.model_validate(payload)
+        except ValidationError as exc:
+            raise ValueError(
+                "segment payload does not match the BBC TAMS contract"
+            ) from exc
 
     parsed = parse_timerange(
         segment.timerange.root,
