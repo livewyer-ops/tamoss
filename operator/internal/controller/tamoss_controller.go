@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -355,15 +354,15 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 			return err
 		}
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
-		result, err := applyCanonicalObject(ctx, r.Client, desired)
+		result, err := applyManagedObject(ctx, r.Client, desired)
 		if err != nil {
 			return err
 		}
 		if result.Changed {
-			log.FromContext(ctx).V(1).Info("applied canonical object", "kind", canonicalObjectKind(desired), "name", desired.GetName(), "namespace", desired.GetNamespace())
+			log.FromContext(ctx).V(1).Info("applied managed object", "kind", canonicalObjectKind(desired), "name", desired.GetName(), "namespace", desired.GetNamespace())
 		}
 		if result.Changed && !result.Created {
-			r.recordDriftCorrected(tamoss, desired, result.DriftPaths)
+			r.recordDriftCorrected(tamoss, desired)
 		}
 	}
 	return nil
@@ -393,21 +392,17 @@ func shortestPositiveDuration(current, candidate time.Duration) time.Duration {
 	return current
 }
 
-func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, obj client.Object, paths []string) {
+func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, obj client.Object) {
 	if r.Recorder == nil || !tamossObservedReady(tamoss) {
 		return
-	}
-	if len(paths) == 0 {
-		paths = []string{"unknown"}
 	}
 	r.Recorder.Eventf(
 		tamoss,
 		corev1.EventTypeNormal,
 		operatorstatus.ReasonDriftCorrected,
-		"Corrected drift on %s/%s at %s",
+		"Corrected drift on %s/%s",
 		canonicalObjectKind(obj),
 		obj.GetName(),
-		strings.Join(paths, ","),
 	)
 }
 

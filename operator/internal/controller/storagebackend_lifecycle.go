@@ -102,7 +102,7 @@ func (r *StorageBackendReconciler) reconcileStorageBackendCleanupJob(ctx context
 		if !apierrors.IsNotFound(err) {
 			return storageBackendReconcileResult{}, err
 		}
-		if _, err := applyCanonicalObject(ctx, r.Client, desiredJob); err != nil {
+		if _, err := applyManagedObject(ctx, r.Client, desiredJob); err != nil {
 			return storageBackendReconcileResult{}, err
 		}
 		return storageBackendReconcileResult{Ready: false, Reason: reasonPrefix + "InProgress", Message: messagePrefix + " job was launched"}, nil

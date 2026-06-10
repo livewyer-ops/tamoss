@@ -121,7 +121,7 @@ func (r *StorageBackendReconciler) reconcileRuntimeCredentialsSecret(ctx context
 	if err := controllerutil.SetControllerReference(tamoss, secret, r.Scheme); err != nil {
 		return err
 	}
-	_, err = applyCanonicalObject(ctx, r.Client, secret)
+	_, err = applyManagedObject(ctx, r.Client, secret)
 	return err
 }
 

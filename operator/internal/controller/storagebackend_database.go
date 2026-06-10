@@ -48,7 +48,7 @@ func (r *StorageBackendReconciler) reconcileStorageBackendDatabase(ctx context.C
 		if !apierrors.IsNotFound(err) {
 			return storageBackendReconcileResult{}, err
 		}
-		if _, err := applyCanonicalObject(ctx, r.Client, desiredJob); err != nil {
+		if _, err := applyManagedObject(ctx, r.Client, desiredJob); err != nil {
 			return storageBackendReconcileResult{}, err
 		}
 		return storageBackendReconcileResult{Ready: false, Reason: operatorstatus.ReasonDatabaseRegistrationInProgress, Message: "TAMS storage backend registration job was launched"}, nil
@@ -73,7 +73,7 @@ func (r *StorageBackendReconciler) reconcileStorageBackendDatabase(ctx context.C
 	if err := controllerutil.SetControllerReference(storageBackend, desiredState, r.Scheme); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
-	if _, err := applyCanonicalObject(ctx, r.Client, desiredState); err != nil {
+	if _, err := applyManagedObject(ctx, r.Client, desiredState); err != nil {
 		return storageBackendReconcileResult{}, err
 	}
 	return storageBackendReconcileResult{Ready: true, Reason: operatorstatus.ReasonDatabaseRegistered, Message: "TAMS storage backend row has been registered"}, nil

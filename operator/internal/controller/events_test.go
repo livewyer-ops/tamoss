@@ -99,13 +99,13 @@ func TestDriftCorrectedSuppressesInitialConvergence(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example-api", Namespace: "media"},
 	}
 
-	reconciler.recordDriftCorrected(tamoss, deployment, []string{"spec"})
+	reconciler.recordDriftCorrected(tamoss, deployment)
 	if events := drainRecorder(recorder); len(events) != 0 {
 		t.Fatalf("expected no drift event before Ready=True, got %#v", events)
 	}
 
 	operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionReady, true, operatorstatus.ReasonAllComponentsReady, "ready")
-	reconciler.recordDriftCorrected(tamoss, deployment, []string{"spec"})
+	reconciler.recordDriftCorrected(tamoss, deployment)
 
 	events := drainRecorder(recorder)
 	if got := len(events); got != 1 {

@@ -267,7 +267,7 @@ func (s *SchemaController) applyOwned(ctx context.Context, tamoss *tamossv1alpha
 	if err := controllerutil.SetControllerReference(tamoss, obj, s.Scheme); err != nil {
 		return err
 	}
-	_, err := applyCanonicalObject(ctx, s.Client, obj)
+	_, err := applyManagedObject(ctx, s.Client, obj)
 	return err
 }
 

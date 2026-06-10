@@ -75,21 +75,18 @@ func (r *TamossReconciler) finalizeTamoss(ctx context.Context, tamoss *tamossv1a
 			r.recordWarning(tamoss, operatorstatus.ReasonAuthentikManagedBlueprintDeleteFailed, message)
 		}
 	}
+	// Managed StorageBackends must finish their own finalisation — bucket
+	// deletion and TAMS database deregistration — while the backing database,
+	// object store and credential Secrets still exist. Owner-reference
+	// garbage collection offers no ordering between siblings, so delete them
+	// explicitly and hold the Tamoss finalizer until they are gone. Every
+	// other child carries a controller reference and is cleaned up by the
+	// garbage collector once the Tamoss disappears.
 	storageBackendsRemain, err := r.deleteOwnedStorageBackends(ctx, tamoss)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if storageBackendsRemain {
-		return ctrl.Result{RequeueAfter: defaultFinalizerPollInterval}, nil
-	}
-	if err := r.pruneOwnedObjects(ctx, tamoss, map[string]struct{}{}); err != nil {
-		return ctrl.Result{}, err
-	}
-	remaining, err := r.ownedObjectsRemain(ctx, tamoss)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if remaining {
 		return ctrl.Result{RequeueAfter: defaultFinalizerPollInterval}, nil
 	}
 	original := tamoss.DeepCopy()
@@ -117,22 +114,6 @@ func (r *TamossReconciler) deleteOwnedStorageBackends(ctx context.Context, tamos
 	return remaining, nil
 }
 
-func (r *TamossReconciler) ownedObjectsRemain(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
-	for _, owned := range r.tamossOwnedLists(ctx) {
-		remaining, err := ownedObjectsRemainInTamossOwnedList(ctx, r.Client, tamoss, owned.list)
-		if err != nil {
-			if owned.tolerateNoMatch && isKubernetesNoMatchError(err) {
-				continue
-			}
-			return false, err
-		}
-		if remaining {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (r *TamossReconciler) optionalOwnedObjectLists(ctx context.Context) []client.ObjectList {
 	lists := []client.ObjectList{}
 	for _, policy := range optionalTamossWatchPolicies() {
@@ -150,27 +131,6 @@ func (r *TamossReconciler) optionalResourceCRDPresent(ctx context.Context, gvr s
 	}
 	present, known := r.dependencyCRDPresent(ctx, gvr)
 	return known && present
-}
-
-func ownedObjectsRemainInTamossOwnedList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, list client.ObjectList) (bool, error) {
-	if err := listTamossOwnedObjects(ctx, c, tamoss, list); err != nil {
-		return false, err
-	}
-	return ownedObjectsRemainInLoadedList(tamoss, list)
-}
-
-func ownedObjectsRemainInLoadedList(tamoss *tamossv1alpha1.Tamoss, list client.ObjectList) (bool, error) {
-	items, err := meta.ExtractList(list)
-	if err != nil {
-		return false, err
-	}
-	for _, item := range items {
-		obj, ok := item.(client.Object)
-		if ok && ownedByTamoss(obj, tamoss) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func pruneTamossOwnedList(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamoss, desired map[string]struct{}, list client.ObjectList) error {
