@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -218,6 +219,47 @@ def _save_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> None:
     )
 
 
+def _save_objects(
+    cur: PostgresCursor, media_objects: Sequence[MediaObjectRecord]
+) -> None:
+    if not media_objects:
+        return
+    cur.executemany(
+        """
+        INSERT INTO tamoss_media_objects (
+            id,
+            first_referenced_by_flow,
+            referenced_by_flows,
+            record,
+            updated_at
+        )
+        VALUES (
+            %(id)s,
+            %(first_referenced_by_flow)s,
+            %(referenced_by_flows)s,
+            %(record)s,
+            NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            first_referenced_by_flow = EXCLUDED.first_referenced_by_flow,
+            referenced_by_flows = EXCLUDED.referenced_by_flows,
+            record = EXCLUDED.record,
+            updated_at = NOW()
+        """,
+        [
+            {
+                "id": media_object.id,
+                "first_referenced_by_flow": media_object.first_referenced_by_flow,
+                "referenced_by_flows": [
+                    str(flow_id) for flow_id in media_object.referenced_by_flows
+                ],
+                "record": Jsonb(_media_object_to_record(media_object)),
+            }
+            for media_object in media_objects
+        ],
+    )
+
+
 def _create_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> bool:
     record = _media_object_to_record(media_object)
     cur.execute(
@@ -249,6 +291,53 @@ def _create_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> bool
         },
     )
     return cur.fetchone() is not None
+
+
+def _create_objects(
+    cur: PostgresCursor, media_objects: Sequence[MediaObjectRecord]
+) -> set[str]:
+    if not media_objects:
+        return set()
+    cur.execute(
+        """
+        INSERT INTO tamoss_media_objects (
+            id,
+            first_referenced_by_flow,
+            referenced_by_flows,
+            record,
+            updated_at
+        )
+        SELECT
+            new_object.id,
+            new_object.first_referenced_by_flow,
+            ARRAY(SELECT jsonb_array_elements_text(new_object.referenced_by_flows)),
+            new_object.record,
+            NOW()
+        FROM unnest(
+            %(ids)s::text[],
+            %(first_referenced_by_flows)s::uuid[],
+            %(referenced_by_flows)s::jsonb[],
+            %(records)s::jsonb[]
+        ) AS new_object(id, first_referenced_by_flow, referenced_by_flows, record)
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+        """,
+        {
+            "ids": [media_object.id for media_object in media_objects],
+            "first_referenced_by_flows": [
+                media_object.first_referenced_by_flow for media_object in media_objects
+            ],
+            "referenced_by_flows": [
+                Jsonb([str(flow_id) for flow_id in media_object.referenced_by_flows])
+                for media_object in media_objects
+            ],
+            "records": [
+                Jsonb(_media_object_to_record(media_object))
+                for media_object in media_objects
+            ],
+        },
+    )
+    return {row[0] for row in cur.fetchall()}
 
 
 def _lock_flow_segments(cur: PostgresCursor, flow_id: UUID) -> None:
@@ -306,6 +395,100 @@ def _append_segment(
             "created": segment.created,
         },
     )
+
+
+def _append_segments(
+    cur: PostgresCursor,
+    segments: Sequence[SegmentRecord],
+    *,
+    reject_overlaps: bool = False,
+) -> None:
+    if not segments:
+        return
+    rows: list[dict[str, Any]] = []
+    bounds_by_flow: dict[UUID, list[tuple[int, int]]] = {}
+    for segment in segments:
+        timerange_start, timerange_end = _timerange_bounds(segment.timerange)
+        bounds_by_flow.setdefault(segment.flow_id, []).append(
+            (timerange_start, timerange_end)
+        )
+        rows.append(
+            {
+                "flow_id": segment.flow_id,
+                "object_id": segment.object_id,
+                "timerange": segment.timerange,
+                "timerange_start": timerange_start,
+                "timerange_end": timerange_end,
+                "record": Jsonb(_segment_to_record(segment)),
+                "created": segment.created,
+            }
+        )
+    if reject_overlaps:
+        # Callers validate the batch against itself before writing; this
+        # set-based check guards against concurrent rows already committed,
+        # replacing one round trip per segment with one per flow.
+        for flow_id, bounds in bounds_by_flow.items():
+            _raise_if_segments_overlap(cur, flow_id=flow_id, bounds=bounds)
+    cur.executemany(
+        """
+        INSERT INTO tamoss_segments (
+            flow_id,
+            object_id,
+            timerange,
+            timerange_start,
+            timerange_end,
+            record,
+            created
+        )
+        VALUES (
+            %(flow_id)s,
+            %(object_id)s,
+            %(timerange)s,
+            %(timerange_start)s,
+            %(timerange_end)s,
+            %(record)s,
+            %(created)s
+        )
+        ON CONFLICT (flow_id, object_id, timerange) DO UPDATE SET
+            timerange_start = EXCLUDED.timerange_start,
+            timerange_end = EXCLUDED.timerange_end,
+            record = EXCLUDED.record,
+            updated_at = NOW()
+        """,
+        rows,
+    )
+
+
+def _raise_if_segments_overlap(
+    cur: PostgresCursor,
+    *,
+    flow_id: UUID,
+    bounds: Sequence[tuple[int, int]],
+) -> None:
+    cur.execute(
+        """
+        SELECT 1
+        FROM tamoss_segments AS segment
+        WHERE segment.flow_id = %(flow_id)s
+          AND EXISTS (
+              SELECT 1
+              FROM unnest(
+                  %(starts)s::bigint[],
+                  %(ends)s::bigint[]
+              ) AS candidate(timerange_start, timerange_end)
+              WHERE segment.timerange_start < candidate.timerange_end
+                AND segment.timerange_end > candidate.timerange_start
+          )
+        LIMIT 1
+        """,
+        {
+            "flow_id": flow_id,
+            "starts": [start for start, _ in bounds],
+            "ends": [end for _, end in bounds],
+        },
+    )
+    if cur.fetchone() is not None:
+        raise SegmentOverlapError(SEGMENT_OVERLAP_MESSAGE)
 
 
 def _raise_if_segment_overlaps(

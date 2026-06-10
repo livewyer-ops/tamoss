@@ -11,12 +11,15 @@ from psycopg import sql
 
 from tamoss.adapters.postgres_repository.mappers import (
     _append_segment,
+    _append_segments,
     _create_object,
+    _create_objects,
     _lock_flow_segments,
     _media_object_from_record,
     _optional_uuid,
     _save_flow,
     _save_object,
+    _save_objects,
     _segment_from_record,
     _storage_backend_from_record,
     _timerange_from_bounds,
@@ -87,6 +90,10 @@ class PostgresObjectSegmentMixin:
     def create_object(self, media_object: MediaObjectRecord) -> bool:
         with self._connect() as conn, conn.cursor() as cur:
             return _create_object(cur, media_object)
+
+    def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
+        with self._connect() as conn, conn.cursor() as cur:
+            return _create_objects(cur, list(media_objects))
 
     def delete_object(self, object_id: str) -> None:
         with self._connect() as conn, conn.cursor() as cur:
@@ -363,10 +370,8 @@ class PostgresObjectSegmentMixin:
         with self._connect() as conn, conn.cursor() as cur:
             _lock_flow_segments(cur, flow.id)
             _save_flow(cur, flow)
-            for media_object in media_objects:
-                _save_object(cur, media_object)
-            for segment in segments:
-                _append_segment(cur, segment, reject_overlaps=True)
+            _save_objects(cur, media_objects)
+            _append_segments(cur, segments, reject_overlaps=True)
 
 
 def _query_start(start: int | None) -> int | None:

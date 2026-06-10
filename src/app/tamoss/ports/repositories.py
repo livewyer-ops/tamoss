@@ -240,6 +240,10 @@ class StorageRepository(
 ):
     def create_object(self, media_object: MediaObjectRecord) -> bool: ...
 
+    def create_objects(
+        self, media_objects: Iterable[MediaObjectRecord]
+    ) -> set[str]: ...
+
 
 class DeletionRepository(
     TransactionalRepository,

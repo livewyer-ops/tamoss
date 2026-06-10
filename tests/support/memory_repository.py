@@ -385,6 +385,16 @@ class FakeTamossRepository:
             self._objects[media_object.id] = media_object
             return True
 
+    def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
+        created: set[str] = set()
+        with self._lock:
+            for media_object in media_objects:
+                if media_object.id in self._objects:
+                    continue
+                self._objects[media_object.id] = media_object
+                created.add(media_object.id)
+        return created
+
     def delete_object(self, object_id: str) -> None:
         with self._lock:
             self._objects.pop(object_id, None)
