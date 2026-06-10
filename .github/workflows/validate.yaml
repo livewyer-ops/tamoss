@@ -89,7 +89,7 @@ jobs:
           submodules: true
 
       - name: Run Pre-commit
-        uses: j178/prek-action@v1
+        uses: j178/prek-action@v2
 
       - name: Install Task
         uses: ./.github/actions/setup-task
