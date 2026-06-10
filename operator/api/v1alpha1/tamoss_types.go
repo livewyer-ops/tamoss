@@ -1,6 +1,9 @@
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
@@ -30,5 +33,8 @@ type TamossList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Tamoss{}, &TamossList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &Tamoss{}, &TamossList{})
+		return nil
+	})
 }

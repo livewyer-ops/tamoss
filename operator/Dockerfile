@@ -1,6 +1,6 @@
 # Build the manager binary. This Dockerfile is intended to be built from the
 # repository root with `docker build -f operator/Dockerfile .`.
-FROM --platform=$BUILDPLATFORM golang:1.23 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.0.1

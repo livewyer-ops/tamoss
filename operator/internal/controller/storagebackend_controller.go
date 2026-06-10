@@ -117,7 +117,7 @@ func (r *StorageBackendReconciler) prepareStorageBackendLifecycle(ctx context.Co
 		log.FromContext(ctx).Info("ignoring StorageBackend outside configured watch scope", "namespace", storageBackend.Namespace)
 		return stopReconcileNow(), nil
 	}
-	if !storageBackend.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !storageBackend.DeletionTimestamp.IsZero() {
 		result, err := r.finalizeStorageBackend(ctx, storageBackend)
 		return stopReconcile(result), err
 	}

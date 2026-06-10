@@ -7,6 +7,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -14,7 +15,7 @@ import (
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
-var httpRouteGVK = gatewayv1.SchemeGroupVersion.WithKind("HTTPRoute")
+var httpRouteGVK = schema.GroupVersion(gatewayv1.GroupVersion).WithKind("HTTPRoute")
 
 type routingStatusResult struct {
 	Ready           bool

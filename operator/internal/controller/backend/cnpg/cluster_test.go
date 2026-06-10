@@ -123,7 +123,7 @@ func TestBuildClusterMapsBackupAndMonitoring(t *testing.T) {
 	if scheduled.Spec.Schedule != "0 0 2 * * *" || scheduled.Spec.BackupOwnerReference != "cluster" {
 		t.Fatalf("unexpected scheduled backup spec: %#v", scheduled.Spec)
 	}
-	if cluster.Spec.Monitoring == nil || !cluster.Spec.Monitoring.EnablePodMonitor {
+	if cluster.Spec.Monitoring == nil || !cluster.Spec.Monitoring.EnablePodMonitor { //nolint:staticcheck // The controller still sets the deprecated EnablePodMonitor knob deliberately; the test asserts it.
 		t.Fatalf("expected PodMonitor enabled")
 	}
 }

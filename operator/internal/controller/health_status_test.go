@@ -102,9 +102,10 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 		Status: metav1.ConditionTrue,
 		Reason: "Archiving",
 	}}
+	//nolint:staticcheck // CNPG deprecates these fields for backup plugins only; this operator configures the in-tree barman object store, which still populates them.
 	cluster.Status.LastSuccessfulBackup = "2026-05-22T11:00:00Z"
-	cluster.Status.LastFailedBackup = "2026-05-22T12:00:00Z"
-	cluster.Status.FirstRecoverabilityPoint = "2026-05-22T10:00:00Z"
+	cluster.Status.LastFailedBackup = "2026-05-22T12:00:00Z"         //nolint:staticcheck // see above
+	cluster.Status.FirstRecoverabilityPoint = "2026-05-22T10:00:00Z" //nolint:staticcheck // see above
 	reconciler := &TamossReconciler{
 		Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
 	}
@@ -120,7 +121,7 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 		t.Fatalf("expected CNPG backup timestamps in status, got %#v", status)
 	}
 
-	cluster.Status.LastFailedBackup = "2026-05-22T10:00:00Z"
+	cluster.Status.LastFailedBackup = "2026-05-22T10:00:00Z" //nolint:staticcheck // deprecated for backup plugins only
 	reconciler.Client = fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build()
 	condition, status, err = reconciler.observedBackupPolicy(context.Background(), tamoss)
 	if err != nil {

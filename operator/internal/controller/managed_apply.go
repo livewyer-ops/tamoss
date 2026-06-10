@@ -51,7 +51,7 @@ func applyManagedObject(ctx context.Context, c client.Client, desired client.Obj
 }
 
 func applyObjectPatch(ctx context.Context, c client.Client, desired client.Object) error {
-	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(resource.FieldOwner), client.ForceOwnership)
+	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(resource.FieldOwner), client.ForceOwnership) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
 }
 
 // managedObjectChanged reports whether the apply produced a new revision of
@@ -116,7 +116,7 @@ func reclaimAuthoritativeFields(ctx context.Context, c client.Client, live clien
 			continue
 		}
 		fields := map[string]interface{}{}
-		if err := json.Unmarshal(entry.FieldsV1.Raw, &fields); err != nil {
+		if err := json.Unmarshal(entry.FieldsV1.GetRawBytes(), &fields); err != nil {
 			return fmt.Errorf("decode managed fields of %s by %q: %w", live.GetName(), entry.Manager, err)
 		}
 		moved := false
@@ -160,12 +160,12 @@ func reclaimAuthoritativeFields(ctx context.Context, c client.Client, live clien
 			Operation:  metav1.ManagedFieldsOperationApply,
 			APIVersion: apiVersion,
 			FieldsType: "FieldsV1",
-			FieldsV1:   &metav1.FieldsV1{Raw: []byte("{}")},
+			FieldsV1:   metav1.NewFieldsV1("{}"),
 		})
 	}
 	ownerFields := map[string]interface{}{}
 	if raw := next[ownerIndex].FieldsV1; raw != nil {
-		if err := json.Unmarshal(raw.Raw, &ownerFields); err != nil {
+		if err := json.Unmarshal(raw.GetRawBytes(), &ownerFields); err != nil {
 			return fmt.Errorf("decode managed fields of %s by %q: %w", live.GetName(), resource.FieldOwner, err)
 		}
 	}
@@ -174,7 +174,9 @@ func reclaimAuthoritativeFields(ctx context.Context, c client.Client, live clien
 	if err != nil {
 		return err
 	}
-	next[ownerIndex].FieldsV1 = &metav1.FieldsV1{Raw: raw}
+	ownerFieldsV1 := &metav1.FieldsV1{}
+	ownerFieldsV1.SetRawBytes(raw)
+	next[ownerIndex].FieldsV1 = ownerFieldsV1
 	live.SetManagedFields(next)
 	return c.Update(ctx, live)
 }

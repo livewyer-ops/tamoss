@@ -30,8 +30,9 @@ type tamossOwnedList struct {
 // a Tamoss: the built-in kinds, the Traefik Middleware CRD, and any optional
 // provider CRDs that are installed.
 func (r *TamossReconciler) tamossOwnedLists(ctx context.Context) []tamossOwnedList {
-	lists := []tamossOwnedList{}
-	for _, policy := range tamossManagedResourcePolicies() {
+	policies := tamossManagedResourcePolicies()
+	lists := make([]tamossOwnedList, 0, len(policies)+1)
+	for _, policy := range policies {
 		lists = append(lists, tamossOwnedList{list: policy.list})
 	}
 	lists = append(lists, tamossOwnedList{list: traefikMiddlewareList(), tolerateNoMatch: true})

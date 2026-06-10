@@ -2,6 +2,6 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
-    image: kindest/node:v1.35.0
+    image: kindest/node:v1.36.1
     labels:
       tamoss.livewyer.io/chainsaw: "true"

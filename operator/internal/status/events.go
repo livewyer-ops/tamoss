@@ -1,7 +1,6 @@
 package status
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -44,35 +43,27 @@ type EventObject interface {
 	runtime.Object
 }
 
-func EmitNormalEvent(recorder record.EventRecorder, obj EventObject, reason, message string, args ...interface{}) {
+func EmitNormalEvent(recorder record.EventRecorder, obj EventObject, reason, message string) {
 	if recorder == nil {
 		return
 	}
-	recorder.Event(obj, corev1.EventTypeNormal, reason, renderEventMessage(message, args...))
+	recorder.Event(obj, corev1.EventTypeNormal, reason, message)
 }
 
-func EmitWarningEvent(recorder record.EventRecorder, deduper *WarningEventDeduper, obj EventObject, reason, message string, args ...interface{}) {
+func EmitWarningEvent(recorder record.EventRecorder, deduper *WarningEventDeduper, obj EventObject, reason, message string) {
 	if recorder == nil {
 		return
 	}
-	rendered := renderEventMessage(message, args...)
 	if deduper != nil {
 		key := WarningEventKey{
 			Namespace: obj.GetNamespace(),
 			Name:      obj.GetName(),
 			Reason:    reason,
-			Message:   rendered,
+			Message:   message,
 		}
 		if !deduper.ShouldRecord(key, time.Now(), time.Minute) {
 			return
 		}
 	}
-	recorder.Event(obj, corev1.EventTypeWarning, reason, rendered)
-}
-
-func renderEventMessage(message string, args ...interface{}) string {
-	if len(args) == 0 {
-		return message
-	}
-	return fmt.Sprintf(message, args...)
+	recorder.Event(obj, corev1.EventTypeWarning, reason, message)
 }

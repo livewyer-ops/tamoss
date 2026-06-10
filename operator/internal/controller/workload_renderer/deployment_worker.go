@@ -38,7 +38,7 @@ func renderWorkerDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		envFromSecrets(tamoss, false, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, "", tamoss.Spec.Worker.EnvFrom),
 		nil,
 	)
-	deployment.ObjectMeta.Name = tamoss.ResourceName("worker")
+	deployment.Name = tamoss.ResourceName("worker")
 	deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: selectorLabels(tamoss, "worker")}
 	return []client.Object{deployment}
 }

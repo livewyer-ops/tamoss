@@ -54,7 +54,7 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 	if err := r.deleteStorageBackendCleanupObjects(ctx, storageBackend); err != nil {
 		return ctrl.Result{}, err
 	}
-	if found && tamoss.ObjectMeta.DeletionTimestamp.IsZero() {
+	if found && tamoss.DeletionTimestamp.IsZero() {
 		if err := r.reconcileRuntimeCredentialsSecret(ctx, tamoss); err != nil {
 			return ctrl.Result{}, err
 		}

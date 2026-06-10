@@ -2,6 +2,7 @@ package workload_renderer
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,22 +18,20 @@ const (
 
 // Render returns the workload resources declared by the Tamoss spec.
 func Render(tamoss *tamossv1alpha1.Tamoss) []client.Object {
-	var objects []client.Object
-
-	objects = append(objects, renderServiceAccount(tamoss)...)
-	objects = append(objects, renderSecrets(tamoss)...)
-	objects = append(objects, renderServices(tamoss)...)
-	objects = append(objects, renderAPIDeployment(tamoss)...)
-	objects = append(objects, renderWorkerDeployment(tamoss)...)
-	objects = append(objects, renderUIDeployment(tamoss)...)
-	objects = append(objects, renderIngresses(tamoss)...)
-	objects = append(objects, renderHTTPRoutes(tamoss)...)
-	objects = append(objects, renderNetworkPolicies(tamoss)...)
-	objects = append(objects, renderPDBs(tamoss)...)
-	objects = append(objects, renderHPAs(tamoss)...)
-	objects = append(objects, renderAdvancedExtraResources(tamoss)...)
-
-	return objects
+	return slices.Concat(
+		renderServiceAccount(tamoss),
+		renderSecrets(tamoss),
+		renderServices(tamoss),
+		renderAPIDeployment(tamoss),
+		renderWorkerDeployment(tamoss),
+		renderUIDeployment(tamoss),
+		renderIngresses(tamoss),
+		renderHTTPRoutes(tamoss),
+		renderNetworkPolicies(tamoss),
+		renderPDBs(tamoss),
+		renderHPAs(tamoss),
+		renderAdvancedExtraResources(tamoss),
+	)
 }
 
 func appLabelName(tamoss *tamossv1alpha1.Tamoss) string {
