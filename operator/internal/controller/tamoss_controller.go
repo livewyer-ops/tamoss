@@ -8,23 +8,22 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
@@ -522,50 +521,38 @@ func schemaMessage(schemaResult SchemaResult) string {
 	return "Schema controller completed for this reconcile"
 }
 
+// canonicalKindScheme resolves GroupVersionKinds for every type the operator
+// manages. It mirrors the registrations performed for the manager scheme in
+// cmd/main.go so that kind resolution never depends on hand-maintained lists.
+var canonicalKindScheme = newCanonicalKindScheme()
+
+func newCanonicalKindScheme() *runtime.Scheme {
+	kindScheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(kindScheme))
+	utilruntime.Must(tamossv1alpha1.AddToScheme(kindScheme))
+	utilruntime.Must(cnpgv1.AddToScheme(kindScheme))
+	utilruntime.Must(gatewayv1.Install(kindScheme))
+	return kindScheme
+}
+
 func canonicalObjectKey(obj client.Object) string {
 	return fmt.Sprintf("%s/%s/%s", canonicalObjectKind(obj), obj.GetNamespace(), obj.GetName())
 }
 
 func canonicalObjectKind(obj client.Object) string {
-	if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind != "" {
-		return kind
+	return canonicalObjectGVK(obj).Kind
+}
+
+// canonicalObjectGVK resolves the GVK from the scheme rather than a
+// hand-maintained switch. An unresolvable type is a programming error: a
+// silent empty kind would corrupt desired-object keys and make the pruner
+// delete still-desired objects, so fail loudly instead.
+func canonicalObjectGVK(obj client.Object) schema.GroupVersionKind {
+	gvk, err := apiutil.GVKForObject(obj, canonicalKindScheme)
+	if err != nil {
+		panic(fmt.Errorf("resolve GVK for %T: %w", obj, err))
 	}
-	ensureTypeMeta(obj)
-	if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind != "" {
-		return kind
-	}
-	switch obj := obj.(type) {
-	case *appsv1.Deployment:
-		return "Deployment"
-	case *autoscalingv2.HorizontalPodAutoscaler:
-		return "HorizontalPodAutoscaler"
-	case *batchv1.Job:
-		return "Job"
-	case *corev1.ConfigMap:
-		return "ConfigMap"
-	case *corev1.PersistentVolumeClaim:
-		return "PersistentVolumeClaim"
-	case *corev1.Secret:
-		return "Secret"
-	case *corev1.Service:
-		return "Service"
-	case *corev1.ServiceAccount:
-		return "ServiceAccount"
-	case *networkingv1.Ingress:
-		return "Ingress"
-	case *networkingv1.NetworkPolicy:
-		return "NetworkPolicy"
-	case *policyv1.PodDisruptionBudget:
-		return "PodDisruptionBudget"
-	case *gatewayv1.HTTPRoute:
-		return "HTTPRoute"
-	case *tamossv1alpha1.StorageBackend:
-		return "StorageBackend"
-	case *unstructured.Unstructured:
-		return obj.GetKind()
-	default:
-		return ""
-	}
+	return gvk
 }
 
 func tamossResourceName(tamoss *tamossv1alpha1.Tamoss, suffix string) string {

@@ -20,6 +20,7 @@ func TestDefaultStorageBackendReadyRequiresDatabaseRegistration(t *testing.T) {
 	storageBackend := defaultStorageBackend(tamoss)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionBucketReady,
 		true,
 		operatorstatus.ReasonBucketReady,
@@ -27,6 +28,7 @@ func TestDefaultStorageBackendReadyRequiresDatabaseRegistration(t *testing.T) {
 	)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionDatabaseReady,
 		false,
 		operatorstatus.ReasonDatabaseRegistrationInProgress,
@@ -34,6 +36,7 @@ func TestDefaultStorageBackendReadyRequiresDatabaseRegistration(t *testing.T) {
 	)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionReady,
 		false,
 		operatorstatus.ReasonDatabaseRegistrationInProgress,
@@ -73,6 +76,7 @@ func TestDefaultStorageBackendReadyAfterBucketAndDatabaseRegistration(t *testing
 	storageBackend := defaultStorageBackend(tamoss)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionBucketReady,
 		true,
 		operatorstatus.ReasonBucketReady,
@@ -80,6 +84,7 @@ func TestDefaultStorageBackendReadyAfterBucketAndDatabaseRegistration(t *testing
 	)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionDatabaseReady,
 		true,
 		operatorstatus.ReasonDatabaseRegistered,
@@ -87,6 +92,7 @@ func TestDefaultStorageBackendReadyAfterBucketAndDatabaseRegistration(t *testing
 	)
 	operatorstatus.SetConditionBool(
 		&storageBackend.Status.Conditions,
+		storageBackend.Generation,
 		operatorstatus.ConditionReady,
 		true,
 		operatorstatus.ReasonStorageBackendReady,

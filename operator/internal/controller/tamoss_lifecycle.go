@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -220,13 +219,6 @@ func pruneLoadedList(ctx context.Context, c client.Client, tamoss *tamossv1alpha
 		}
 		if _, keep := desired[canonicalObjectKey(obj)]; keep {
 			continue
-		}
-		if job, ok := obj.(*batchv1.Job); ok && len(job.Finalizers) > 0 {
-			original := job.DeepCopy()
-			job.Finalizers = nil
-			if err := c.Patch(ctx, job, client.MergeFrom(original)); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
 		}
 		propagation := metav1.DeletePropagationBackground
 		if err := c.Delete(ctx, obj, client.PropagationPolicy(propagation)); err != nil && !apierrors.IsNotFound(err) {

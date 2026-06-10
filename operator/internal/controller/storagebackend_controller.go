@@ -126,7 +126,10 @@ func (r *StorageBackendReconciler) prepareStorageBackendLifecycle(ctx context.Co
 		if err := r.Client.Patch(ctx, storageBackend, client.MergeFrom(original)); err != nil {
 			return stopReconcileNow(), err
 		}
-		return stopReconcile(ctrl.Result{Requeue: true}), nil
+		// The finalizer patch emits an Update event whose finalizer diff
+		// passes storageBackendPrimaryPredicate, so the controller is
+		// re-enqueued without the deprecated Result.Requeue flag.
+		return stopReconcileNow(), nil
 	}
 	return continueReconcile(), nil
 }

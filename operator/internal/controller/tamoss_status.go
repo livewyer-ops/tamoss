@@ -45,15 +45,15 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 			if schemaResult.Degraded {
 				tamoss.Status.Phase = operatorstatus.PhaseDegraded
 			}
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, schemaResult.Ready, schemaReason(schemaResult), schemaMessage(schemaResult))
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted, identityResult.BlueprintSubmitted, identityBlueprintReason(identityResult), identityBlueprintMessage(identityResult))
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionIdentityReady, identityResult.Ready, identityResult.Reason, identityResult.Message)
-			setRoutingConditions(&tamoss.Status.Conditions, routingResult)
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionDegraded, schemaResult.Degraded, degradedReason(schemaResult), degradedMessage(schemaResult))
-			operatorstatus.SetReconciliationActive(&tamoss.Status.Conditions)
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionProgressing, !ready && !schemaResult.Degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available")
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionReady, ready, readyReason(ready, schemaResult, identityResult, routingResult), readyMessage(ready, schemaResult, identityResult, routingResult))
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, schemaResult.Ready, schemaReason(schemaResult), schemaMessage(schemaResult))
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionIdentityBlueprintSubmitted, identityResult.BlueprintSubmitted, identityBlueprintReason(identityResult), identityBlueprintMessage(identityResult))
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionIdentityReady, identityResult.Ready, identityResult.Reason, identityResult.Message)
+			setRoutingConditions(&tamoss.Status.Conditions, tamoss.Generation, routingResult)
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionDegraded, schemaResult.Degraded, degradedReason(schemaResult), degradedMessage(schemaResult))
+			operatorstatus.SetReconciliationActive(&tamoss.Status.Conditions, tamoss.Generation)
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionProgressing, !ready && !schemaResult.Degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available")
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionReady, ready, readyReason(ready, schemaResult, identityResult, routingResult), readyMessage(ready, schemaResult, identityResult, routingResult))
 			return nil
 		},
 	})
@@ -62,9 +62,9 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 func (r *TamossReconciler) updateBlockedBackendStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, input backendBlockedStatusInput) error {
 	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
 		tamoss.Status.Phase = operatorstatus.PhaseDegraded
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, input.Reason, input.SchemaMessage)
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, false, input.Reason, input.Message)
-		setActiveBlockedConditions(&tamoss.Status.Conditions, input.Reason, input.Message, input.ProgressingMessage)
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, input.Reason, input.SchemaMessage)
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, false, input.Reason, input.Message)
+		setActiveBlockedConditions(&tamoss.Status.Conditions, tamoss.Generation, input.Reason, input.Message, input.ProgressingMessage)
 		return nil
 	}})
 }
@@ -82,12 +82,12 @@ func (r *TamossReconciler) updateProviderBackendStatus(ctx context.Context, tamo
 				tamoss.Status.Phase = operatorstatus.PhaseDegraded
 			}
 			if schemaResult == nil {
-				operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, backendResult.Reason, "Schema reconciliation is blocked by backend readiness")
+				operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, backendResult.Reason, "Schema reconciliation is blocked by backend readiness")
 			} else {
-				operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, schemaResult.Ready, schemaReason(*schemaResult), schemaMessage(*schemaResult))
+				operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, schemaResult.Ready, schemaReason(*schemaResult), schemaMessage(*schemaResult))
 			}
-			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, false, backendResult.Reason, backendResult.Message)
-			setProviderBackendConditions(&tamoss.Status.Conditions, backendResult)
+			operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, false, backendResult.Reason, backendResult.Message)
+			setProviderBackendConditions(&tamoss.Status.Conditions, tamoss.Generation, backendResult)
 			return nil
 		},
 	})
@@ -97,13 +97,13 @@ func (r *TamossReconciler) updateGatewayAPIUnavailableStatus(ctx context.Context
 	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
 		routingResult := gatewayAPIUnavailableResult()
 		tamoss.Status.Phase = operatorstatus.PhaseProgressing
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, routingResult.Reason, "Schema migration status is unchanged while Gateway API routing is unavailable")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
-		setRoutingConditions(&tamoss.Status.Conditions, routingResult)
-		operatorstatus.SetReconciliationActive(&tamoss.Status.Conditions)
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionReady, false, routingResult.Reason, routingResult.Message)
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionProgressing, true, routingResult.Reason, routingResult.Message)
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionDegraded, false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed")
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, routingResult.Reason, "Schema migration status is unchanged while Gateway API routing is unavailable")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
+		setRoutingConditions(&tamoss.Status.Conditions, tamoss.Generation, routingResult)
+		operatorstatus.SetReconciliationActive(&tamoss.Status.Conditions, tamoss.Generation)
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionReady, false, routingResult.Reason, routingResult.Message)
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionProgressing, true, routingResult.Reason, routingResult.Message)
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionDegraded, false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed")
 		return nil
 	}})
 }
@@ -111,28 +111,28 @@ func (r *TamossReconciler) updateGatewayAPIUnavailableStatus(ctx context.Context
 func (r *TamossReconciler) updatePausedStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
 		tamoss.Status.Phase = operatorstatus.PhasePaused
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, operatorstatus.ReasonPaused, "Schema reconciliation is paused")
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, metav1.ConditionUnknown, operatorstatus.ReasonPaused, "Backend checks are paused")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionPaused, true, operatorstatus.ReasonReconciliationPaused, "Reconciliation is paused by spec.paused")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionReady, false, operatorstatus.ReasonPaused, "Reconciliation is paused")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionProgressing, false, operatorstatus.ReasonPaused, "Reconciliation is paused")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionDegraded, false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed")
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, operatorstatus.ReasonPaused, "Schema reconciliation is paused")
+		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionBackendsReady, metav1.ConditionUnknown, operatorstatus.ReasonPaused, "Backend checks are paused")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionPaused, true, operatorstatus.ReasonReconciliationPaused, "Reconciliation is paused by spec.paused")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionReady, false, operatorstatus.ReasonPaused, "Reconciliation is paused")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionProgressing, false, operatorstatus.ReasonPaused, "Reconciliation is paused")
+		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionDegraded, false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed")
 		return nil
 	}})
 }
 
-func setActiveBlockedConditions(conditions *[]metav1.Condition, reason, message, progressingMessage string) {
-	operatorstatus.SetReconciliationActive(conditions)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionReady, false, reason, message)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionProgressing, false, reason, progressingMessage)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionDegraded, true, reason, message)
+func setActiveBlockedConditions(conditions *[]metav1.Condition, generation int64, reason, message, progressingMessage string) {
+	operatorstatus.SetReconciliationActive(conditions, generation)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionReady, false, reason, message)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionProgressing, false, reason, progressingMessage)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionDegraded, true, reason, message)
 }
 
-func setProviderBackendConditions(conditions *[]metav1.Condition, backendResult providerBackendResult) {
-	operatorstatus.SetReconciliationActive(conditions)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionReady, false, backendResult.Reason, backendResult.Message)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionProgressing, !backendResult.Degraded, backendResult.Reason, backendResult.Message)
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionDegraded, backendResult.Degraded, backendResult.Reason, backendResult.Message)
+func setProviderBackendConditions(conditions *[]metav1.Condition, generation int64, backendResult providerBackendResult) {
+	operatorstatus.SetReconciliationActive(conditions, generation)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionReady, false, backendResult.Reason, backendResult.Message)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionProgressing, !backendResult.Degraded, backendResult.Reason, backendResult.Message)
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionDegraded, backendResult.Degraded, backendResult.Reason, backendResult.Message)
 }
 
 func (r *TamossReconciler) patchTamossStatusInput(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, input tamossStatusPatchInput) error {
