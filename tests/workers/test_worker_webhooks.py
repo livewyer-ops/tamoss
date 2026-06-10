@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from tamoss import worker
 from tamoss.application import webhooks as webhooking
-from tamoss.domain.model import utc_now
+from tamoss.domain.model import WebhookDeliveryRecord, utc_now
 
 from tests.support.fixtures import load_json_fixture
 from tests.tams.support import video_flow_payload
@@ -166,15 +167,13 @@ def test_webhook_workers_split_active_leases_without_duplicate_delivery(
     }
     assert len(delivery_ids) == 2
 
-    def hold_webhook_claim(delivery_id: UUID):
-        delivery = use_cases.repository.get_webhook_delivery(delivery_id)
-        assert delivery is not None
+    def hold_webhook_claim(delivery):
         claimed.append((delivery.id, delivery.claimed_by))
         return delivery
 
     monkeypatch.setattr(
         use_cases.webhooks,
-        "process_webhook_delivery",
+        "_process_claimed_delivery",
         hold_webhook_claim,
     )
 
@@ -368,6 +367,48 @@ def test_webhook_worker_retries_transport_failures(
     errored_webhook = use_cases.repository.get_webhook(webhook_id)
     assert errored_webhook is not None
     assert errored_webhook.status == "error"
+
+
+def test_worker_purges_finished_queue_records_past_retention(
+    tamoss_app: FastAPI,
+) -> None:
+    use_cases = route_worker_to_app(tamoss_app)
+    retention_seconds = 7 * 24 * 60 * 60
+    stale = utc_now() - timedelta(seconds=retention_seconds + 60)
+
+    old_done = _delivery_record(status="done", updated=stale)
+    old_dead = _delivery_record(status="dead", updated=stale)
+    old_pending = _delivery_record(status="pending", updated=stale)
+    recent_done = _delivery_record(status="done", updated=utc_now())
+    for delivery in (old_done, old_dead, old_pending, recent_done):
+        use_cases.repository.save_webhook_delivery(delivery)
+
+    purged = worker.purge_finished_queue_records(
+        use_cases,
+        retention_seconds=retention_seconds,
+    )
+
+    assert purged == 2
+    assert use_cases.repository.get_webhook_delivery(old_done.id) is None
+    assert use_cases.repository.get_webhook_delivery(old_dead.id) is None
+    assert use_cases.repository.get_webhook_delivery(old_pending.id) is not None
+    assert use_cases.repository.get_webhook_delivery(recent_done.id) is not None
+
+    assert worker.purge_finished_queue_records(use_cases, retention_seconds=0) == 0
+
+
+def _delivery_record(*, status: str, updated) -> WebhookDeliveryRecord:
+    return WebhookDeliveryRecord(
+        id=uuid4(),
+        webhook_id=uuid4(),
+        webhook_snapshot={},
+        event_type="flows/updated",
+        event_timestamp=updated,
+        payload={},
+        status=status,
+        created=updated,
+        updated=updated,
+    )
 
 
 def _webhook_payload(

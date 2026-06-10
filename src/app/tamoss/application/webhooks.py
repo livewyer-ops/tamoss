@@ -3,13 +3,17 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from urllib.parse import ParseResult, urljoin, urlparse
 from uuid import uuid4
 
 import requests
 from requests import Response
+from requests.adapters import HTTPAdapter
 
 from tamoss.application.contexts.object_get_urls import objects_get_urls
 from tamoss.contract.payloads import (
@@ -77,6 +81,37 @@ _METADATA_HOSTNAMES = {
     "metadata.google.internal",
 }
 _WEBHOOK_CREDENTIAL_REF = "webhook.api_key_value"
+
+# Webhook receivers are contacted continuously (per-segment events), so
+# deliveries share one keepalive-pooled session instead of paying a TCP and
+# TLS handshake per callback. Pool sizes bound concurrent connections per
+# worker process and must cover the delivery concurrency setting.
+_HTTP_POOL_CONNECTIONS = 32
+_HTTP_POOL_MAXSIZE = 128
+
+# Egress validation resolves receiver hostnames repeatedly (twice per
+# delivery attempt); a short TTL cache absorbs that without materially
+# changing rebinding exposure, since the post-validation connect resolves
+# independently either way.
+_DNS_CACHE_TTL_SECONDS = 30.0
+_DNS_CACHE_MAX_ENTRIES = 1024
+_dns_cache_lock = threading.Lock()
+_dns_cache: dict[
+    tuple[str, int],
+    tuple[float, list[ipaddress.IPv4Address | ipaddress.IPv6Address]],
+] = {}
+
+
+@lru_cache(maxsize=1)
+def _http_session() -> requests.Session:
+    session = requests.Session()
+    adapter = HTTPAdapter(
+        pool_connections=_HTTP_POOL_CONNECTIONS,
+        pool_maxsize=_HTTP_POOL_MAXSIZE,
+    )
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 @dataclass(frozen=True)
@@ -194,6 +229,23 @@ def webhook_matches(
     )
 
 
+def active_webhooks_for_event(
+    repository: WebhookEventRepository,
+    event_type: str,
+) -> list[WebhookRecord]:
+    """Active webhooks subscribed to the event type.
+
+    Publishing call sites use this to skip event-context queries and payload
+    construction entirely when nothing would be delivered.
+    """
+    return [
+        webhook
+        for webhook in repository.list_webhooks()
+        if webhook.status in {"created", "started"}
+        and event_type in _list_of_strings(webhook.data.get("events"))
+    ]
+
+
 def publish_webhook_event(
     *,
     repository: WebhookEventRepository,
@@ -203,15 +255,19 @@ def publish_webhook_event(
     source: SourceRecord | None,
     flow_collected_by_ids: list[str],
     source_collected_by_ids: list[str],
+    webhooks: list[WebhookRecord] | None = None,
 ) -> list[WebhookDeliveryRecord]:
     event_timestamp = utc_now()
     flow_ids = [str(flow.id)] if flow is not None else []
     source_ids = [str(source.id)] if source is not None else []
     deliveries: list[WebhookDeliveryRecord] = []
 
-    for webhook in repository.list_webhooks():
-        if webhook.status not in {"created", "started"}:
-            continue
+    candidates = (
+        webhooks
+        if webhooks is not None
+        else active_webhooks_for_event(repository, event_type)
+    )
+    for webhook in candidates:
         if not webhook_matches(
             webhook.data,
             event_type=event_type,
@@ -256,6 +312,9 @@ def _publish_flow_webhook_event(
     flow: FlowRecord,
     event_factory: FlowWebhookEventFactory,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, event_type)
+    if not webhooks:
+        return []
     source, collected_by_ids, source_collected_ids = flow_event_context(
         resource_repository, flow
     )
@@ -267,6 +326,7 @@ def _publish_flow_webhook_event(
         source=source,
         flow_collected_by_ids=collected_by_ids,
         source_collected_by_ids=source_collected_ids,
+        webhooks=webhooks,
     )
 
 
@@ -353,6 +413,9 @@ def publish_source_event(
     event_type: str,
     source: SourceRecord,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, event_type)
+    if not webhooks:
+        return []
     relationship = resource_repository.source_relationships_for([source.id]).get(
         source.id
     )
@@ -372,6 +435,7 @@ def publish_source_event(
         source=source,
         flow_collected_by_ids=[],
         source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        webhooks=webhooks,
     )
 
 
@@ -381,6 +445,9 @@ def publish_source_deleted(
     resource_repository: WebhookResourceRepository,
     source: SourceRecord,
 ) -> list[WebhookDeliveryRecord]:
+    webhooks = active_webhooks_for_event(repository, "sources/deleted")
+    if not webhooks:
+        return []
     return publish_webhook_event(
         repository=repository,
         event_type="sources/deleted",
@@ -389,6 +456,7 @@ def publish_source_deleted(
         source=source,
         flow_collected_by_ids=[],
         source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        webhooks=webhooks,
     )
 
 
@@ -449,15 +517,15 @@ def flow_event_context(
     repository: WebhookResourceRepository,
     flow: FlowRecord,
 ) -> tuple[SourceRecord | None, list[str], list[str]]:
-    flows = repository.list_flows()
     source = (
         repository.get_source(flow.source_id) if flow.source_id is not None else None
     )
-    collected_by_ids = collected_by_by_flow_id(flows).get(flow.id, [])
+    parents = repository.list_flows_collecting([flow.id])
+    collected_by_ids = collected_by_by_flow_id(parents).get(flow.id, [])
     return (
         source,
         collected_by_ids,
-        source_collected_by_ids_from_flows(flows, source),
+        source_collected_by_ids(repository, source),
     )
 
 
@@ -465,26 +533,20 @@ def source_collected_by_ids(
     repository: WebhookResourceRepository,
     source: SourceRecord | None,
 ) -> list[str]:
-    return source_collected_by_ids_from_flows(repository.list_flows(), source)
-
-
-def source_collected_by_ids_from_flows(
-    flows: list[FlowRecord],
-    source: SourceRecord | None,
-) -> list[str]:
     if source is None:
         return []
-    flows_by_id = {flow.id: flow for flow in flows}
+    child_ids = {flow.id for flow in repository.list_flows_by_source(source.id)}
+    if not child_ids:
+        return []
     collected_by: list[str] = []
-    for parent_flow in flows_by_id.values():
+    for parent_flow in repository.list_flows_collecting(child_ids):
         if parent_flow.source_id is None:
             continue
         for item in flow_collection(parent_flow):
             child_flow_id = collection_child_id(item)
             if child_flow_id is None or collection_role(item) is None:
                 continue
-            child_flow = flows_by_id.get(child_flow_id)
-            if child_flow is None or child_flow.source_id != source.id:
+            if child_flow_id not in child_ids:
                 continue
             source_id = str(parent_flow.source_id)
             if source_id not in collected_by:
@@ -509,7 +571,7 @@ def send_webhook_delivery(
 ) -> requests.Response:
     url = str(webhook["url"])
     validate_webhook_url(url, egress_policy=egress_policy)
-    response = requests.post(
+    response = _http_session().post(
         url,
         headers=webhook_headers(webhook),
         json=payload,
@@ -669,6 +731,12 @@ def _resolve_host_addresses(
     hostname: str,
     port: int,
 ) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    cache_key = (hostname, port)
+    now = time.monotonic()
+    with _dns_cache_lock:
+        cached = _dns_cache.get(cache_key)
+        if cached is not None and now - cached[0] < _DNS_CACHE_TTL_SECONDS:
+            return list(cached[1])
     try:
         address_info = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except OSError:
@@ -682,4 +750,8 @@ def _resolve_host_addresses(
         address = _ip_address(str(sockaddr[0]))
         if address is not None and address not in addresses:
             addresses.append(address)
+    with _dns_cache_lock:
+        if len(_dns_cache) >= _DNS_CACHE_MAX_ENTRIES:
+            _dns_cache.clear()
+        _dns_cache[cache_key] = (now, list(addresses))
     return addresses

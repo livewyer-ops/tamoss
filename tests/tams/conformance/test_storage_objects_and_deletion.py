@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -765,6 +765,8 @@ def test_segment_deletion_request_lifecycle(
     assert accepted.json()["delete_flow"] is False
     assert accepted.json()["timerange_to_delete"] == "[0:0_10:0)"
     assert accepted.json()["status"] == "created"
+    # expiry only applies once the request reaches a terminal state.
+    assert "expiry" not in accepted.json()
 
     listed_requests = client.get("/flow-delete-requests")
     assert listed_requests.status_code == 200
@@ -779,6 +781,10 @@ def test_segment_deletion_request_lifecycle(
     completed = client.get(f"/flow-delete-requests/{request_id}")
     assert completed.status_code == 200
     assert completed.json()["status"] == "done"
+    retention_seconds = tamoss_app.state.tamoss_settings.worker_queue_retention_seconds
+    assert datetime.fromisoformat(completed.json()["expiry"]) == datetime.fromisoformat(
+        completed.json()["updated"]
+    ) + timedelta(seconds=retention_seconds)
     remaining = client.get(f"/flows/{flow_id}/segments")
     assert remaining.status_code == 200
     assert [item["object_id"] for item in remaining.json()] == [second_object]

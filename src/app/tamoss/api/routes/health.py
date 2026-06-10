@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import time
+
 import psycopg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from psycopg_pool import PoolTimeout
 
@@ -11,6 +13,7 @@ from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.db.migrations.runner import MultipleAlembicHeads, UnsupportedSchemaRevision
 from tamoss.domain.model import StorageBackend
 from tamoss.errors import ConfigurationError
+from tamoss.settings import Settings
 
 router = APIRouter(tags=["Health"])
 
@@ -43,27 +46,47 @@ def healthz() -> str:
 
 @router.get("/readyz", include_in_schema=False)
 def readyz(
+    request: Request,
     use_cases: TamossUseCases = Depends(get_use_cases),
 ) -> JSONResponse:
+    # Readiness performs several database queries plus an object-store
+    # reachability check on the pool shared with traffic; a short cache stops
+    # probe bursts from amplifying load (and flapping) under pressure.
+    ttl = _readiness_cache_ttl(request)
+    now = time.monotonic()
+    cached = getattr(request.app.state, "tamoss_readyz_cache", None)
+    if ttl > 0 and cached is not None and now - cached[0] < ttl:
+        status_code, content = cached[1], cached[2]
+        return JSONResponse(status_code=status_code, content=content)
+
     repository_check = _repository_readiness(use_cases)
-    storage_backend_check = _storage_backend_readiness(use_cases)
-    object_store_check = _object_store_readiness(use_cases, storage_backend_check)
+    storage_backend_check, storage_backends = _storage_backend_readiness(use_cases)
+    object_store_check = _object_store_readiness(
+        use_cases, storage_backend_check, storage_backends
+    )
     ready = bool(
         repository_check["ok"]
         and storage_backend_check["ok"]
         and object_store_check["ok"]
     )
-    return JSONResponse(
-        status_code=200 if ready else 503,
-        content={
-            "status": "ready" if ready else "not_ready",
-            "checks": {
-                "repository": repository_check,
-                "storage_backends": storage_backend_check,
-                "object_store": object_store_check,
-            },
+    status_code = 200 if ready else 503
+    content = {
+        "status": "ready" if ready else "not_ready",
+        "checks": {
+            "repository": repository_check,
+            "storage_backends": storage_backend_check,
+            "object_store": object_store_check,
         },
-    )
+    }
+    request.app.state.tamoss_readyz_cache = (now, status_code, content)
+    return JSONResponse(status_code=status_code, content=content)
+
+
+def _readiness_cache_ttl(request: Request) -> float:
+    settings = getattr(request.app.state, "tamoss_settings", None)
+    if isinstance(settings, Settings):
+        return float(settings.readiness_cache_ttl_seconds)
+    return 0.0
 
 
 def _repository_readiness(use_cases: TamossUseCases) -> dict[str, object]:
@@ -102,7 +125,9 @@ def _repository_readiness(use_cases: TamossUseCases) -> dict[str, object]:
     }
 
 
-def _storage_backend_readiness(use_cases: TamossUseCases) -> dict[str, object]:
+def _storage_backend_readiness(
+    use_cases: TamossUseCases,
+) -> tuple[dict[str, object], list[StorageBackend]]:
     try:
         storage_backends = use_cases.service.list_storage_backends()
     except _DEPENDENCY_READINESS_ERRORS as exc:
@@ -111,23 +136,25 @@ def _storage_backend_readiness(use_cases: TamossUseCases) -> dict[str, object]:
             "reason": REASON_STORAGE_BACKEND_METADATA_UNAVAILABLE,
             "error": type(exc).__name__,
             "count": 0,
-        }
+        }, []
     if not storage_backends:
         return {
             "ok": False,
             "reason": REASON_STORAGE_BACKEND_METADATA_MISSING,
             "count": 0,
-        }
+        }, []
     return {
         "ok": True,
         "reason": REASON_STORAGE_BACKEND_METADATA_READY,
         "count": len(storage_backends),
         "backendIds": [str(backend.id) for backend in storage_backends],
-    }
+    }, storage_backends
 
 
 def _object_store_readiness(
-    use_cases: TamossUseCases, storage_backend_check: dict[str, object]
+    use_cases: TamossUseCases,
+    storage_backend_check: dict[str, object],
+    storage_backends: list[StorageBackend],
 ) -> dict[str, object]:
     if not storage_backend_check["ok"]:
         return {
@@ -136,7 +163,6 @@ def _object_store_readiness(
             "count": 0,
         }
     try:
-        storage_backends = use_cases.service.list_storage_backends()
         for backend in storage_backends:
             _check_object_store_backend(use_cases, backend)
     except Exception as exc:

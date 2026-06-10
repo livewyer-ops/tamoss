@@ -5,9 +5,11 @@ import signal
 import sys
 import time
 from collections.abc import Callable
+from datetime import timedelta
 
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.bootstrap import create_use_cases
+from tamoss.domain.model import utc_now
 from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings, get_settings
 from tamoss.storage_credentials import validate_credentials_file
 
@@ -98,6 +100,26 @@ def drain_once(
     return delete_processed, webhook_processed
 
 
+def purge_finished_queue_records(
+    use_cases: TamossUseCases,
+    *,
+    retention_seconds: int,
+    limit: int = 1000,
+) -> int:
+    """Drop terminal queue rows older than the retention window.
+
+    Webhook deliveries accumulate one row per event per webhook; without a
+    purge the queue tables grow without bound and their claim scans degrade.
+    """
+    if retention_seconds <= 0:
+        return 0
+    purge = getattr(use_cases.repository, "purge_finished_worker_records", None)
+    if not callable(purge):
+        return 0
+    cutoff = utc_now() - timedelta(seconds=retention_seconds)
+    return int(purge(older_than=cutoff, limit=limit))
+
+
 def _default_worker_id() -> str:
     return get_settings().worker_id
 
@@ -169,6 +191,7 @@ def main(argv: list[str] | None = None) -> None:
     worker_id = settings.worker_id
     enable_delete = settings.worker_enable_delete
     enable_webhook = settings.worker_enable_webhook
+    queue_retention_seconds = settings.worker_queue_retention_seconds
 
     logger.info(
         "starting TAMOSS worker worker_id=%s poll_interval=%s max_requests=%s "
@@ -200,6 +223,12 @@ def main(argv: list[str] | None = None) -> None:
                     )
                 if webhook_processed:
                     logger.info("processed %s webhook delivery(ies)", webhook_processed)
+                purged = purge_finished_queue_records(
+                    use_cases,
+                    retention_seconds=queue_retention_seconds,
+                )
+                if purged:
+                    logger.info("purged %s finished queue record(s)", purged)
             except Exception:
                 logger.exception("worker poll failed; retrying")
             if not processed:

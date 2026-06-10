@@ -222,8 +222,21 @@ class Settings(BaseSettings):
         validation_alias="TAMOSS_DATABASE_POOL_MIN_SIZE",
     )
     database_pool_max_size: int = Field(
-        default=10,
+        default=20,
         validation_alias="TAMOSS_DATABASE_POOL_MAX_SIZE",
+    )
+    # Sync route handlers and threaded auth share the anyio thread pool, so
+    # this is the per-process request concurrency ceiling. Size it together
+    # with database_pool_max_size and PostgreSQL max_connections.
+    api_thread_pool_tokens: int = Field(
+        default=80,
+        ge=8,
+        validation_alias="TAMOSS_API_THREAD_POOL_TOKENS",
+    )
+    readiness_cache_ttl_seconds: float = Field(
+        default=2.0,
+        ge=0.0,
+        validation_alias="TAMOSS_READINESS_CACHE_TTL_SECONDS",
     )
     min_object_timeout: str = Field(
         default="300:0",
@@ -295,6 +308,18 @@ class Settings(BaseSettings):
     webhook_max_attempts: int = Field(
         default=5,
         validation_alias="TAMOSS_WORKER_MAX_ATTEMPTS",
+    )
+    webhook_delivery_concurrency: int = Field(
+        default=8,
+        ge=1,
+        validation_alias="TAMOSS_WEBHOOK_DELIVERY_CONCURRENCY",
+    )
+    # Retention for terminal queue rows (done webhook deliveries, delete
+    # requests, cleanups, copies); 0 disables purging.
+    worker_queue_retention_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        ge=0,
+        validation_alias="TAMOSS_WORKER_QUEUE_RETENTION_SECONDS",
     )
     webhook_allow_private_targets: bool = Field(
         default=False,

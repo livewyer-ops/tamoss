@@ -163,6 +163,25 @@ class FakeTamossRepository:
         with self._lock:
             return list(self._flows.values())
 
+    def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
+        with self._lock:
+            return [
+                flow for flow in self._flows.values() if flow.source_id == source_id
+            ]
+
+    def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]:
+        requested_ids = set(flow_ids)
+        with self._lock:
+            flows = list(self._flows.values())
+        return [
+            flow
+            for flow in flows
+            if any(
+                flow_collections.collection_child_id(item) in requested_ids
+                for item in flow_collections.flow_collection(flow)
+            )
+        ]
+
     def list_flows_page(
         self,
         *,
@@ -365,6 +384,40 @@ class FakeTamossRepository:
                 return False
             self._objects[media_object.id] = media_object
             return True
+
+    def purge_finished_worker_records(self, *, older_than: datetime, limit: int) -> int:
+        purged = 0
+        with self._lock:
+            stores: tuple[tuple[dict, set[str]], ...] = (
+                (self._webhook_deliveries, {"done", "dead"}),
+                (self._delete_requests, {"done"}),
+                (self._object_cleanups, {"done"}),
+                (self._object_copies, {"done"}),
+            )
+            for store, statuses in stores:
+                for key in list(store.keys()):
+                    if purged >= limit:
+                        return purged
+                    record = store[key]
+                    updated = getattr(record, "updated", None)
+                    if (
+                        record.status in statuses
+                        and updated is not None
+                        and updated < older_than
+                    ):
+                        del store[key]
+                        purged += 1
+        return purged
+
+    def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
+        created: set[str] = set()
+        with self._lock:
+            for media_object in media_objects:
+                if media_object.id in self._objects:
+                    continue
+                self._objects[media_object.id] = media_object
+                created.add(media_object.id)
+        return created
 
     def delete_object(self, object_id: str) -> None:
         with self._lock:

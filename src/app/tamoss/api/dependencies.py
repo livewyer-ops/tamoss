@@ -14,6 +14,7 @@ from tamoss.application.contexts.storage import StorageUseCases
 from tamoss.application.contexts.webhooks import WebhookUseCases
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.errors import BadRequest
+from tamoss.settings import Settings
 
 
 async def require_json_body(request: Request) -> None:
@@ -25,6 +26,10 @@ async def require_json_body(request: Request) -> None:
 
 def get_use_cases(request: Request) -> TamossUseCases:
     return request.app.state.tamoss_use_cases
+
+
+def get_app_settings(request: Request) -> Settings:
+    return request.app.state.tamoss_settings
 
 
 def get_service_use_cases(request: Request) -> ServiceUseCases:

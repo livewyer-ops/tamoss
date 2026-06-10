@@ -73,3 +73,6 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 .history/
+
+# Local Claude working notes (not for publication)
+claudedocs/

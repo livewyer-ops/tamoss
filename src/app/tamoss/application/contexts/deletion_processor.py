@@ -133,7 +133,7 @@ def delete_orphan_source(
 ) -> None:
     if source_id is None:
         return
-    if any(flow.source_id == source_id for flow in repository.list_flows()):
+    if repository.list_flows_by_source(source_id):
         return
     source = repository.get_source(source_id)
     repository.delete_source(source_id)

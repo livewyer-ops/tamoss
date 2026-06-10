@@ -62,49 +62,56 @@ class StorageUseCases:
         for object_id in requested_object_ids:
             self._validate_storage_object_id(object_id)
 
-        allocations: list[dict[str, object]] = []
         with self.repository.unit_of_work():
             object_ids = requested_object_ids
             if request.get("object_ids") is None:
                 object_ids = []
                 while len(object_ids) < (limit or 1):
-                    object_id = str(uuid4())
-                    if self._reserve_allocated_object(
-                        object_id=object_id,
-                        backend=backend,
-                        flow_id=flow_id,
-                    ):
-                        object_ids.append(object_id)
-            else:
-                for object_id in object_ids:
-                    if not self._reserve_allocated_object(
-                        object_id=object_id,
-                        backend=backend,
-                        flow_id=flow_id,
-                    ):
-                        raise BadRequest(
-                            "One or more supplied object_ids already exist."
-                        )
-
-            allocations.extend(
-                [
-                    {
-                        "object_id": object_id,
-                        "storage_id": str(backend.id),
-                        "put_url": self.object_storage.build_put_request(
+                    batch_ids = [
+                        str(uuid4()) for _ in range((limit or 1) - len(object_ids))
+                    ]
+                    created = self.repository.create_objects(
+                        self._allocated_object(
                             object_id=object_id,
-                            flow_container=flow.container,
                             backend=backend,
-                        ),
-                    }
+                            flow_id=flow_id,
+                        )
+                        for object_id in batch_ids
+                    )
+                    object_ids.extend(
+                        object_id for object_id in batch_ids if object_id in created
+                    )
+            else:
+                created = self.repository.create_objects(
+                    self._allocated_object(
+                        object_id=object_id,
+                        backend=backend,
+                        flow_id=flow_id,
+                    )
                     for object_id in object_ids
-                ]
-            )
-        return allocations
+                )
+                if len(created) != len(object_ids):
+                    raise BadRequest("One or more supplied object_ids already exist.")
 
-    def _reserve_allocated_object(
+        # Presigning is deliberately outside the transaction: the reservation
+        # rows do not depend on the URL strings, and a failure here leaves
+        # unallocated reservations to the stale-allocation cleanup worker.
+        return [
+            {
+                "object_id": object_id,
+                "storage_id": str(backend.id),
+                "put_url": self.object_storage.build_put_request(
+                    object_id=object_id,
+                    flow_container=flow.container,
+                    backend=backend,
+                ),
+            }
+            for object_id in object_ids
+        ]
+
+    def _allocated_object(
         self, *, object_id: str, backend: StorageBackend, flow_id: UUID
-    ) -> bool:
+    ) -> MediaObjectRecord:
         self._validate_storage_object_id(object_id)
         media_object = MediaObjectRecord(id=object_id, allocated_by_flow=flow_id)
         media_object.instances.append(
@@ -115,7 +122,7 @@ class StorageUseCases:
                 controlled=True,
             )
         )
-        return self.repository.create_object(media_object)
+        return media_object
 
     def _validate_storage_object_id(self, object_id: str) -> None:
         if (

@@ -26,6 +26,7 @@ dependencies = [
     "requests>=2.34.2",
     "pyjwt[crypto]>=2.13.0",
     "pydantic-settings>=2.7.0",
+    "orjson>=3.11.9",
 ]
 
 [project.scripts]

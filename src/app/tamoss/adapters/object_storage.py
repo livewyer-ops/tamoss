@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from threading import RLock
 from typing import Any
@@ -77,37 +76,17 @@ class ConfiguredObjectStorage:
             existing.include_presigned = (
                 existing.include_presigned or request.include_presigned
             )
-        if not unique_requests:
-            return {}
-        if len(unique_requests) == 1:
-            key, request = next(iter(unique_requests.items()))
-            return {
-                key: self._build_get_urls_for_resolved_backend(
-                    object_id=key[1],
-                    backend=request.backend,
-                    include_direct=request.include_direct,
-                    include_presigned=request.include_presigned,
-                )
-            }
-
-        max_workers = min(
-            max(1, self._settings.s3_max_pool_connections), len(unique_requests)
-        )
-        results: dict[ObjectGetUrlBatchKey, list[dict[str, object]]] = {}
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    self._build_get_urls_for_resolved_backend,
-                    object_id=key[1],
-                    backend=request.backend,
-                    include_direct=request.include_direct,
-                    include_presigned=request.include_presigned,
-                ): key
-                for key, request in unique_requests.items()
-            }
-            for future in as_completed(futures):
-                results[futures[future]] = future.result()
-        return results
+        # Presigning is local CPU work (request signing, no network), so a
+        # plain loop beats spawning a thread pool per call under the GIL.
+        return {
+            key: self._build_get_urls_for_resolved_backend(
+                object_id=key[1],
+                backend=request.backend,
+                include_direct=request.include_direct,
+                include_presigned=request.include_presigned,
+            )
+            for key, request in unique_requests.items()
+        }
 
     def _build_get_urls_for_resolved_backend(
         self,
