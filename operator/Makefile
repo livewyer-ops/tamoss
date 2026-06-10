@@ -69,18 +69,23 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: test
-test: manifests generate fmt vet envtest ## Run tests.
-	assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
-	case "$$assets" in \
-		/*) kubebuilder_assets="$$assets" ;; \
-		*) kubebuilder_assets="$$(pwd)/$$assets" ;; \
-	esac; \
-	KUBEBUILDER_ASSETS="$$kubebuilder_assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+# Resolve envtest assets and run the Go test suite; shared by test and test-fast.
+define run-envtest-suite
+assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
+case "$$assets" in \
+	/*) kubebuilder_assets="$$assets" ;; \
+	*) kubebuilder_assets="$$(pwd)/$$assets" ;; \
+esac; \
+KUBEBUILDER_ASSETS="$$kubebuilder_assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+endef
 
-.PHONY: test-e2e
-test-e2e: ## Run the operator chainsaw e2e suite against the current Kubernetes context.
-	cd .. && task operator:e2e:chainsaw
+.PHONY: test
+test: manifests generate fmt vet envtest ## Run tests (full gate: codegen, fmt, vet, envtest suite).
+	$(run-envtest-suite)
+
+.PHONY: test-fast
+test-fast: envtest ## Run the envtest suite only (no codegen/fmt/vet); inner loop helper, run `make test` before pushing.
+	$(run-envtest-suite)
 
 .PHONY: lint
 lint: golangci-lint deadcode ## Run Go linters and dead-code checks.
@@ -99,6 +104,11 @@ build: manifests generate fmt vet ## Build manager binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run -ldflags "$(GO_LDFLAGS)" ./cmd
+
+.PHONY: install-manifest
+install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.
+	mkdir -p ../deploy/operator
+	$(KUSTOMIZE) build config/default > ../deploy/operator/install.yaml
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
