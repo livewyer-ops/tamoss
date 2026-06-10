@@ -9,11 +9,19 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
+import orjson
 import psycopg
+from psycopg.types.json import set_json_dumps, set_json_loads
 from psycopg_pool import ConnectionPool
 
 from tamoss.db.migrations.runner import MultipleAlembicHeads
 from tamoss.domain.model import StorageBackend
+
+# Every row in the hot tables carries a JSONB record; orjson cuts the
+# per-row encode/decode CPU severalfold over the stdlib codec. Records are
+# JSON-native by construction (mappers stringify UUIDs and datetimes).
+set_json_dumps(orjson.dumps)
+set_json_loads(orjson.loads)
 
 # The database URL provider re-reads environment variables; checking it on
 # every connection checkout is pure hot-path overhead, so rotations are
