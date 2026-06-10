@@ -4,7 +4,7 @@ metadata:
   name: out-of-band-edits-are-reverted
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: standard
+    test.tamoss.io/tier: smoke
     test.tamoss.io/domain: instance
     test.tamoss.io/lifecycle: ephemeral
     test.tamoss.io/provider: mixed

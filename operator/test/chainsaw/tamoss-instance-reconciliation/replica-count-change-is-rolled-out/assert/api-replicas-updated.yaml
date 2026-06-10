@@ -10,3 +10,6 @@ kind: Tamoss
 metadata:
   name: tamoss
 (status.replicas.api.desired): 2
+# The spec patch bumps metadata.generation, so equality proves
+# status.observedGeneration advanced with the update.
+(status.observedGeneration == metadata.generation): true
