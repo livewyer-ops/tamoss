@@ -3,6 +3,7 @@ from __future__ import annotations
 # mypy: disable-error-code=attr-defined
 # Focused PostgreSQL stores are invoked through the repository facade and share
 # one connection and transaction boundary.
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -13,6 +14,11 @@ from psycopg_pool import ConnectionPool
 
 from tamoss.db.migrations.runner import MultipleAlembicHeads
 from tamoss.domain.model import StorageBackend
+
+# The database URL provider re-reads environment variables; checking it on
+# every connection checkout is pure hot-path overhead, so rotations are
+# detected at most this often.
+_POOL_URL_RECHECK_SECONDS = 5.0
 
 
 class PostgresConnectionMixin:
@@ -38,6 +44,7 @@ class PostgresConnectionMixin:
         self._owns_pool = False
         self._pool_min_size = pool_min_size
         self._pool_max_size = pool_max_size
+        self._pool_url_checked_at: float | None = None
         self._configured_storage_backend = storage_backend
         self._transaction_connection: ContextVar[Any | None] = ContextVar(
             "tamoss_postgres_transaction_connection",
@@ -127,6 +134,13 @@ class PostgresConnectionMixin:
     def _ensure_pool_current(self) -> None:
         if not self._owns_pool or self._database_url_provider is None:
             return
+        now = time.monotonic()
+        if (
+            self._pool_url_checked_at is not None
+            and now - self._pool_url_checked_at < _POOL_URL_RECHECK_SECONDS
+        ):
+            return
+        self._pool_url_checked_at = now
         current = self._database_url_provider()
         if current is None or current == self._database_url:
             return

@@ -22,7 +22,8 @@ ENV HOME=/tmp \
   UV_PYTHON_DOWNLOADS=never \
   TAMOSS_VERSION=${VERSION} \
   TAMOSS_SERVICE_VERSION=${VERSION} \
-  TAMOSS_TAMS_API_VERSION=${TAMS_API_VERSION}
+  TAMOSS_TAMS_API_VERSION=${TAMS_API_VERSION} \
+  UVICORN_WORKERS=1
 
 COPY --chown=1001:1001 src/app ./app
 
@@ -31,4 +32,6 @@ RUN --mount=type=bind,source=src/pyproject.toml,target=/app/pyproject.toml \
   --mount=type=bind,source=src/README.md,target=/app/README.md \
   uv sync --frozen --no-dev
 
-CMD ["uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Worker count is deployment-tunable via UVICORN_WORKERS; exec preserves
+# signal handling for graceful shutdown.
+CMD ["/bin/sh", "-c", "exec uv run uvicorn tamoss.app:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*' --workers \"${UVICORN_WORKERS:-1}\""]

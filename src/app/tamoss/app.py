@@ -53,6 +53,12 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        # Sync handlers and threaded auth both consume this limiter; the
+        # anyio default of 40 tokens otherwise caps request concurrency
+        # below the configured database pool headroom.
+        anyio.to_thread.current_default_thread_limiter().total_tokens = (
+            resolved_settings.api_thread_pool_tokens
+        )
         try:
             await _warm_runtime_auth(resolved_settings)
             yield
@@ -100,11 +106,17 @@ def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
         if _auth_is_skipped(request):
             return await call_next(request)
         try:
-            identity = await anyio.to_thread.run_sync(
-                authenticate_request,
-                request,
-                settings,
-            )
+            if _request_carries_credentials(request, settings):
+                identity = await anyio.to_thread.run_sync(
+                    authenticate_request,
+                    request,
+                    settings,
+                )
+            else:
+                # Without credentials authentication is a pure in-memory
+                # decision (anonymous or 401), so the thread-pool dispatch
+                # would only burn a limiter token.
+                identity = authenticate_request(request, settings)
             authorize_request(request, identity, settings)
         except TamossError as exc:
             headers = (
@@ -132,6 +144,14 @@ def _auth_is_skipped(request: Request) -> bool:
         "/healthz",
         "/readyz",
     }
+
+
+def _request_carries_credentials(request: Request, settings: Settings) -> bool:
+    if settings.trust_forward_auth_headers:
+        return True
+    return bool(
+        request.headers.get("authorization") or request.query_params.get("access_token")
+    )
 
 
 def _install_openapi_schema(application: FastAPI, settings: Settings) -> None:
