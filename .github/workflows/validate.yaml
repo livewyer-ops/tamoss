@@ -226,8 +226,13 @@ jobs:
           retention-days: 30
 
       - name: Audit Python dependencies (pip-audit)
+        # Audit the locked dependency set through the OSV service: auditing
+        # the installed environment queries PyPI's JSON API per package
+        # (including the private project name), which fails the job whenever
+        # that API wobbles.
         run: |
-          uv run --project src --with pip-audit pip-audit
+          uv export --project src --frozen --no-emit-project --output-file reports/requirements-audit.txt
+          uv run --project src --with pip-audit pip-audit -s osv --no-deps -r reports/requirements-audit.txt
 
       - name: Audit frontend dependencies (npm audit)
         run: |
