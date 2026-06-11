@@ -41,6 +41,17 @@
           "8.0.0-oss3"
         ]
       }
+    },
+    {
+      "version": "8.1.0-oss2",
+      "tamsAPI": "8.1",
+      "schemaRevision": "8.1.0-oss2",
+      "upgrade": {
+        "class": "SchemaAndAPI",
+        "from": [
+          "8.1.0-oss1"
+        ]
+      }
     }
   ]
 }
