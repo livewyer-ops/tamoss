@@ -8,7 +8,9 @@ VERSION ?= 0.0.1
 # Image URL to use all building/pushing image targets
 IMG ?= livewyer/tamoss-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.29.x
+# Keep this on the same Kubernetes minor as the Kind node image used by the
+# chainsaw suite (kind v0.32.0 defaults to kindest/node v1.36.1).
+ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
 TAMS_API_VERSION ?= 8.1
@@ -67,18 +69,23 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: test
-test: manifests generate fmt vet envtest ## Run tests.
-	assets="$$($(ENVTEST) use --use-deprecated-gcs=false $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
-	case "$$assets" in \
-		/*) kubebuilder_assets="$$assets" ;; \
-		*) kubebuilder_assets="$$(pwd)/$$assets" ;; \
-	esac; \
-	KUBEBUILDER_ASSETS="$$kubebuilder_assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+# Resolve envtest assets and run the Go test suite; shared by test and test-fast.
+define run-envtest-suite
+assets="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"; \
+case "$$assets" in \
+	/*) kubebuilder_assets="$$assets" ;; \
+	*) kubebuilder_assets="$$(pwd)/$$assets" ;; \
+esac; \
+KUBEBUILDER_ASSETS="$$kubebuilder_assets" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+endef
 
-.PHONY: test-e2e
-test-e2e: ## Run the operator chainsaw e2e suite against the current Kubernetes context.
-	cd .. && task operator:e2e:chainsaw
+.PHONY: test
+test: manifests generate fmt vet envtest ## Run tests (full gate: codegen, fmt, vet, envtest suite).
+	$(run-envtest-suite)
+
+.PHONY: test-fast
+test-fast: envtest ## Run the envtest suite only (no codegen/fmt/vet); inner loop helper, run `make test` before pushing.
+	$(run-envtest-suite)
 
 .PHONY: lint
 lint: golangci-lint deadcode ## Run Go linters and dead-code checks.
@@ -97,6 +104,11 @@ build: manifests generate fmt vet ## Build manager binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run -ldflags "$(GO_LDFLAGS)" ./cmd
+
+.PHONY: install-manifest
+install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.
+	mkdir -p ../deploy/operator
+	$(KUSTOMIZE) build config/default > ../deploy/operator/install.yaml
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
@@ -123,11 +135,11 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 DEADCODE ?= $(LOCALBIN)/deadcode-$(GO_TOOLS_VERSION)
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.3.0
-CONTROLLER_TOOLS_VERSION ?= v0.14.0
-ENVTEST_VERSION ?= release-0.17
-GOLANGCI_LINT_VERSION ?= v1.64.8
-GO_TOOLS_VERSION ?= v0.30.0
+KUSTOMIZE_VERSION ?= v5.8.1
+CONTROLLER_TOOLS_VERSION ?= v0.21.0
+ENVTEST_VERSION ?= release-0.24
+GOLANGCI_LINT_VERSION ?= v2.12.2
+GO_TOOLS_VERSION ?= v0.44.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -146,13 +158,17 @@ $(ENVTEST): $(LOCALBIN)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
+# Build golangci-lint with the module toolchain so it can analyse the Go
+# language version targeted by go.mod (its own go.mod pins an older toolchain).
+$(GOLANGCI_LINT): export GOTOOLCHAIN = $(shell awk '/^toolchain /{print $$2}' go.mod)
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
 
 .PHONY: deadcode
 deadcode: $(DEADCODE) ## Run Go dead-code analysis.
 	$(DEADCODE) ./...
 
+$(DEADCODE): export GOTOOLCHAIN = $(shell awk '/^toolchain /{print $$2}' go.mod)
 $(DEADCODE): $(LOCALBIN)
 	$(call go-install-tool,$(DEADCODE),golang.org/x/tools/cmd/deadcode,$(GO_TOOLS_VERSION))
 

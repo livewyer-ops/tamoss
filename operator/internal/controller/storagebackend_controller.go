@@ -41,7 +41,7 @@ type StorageBackendReconciler struct {
 	Client          client.Client
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
-	WatchNamespaces map[string]struct{}
+	WatchNamespaces WatchNamespaceSet
 	WarningEvents   operatorstatus.WarningEventDeduper
 	HTTPClient      *http.Client
 	BucketClient    rustfs.BucketClient
@@ -113,11 +113,11 @@ func (r *StorageBackendReconciler) loadStorageBackend(ctx context.Context, key c
 }
 
 func (r *StorageBackendReconciler) prepareStorageBackendLifecycle(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend) (reconcileControl, error) {
-	if !r.namespaceAllowed(storageBackend.Namespace) {
+	if !r.WatchNamespaces.Allows(storageBackend.Namespace) {
 		log.FromContext(ctx).Info("ignoring StorageBackend outside configured watch scope", "namespace", storageBackend.Namespace)
 		return stopReconcileNow(), nil
 	}
-	if !storageBackend.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !storageBackend.DeletionTimestamp.IsZero() {
 		result, err := r.finalizeStorageBackend(ctx, storageBackend)
 		return stopReconcile(result), err
 	}
@@ -126,7 +126,10 @@ func (r *StorageBackendReconciler) prepareStorageBackendLifecycle(ctx context.Co
 		if err := r.Client.Patch(ctx, storageBackend, client.MergeFrom(original)); err != nil {
 			return stopReconcileNow(), err
 		}
-		return stopReconcile(ctrl.Result{Requeue: true}), nil
+		// The finalizer patch emits an Update event whose finalizer diff
+		// passes storageBackendPrimaryPredicate, so the controller is
+		// re-enqueued without the deprecated Result.Requeue flag.
+		return stopReconcileNow(), nil
 	}
 	return continueReconcile(), nil
 }
@@ -135,29 +138,19 @@ func (r *StorageBackendReconciler) resolveStorageBackendSpec(ctx context.Context
 	spec := storageBackend.Spec
 	spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
 	if spec.Provider != tamossv1alpha1.StorageBackendProviderRustFS && !spec.IsExternalObjectStore() {
-		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-			Ready:         false,
-			BucketReady:   false,
-			DatabaseReady: false,
-			Reason:        operatorstatus.ReasonUnsupportedProvider,
-			Message:       fmt.Sprintf("StorageBackend provider %q is not supported", spec.Provider),
-			Degraded:      true,
-			BackendID:     spec.ID,
-			BucketName:    spec.BucketName,
-		})
+		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+			Reason:   operatorstatus.ReasonUnsupportedProvider,
+			Message:  fmt.Sprintf("StorageBackend provider %q is not supported", spec.Provider),
+			Degraded: true,
+		}))
 		return tamossv1alpha1.StorageBackendSpec{}, stopReconcile(result), err
 	}
 	if missing := missingStorageBackendFields(spec); len(missing) > 0 {
-		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-			Ready:         false,
-			BucketReady:   false,
-			DatabaseReady: false,
-			Reason:        operatorstatus.ReasonMissingProviderConfiguration,
-			Message:       fmt.Sprintf("Required StorageBackend fields are missing: %s", strings.Join(missing, ", ")),
-			Degraded:      true,
-			BackendID:     spec.ID,
-			BucketName:    spec.BucketName,
-		})
+		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+			Reason:   operatorstatus.ReasonMissingProviderConfiguration,
+			Message:  fmt.Sprintf("Required StorageBackend fields are missing: %s", strings.Join(missing, ", ")),
+			Degraded: true,
+		}))
 		return tamossv1alpha1.StorageBackendSpec{}, stopReconcile(result), err
 	}
 	return spec, continueReconcile(), nil
@@ -168,15 +161,10 @@ func (r *StorageBackendReconciler) loadStorageBackendTamossStage(ctx context.Con
 	tamossKey := types.NamespacedName{Name: spec.TamossRef.Name, Namespace: storageBackend.Namespace}
 	if err := r.Client.Get(ctx, tamossKey, tamoss); err != nil {
 		if apierrors.IsNotFound(err) {
-			result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-				Ready:         false,
-				BucketReady:   false,
-				DatabaseReady: false,
-				Reason:        operatorstatus.ReasonTamossNotFound,
-				Message:       fmt.Sprintf("Referenced Tamoss %s was not found", tamossKey.Name),
-				BackendID:     spec.ID,
-				BucketName:    spec.BucketName,
-			})
+			result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+				Reason:  operatorstatus.ReasonTamossNotFound,
+				Message: fmt.Sprintf("Referenced Tamoss %s was not found", tamossKey.Name),
+			}))
 			return nil, stopReconcile(result), statusErr
 		}
 		return nil, stopReconcileNow(), err
@@ -197,15 +185,10 @@ func (r *StorageBackendReconciler) reconcileStorageBackendCredentialsStage(ctx c
 	if err := r.reconcileRuntimeCredentialsSecret(ctx, tamoss); err != nil {
 		return stopReconcileNow(), err
 	}
-	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-		Ready:         false,
-		BucketReady:   false,
-		DatabaseReady: false,
-		Reason:        reason,
-		Message:       message,
-		BackendID:     spec.ID,
-		BucketName:    spec.BucketName,
-	})
+	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+		Reason:  reason,
+		Message: message,
+	}))
 	return stopReconcile(result), err
 }
 
@@ -217,30 +200,16 @@ func (r *StorageBackendReconciler) reconcileStorageBackendBucketStage(ctx contex
 	if bucketResult.Ready {
 		return continueReconcile(), nil
 	}
-	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-		Ready:         false,
-		BucketReady:   false,
-		DatabaseReady: false,
-		Reason:        bucketResult.Reason,
-		Message:       bucketResult.Message,
-		Degraded:      bucketResult.Degraded,
-		BackendID:     spec.ID,
-		BucketName:    spec.BucketName,
-	})
+	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, bucketResult))
 	return stopReconcile(result), err
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendDatabaseStage(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) (reconcileControl, error) {
 	if !r.schemaStateReady(ctx, tamoss) {
-		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-			Ready:         false,
-			BucketReady:   true,
-			DatabaseReady: false,
-			Reason:        operatorstatus.ReasonSchemaNotReady,
-			Message:       fmt.Sprintf("Tamoss %s schema state is not ready", tamoss.Name),
-			BackendID:     spec.ID,
-			BucketName:    spec.BucketName,
-		})
+		result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, true, storageBackendReconcileResult{
+			Reason:  operatorstatus.ReasonSchemaNotReady,
+			Message: fmt.Sprintf("Tamoss %s schema state is not ready", tamoss.Name),
+		}))
 		return stopReconcile(result), err
 	}
 	dbResult, err := r.reconcileStorageBackendDatabase(ctx, storageBackend, tamoss, spec)
@@ -250,23 +219,6 @@ func (r *StorageBackendReconciler) reconcileStorageBackendDatabaseStage(ctx cont
 	if dbResult.Ready {
 		return continueReconcile(), nil
 	}
-	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
-		Ready:         false,
-		BucketReady:   true,
-		DatabaseReady: false,
-		Reason:        dbResult.Reason,
-		Message:       dbResult.Message,
-		Degraded:      dbResult.Degraded,
-		BackendID:     spec.ID,
-		BucketName:    spec.BucketName,
-	})
+	result, err := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, true, dbResult))
 	return stopReconcile(result), err
-}
-
-func (r *StorageBackendReconciler) namespaceAllowed(namespace string) bool {
-	if len(r.WatchNamespaces) == 0 {
-		return true
-	}
-	_, ok := r.WatchNamespaces[namespace]
-	return ok
 }

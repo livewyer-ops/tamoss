@@ -84,15 +84,19 @@ func (r *TamossReconciler) deleteAuthentikProxyOutpost(ctx context.Context, tamo
 }
 
 func (r *TamossReconciler) updateIdentityBlockedStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, reason, message string) error {
-	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
-		tamoss.Status.Phase = operatorstatus.PhaseDegraded
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, reason, "Schema reconciliation is blocked by identity configuration")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted, false, reason, message)
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionIdentityReady, false, reason, message)
-		setActiveBlockedConditions(&tamoss.Status.Conditions, reason, message, "Reconciliation is blocked by identity configuration")
-		return nil
-	}})
+	identityBlueprint := boolCondition(false, reason, message)
+	identity := boolCondition(false, reason, message)
+	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
+		Phase:       operatorstatus.PhaseDegraded,
+		SchemaState: unknownCondition(reason, "Schema reconciliation is blocked by identity configuration"),
+		// The identity gates only run once the backend stages have passed.
+		Backends:          &statusConditionValue{Status: metav1.ConditionTrue, Reason: operatorstatus.ReasonBackendReferencesConfigured, Message: "Backend secret references are configured"},
+		IdentityBlueprint: &identityBlueprint,
+		Identity:          &identity,
+		Ready:             boolCondition(false, reason, message),
+		Progressing:       boolCondition(false, reason, "Reconciliation is blocked by identity configuration"),
+		Degraded:          boolCondition(true, reason, message),
+	})
 }
 
 func (r *TamossReconciler) identityResult(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) identityReconcileResult {

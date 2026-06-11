@@ -54,7 +54,7 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 	if err := r.deleteStorageBackendCleanupObjects(ctx, storageBackend); err != nil {
 		return ctrl.Result{}, err
 	}
-	if found && tamoss.ObjectMeta.DeletionTimestamp.IsZero() {
+	if found && tamoss.DeletionTimestamp.IsZero() {
 		if err := r.reconcileRuntimeCredentialsSecret(ctx, tamoss); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -102,7 +102,7 @@ func (r *StorageBackendReconciler) reconcileStorageBackendCleanupJob(ctx context
 		if !apierrors.IsNotFound(err) {
 			return storageBackendReconcileResult{}, err
 		}
-		if _, err := applyCanonicalObject(ctx, r.Client, desiredJob); err != nil {
+		if _, err := applyManagedObject(ctx, r.Client, desiredJob); err != nil {
 			return storageBackendReconcileResult{}, err
 		}
 		return storageBackendReconcileResult{Ready: false, Reason: reasonPrefix + "InProgress", Message: messagePrefix + " job was launched"}, nil

@@ -100,7 +100,11 @@ func main() {
 		setupLog.Error(err, "unable to create controllers")
 		os.Exit(1)
 	}
-	registerDeleteProtectionWebhooks(mgr)
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		registerDeleteProtectionWebhooks(mgr)
+	} else {
+		setupLog.Info("ENABLE_WEBHOOKS=false; skipping delete-protection webhook registration")
+	}
 
 	if err := addHealthChecks(mgr); err != nil {
 		setupLog.Error(err, "unable to set up health checks")

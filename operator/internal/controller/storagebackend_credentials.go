@@ -67,7 +67,7 @@ func storageBackendRuntimeCredentials(ctx context.Context, c client.Client, tamo
 	credentials := make([]runtimeStorageBackendCredentials, 0, len(list.Items))
 	for i := range list.Items {
 		storageBackend := list.Items[i]
-		if !storageBackend.ObjectMeta.DeletionTimestamp.IsZero() {
+		if !storageBackend.DeletionTimestamp.IsZero() {
 			continue
 		}
 		spec := storageBackend.Spec
@@ -101,7 +101,7 @@ func storageBackendRuntimeCredentials(ctx context.Context, c client.Client, tamo
 }
 
 func storageBackendRuntimeCredentialsLabels(tamoss *tamossv1alpha1.Tamoss) map[string]string {
-	appName := "tamoss"
+	appName := tamossAppName
 	if tamoss.Spec.NameOverride != "" {
 		appName = tamoss.Spec.NameOverride
 	}
@@ -121,7 +121,7 @@ func (r *StorageBackendReconciler) reconcileRuntimeCredentialsSecret(ctx context
 	if err := controllerutil.SetControllerReference(tamoss, secret, r.Scheme); err != nil {
 		return err
 	}
-	_, err = applyCanonicalObject(ctx, r.Client, secret)
+	_, err = applyManagedObject(ctx, r.Client, secret)
 	return err
 }
 

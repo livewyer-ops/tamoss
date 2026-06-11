@@ -26,13 +26,24 @@ func (r *TamossReconciler) reconcileHTTPRouteInputGate(ctx context.Context, tamo
 }
 
 func (r *TamossReconciler) updateHTTPRouteInputStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, message string) error {
-	return r.patchTamossStatusInput(ctx, tamoss, tamossStatusPatchInput{Apply: func(tamoss *tamossv1alpha1.Tamoss) error {
-		tamoss.Status.Phase = operatorstatus.PhaseDegraded
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, "Schema reconciliation is blocked by routing configuration")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionBackendsReady, true, operatorstatus.ReasonBackendReferencesConfigured, "Backend secret references are configured")
-		operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
-		operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, operatorstatus.ConditionHostnamesReady, metav1.ConditionUnknown, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message)
-		setActiveBlockedConditions(&tamoss.Status.Conditions, operatorstatus.ReasonUnsupportedHTTPRouteFilter, message, "Reconciliation is blocked by routing configuration")
-		return nil
-	}})
+	reason := operatorstatus.ReasonUnsupportedHTTPRouteFilter
+	routing := routingStatusResult{
+		Ready:           false,
+		Reason:          reason,
+		Message:         message,
+		HostnameStatus:  metav1.ConditionUnknown,
+		HostnameReason:  reason,
+		HostnameMessage: message,
+	}
+	// This gate runs before any backend stage, so the backend state for this
+	// pass is whatever was last observed.
+	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
+		Phase:            operatorstatus.PhaseDegraded,
+		SchemaState:      unknownCondition(reason, "Schema reconciliation is blocked by routing configuration"),
+		BackendsFallback: unknownCondition(reason, "Backend state has not been evaluated while routing configuration is invalid"),
+		Routing:          &routing,
+		Ready:            boolCondition(false, reason, message),
+		Progressing:      boolCondition(false, reason, "Reconciliation is blocked by routing configuration"),
+		Degraded:         boolCondition(true, reason, message),
+	})
 }

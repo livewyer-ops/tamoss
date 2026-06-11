@@ -77,7 +77,7 @@ func defaultHTTPRouteRule(tamoss *tamossv1alpha1.Tamoss, component string, spec 
 	}
 	pathType := gatewayv1.PathMatchPathPrefix
 	pathValue := "/"
-	port := gatewayv1.PortNumber(servicePort)
+	port := servicePort
 	weight := int32(1)
 	rule := gatewayv1.HTTPRouteRule{
 		Matches: []gatewayv1.HTTPRouteMatch{{
@@ -186,7 +186,7 @@ func gatewayBackendRefs(values []tamossv1alpha1.HTTPRouteBackendRef) []gatewayv1
 			ref.Namespace = &namespace
 		}
 		if value.Port != 0 {
-			port := gatewayv1.PortNumber(value.Port)
+			port := value.Port
 			ref.Port = &port
 		}
 		if value.Weight != nil {

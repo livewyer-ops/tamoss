@@ -54,6 +54,38 @@ tasks:
       - printf 'test operator.go\n'
       - make test
 
+  lint:
+    desc: "Operator: run Go linters and dead-code checks"
+    silent: true
+    dir: operator
+    cmds:
+      - printf 'lint operator.go\n'
+      - make lint
+
+  run:
+    desc: "Operator: run the controller manager on the host against KUBECONFIG (webhooks disabled)"
+    interactive: true
+    silent: true
+    requires:
+      vars: [KUBECONFIG]
+    preconditions:
+      - sh: command -v kubectl
+        msg: "kubectl required"
+      - sh: command -v go
+        msg: "go required"
+    cmds:
+      - |
+        set -euo pipefail
+        kubeconfig="$(readlink -f "{{.KUBECONFIG}}")"
+        if kubectl --kubeconfig "$kubeconfig" -n "{{.OPERATOR_NAMESPACE}}" get "deploy/{{.OPERATOR_DEPLOYMENT}}" >/dev/null 2>&1; then
+          echo "Scaling in-cluster {{.OPERATOR_NAMESPACE}}/{{.OPERATOR_DEPLOYMENT}} to 0 so it does not compete with the host process."
+          echo "Scale it back up afterwards: kubectl -n {{.OPERATOR_NAMESPACE}} scale deploy/{{.OPERATOR_DEPLOYMENT}} --replicas=1"
+          kubectl --kubeconfig "$kubeconfig" -n "{{.OPERATOR_NAMESPACE}}" scale "deploy/{{.OPERATOR_DEPLOYMENT}}" --replicas=0
+        fi
+        echo "ENABLE_WEBHOOKS=false: the delete-protection webhook server is not started on the host."
+        echo "If the in-cluster webhook configuration is installed, deletes of Tamoss/StorageBackend resources will fail while the deployment is scaled to 0 (failurePolicy: Fail)."
+        KUBECONFIG="$kubeconfig" ENABLE_WEBHOOKS=false make -C operator run
+
   manifests:
     dir: operator
     cmds:
@@ -75,6 +107,10 @@ tasks:
       CHAINSAW_BIN: '{{default "chainsaw" .CHAINSAW_BIN}}'
       CHAINSAW_TESTS: '{{default "operator/test/chainsaw" .CHAINSAW_TESTS}}'
       REPORT_PATH: '{{default "reports" .REPORT_PATH}}'
+      # Chainsaw runs with --parallel 1 because the suites share the single
+      # cluster-scoped operator install (CRDs, tamoss-system deployment) and a
+      # one-node Kind cluster cannot host several full Tamoss stacks at once;
+      # concurrent tests would interfere with each other's operator state.
       CHAINSAW_PARALLEL: '{{default "1" .CHAINSAW_PARALLEL}}'
       CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
       CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=kind" .CHAINSAW_SELECTOR}}'
@@ -275,9 +311,8 @@ tasks:
     silent: true
     dir: operator
     cmds:
-      - make manifests kustomize
-      - mkdir -p ../deploy/operator
-      - bin/kustomize-v5.3.0 build config/default > ../deploy/operator/install.yaml
+      # The Makefile owns the kustomize pin and the render; keep the version in one place.
+      - make install-manifest
 
   security-lint:
     silent: true

@@ -267,7 +267,7 @@ func (s *SchemaController) applyOwned(ctx context.Context, tamoss *tamossv1alpha
 	if err := controllerutil.SetControllerReference(tamoss, obj, s.Scheme); err != nil {
 		return err
 	}
-	_, err := applyCanonicalObject(ctx, s.Client, obj)
+	_, err := applyManagedObject(ctx, s.Client, obj)
 	return err
 }
 
@@ -602,7 +602,7 @@ func schemaVersionForName() string {
 
 func schemaLabels(tamoss *tamossv1alpha1.Tamoss) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       "tamoss",
+		"app.kubernetes.io/name":       tamossAppName,
 		"app.kubernetes.io/instance":   tamoss.Name,
 		"app.kubernetes.io/component":  "schema",
 		"app.kubernetes.io/managed-by": "tamoss-operator",

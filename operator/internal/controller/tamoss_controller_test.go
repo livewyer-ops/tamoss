@@ -897,7 +897,7 @@ var _ = Describe("Tamoss Controller", func() {
 			makeSchemaReady(ctx, controllerReconciler, typeNamespacedName, resourceName)
 			instance = &tamossv1alpha1.Tamoss{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, instance)).To(Succeed())
-			operatorstatus.SetConditionBool(&instance.Status.Conditions, operatorstatus.ConditionReady, true, "AllComponentsReady", "All components are ready")
+			operatorstatus.SetConditionBool(&instance.Status.Conditions, instance.Generation, operatorstatus.ConditionReady, true, "AllComponentsReady", "All components are ready")
 			Expect(k8sClient.Status().Update(ctx, instance)).To(Succeed())
 
 			apiDeployment := &appsv1.Deployment{}
@@ -1036,11 +1036,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(running.Status.SchemaMigration.Phase).To(Equal(operatorstatus.PhaseRunning))
 			Expect(running.Status.SchemaMigration.Attempts).To(Equal(int32(1)))
 			Expect(meta.FindStatusCondition(running.Status.Conditions, operatorstatus.ConditionUpgradeable).Status).To(Equal(metav1.ConditionUnknown))
-			job.Status.Succeeded = 1
-			job.Status.Conditions = []batchv1.JobCondition{{
-				Type:   batchv1.JobComplete,
-				Status: corev1.ConditionTrue,
-			}}
+			markJobStatusSucceeded(job)
 			Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
@@ -1075,11 +1071,7 @@ var _ = Describe("Tamoss Controller", func() {
 			jobName := resourceName + "-schema-migrate-" + schemaVersionForName()
 			job := &batchv1.Job{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: "default"}, job)).To(Succeed())
-			job.Status.Failed = 1
-			job.Status.Conditions = []batchv1.JobCondition{{
-				Type:   batchv1.JobFailed,
-				Status: corev1.ConditionTrue,
-			}}
+			markJobStatusFailed(job)
 			Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
@@ -1140,7 +1132,6 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(state.Data[schemaStateFixturesKey]).To(Equal("true"))
 		})
 	})
-
 })
 
 func minimalTamossSpec() tamossv1alpha1.TamossSpec {
@@ -1532,12 +1523,39 @@ func makeSchemaReady(ctx context.Context, reconciler *TamossReconciler, name typ
 	completeSchemaMigration(ctx, reconciler, name, job)
 }
 
-func completeSchemaMigration(ctx context.Context, reconciler *TamossReconciler, name types.NamespacedName, job *batchv1.Job) {
+// markJobStatusSucceeded stamps the full status a finished Job carries on a
+// real cluster. Since Kubernetes 1.32 the apiserver validates Job status
+// transitions strictly: Complete=True requires SuccessCriteriaMet plus
+// startTime and completionTime.
+func markJobStatusSucceeded(job *batchv1.Job) {
+	now := metav1.Now()
+	if job.Status.StartTime == nil {
+		job.Status.StartTime = &now
+	}
 	job.Status.Succeeded = 1
-	job.Status.Conditions = []batchv1.JobCondition{{
-		Type:   batchv1.JobComplete,
-		Status: corev1.ConditionTrue,
-	}}
+	job.Status.CompletionTime = &now
+	job.Status.Conditions = []batchv1.JobCondition{
+		{Type: batchv1.JobSuccessCriteriaMet, Status: corev1.ConditionTrue, Reason: "CompletionsReached"},
+		{Type: batchv1.JobComplete, Status: corev1.ConditionTrue, Reason: "CompletionsReached"},
+	}
+}
+
+// markJobStatusFailed mirrors markJobStatusSucceeded for failed Jobs:
+// Failed=True requires a FailureTarget condition and a startTime.
+func markJobStatusFailed(job *batchv1.Job) {
+	now := metav1.Now()
+	if job.Status.StartTime == nil {
+		job.Status.StartTime = &now
+	}
+	job.Status.Failed = 1
+	job.Status.Conditions = []batchv1.JobCondition{
+		{Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"},
+		{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"},
+	}
+}
+
+func completeSchemaMigration(ctx context.Context, reconciler *TamossReconciler, name types.NamespacedName, job *batchv1.Job) {
+	markJobStatusSucceeded(job)
 	Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
 	_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})

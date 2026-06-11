@@ -3,6 +3,7 @@ package controller
 import (
 	"reflect"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -16,6 +17,25 @@ func tamossPrimaryPredicate() predicate.Predicate {
 
 func storageBackendPrimaryPredicate() predicate.Predicate {
 	return primaryResourcePredicate(storageBackendFinalizer, nil)
+}
+
+// credentialSecretPredicate passes Secret create and delete events but only
+// forwards updates whose data actually changed, so metadata-only churn does
+// not fan out into StorageBackend reconciles.
+func credentialSecretPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(evt event.UpdateEvent) bool {
+			oldSecret, oldOK := evt.ObjectOld.(*corev1.Secret)
+			newSecret, newOK := evt.ObjectNew.(*corev1.Secret)
+			if !oldOK || !newOK {
+				return true
+			}
+			if oldSecret.ResourceVersion == newSecret.ResourceVersion {
+				return false
+			}
+			return !reflect.DeepEqual(oldSecret.Data, newSecret.Data)
+		},
+	}
 }
 
 func primaryResourcePredicate(finalizer string, actionAnnotations []string) predicate.Predicate {

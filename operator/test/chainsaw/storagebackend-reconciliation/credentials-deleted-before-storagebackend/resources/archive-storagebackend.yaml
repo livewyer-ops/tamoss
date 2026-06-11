@@ -1,0 +1,24 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: archive
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  id: 33333333-3333-5333-8333-333333333333
+  tamossRef:
+    name: tamoss
+  provider: rustfs
+  label: tamoss.us-east-1:s3:archive
+  region: us-east-1
+  bucketName: archive
+  endpoint:
+    default:
+      url: (join('', ['http://rustfs-svc.', $namespace, '.svc:9000']))
+    public:
+      url: (join('', ['http://rustfs-svc.', $namespace, '.svc:9000']))
+  credentials:
+    existingSecret: doomed-rustfs-auth
+    secretKeys:
+      accessKey: RUSTFS_ACCESS_KEY
+      secretKey: RUSTFS_SECRET_KEY

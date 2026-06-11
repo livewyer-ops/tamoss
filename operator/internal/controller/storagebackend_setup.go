@@ -15,6 +15,14 @@ import (
 )
 
 func (r *StorageBackendReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&tamossv1alpha1.StorageBackend{},
+		storageBackendCredentialsSecretIndex,
+		storageBackendCredentialsSecretIndexValue,
+	); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tamossv1alpha1.StorageBackend{}, builder.WithPredicates(storageBackendPrimaryPredicate())).
 		Owns(&batchv1.Job{}).
@@ -22,25 +30,23 @@ func (r *StorageBackendReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.storageBackendCredentialSecretRequests),
+			builder.WithPredicates(credentialSecretPredicate()),
 		).
 		Complete(r)
 }
 
 func (r *StorageBackendReconciler) storageBackendCredentialSecretRequests(ctx context.Context, obj client.Object) []reconcile.Request {
 	list := &tamossv1alpha1.StorageBackendList{}
-	if err := listStorageBackendsByCredentialSecret(ctx, r.Client, obj.GetNamespace(), obj.GetName(), list); err != nil {
+	if err := r.Client.List(ctx, list,
+		client.InNamespace(obj.GetNamespace()),
+		client.MatchingFields{storageBackendCredentialsSecretIndex: obj.GetName()},
+	); err != nil {
 		return nil
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for i := range list.Items {
-		storageBackend := list.Items[i]
-		spec := storageBackend.Spec
-		spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
-		if spec.Credentials.ExistingSecret != obj.GetName() {
-			continue
-		}
 		requests = append(requests, reconcile.Request{
-			NamespacedName: storageBackendRequest(storageBackend),
+			NamespacedName: storageBackendRequest(list.Items[i]),
 		})
 	}
 	return requests

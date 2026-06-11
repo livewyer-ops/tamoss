@@ -18,11 +18,11 @@ func TestNamespaceAllowedSupportsMultipleTenantNamespaces(t *testing.T) {
 	reconciler := TamossReconciler{WatchNamespaces: watchNamespaces}
 
 	for _, namespace := range []string{"tams-team-a", "tams-team-b"} {
-		if !reconciler.namespaceAllowed(namespace) {
+		if !reconciler.WatchNamespaces.Allows(namespace) {
 			t.Fatalf("expected namespace %q to be watched", namespace)
 		}
 	}
-	if reconciler.namespaceAllowed("tams-team-c") {
+	if reconciler.WatchNamespaces.Allows("tams-team-c") {
 		t.Fatalf("expected unwatched namespace to be ignored")
 	}
 }

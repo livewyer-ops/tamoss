@@ -81,7 +81,7 @@ func parseLogLevel(value string) (zapcore.Level, error) {
 	if verbosity > 127 {
 		return zapcore.InfoLevel, fmt.Errorf("verbosity must be 127 or less")
 	}
-	return zapcore.Level(-1 * verbosity), nil //nolint:gosec // Verbosity is range-checked for zapcore.Level.
+	return zapcore.Level(-1 * verbosity), nil
 }
 
 func parseLogLevelOverrides(raw string) (map[string]zapcore.Level, error) {

@@ -21,7 +21,7 @@ func BuildCluster(tamoss *tamossv1alpha1.Tamoss) *cnpgv1.Cluster {
 	enableSuperuserAccess := true
 	return &cnpgv1.Cluster{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: cnpgv1.GroupVersion.String(),
+			APIVersion: cnpgv1.SchemeGroupVersion.String(),
 			Kind:       "Cluster",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -53,7 +53,7 @@ func BuildScheduledBackup(tamoss *tamossv1alpha1.Tamoss) *cnpgv1.ScheduledBackup
 	}
 	return &cnpgv1.ScheduledBackup{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: cnpgv1.GroupVersion.String(),
+			APIVersion: cnpgv1.SchemeGroupVersion.String(),
 			Kind:       "ScheduledBackup",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,14 +80,14 @@ func Reconcile(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamo
 	if err := mutateObject(cluster, mutators...); err != nil {
 		return err
 	}
-	if err := c.Patch(ctx, cluster, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil {
+	if err := c.Patch(ctx, cluster, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil { //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
 		return err
 	}
 	if scheduledBackup := BuildScheduledBackup(tamoss); scheduledBackup != nil {
 		if err := mutateObject(scheduledBackup, mutators...); err != nil {
 			return err
 		}
-		return c.Patch(ctx, scheduledBackup, client.Apply, client.FieldOwner(resource.FieldOwner))
+		return c.Patch(ctx, scheduledBackup, client.Apply, client.FieldOwner(resource.FieldOwner)) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
 	}
 	return nil
 }
@@ -208,7 +208,7 @@ func barmanObjectStore(clusterName string, spec tamossv1alpha1.DBCNPGObjectStore
 		DestinationPath: fmt.Sprintf("s3://%s/%s", spec.Bucket, clusterName),
 	}
 	if spec.ExistingSecret != "" {
-		store.BarmanCredentials.AWS = &cnpgv1.S3Credentials{
+		store.AWS = &cnpgv1.S3Credentials{
 			AccessKeyIDReference:     secretKey(spec.ExistingSecret, "AWS_ACCESS_KEY_ID"),
 			SecretAccessKeyReference: secretKey(spec.ExistingSecret, "AWS_SECRET_ACCESS_KEY"),
 		}

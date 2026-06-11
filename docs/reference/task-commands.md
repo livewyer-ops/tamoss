@@ -15,6 +15,7 @@ names or descriptions change.
 | --- | --- |
 | `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment unless `KIND_DEMO_INGEST=false` is set. `PROFILE=multi-server` uses a multi-node Kind cluster. |
 | `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
+| `task kind:operator:reload` | Rebuild the operator image, load it into the existing Kind cluster, and restart the operator deployment without rerunning the full `task kind:up` flow. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
 | `task kind:test PROFILE=local-kind` | Create or reuse Kind, deploy the selected profile, and run deployed TAMS/product checks. |
 | `task kind:e2e PROFILE=local-kind` | Recreate Kind from scratch, deploy the selected profile with the current operator, and run deployed TAMS/product checks. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
@@ -86,6 +87,8 @@ use stable `reports/junit-*.xml` names.
 | --- | --- |
 | `task operator:build` | Build the operator manager binary. |
 | `task operator:test` | Run operator unit and envtest suites. |
+| `task operator:lint` | Run operator Go linters and dead-code checks. |
+| `task operator:run KUBECONFIG=tams.kubeconfig` | Run the controller manager on the host against a cluster; scales the in-cluster operator to zero and disables the delete-protection webhook. |
 | `task operator:manifests` | Generate CRDs, RBAC, and webhook manifests. |
 | `task operator:template` | Render the operator Kustomize install. |
 | `task operator:monitoring:template` | Render the optional Prometheus Operator monitoring overlay. |

@@ -4,27 +4,25 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
@@ -37,6 +35,10 @@ import (
 const (
 	tamossFinalizer = "tamoss.livewyer.io/finalizer"
 
+	// tamossAppName is the default app.kubernetes.io/name label value for
+	// resources the operator manages.
+	tamossAppName = "tamoss"
+
 	defaultAuthentikProbeInterval         = 30 * time.Second
 	defaultDependencyProbeInterval        = 5 * time.Minute
 	defaultFinalizerPollInterval          = 2 * time.Second
@@ -48,7 +50,7 @@ type TamossReconciler struct {
 	Client                      client.Client
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
-	WatchNamespaces             map[string]struct{}
+	WatchNamespaces             WatchNamespaceSet
 	Discovery                   *operatordiscovery.Manager
 	AuthentikPlatformNamespaces *authentik.PlatformNamespacePolicy
 	AuthentikProbeInterval      time.Duration
@@ -84,7 +86,7 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 		phaseRecorded = true
 	}
 	defer func() {
-		recordControllerReconcile("tamoss", result, err, time.Since(start))
+		recordControllerReconcile(tamossAppName, result, err, time.Since(start))
 	}()
 	defer func() {
 		if err != nil && tamoss != nil && tamoss.Spec.HTTPRoute.Enabled && isKubernetesNoMatchError(err) {
@@ -160,12 +162,12 @@ func (r *TamossReconciler) loadTamoss(ctx context.Context, key client.ObjectKey)
 }
 
 func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, recordPhase func(string)) (*tamossv1alpha1.Tamoss, reconcileControl, error) {
-	if !r.namespaceAllowed(tamoss.Namespace) {
+	if !r.WatchNamespaces.Allows(tamoss.Namespace) {
 		log.FromContext(ctx).Info("ignoring Tamoss outside configured watch scope", "namespace", tamoss.Namespace)
 		recordPhase(operatorstatus.PhaseIgnored)
 		return nil, stopReconcile(ctrl.Result{}), nil
 	}
-	if !tamoss.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !tamoss.DeletionTimestamp.IsZero() {
 		recordPhase(operatorstatus.PhaseFinalizing)
 		result, err := r.finalizeTamoss(ctx, tamoss)
 		return nil, stopReconcile(result), err
@@ -356,15 +358,15 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 			return err
 		}
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
-		result, err := applyCanonicalObject(ctx, r.Client, desired)
+		result, err := applyManagedObject(ctx, r.Client, desired)
 		if err != nil {
 			return err
 		}
 		if result.Changed {
-			log.FromContext(ctx).V(1).Info("applied canonical object", "kind", canonicalObjectKind(desired), "name", desired.GetName(), "namespace", desired.GetNamespace())
+			log.FromContext(ctx).V(1).Info("applied managed object", "kind", canonicalObjectKind(desired), "name", desired.GetName(), "namespace", desired.GetNamespace())
 		}
 		if result.Changed && !result.Created {
-			r.recordDriftCorrected(tamoss, desired, result.DriftPaths)
+			r.recordDriftCorrected(tamoss, desired)
 		}
 	}
 	return nil
@@ -394,34 +396,22 @@ func shortestPositiveDuration(current, candidate time.Duration) time.Duration {
 	return current
 }
 
-func (r *TamossReconciler) namespaceAllowed(namespace string) bool {
-	if len(r.WatchNamespaces) == 0 {
-		return true
-	}
-	_, ok := r.WatchNamespaces[namespace]
-	return ok
-}
-
-func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, obj client.Object, paths []string) {
+func (r *TamossReconciler) recordDriftCorrected(tamoss *tamossv1alpha1.Tamoss, obj client.Object) {
 	if r.Recorder == nil || !tamossObservedReady(tamoss) {
 		return
-	}
-	if len(paths) == 0 {
-		paths = []string{"unknown"}
 	}
 	r.Recorder.Eventf(
 		tamoss,
 		corev1.EventTypeNormal,
 		operatorstatus.ReasonDriftCorrected,
-		"Corrected drift on %s/%s at %s",
+		"Corrected drift on %s/%s",
 		canonicalObjectKind(obj),
 		obj.GetName(),
-		strings.Join(paths, ","),
 	)
 }
 
-func (r *TamossReconciler) recordWarning(tamoss *tamossv1alpha1.Tamoss, reason, message string, args ...interface{}) {
-	operatorstatus.EmitWarningEvent(r.Recorder, &r.WarningEvents, tamoss, reason, message, args...)
+func (r *TamossReconciler) recordWarning(tamoss *tamossv1alpha1.Tamoss, reason, message string) {
+	operatorstatus.EmitWarningEvent(r.Recorder, &r.WarningEvents, tamoss, reason, message)
 }
 
 func (r *TamossReconciler) recordRecoveryEvent(tamoss *tamossv1alpha1.Tamoss, event *recoveryActionEvent) {
@@ -522,50 +512,38 @@ func schemaMessage(schemaResult SchemaResult) string {
 	return "Schema controller completed for this reconcile"
 }
 
+// canonicalKindScheme resolves GroupVersionKinds for every type the operator
+// manages. It mirrors the registrations performed for the manager scheme in
+// cmd/main.go so that kind resolution never depends on hand-maintained lists.
+var canonicalKindScheme = newCanonicalKindScheme()
+
+func newCanonicalKindScheme() *runtime.Scheme {
+	kindScheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(kindScheme))
+	utilruntime.Must(tamossv1alpha1.AddToScheme(kindScheme))
+	utilruntime.Must(cnpgv1.AddToScheme(kindScheme))
+	utilruntime.Must(gatewayv1.Install(kindScheme))
+	return kindScheme
+}
+
 func canonicalObjectKey(obj client.Object) string {
 	return fmt.Sprintf("%s/%s/%s", canonicalObjectKind(obj), obj.GetNamespace(), obj.GetName())
 }
 
 func canonicalObjectKind(obj client.Object) string {
-	if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind != "" {
-		return kind
+	return canonicalObjectGVK(obj).Kind
+}
+
+// canonicalObjectGVK resolves the GVK from the scheme rather than a
+// hand-maintained switch. An unresolvable type is a programming error: a
+// silent empty kind would corrupt desired-object keys and make the pruner
+// delete still-desired objects, so fail loudly instead.
+func canonicalObjectGVK(obj client.Object) schema.GroupVersionKind {
+	gvk, err := apiutil.GVKForObject(obj, canonicalKindScheme)
+	if err != nil {
+		panic(fmt.Errorf("resolve GVK for %T: %w", obj, err))
 	}
-	ensureTypeMeta(obj)
-	if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind != "" {
-		return kind
-	}
-	switch obj := obj.(type) {
-	case *appsv1.Deployment:
-		return "Deployment"
-	case *autoscalingv2.HorizontalPodAutoscaler:
-		return "HorizontalPodAutoscaler"
-	case *batchv1.Job:
-		return "Job"
-	case *corev1.ConfigMap:
-		return "ConfigMap"
-	case *corev1.PersistentVolumeClaim:
-		return "PersistentVolumeClaim"
-	case *corev1.Secret:
-		return "Secret"
-	case *corev1.Service:
-		return "Service"
-	case *corev1.ServiceAccount:
-		return "ServiceAccount"
-	case *networkingv1.Ingress:
-		return "Ingress"
-	case *networkingv1.NetworkPolicy:
-		return "NetworkPolicy"
-	case *policyv1.PodDisruptionBudget:
-		return "PodDisruptionBudget"
-	case *gatewayv1.HTTPRoute:
-		return "HTTPRoute"
-	case *tamossv1alpha1.StorageBackend:
-		return "StorageBackend"
-	case *unstructured.Unstructured:
-		return obj.GetKind()
-	default:
-		return ""
-	}
+	return gvk
 }
 
 func tamossResourceName(tamoss *tamossv1alpha1.Tamoss, suffix string) string {

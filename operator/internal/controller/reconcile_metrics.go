@@ -13,7 +13,7 @@ func recordControllerReconcile(controller string, result ctrl.Result, err error,
 		operatormetrics.RecordReconcile(controller, "error", duration)
 		return
 	}
-	if result.Requeue || result.RequeueAfter > 0 {
+	if result.RequeueAfter > 0 {
 		operatormetrics.RecordReconcile(controller, "requeue", duration)
 		return
 	}

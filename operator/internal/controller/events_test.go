@@ -19,9 +19,9 @@ func TestTamossLifecycleEventsFromConditionTransitions(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionReady, true, operatorstatus.ReasonAllComponentsReady, "ready")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionSchemaMigrated, true, operatorstatus.ReasonSchemaApplied, "schema ready")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted, true, operatorstatus.ReasonManagedBlueprintApplied, "blueprint applied")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionReady, true, operatorstatus.ReasonAllComponentsReady, "ready")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionSchemaMigrated, true, operatorstatus.ReasonSchemaApplied, "schema ready")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionIdentityBlueprintSubmitted, true, operatorstatus.ReasonManagedBlueprintApplied, "blueprint applied")
 
 	reconciler.recordTamossLifecycleEvents(original, updated)
 
@@ -38,9 +38,9 @@ func TestTamossWarningEventsFromConditionTransitions(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionBackendsReady, false, operatorstatus.ReasonMissingDependencyOperator, "CNPG is not installed")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonRouteRejected, "HTTPRoute was rejected")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionBackupPolicyReady, false, operatorstatus.ReasonBackupArchivingFailed, "CNPG archiving failed")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionBackendsReady, false, operatorstatus.ReasonMissingDependencyOperator, "CNPG is not installed")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonRouteRejected, "HTTPRoute was rejected")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionBackupPolicyReady, false, operatorstatus.ReasonBackupArchivingFailed, "CNPG archiving failed")
 
 	reconciler.recordTamossLifecycleEvents(original, updated)
 
@@ -60,9 +60,9 @@ func TestTamossWarningEventsIgnoreProgressReasons(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionReady, false, operatorstatus.ReasonComponentsProgressing, "Components are still rolling out")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionSchemaMigrated, false, operatorstatus.ReasonWaitingForSchema, "Schema migration is still running")
-	operatorstatus.SetConditionBool(&updated.Status.Conditions, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonRoutePending, "Route has not reported status yet")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionReady, false, operatorstatus.ReasonComponentsProgressing, "Components are still rolling out")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionSchemaMigrated, false, operatorstatus.ReasonWaitingForSchema, "Schema migration is still running")
+	operatorstatus.SetConditionBool(&updated.Status.Conditions, updated.Generation, operatorstatus.ConditionRoutingReady, false, operatorstatus.ReasonRoutePending, "Route has not reported status yet")
 
 	reconciler.recordTamossLifecycleEvents(original, updated)
 
@@ -99,13 +99,13 @@ func TestDriftCorrectedSuppressesInitialConvergence(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example-api", Namespace: "media"},
 	}
 
-	reconciler.recordDriftCorrected(tamoss, deployment, []string{"spec"})
+	reconciler.recordDriftCorrected(tamoss, deployment)
 	if events := drainRecorder(recorder); len(events) != 0 {
 		t.Fatalf("expected no drift event before Ready=True, got %#v", events)
 	}
 
-	operatorstatus.SetConditionBool(&tamoss.Status.Conditions, operatorstatus.ConditionReady, true, operatorstatus.ReasonAllComponentsReady, "ready")
-	reconciler.recordDriftCorrected(tamoss, deployment, []string{"spec"})
+	operatorstatus.SetConditionBool(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionReady, true, operatorstatus.ReasonAllComponentsReady, "ready")
+	reconciler.recordDriftCorrected(tamoss, deployment)
 
 	events := drainRecorder(recorder)
 	if got := len(events); got != 1 {

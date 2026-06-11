@@ -34,7 +34,7 @@ func TestTamossCompletionResultDoesNotRequeueForExternalAuth(t *testing.T) {
 	}
 
 	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Fatalf("did not expect external-auth completion to requeue, got %#v", result)
 	}
 }
@@ -96,7 +96,7 @@ func TestPrepareStorageBackendLifecycleIgnoresDisallowedNamespace(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !control.Stop || control.Result.Requeue || control.Result.RequeueAfter != 0 {
+	if !control.Stop || control.Result.RequeueAfter != 0 {
 		t.Fatalf("expected disallowed namespace to finish without requeue, got control=%#v", control)
 	}
 }

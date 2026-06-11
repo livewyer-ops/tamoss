@@ -60,7 +60,7 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		return providerBackendResult{}, err
 	}
 	desiredKeys[canonicalObjectKey(aliasService)] = struct{}{}
-	if _, err := applyCanonicalObject(ctx, r.Client, aliasService); err != nil {
+	if _, err := applyManagedObject(ctx, r.Client, aliasService); err != nil {
 		return providerBackendResult{}, err
 	}
 
@@ -229,7 +229,7 @@ func (r *TamossReconciler) ensureDefaultStorageBackend(ctx context.Context, tamo
 		return nil, err
 	}
 	desiredKeys[canonicalObjectKey(desired)] = struct{}{}
-	if _, err := applyCanonicalObject(ctx, r.Client, desired); err != nil {
+	if _, err := applyManagedObject(ctx, r.Client, desired); err != nil {
 		return nil, err
 	}
 	live := &tamossv1alpha1.StorageBackend{}
@@ -260,7 +260,7 @@ func defaultStorageBackend(tamoss *tamossv1alpha1.Tamoss) *tamossv1alpha1.Storag
 			Name:      defaultStorageBackendName(tamoss),
 			Namespace: tamoss.Namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/name":       "tamoss",
+				"app.kubernetes.io/name":       tamossAppName,
 				"app.kubernetes.io/instance":   tamoss.Name,
 				"app.kubernetes.io/component":  "storage-backend",
 				"app.kubernetes.io/managed-by": "tamoss-operator",

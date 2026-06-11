@@ -30,6 +30,20 @@ type storageBackendStatusInput struct {
 	Diagnostic    *storageBackendDiagnosticResult
 }
 
+// storageBackendStageStatusInput fills the fields that are constant for a
+// not-yet-ready stage so call sites only describe bucket readiness and the
+// stage outcome.
+func storageBackendStageStatusInput(spec tamossv1alpha1.StorageBackendSpec, bucketReady bool, result storageBackendReconcileResult) storageBackendStatusInput {
+	return storageBackendStatusInput{
+		BucketReady: bucketReady,
+		Reason:      result.Reason,
+		Message:     result.Message,
+		Degraded:    result.Degraded,
+		BackendID:   spec.ID,
+		BucketName:  spec.BucketName,
+	}
+}
+
 func (r *StorageBackendReconciler) updateStorageBackendStatus(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, input storageBackendStatusInput) (ctrl.Result, error) {
 	original := storageBackend.DeepCopy()
 	storageBackend.Status.ObservedGeneration = storageBackend.Generation
@@ -43,12 +57,12 @@ func (r *StorageBackendReconciler) updateStorageBackendStatus(ctx context.Contex
 	if input.Degraded {
 		storageBackend.Status.Phase = operatorstatus.PhaseDegraded
 	}
-	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, operatorstatus.ConditionBucketReady, input.BucketReady, bucketReadyReason(input), bucketReadyMessage(input))
-	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, operatorstatus.ConditionDatabaseReady, input.DatabaseReady, databaseReadyReason(input), databaseReadyMessage(input))
+	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, storageBackend.Generation, operatorstatus.ConditionBucketReady, input.BucketReady, bucketReadyReason(input), bucketReadyMessage(input))
+	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, storageBackend.Generation, operatorstatus.ConditionDatabaseReady, input.DatabaseReady, databaseReadyReason(input), databaseReadyMessage(input))
 	if input.Diagnostic != nil {
-		operatorstatus.SetConditionStatus(&storageBackend.Status.Conditions, operatorstatus.ConditionExternalS3DiagnosticReady, input.Diagnostic.Status, input.Diagnostic.Reason, input.Diagnostic.Message)
+		operatorstatus.SetConditionStatus(&storageBackend.Status.Conditions, storageBackend.Generation, operatorstatus.ConditionExternalS3DiagnosticReady, input.Diagnostic.Status, input.Diagnostic.Reason, input.Diagnostic.Message)
 	}
-	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, operatorstatus.ConditionReady, input.Ready, input.Reason, input.Message)
+	operatorstatus.SetConditionBool(&storageBackend.Status.Conditions, storageBackend.Generation, operatorstatus.ConditionReady, input.Ready, input.Reason, input.Message)
 	if err := r.patchStorageBackendStatus(ctx, storageBackend, original); err != nil {
 		return ctrl.Result{}, err
 	}

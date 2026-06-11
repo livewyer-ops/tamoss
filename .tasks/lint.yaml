@@ -6,7 +6,8 @@ set: [errexit, nounset, pipefail]
 tasks:
   # `task lint` covers Python, frontend, and shell-helper gates:
   # Ruff import/format, mypy, frontend Prettier, TypeScript, ESLint, and bash syntax.
-  # Operator Go and Kubernetes manifest gates live under operator tasks/CI.
+  # Operator Go lint runs separately via `task operator:lint` (operator CI), and
+  # Kubernetes manifest gates via `task operator:security-lint`.
   mypy:
     aliases: [strict-mypy]
     silent: true

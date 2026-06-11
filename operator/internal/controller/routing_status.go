@@ -7,6 +7,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -14,7 +15,7 @@ import (
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
-var httpRouteGVK = gatewayv1.SchemeGroupVersion.WithKind("HTTPRoute")
+var httpRouteGVK = schema.GroupVersion(gatewayv1.GroupVersion).WithKind("HTTPRoute")
 
 type routingStatusResult struct {
 	Ready           bool
@@ -232,9 +233,9 @@ func gatewayAPIUnavailableResult() routingStatusResult {
 	}
 }
 
-func setRoutingConditions(conditions *[]metav1.Condition, result routingStatusResult) {
-	operatorstatus.SetConditionBool(conditions, operatorstatus.ConditionRoutingReady, result.Ready, result.Reason, result.Message)
-	operatorstatus.SetConditionStatus(conditions, operatorstatus.ConditionHostnamesReady, result.HostnameStatus, result.HostnameReason, result.HostnameMessage)
+func setRoutingConditions(conditions *[]metav1.Condition, generation int64, result routingStatusResult) {
+	operatorstatus.SetConditionBool(conditions, generation, operatorstatus.ConditionRoutingReady, result.Ready, result.Reason, result.Message)
+	operatorstatus.SetConditionStatus(conditions, generation, operatorstatus.ConditionHostnamesReady, result.HostnameStatus, result.HostnameReason, result.HostnameMessage)
 }
 
 func isKubernetesNoMatchError(err error) bool {

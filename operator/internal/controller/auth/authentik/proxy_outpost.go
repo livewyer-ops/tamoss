@@ -225,44 +225,41 @@ func (c ProxyOutpostClient) managedBlueprintClient() (ManagedBlueprintClient, er
 	return ManagedBlueprintClient(c), nil
 }
 
-func findOAuthProvider(ctx context.Context, api ManagedBlueprintClient, name string) (oauthProvider, error) {
-	endpoint, err := api.apiURL("providers", "oauth2")
+// findByQuery lists an Authentik API collection filtered by a query parameter
+// and returns the first result accepted by match.
+func findByQuery[T any](ctx context.Context, api ManagedBlueprintClient, segments []string, queryKey, queryValue string, match func(T) bool) (T, error) {
+	var zero T
+	endpoint, err := api.apiURL(segments...)
 	if err != nil {
-		return oauthProvider{}, err
+		return zero, err
 	}
 	query := endpoint.Query()
-	query.Set("name", name)
+	query.Set(queryKey, queryValue)
 	endpoint.RawQuery = query.Encode()
-	var list oauthProviderList
+	var list struct {
+		Results []T `json:"results"`
+	}
 	if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
-		return oauthProvider{}, err
+		return zero, err
 	}
 	for _, result := range list.Results {
-		if result.Name == name {
+		if match(result) {
 			return result, nil
 		}
 	}
-	return oauthProvider{}, nil
+	return zero, nil
+}
+
+func findOAuthProvider(ctx context.Context, api ManagedBlueprintClient, name string) (oauthProvider, error) {
+	return findByQuery(ctx, api, []string{"providers", "oauth2"}, "name", name, func(provider oauthProvider) bool {
+		return provider.Name == name
+	})
 }
 
 func findProxyProvider(ctx context.Context, api ManagedBlueprintClient, name string) (proxyProvider, error) {
-	endpoint, err := api.apiURL("providers", "proxy")
-	if err != nil {
-		return proxyProvider{}, err
-	}
-	query := endpoint.Query()
-	query.Set("name", name)
-	endpoint.RawQuery = query.Encode()
-	var list proxyProviderList
-	if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
-		return proxyProvider{}, err
-	}
-	for _, result := range list.Results {
-		if result.Name == name {
-			return result, nil
-		}
-	}
-	return proxyProvider{}, nil
+	return findByQuery(ctx, api, []string{"providers", "proxy"}, "name", name, func(provider proxyProvider) bool {
+		return provider.Name == name
+	})
 }
 
 func upsertProxyProvider(ctx context.Context, api ManagedBlueprintClient, tamoss *tamossv1alpha1.Tamoss, oauth oauthProvider) (proxyProvider, error) {
@@ -327,23 +324,9 @@ func upsertProxyApplication(ctx context.Context, api ManagedBlueprintClient, tam
 }
 
 func findApplication(ctx context.Context, api ManagedBlueprintClient, slug string) (application, error) {
-	endpoint, err := api.apiURL("core", "applications")
-	if err != nil {
-		return application{}, err
-	}
-	query := endpoint.Query()
-	query.Set("slug", slug)
-	endpoint.RawQuery = query.Encode()
-	var list applicationList
-	if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
-		return application{}, err
-	}
-	for _, result := range list.Results {
-		if result.Slug == slug {
-			return result, nil
-		}
-	}
-	return application{}, nil
+	return findByQuery(ctx, api, []string{"core", "applications"}, "slug", slug, func(app application) bool {
+		return app.Slug == slug
+	})
 }
 
 func addProviderToEmbeddedOutpost(ctx context.Context, api ManagedBlueprintClient, tamoss *tamossv1alpha1.Tamoss, providerPK int) error {
@@ -375,23 +358,9 @@ func removeProviderFromEmbeddedOutpost(ctx context.Context, api ManagedBlueprint
 }
 
 func findEmbeddedOutpost(ctx context.Context, api ManagedBlueprintClient) (outpost, error) {
-	endpoint, err := api.apiURL("outposts", "instances")
-	if err != nil {
-		return outpost{}, err
-	}
-	query := endpoint.Query()
-	query.Set("name", embeddedOutpostName)
-	endpoint.RawQuery = query.Encode()
-	var list outpostList
-	if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
-		return outpost{}, err
-	}
-	for _, result := range list.Results {
-		if result.Name == embeddedOutpostName {
-			return result, nil
-		}
-	}
-	return outpost{}, nil
+	return findByQuery(ctx, api, []string{"outposts", "instances"}, "name", embeddedOutpostName, func(candidate outpost) bool {
+		return candidate.Name == embeddedOutpostName
+	})
 }
 
 func updateOutpost(ctx context.Context, api ManagedBlueprintClient, current outpost, providers []int, config map[string]any) error {
