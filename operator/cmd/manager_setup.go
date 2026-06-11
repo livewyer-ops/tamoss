@@ -146,7 +146,7 @@ func setupControllers(
 // their tests are built around record.EventRecorder; migrating to the
 // events API is deliberately out of scope for this toolchain upgrade.
 func eventRecorderFor(mgr ctrl.Manager, name string) record.EventRecorder {
-	return mgr.GetEventRecorderFor(name)
+	return mgr.GetEventRecorderFor(name) //nolint:staticcheck,nolintlint // events-API migration deferred
 }
 
 func registerDeleteProtectionWebhooks(mgr ctrl.Manager) {
