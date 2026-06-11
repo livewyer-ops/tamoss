@@ -4,6 +4,21 @@ All notable changes to TAMOSS are documented here.
 
 This project follows semantic versioning for public releases.
 
+## 8.1.0-oss2 - 2026-06-11
+
+- Aligned TAMS 8.1 edge-case behaviours for unset properties, empty webhook
+  event lists, invalid flow identifiers and non-JSON property writes, with
+  matching conformance coverage.
+- Improved segment ingest, webhook delivery and worker queue throughput with
+  new database indexes (schema revision 8.1.0-oss2).
+- Upgraded the Python runtime to 3.14 and the operator toolchain to Go 1.26,
+  controller-runtime 0.24 and Kubernetes 1.36.
+- Reworked operator reconciliation around server-side apply, garbage-collected
+  cleanup, single-pass status and indexed Secret watches.
+- Extended operator e2e gates for drift correction, field ownership and secret
+  rotation; refactored API routes and persistence helpers; improved the
+  operator development inner loop.
+
 ## Unreleased
 
 - Preparing the first public TAMOSS release candidate.
