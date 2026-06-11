@@ -37,21 +37,26 @@ func applyManagedObject(ctx context.Context, c client.Client, desired client.Obj
 			// Creating through apply keeps a single write mechanism and
 			// records a clean apply entry from the start, so the next
 			// reconcile is a no-op instead of a field-ownership migration.
-			return applyResult{Changed: true, Created: true}, applyObjectPatch(ctx, c, desired)
+			_, applyErr := applyDesiredObject(ctx, c, desired)
+			return applyResult{Changed: true, Created: true}, applyErr
 		}
 		return applyResult{}, err
 	}
 	if err := reclaimAuthoritativeFields(ctx, c, live); err != nil {
 		return applyResult{}, err
 	}
-	if err := applyObjectPatch(ctx, c, desired); err != nil {
+	applied, err := applyDesiredObject(ctx, c, desired)
+	if err != nil {
 		return applyResult{}, err
 	}
-	return applyResult{Changed: managedObjectChanged(live, desired)}, nil
+	return applyResult{Changed: managedObjectChanged(live, applied)}, nil
 }
 
-func applyObjectPatch(ctx context.Context, c client.Client, desired client.Object) error {
-	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(resource.FieldOwner), client.ForceOwnership) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+// applyDesiredObject submits desired with the operator as a forcing field
+// owner and returns the object as the server applied it, whose revision
+// drives the drift verdict.
+func applyDesiredObject(ctx context.Context, c client.Client, desired client.Object) (client.Object, error) {
+	return resource.ApplyObject(ctx, c, desired, client.FieldOwner(resource.FieldOwner), client.ForceOwnership)
 }
 
 // managedObjectChanged reports whether the apply produced a new revision of

@@ -72,7 +72,8 @@ func Reconcile(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamo
 			return err
 		}
 	}
-	return c.Patch(ctx, tenant, client.Apply, client.FieldOwner(resource.FieldOwner)) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+	_, err = resource.ApplyObject(ctx, c, tenant, client.FieldOwner(resource.FieldOwner))
+	return err
 }
 
 func rustfsOperatorSpec(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.S3RustFSOperatorSpec {
