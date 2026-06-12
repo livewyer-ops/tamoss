@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.14.5-alpine3.22
+FROM python:3.15.0b2-alpine3.22
 
 ARG VERSION=tamoss-dev
 ARG TAMS_API_VERSION=8.1
