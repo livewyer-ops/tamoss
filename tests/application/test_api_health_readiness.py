@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 import urllib.request
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from tamoss.bootstrap import StartupConfigurationError
 from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.db.migrations.runner import MultipleAlembicHeads, UnsupportedSchemaRevision
 from tamoss.domain.model import StorageBackend
+from tamoss.metrics import start_metrics_server
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
@@ -251,6 +253,17 @@ def test_http_metrics_use_route_templates_for_dynamic_paths() -> None:
         == 1
     )
     assert "abc123" not in metrics
+
+
+def test_metrics_server_disabled_when_port_unavailable() -> None:
+    occupied = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    occupied.bind(("127.0.0.1", 0))
+    occupied.listen()
+    try:
+        port = occupied.getsockname()[1]
+        assert start_metrics_server(_settings(metrics_port=port)) is None
+    finally:
+        occupied.close()
 
 
 def test_create_app_fails_fast_for_invalid_configuration() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from starlette.responses import Response
 
 from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 _UNMATCHED_ROUTE = "unmatched"
 _UNKNOWN_EXCEPTION = "UnknownException"
@@ -103,10 +106,21 @@ def install_http_metrics(application: FastAPI) -> None:
 def start_metrics_server(settings: Settings) -> MetricsServer | None:
     if settings.metrics_port is None:
         return None
-    server, thread = start_http_server(
-        settings.metrics_port,
-        addr=settings.metrics_bind_address,
-    )
+    try:
+        server, thread = start_http_server(
+            settings.metrics_port,
+            addr=settings.metrics_bind_address,
+        )
+    except OSError:
+        # A second in-process worker binding the same port, or a port already
+        # in use, must not crash startup; metrics are simply not served here.
+        logger.warning(
+            "metrics endpoint disabled: cannot bind %s:%s",
+            settings.metrics_bind_address,
+            settings.metrics_port,
+            exc_info=True,
+        )
+        return None
     return MetricsServer(server=server, thread=thread)
 
 
