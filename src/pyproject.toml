@@ -27,6 +27,7 @@ dependencies = [
     "pyjwt[crypto]>=2.13.0",
     "pydantic-settings>=2.7.0",
     "orjson>=3.11.9",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.scripts]

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import urllib.request
 from uuid import UUID
 
 import psycopg
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from prometheus_client.parser import text_string_to_metric_families
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.bootstrap import StartupConfigurationError
@@ -183,6 +185,74 @@ def test_unexpected_api_error_returns_stable_payload_with_incident_id(
     assert "private backend detail" in caplog.text
 
 
+def test_private_metrics_listener_exposes_common_api_metrics() -> None:
+    app = _app(_Repository([_storage_backend()]), settings=_settings(metrics_port=0))
+
+    with TestClient(app) as client:
+        service_response = client.get("/service")
+        public_response = client.get("/metrics")
+        metrics = _private_metrics_text(app)
+
+    assert service_response.status_code == 200
+    assert public_response.status_code == 404
+    assert (
+        _metric_sample_value(
+            metrics,
+            "tamoss_api_http_requests_total",
+            {"method": "GET", "route": "/service", "status": "200"},
+        )
+        >= 1
+    )
+    assert (
+        _metric_sample_value(
+            metrics,
+            "tamoss_api_info",
+            {
+                "version": _settings().service_version,
+                "tams_api_version": "8.1",
+                "schema_revision": CURRENT_SCHEMA_REVISION,
+            },
+        )
+        == 1
+    )
+    assert 'route="/metrics"' not in metrics
+
+
+def test_http_metrics_use_route_templates_for_dynamic_paths() -> None:
+    app = _app(_Repository([_storage_backend()]), settings=_settings(metrics_port=0))
+
+    @app.get("/metrics-test/{item_id}")
+    def explode(item_id: str) -> None:
+        raise RuntimeError("private backend detail")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/metrics-test/abc123")
+        metrics = _private_metrics_text(app)
+
+    assert response.status_code == 500
+    assert (
+        _metric_sample_value(
+            metrics,
+            "tamoss_api_http_requests_total",
+            {"method": "GET", "route": "/metrics-test/{item_id}", "status": "500"},
+        )
+        >= 1
+    )
+    assert (
+        _metric_sample_value(
+            metrics,
+            "tamoss_api_http_exceptions_total",
+            {
+                "method": "GET",
+                "route": "/metrics-test/{item_id}",
+                "exception": "RuntimeError",
+            },
+        )
+        == 1
+    )
+    assert "abc123" not in metrics
+
+
 def test_create_app_fails_fast_for_invalid_configuration() -> None:
     with pytest.raises(StartupConfigurationError, match="S3 storage backend"):
         create_app(
@@ -200,9 +270,12 @@ def _client(
 
 
 def _app(
-    repository: _Repository, *, object_storage: InMemoryObjectStorage | None = None
+    repository: _Repository,
+    *,
+    object_storage: InMemoryObjectStorage | None = None,
+    settings: Settings | None = None,
 ) -> FastAPI:
-    settings = _settings()
+    settings = settings or _settings()
     return create_app(
         settings,
         use_cases=TamossUseCases(
@@ -213,10 +286,10 @@ def _app(
     )
 
 
-def _settings() -> Settings:
-    return Settings(
-        auth_required=False,
-        storage_backend=StorageBackendSettings(
+def _settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "auth_required": False,
+        "storage_backend": StorageBackendSettings(
             id="11111111-1111-4111-8111-111111111111",
             label="tamoss.storage.primary",
             provider="tamoss",
@@ -229,6 +302,10 @@ def _settings() -> Settings:
             access_key="access",
             secret_key="secret",
         ),
+    }
+    values.update(overrides)
+    return Settings(
+        **values,
     )
 
 
@@ -246,6 +323,27 @@ def _storage_backend() -> StorageBackend:
         access_key="access",
         secret_key="secret",
     )
+
+
+def _metric_sample_value(
+    metrics: str,
+    sample_name: str,
+    labels: dict[str, str],
+) -> float:
+    for family in text_string_to_metric_families(metrics):
+        for sample in family.samples:
+            if sample.name == sample_name and labels.items() <= sample.labels.items():
+                return float(sample.value)
+    raise AssertionError(f"missing metric sample {sample_name} with labels {labels}")
+
+
+def _private_metrics_text(app: FastAPI) -> str:
+    metrics_server = app.state.tamoss_metrics_server
+    with urllib.request.urlopen(
+        f"http://127.0.0.1:{metrics_server.port}/metrics",
+        timeout=5,
+    ) as response:
+        return response.read().decode("utf-8")
 
 
 class _Repository:

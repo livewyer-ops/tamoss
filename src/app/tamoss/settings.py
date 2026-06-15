@@ -238,6 +238,16 @@ class Settings(BaseSettings):
         ge=0.0,
         validation_alias="TAMOSS_READINESS_CACHE_TTL_SECONDS",
     )
+    metrics_bind_address: str = Field(
+        default="127.0.0.1",
+        validation_alias="TAMOSS_METRICS_BIND_ADDRESS",
+    )
+    metrics_port: int | None = Field(
+        default=None,
+        ge=0,
+        le=65535,
+        validation_alias="TAMOSS_METRICS_PORT",
+    )
     min_object_timeout: str = Field(
         default="300:0",
         validation_alias="TAMOSS_MIN_OBJECT_TIMEOUT",
@@ -346,6 +356,7 @@ class Settings(BaseSettings):
         "forward_auth_shared_secret",
         "forward_auth_shared_secret_file",
         "oauth2_audience",
+        "metrics_port",
         "storage_backend_credentials_file",
         mode="before",
     )

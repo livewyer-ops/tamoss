@@ -143,6 +143,63 @@ func TestRenderOrdersServicesBeforeDependentDeployments(t *testing.T) {
 	}
 }
 
+func TestRenderExposesAPIInternalMetricsService(t *testing.T) {
+	tamoss := rendererFixture()
+
+	objects := Render(tamoss)
+
+	apiService := serviceByName(t, objects, "example-api")
+	if len(apiService.Annotations) != 0 {
+		t.Fatalf("API Service should not expose metrics scrape annotations, got %#v", apiService.Annotations)
+	}
+	metricsService := serviceByName(t, objects, "example-api-metrics")
+	if metricsService.Spec.Type != corev1.ServiceTypeClusterIP {
+		t.Fatalf("metrics Service should be ClusterIP, got %q", metricsService.Spec.Type)
+	}
+	if metricsService.Annotations[metricsPathAnnotation] != "/metrics" ||
+		metricsService.Annotations[metricsPortAnnotation] != "9090" ||
+		metricsService.Annotations[prometheusScrapeAnnotation] != "true" ||
+		metricsService.Annotations[prometheusPathAnnotation] != "/metrics" ||
+		metricsService.Annotations[prometheusPortAnnotation] != "9090" {
+		t.Fatalf("expected metrics Service scrape annotations, got %#v", metricsService.Annotations)
+	}
+	if metricsService.Spec.Selector["app.kubernetes.io/component"] != "api" {
+		t.Fatalf("metrics Service should select API pods, got %#v", metricsService.Spec.Selector)
+	}
+	if len(metricsService.Spec.Ports) != 1 ||
+		metricsService.Spec.Ports[0].Name != metricsPortName ||
+		metricsService.Spec.Ports[0].Port != 9090 ||
+		metricsService.Spec.Ports[0].TargetPort.StrVal != metricsPortName {
+		t.Fatalf("unexpected metrics Service ports: %#v", metricsService.Spec.Ports)
+	}
+	uiService := serviceByName(t, objects, "example-ui")
+	if len(uiService.Annotations) != 0 {
+		t.Fatalf("UI Service should not expose metrics scrape annotations, got %#v", uiService.Annotations)
+	}
+}
+
+func TestRenderKeepsMetricsServiceSeparateFromConfiguredAPIServicePort(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Service.API.Ports = []corev1.ServicePort{{
+		Name:       "http",
+		Port:       9000,
+		TargetPort: intstr.FromString("http"),
+		Protocol:   corev1.ProtocolTCP,
+	}}
+
+	objects := Render(tamoss)
+
+	apiService := serviceByName(t, objects, "example-api")
+	if len(apiService.Annotations) != 0 {
+		t.Fatalf("API Service should not expose metrics scrape annotations, got %#v", apiService.Annotations)
+	}
+	metricsService := serviceByName(t, objects, "example-api-metrics")
+	if metricsService.Annotations[metricsPortAnnotation] != "9090" ||
+		metricsService.Annotations[prometheusPortAnnotation] != "9090" {
+		t.Fatalf("expected metrics Service port 9090, got %#v", metricsService.Annotations)
+	}
+}
+
 func TestRenderUsesExplicitDevelopmentTagWhenImageTagOmitted(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.API.Image.Tag = ""
@@ -206,6 +263,17 @@ func TestRenderUsesServicePortForAPIContainer(t *testing.T) {
 		container := deployment.Spec.Template.Spec.Containers[0]
 		if got := container.Ports[0].ContainerPort; got != 9000 {
 			t.Fatalf("expected API container port 9000, got %d", got)
+		}
+		if len(container.Ports) != 2 ||
+			container.Ports[1].Name != metricsPortName ||
+			container.Ports[1].ContainerPort != apiMetricsPort {
+			t.Fatalf("expected API metrics container port, got %#v", container.Ports)
+		}
+		if envValue(container.Env, "TAMOSS_METRICS_PORT") != "9090" {
+			t.Fatalf("expected API metrics port env, got %#v", container.Env)
+		}
+		if envValue(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != "0.0.0.0" {
+			t.Fatalf("expected API metrics bind address env, got %#v", container.Env)
 		}
 		return
 	}

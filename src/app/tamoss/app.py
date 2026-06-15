@@ -38,6 +38,7 @@ from tamoss.errors import (
     error_payload,
     register_error_handlers,
 )
+from tamoss.metrics import install_http_metrics, record_api_info, start_metrics_server
 from tamoss.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,12 @@ def create_app(
         )
         try:
             await _warm_runtime_auth(resolved_settings)
+            application.state.tamoss_metrics_server = start_metrics_server(
+                resolved_settings
+            )
             yield
         finally:
+            _close_metrics_server(application)
             _close_repository(application)
 
     application = FastAPI(
@@ -76,6 +81,8 @@ def create_app(
 
     register_error_handlers(application)
     _install_runtime_auth(application, resolved_settings)
+    install_http_metrics(application)
+    record_api_info(resolved_settings)
     application.include_router(health.router)
     application.include_router(service.router)
     application.include_router(webhooks.router)
@@ -95,6 +102,14 @@ def _close_repository(application: FastAPI) -> None:
     close = getattr(repository, "close", None)
     if callable(close):
         close()
+
+
+def _close_metrics_server(application: FastAPI) -> None:
+    metrics_server = getattr(application.state, "tamoss_metrics_server", None)
+    close = getattr(metrics_server, "close", None)
+    if callable(close):
+        close()
+    application.state.tamoss_metrics_server = None
 
 
 def _install_runtime_auth(application: FastAPI, settings: Settings) -> None:
