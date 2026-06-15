@@ -86,6 +86,37 @@ def record_presigned_url(operation: str) -> None:
     PRESIGNED_URLS_GENERATED_TOTAL.labels(operation=operation).inc()
 
 
+# Worker media-load metrics: the background worker is a separate process that
+# drains the delete and webhook queues, so it exports its own throughput signals
+# on the shared side port via start_metrics_server.
+WORKER_TASKS_PROCESSED_TOTAL = Counter(
+    "tamoss_worker_tasks_processed_total",
+    "Worker queue tasks drained per poll.",
+    ("queue",),
+)
+WEBHOOK_DELIVERY_TOTAL = Counter(
+    "tamoss_webhook_delivery_total",
+    "Webhook HTTP delivery attempts by outcome.",
+    ("outcome",),
+)
+WEBHOOK_DELIVERY_SECONDS = Histogram(
+    "tamoss_webhook_delivery_seconds",
+    "Webhook HTTP delivery attempt duration.",
+    ("outcome",),
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
+
+def record_worker_tasks_processed(queue: str, count: int) -> None:
+    if count > 0:
+        WORKER_TASKS_PROCESSED_TOTAL.labels(queue=queue).inc(count)
+
+
+def observe_webhook_delivery(outcome: str, duration_seconds: float) -> None:
+    WEBHOOK_DELIVERY_TOTAL.labels(outcome=outcome).inc()
+    WEBHOOK_DELIVERY_SECONDS.labels(outcome=outcome).observe(duration_seconds)
+
+
 @dataclass
 class MetricsServer:
     server: WSGIServer

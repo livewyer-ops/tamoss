@@ -10,6 +10,7 @@ from datetime import timedelta
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.bootstrap import create_use_cases
 from tamoss.domain.model import utc_now
+from tamoss.metrics import record_worker_tasks_processed, start_metrics_server
 from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings, get_settings
 from tamoss.storage_credentials import validate_credentials_file
 
@@ -203,6 +204,7 @@ def main(argv: list[str] | None = None) -> None:
         enable_delete,
         enable_webhook,
     )
+    metrics_server = start_metrics_server(settings)
     use_cases = create_use_cases(settings)
     try:
         while not _shutdown:
@@ -216,6 +218,8 @@ def main(argv: list[str] | None = None) -> None:
                     enable_delete=enable_delete,
                     enable_webhook=enable_webhook,
                 )
+                record_worker_tasks_processed("delete", delete_processed)
+                record_worker_tasks_processed("webhook", webhook_processed)
                 processed = delete_processed + webhook_processed
                 if delete_processed:
                     logger.info(
@@ -234,6 +238,8 @@ def main(argv: list[str] | None = None) -> None:
             if not processed:
                 time.sleep(poll_interval)
     finally:
+        if metrics_server is not None:
+            metrics_server.close()
         _close_use_cases(use_cases)
 
 

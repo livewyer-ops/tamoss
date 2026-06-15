@@ -280,6 +280,33 @@ func TestRenderUsesServicePortForAPIContainer(t *testing.T) {
 	t.Fatalf("expected API deployment in %v", renderedIDs(objects))
 }
 
+func TestRenderExposesWorkerMetricsPort(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Worker.Enabled = ptr.To(true)
+
+	objects := Render(tamoss)
+	for _, obj := range objects {
+		deployment, ok := obj.(*appsv1.Deployment)
+		if !ok || deployment.Name != "example-worker" {
+			continue
+		}
+		container := deployment.Spec.Template.Spec.Containers[0]
+		if len(container.Ports) != 1 ||
+			container.Ports[0].Name != metricsPortName ||
+			container.Ports[0].ContainerPort != apiMetricsPort {
+			t.Fatalf("expected worker metrics container port, got %#v", container.Ports)
+		}
+		if envValue(container.Env, "TAMOSS_METRICS_PORT") != "9090" {
+			t.Fatalf("expected worker metrics port env, got %#v", container.Env)
+		}
+		if envValue(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != "0.0.0.0" {
+			t.Fatalf("expected worker metrics bind address env, got %#v", container.Env)
+		}
+		return
+	}
+	t.Fatalf("expected worker deployment in %v", renderedIDs(objects))
+}
+
 func TestRenderMultiServerSecurityDefaults(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Profile = tamossv1alpha1.TamossProfileMultiServer

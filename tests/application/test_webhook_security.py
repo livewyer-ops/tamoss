@@ -4,7 +4,19 @@ import ipaddress
 from typing import ClassVar
 
 import pytest
+import requests
+from tamoss import metrics
 from tamoss.application import webhooks
+
+
+def _delivery_count(outcome: str) -> float:
+    value = metrics.WEBHOOK_DELIVERY_TOTAL.labels(outcome=outcome)._value.get()
+    return float(value)
+
+
+def _delivery_observations(outcome: str) -> float:
+    sample = metrics.WEBHOOK_DELIVERY_SECONDS.labels(outcome=outcome)._sum.get()
+    return float(sample)
 
 
 @pytest.mark.parametrize(
@@ -82,6 +94,61 @@ def test_webhook_delivery_blocks_redirect_to_private_target(
         )
 
     assert post_calls[0]["allow_redirects"] is False
+
+
+def test_webhook_delivery_records_success_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OkResponse:
+        status_code = 202
+        headers: ClassVar[dict[str, str]] = {}
+
+    class OkSession:
+        def post(self, *_args: object, **_kwargs: object) -> OkResponse:
+            return OkResponse()
+
+    monkeypatch.setattr(
+        webhooks,
+        "_resolve_host_addresses",
+        lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
+    )
+    monkeypatch.setattr(webhooks, "_http_session", lambda: OkSession())
+
+    before_count = _delivery_count("success")
+    before_sum = _delivery_observations("success")
+    webhooks.send_webhook_delivery(
+        webhook={"url": "https://receiver.example.test/hook"},
+        payload={"event_type": "flows/created"},
+        timeout_seconds=1,
+    )
+
+    assert _delivery_count("success") - before_count == 1
+    assert _delivery_observations("success") - before_sum >= 0
+
+
+def test_webhook_delivery_records_failure_metric_on_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingSession:
+        def post(self, *_args: object, **_kwargs: object):
+            raise requests.Timeout("boom")
+
+    monkeypatch.setattr(
+        webhooks,
+        "_resolve_host_addresses",
+        lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
+    )
+    monkeypatch.setattr(webhooks, "_http_session", lambda: FailingSession())
+
+    before = _delivery_count("failure")
+    with pytest.raises(requests.Timeout):
+        webhooks.send_webhook_delivery(
+            webhook={"url": "https://receiver.example.test/hook"},
+            payload={"event_type": "flows/created"},
+            timeout_seconds=1,
+        )
+
+    assert _delivery_count("failure") - before == 1
 
 
 def test_webhook_url_accepts_allowlisted_private_targets() -> None:
