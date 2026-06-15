@@ -12,6 +12,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from tamoss import metrics
 from tamoss.domain.model import (
     ObjectGetUrlBatchKey,
     ObjectGetUrlRequest,
@@ -241,7 +242,7 @@ class ConfiguredObjectStorage:
     def _presign_put_url(
         self, *, backend: StorageBackend, object_id: str, content_type: str
     ) -> str:
-        return self._s3_presign_client(backend).generate_presigned_url(
+        url = self._s3_presign_client(backend).generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": _require_bucket(backend),
@@ -250,9 +251,11 @@ class ConfiguredObjectStorage:
             },
             ExpiresIn=self._settings.presigned_put_ttl_seconds(),
         )
+        metrics.record_presigned_url("put")
+        return url
 
     def _presign_get_url(self, *, backend: StorageBackend, object_id: str) -> str:
-        return self._s3_presign_client(backend).generate_presigned_url(
+        url = self._s3_presign_client(backend).generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": _require_bucket(backend),
@@ -260,6 +263,8 @@ class ConfiguredObjectStorage:
             },
             ExpiresIn=self._settings.s3_presign_ttl_seconds,
         )
+        metrics.record_presigned_url("get")
+        return url
 
     def _s3_client(self, backend: StorageBackend):
         return self._cached_s3_client(backend=backend, public=False)

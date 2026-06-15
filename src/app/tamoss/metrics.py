@@ -46,6 +46,45 @@ API_INFO = Gauge(
     ("version", "tams_api_version", "schema_revision"),
 )
 
+# Media-load metrics: the throughput of media operations, distinct from HTTP
+# request counts (a single bulk POST may register thousands of segments).
+SEGMENTS_INGESTED_TOTAL = Counter(
+    "tamoss_segments_ingested_total",
+    "Flow Segments successfully registered.",
+)
+SEGMENT_INGEST_FAILED_TOTAL = Counter(
+    "tamoss_segment_ingest_failed_total",
+    "Flow Segments that failed registration (including bulk partial failures).",
+)
+SEGMENT_INGEST_BATCH_SIZE = Histogram(
+    "tamoss_segment_ingest_batch_size",
+    "Number of segments submitted per POST /flows/{flowId}/segments call.",
+    buckets=(1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500),
+)
+PRESIGNED_URLS_GENERATED_TOTAL = Counter(
+    "tamoss_presigned_urls_generated_total",
+    "Presigned object-store URLs generated.",
+    ("operation",),
+)
+
+
+def record_segments_ingested(count: int) -> None:
+    if count > 0:
+        SEGMENTS_INGESTED_TOTAL.inc(count)
+
+
+def record_segment_ingest_failures(count: int) -> None:
+    if count > 0:
+        SEGMENT_INGEST_FAILED_TOTAL.inc(count)
+
+
+def observe_segment_ingest_batch(size: int) -> None:
+    SEGMENT_INGEST_BATCH_SIZE.observe(size)
+
+
+def record_presigned_url(operation: str) -> None:
+    PRESIGNED_URLS_GENERATED_TOTAL.labels(operation=operation).inc()
+
 
 @dataclass
 class MetricsServer:

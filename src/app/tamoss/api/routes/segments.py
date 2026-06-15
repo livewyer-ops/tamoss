@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from mediatimestamp import TimeRange, Timestamp
 
+from tamoss import metrics
 from tamoss.api.dependencies import get_deletion_use_cases, get_segment_use_cases
 from tamoss.api.presenters import (
     deletion_request_accepted_response,
@@ -143,6 +144,7 @@ def post_segments(
     # The validated models are handed to the use case directly so the payload
     # is not re-validated against the contract a second time.
     if isinstance(body, list):
+        metrics.observe_segment_ingest_batch(len(body))
         failed: list[contract_models.FailedSegment] = []
         for segment, result in zip(
             body,
@@ -157,6 +159,8 @@ def post_segments(
                         error=error_payload("TAMSError", result.error),
                     )
                 )
+        metrics.record_segment_ingest_failures(len(failed))
+        metrics.record_segments_ingested(len(body) - len(failed))
         if failed:
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
@@ -166,9 +170,12 @@ def post_segments(
             )
         return Response(status_code=status.HTTP_201_CREATED)
 
+    metrics.observe_segment_ingest_batch(1)
     result = segments.register_segment(flow_id=flow_id, segment_post=body)
     if result.error:
+        metrics.record_segment_ingest_failures(1)
         raise BadRequest(result.error)
+    metrics.record_segments_ingested(1)
     return Response(status_code=status.HTTP_201_CREATED)
 
 

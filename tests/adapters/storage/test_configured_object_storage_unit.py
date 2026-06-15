@@ -718,3 +718,32 @@ def _write_credentials_file(
         ),
         encoding="utf-8",
     )
+
+
+def test_presigned_get_urls_increment_media_metric(monkeypatch) -> None:
+    from prometheus_client import REGISTRY
+
+    class FakeS3Client:
+        def generate_presigned_url(self, *args, **kwargs) -> str:
+            return f"https://storage.example.test/{kwargs['Params']['Key']}"
+
+    monkeypatch.setattr(
+        "tamoss.adapters.object_storage.boto3.client",
+        lambda *args, **kwargs: FakeS3Client(),
+    )
+    backend = _s3_backend()
+    storage = ConfiguredObjectStorage(
+        Settings(auth_required=False, storage_backend=_settings_backend(backend))
+    )
+    metric = "tamoss_presigned_urls_generated_total"
+    before = REGISTRY.get_sample_value(metric, {"operation": "get"}) or 0.0
+
+    storage.build_get_urls_batch(
+        [
+            ObjectGetUrlRequest(object_id="media/a.ts", backend=backend),
+            ObjectGetUrlRequest(object_id="media/b.ts", backend=backend),
+        ]
+    )
+
+    after = REGISTRY.get_sample_value(metric, {"operation": "get"}) or 0.0
+    assert after - before == 2
