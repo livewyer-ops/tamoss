@@ -112,7 +112,7 @@ def test_webhook_delivery_records_success_metric(
         "_resolve_host_addresses",
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
-    monkeypatch.setattr(webhooks, "_http_session", lambda: OkSession())
+    monkeypatch.setattr(webhooks, "_http_session", OkSession)
 
     before_count = _delivery_count("success")
     before_sum = _delivery_observations("success")
@@ -138,7 +138,7 @@ def test_webhook_delivery_records_failure_metric_on_transport_error(
         "_resolve_host_addresses",
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
-    monkeypatch.setattr(webhooks, "_http_session", lambda: FailingSession())
+    monkeypatch.setattr(webhooks, "_http_session", FailingSession)
 
     before = _delivery_count("failure")
     with pytest.raises(requests.Timeout):

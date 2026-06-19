@@ -8,6 +8,7 @@ from uuid import UUID
 
 import pytest
 from botocore.exceptions import ClientError
+from prometheus_client import REGISTRY
 from tamoss.adapters.object_storage import ConfiguredObjectStorage
 from tamoss.domain.model import ObjectGetUrlRequest, StorageBackend
 from tamoss.errors import ConfigurationError
@@ -721,8 +722,6 @@ def _write_credentials_file(
 
 
 def test_presigned_get_urls_increment_media_metric(monkeypatch) -> None:
-    from prometheus_client import REGISTRY
-
     class FakeS3Client:
         def generate_presigned_url(self, *args, **kwargs) -> str:
             return f"https://storage.example.test/{kwargs['Params']['Key']}"
