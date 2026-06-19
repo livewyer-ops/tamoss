@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 from tamoss.contract.generated import contract_models
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE
 
@@ -602,6 +603,10 @@ def test_segment_batch_reports_per_segment_failures(client: TestClient) -> None:
     )
     assert initial.status_code == 201
 
+    ingested_before = REGISTRY.get_sample_value("tamoss_segments_ingested_total") or 0.0
+    failed_before = (
+        REGISTRY.get_sample_value("tamoss_segment_ingest_failed_total") or 0.0
+    )
     response = client.post(
         f"/flows/{flow_id}/segments",
         json=[
@@ -612,6 +617,15 @@ def test_segment_batch_reports_per_segment_failures(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["failed_segments"][0]["object_id"] == object_two
     assert response.json()["failed_segments"][0]["error"]["type"] == "TAMSError"
+
+    # One of the two bulk segments registers, the overlapping one fails — the
+    # media-load counters count segments, not the single HTTP request.
+    ingested_after = REGISTRY.get_sample_value("tamoss_segments_ingested_total") or 0.0
+    failed_after = (
+        REGISTRY.get_sample_value("tamoss_segment_ingest_failed_total") or 0.0
+    )
+    assert ingested_after - ingested_before == 1
+    assert failed_after - failed_before == 1
 
 
 def test_segment_timerange_validation_follows_bbc_boundary_rules(

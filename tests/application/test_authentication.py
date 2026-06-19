@@ -29,6 +29,14 @@ def test_authentication_required_rejects_anonymous_requests() -> None:
     assert response.headers["www-authenticate"] == "Bearer, Basic"
 
 
+def test_public_metrics_path_is_not_exposed() -> None:
+    with _auth_client() as client:
+        response = client.get("/metrics")
+
+    assert response.status_code == 401
+    assert response.json()["type"] == "unauthorized"
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [

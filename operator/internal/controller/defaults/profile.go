@@ -473,7 +473,9 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		return
 	}
 	if len(tamoss.Spec.NetworkPolicy.API.Ingress) == 0 {
-		tamoss.Spec.NetworkPolicy.API.Ingress = serviceIngressRules(8000)
+		// 9090 mirrors apiMetricsPort in the workload renderer; the scrape
+		// collector must reach the API metrics port as well as the HTTP port.
+		tamoss.Spec.NetworkPolicy.API.Ingress = serviceIngressRules(8000, 9090)
 	}
 	if len(tamoss.Spec.NetworkPolicy.API.Egress) == 0 {
 		tamoss.Spec.NetworkPolicy.API.Egress = appEgressRules()
@@ -484,15 +486,24 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 	if len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 {
 		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(firstServicePort(tamoss.Spec.Service.API.Ports, 8000))
 	}
+	if len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 {
+		// The worker has no inbound traffic of its own, but the rendered
+		// policy always declares policyTypes Ingress, so an empty rule list
+		// denies all ingress. Open 9090 so the scrape collector can reach the
+		// worker metrics port.
+		tamoss.Spec.NetworkPolicy.Worker.Ingress = serviceIngressRules(9090)
+	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
 		tamoss.Spec.NetworkPolicy.Worker.Egress = appEgressRules()
 	}
 }
 
-func serviceIngressRules(port int32) []networkingv1.NetworkPolicyIngressRule {
-	return []networkingv1.NetworkPolicyIngressRule{{
-		Ports: []networkingv1.NetworkPolicyPort{networkPolicyTCPPort(port)},
-	}}
+func serviceIngressRules(ports ...int32) []networkingv1.NetworkPolicyIngressRule {
+	tcpPorts := make([]networkingv1.NetworkPolicyPort, 0, len(ports))
+	for _, port := range ports {
+		tcpPorts = append(tcpPorts, networkPolicyTCPPort(port))
+	}
+	return []networkingv1.NetworkPolicyIngressRule{{Ports: tcpPorts}}
 }
 
 func appEgressRules() []networkingv1.NetworkPolicyEgressRule {

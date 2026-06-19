@@ -43,9 +43,12 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	assertAPIHTTPProbes(t, tamoss.Spec.API.WorkloadCommonSpec)
 	if len(tamoss.Spec.NetworkPolicy.API.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.API.Egress) == 0 ||
 		len(tamoss.Spec.NetworkPolicy.UI.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 ||
-		len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
+		len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
 		t.Fatalf("expected multi-server NetworkPolicy rules, got %#v", tamoss.Spec.NetworkPolicy)
 	}
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[0], 8000)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[1], 9090)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Ingress[0].Ports[0], 9090)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Ingress[0].Ports[0], 8080)
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[0], 53, corev1.ProtocolTCP)
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[1], 53, corev1.ProtocolUDP)

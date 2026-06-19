@@ -39,6 +39,7 @@ from tamoss.domain.model import (
     utc_now,
 )
 from tamoss.domain.segments import timerange_union
+from tamoss.metrics import observe_webhook_delivery
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import (
     WebhookEventRepository,
@@ -571,15 +572,32 @@ def send_webhook_delivery(
 ) -> requests.Response:
     url = str(webhook["url"])
     validate_webhook_url(url, egress_policy=egress_policy)
-    response = _http_session().post(
-        url,
-        headers=webhook_headers(webhook),
-        json=payload,
-        allow_redirects=False,
-        timeout=timeout_seconds,
+    start = time.perf_counter()
+    try:
+        response = _http_session().post(
+            url,
+            headers=webhook_headers(webhook),
+            json=payload,
+            allow_redirects=False,
+            timeout=timeout_seconds,
+        )
+        _validate_redirect_response(url, response, egress_policy=egress_policy)
+    except Exception:
+        observe_webhook_delivery("failure", time.perf_counter() - start)
+        raise
+    observe_webhook_delivery(
+        _delivery_outcome(response.status_code),
+        time.perf_counter() - start,
     )
-    _validate_redirect_response(url, response, egress_policy=egress_policy)
     return response
+
+
+def _delivery_outcome(status_code: int) -> str:
+    if 200 <= status_code < 300:
+        return "success"
+    if status_code in RETRIABLE_STATUS_CODES:
+        return "retry"
+    return "failure"
 
 
 def webhook_headers(webhook: WebhookData) -> dict[str, str]:

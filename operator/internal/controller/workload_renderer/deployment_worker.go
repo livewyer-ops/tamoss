@@ -1,6 +1,8 @@
 package workload_renderer
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,6 +27,11 @@ func renderWorkerDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		})
 	}
 	env = append(env, backendEnv(tamoss)...)
+	env = append(
+		env,
+		corev1.EnvVar{Name: "TAMOSS_METRICS_BIND_ADDRESS", Value: "0.0.0.0"},
+		corev1.EnvVar{Name: "TAMOSS_METRICS_PORT", Value: fmt.Sprintf("%d", apiMetricsPort)},
+	)
 	env = append(env, literalEnv(tamoss.Spec.Worker.Env)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.Worker.WorkloadCommonSpec, tamoss)
 	deployment := deploymentFor(
@@ -36,7 +43,9 @@ func renderWorkerDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		[]string{"/bin/uv", "run", "python", "-m", "tamoss.worker"},
 		env,
 		envFromSecrets(tamoss, false, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, "", tamoss.Spec.Worker.EnvFrom),
-		nil,
+		[]corev1.ContainerPort{
+			{Name: metricsPortName, ContainerPort: apiMetricsPort, Protocol: corev1.ProtocolTCP},
+		},
 	)
 	deployment.Name = tamoss.ResourceName("worker")
 	deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: selectorLabels(tamoss, "worker")}

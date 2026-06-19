@@ -15,6 +15,11 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	}
 	apiPort := firstServicePort(tamoss.Spec.Service.API.Ports, 8000)
 	env := append(backendEnv(tamoss), authEnv(tamoss)...)
+	env = append(
+		env,
+		corev1.EnvVar{Name: "TAMOSS_METRICS_BIND_ADDRESS", Value: "0.0.0.0"},
+		corev1.EnvVar{Name: "TAMOSS_METRICS_PORT", Value: fmt.Sprintf("%d", apiMetricsPort)},
+	)
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
@@ -30,7 +35,10 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			[]string{"/bin/uv", "run", "uvicorn", "tamoss.app:app", "--host", "0.0.0.0", "--port", fmt.Sprintf("%d", apiPort), "--proxy-headers", "--forwarded-allow-ips", "*"},
 			env,
 			envFromSecrets(tamoss, tamoss.Spec.Secrets.APIToken.Generate, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, oauth2CredentialsSecretName(tamoss), tamoss.Spec.API.EnvFrom),
-			[]corev1.ContainerPort{{Name: "http", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP}},
+			[]corev1.ContainerPort{
+				{Name: "http", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
+				{Name: metricsPortName, ContainerPort: apiMetricsPort, Protocol: corev1.ProtocolTCP},
+			},
 		),
 	}
 }
