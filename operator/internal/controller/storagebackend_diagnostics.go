@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 )
 
 var defaultStorageBackendHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
+const externalS3DiagnosticObjectKey = ".tamoss-cors-probe"
 
 type storageBackendDiagnosticResult struct {
 	Status  metav1.ConditionStatus
@@ -47,12 +50,20 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 		}
 	}
 	origin := "https://app." + originBase
-	request, err := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+	probeURL, err := externalS3DiagnosticProbeURL(endpoint, spec.BucketName)
 	if err != nil {
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionFalse,
 			Reason:  operatorstatus.ReasonEndpointUnreachable,
-			Message: fmt.Sprintf("External S3 diagnostic could not build request for %s: %v", endpoint, err),
+			Message: fmt.Sprintf("External S3 diagnostic could not build bucket probe URL for %s: %v", endpoint, err),
+		}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodOptions, probeURL, nil)
+	if err != nil {
+		return &storageBackendDiagnosticResult{
+			Status:  metav1.ConditionFalse,
+			Reason:  operatorstatus.ReasonEndpointUnreachable,
+			Message: fmt.Sprintf("External S3 diagnostic could not build request for %s: %v", probeURL, err),
 		}
 	}
 	request.Header.Set("Origin", origin)
@@ -67,7 +78,7 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionFalse,
 			Reason:  reason,
-			Message: fmt.Sprintf("External S3 diagnostic failed for %s from origin %s: %v", endpoint, origin, err),
+			Message: fmt.Sprintf("External S3 diagnostic failed for %s from origin %s: %v", probeURL, origin, err),
 		}
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -81,8 +92,28 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 	return &storageBackendDiagnosticResult{
 		Status:  metav1.ConditionFalse,
 		Reason:  operatorstatus.ReasonCORSMisconfigured,
-		Message: fmt.Sprintf("External S3 diagnostic did not observe CORS headers allowing PUT from origin %s", origin),
+		Message: fmt.Sprintf("External S3 diagnostic did not observe CORS headers allowing PUT from origin %s at %s", origin, probeURL),
 	}
+}
+
+func externalS3DiagnosticProbeURL(endpoint, bucketName string) (string, error) {
+	bucketName = strings.TrimSpace(bucketName)
+	if bucketName == "" {
+		return "", fmt.Errorf("bucket name is required")
+	}
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("endpoint URL must include scheme and host")
+	}
+	basePath := strings.TrimRight(parsed.Path, "/")
+	parsed.Path = basePath + "/" + bucketName + "/" + externalS3DiagnosticObjectKey
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func (r *StorageBackendReconciler) storageBackendHTTPClient() *http.Client {

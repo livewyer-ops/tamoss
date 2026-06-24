@@ -136,7 +136,20 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 }
 
 func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
+	wantPath := "/" + "archive" + "/" + externalS3DiagnosticObjectKey
+	observedPath := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observedPath = r.URL.Path
+		if r.Method != http.MethodOptions {
+			t.Errorf("expected OPTIONS preflight, got %s", r.Method)
+		}
+		if r.Header.Get("Origin") != "https://app.tamoss.example.com" {
+			t.Errorf("expected UI origin header, got %q", r.Header.Get("Origin"))
+		}
+		if r.URL.Path != wantPath {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		w.Header().Set("Access-Control-Allow-Origin", "https://app.tamoss.example.com")
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
 		w.WriteHeader(http.StatusNoContent)
@@ -152,6 +165,21 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	diagnostic := reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
 	if diagnostic.Status != metav1.ConditionTrue || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticReady {
 		t.Fatalf("expected successful diagnostic, got %#v", diagnostic)
+	}
+	if observedPath != wantPath {
+		t.Fatalf("expected bucket/object CORS probe path %q, got %q", wantPath, observedPath)
+	}
+
+	wantPath = "/prefixed/archive/" + externalS3DiagnosticObjectKey
+	observedPath = ""
+	spec.Endpoint.Public.URL = ""
+	spec.Endpoint.Default.URL = server.URL + "/prefixed/"
+	diagnostic = reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
+	if diagnostic.Status != metav1.ConditionTrue || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticReady {
+		t.Fatalf("expected successful default-endpoint diagnostic, got %#v", diagnostic)
+	}
+	if observedPath != wantPath {
+		t.Fatalf("expected default endpoint bucket/object probe path %q, got %q", wantPath, observedPath)
 	}
 
 	blockedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
