@@ -307,6 +307,28 @@ func TestRenderExposesWorkerMetricsPort(t *testing.T) {
 	t.Fatalf("expected worker deployment in %v", renderedIDs(objects))
 }
 
+func TestRenderAPICORSAllowedOrigins(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Worker.Enabled = ptr.To(true)
+	tamoss.Spec.API.CORS.AllowedOrigins = []string{
+		"https://cuttingroom.github.io",
+		" https://app.example.com ",
+	}
+
+	objects := Render(tamoss)
+	api := deploymentByName(t, objects, "example-api")
+	if got := envValue(api.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGINS"); got != "https://cuttingroom.github.io,https://app.example.com" {
+		t.Fatalf("expected API CORS origins env, got %q", got)
+	}
+
+	for _, name := range []string{"example-ui", "example-worker"} {
+		deployment := deploymentByName(t, objects, name)
+		if hasEnv(deployment.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGINS") {
+			t.Fatalf("%s should not receive API CORS origins env", name)
+		}
+	}
+}
+
 func TestRenderMultiServerSecurityDefaults(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Profile = tamossv1alpha1.TamossProfileMultiServer

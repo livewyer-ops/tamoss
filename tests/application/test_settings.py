@@ -13,6 +13,11 @@ from tamoss.settings import Settings, read_secret_file
         ("TAMOSS_WORKER_ENABLE_DELETE", "sometimes", "boolean"),
         ("TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED", "sometimes", "boolean"),
         ("TAMOSS_OAUTH2_ISSUER", "auth.example.test", "TAMOSS_OAUTH2_ISSUER"),
+        (
+            "TAMOSS_CORS_ALLOWED_ORIGINS",
+            "https://tool.example.test/path",
+            "TAMOSS_CORS_ALLOWED_ORIGINS",
+        ),
         ("TAMOSS_S3_ENDPOINT", "objects.internal", "TAMOSS_S3_ENDPOINT"),
         ("TAMOSS_MIN_OBJECT_TIMEOUT", "299:0", "min_object_timeout"),
         (
@@ -46,6 +51,7 @@ def test_operator_rendered_runtime_env_values_parse(
         "TAMOSS_OAUTH2_ISSUER": "https://auth.example.test/application/o/tamoss/",
         "TAMOSS_OAUTH2_JWKS_URI": "http://authentik.auth.svc:9000/application/o/tamoss/jwks/",
         "TAMOSS_OAUTH2_ALGORITHMS": "RS256,PS256",
+        "TAMOSS_CORS_ALLOWED_ORIGINS": "https://cuttingroom.github.io, https://app.example.test/",
     }
     for name, value in operator_env.items():
         monkeypatch.setenv(name, value)
@@ -60,6 +66,10 @@ def test_operator_rendered_runtime_env_values_parse(
     assert settings.storage_backend_registration_enabled is False
     assert settings.oauth2_enabled is True
     assert settings.oauth2_algorithms == ["RS256", "PS256"]
+    assert settings.cors_allowed_origins == [
+        "https://cuttingroom.github.io",
+        "https://app.example.test",
+    ]
 
 
 def test_local_kind_runtime_env_values_parse(
