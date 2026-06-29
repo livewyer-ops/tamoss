@@ -235,29 +235,42 @@ func findByQuery[T any](ctx context.Context, api ManagedBlueprintClient, segment
 	}
 	query := endpoint.Query()
 	query.Set(queryKey, queryValue)
-	endpoint.RawQuery = query.Encode()
-	var list struct {
-		Results []T `json:"results"`
-	}
-	if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
-		return zero, err
-	}
-	for _, result := range list.Results {
-		if match(result) {
-			return result, nil
+	query.Set("page_size", "100")
+	for {
+		endpoint.RawQuery = query.Encode()
+		var list struct {
+			Results    []T `json:"results"`
+			Pagination struct {
+				Next int `json:"next"`
+			} `json:"pagination"`
 		}
+		if err := api.doJSON(ctx, http.MethodGet, endpoint.String(), nil, &list); err != nil {
+			return zero, err
+		}
+		for _, result := range list.Results {
+			if match(result) {
+				return result, nil
+			}
+		}
+		if list.Pagination.Next <= 0 {
+			return zero, nil
+		}
+		query.Set("page", strconv.Itoa(list.Pagination.Next))
 	}
-	return zero, nil
+}
+
+func findBySearch[T any](ctx context.Context, api ManagedBlueprintClient, segments []string, searchValue string, match func(T) bool) (T, error) {
+	return findByQuery(ctx, api, segments, "search", searchValue, match)
 }
 
 func findOAuthProvider(ctx context.Context, api ManagedBlueprintClient, name string) (oauthProvider, error) {
-	return findByQuery(ctx, api, []string{"providers", "oauth2"}, "name", name, func(provider oauthProvider) bool {
+	return findBySearch(ctx, api, []string{"providers", "oauth2"}, name, func(provider oauthProvider) bool {
 		return provider.Name == name
 	})
 }
 
 func findProxyProvider(ctx context.Context, api ManagedBlueprintClient, name string) (proxyProvider, error) {
-	return findByQuery(ctx, api, []string{"providers", "proxy"}, "name", name, func(provider proxyProvider) bool {
+	return findBySearch(ctx, api, []string{"providers", "proxy"}, name, func(provider proxyProvider) bool {
 		return provider.Name == name
 	})
 }
@@ -324,7 +337,7 @@ func upsertProxyApplication(ctx context.Context, api ManagedBlueprintClient, tam
 }
 
 func findApplication(ctx context.Context, api ManagedBlueprintClient, slug string) (application, error) {
-	return findByQuery(ctx, api, []string{"core", "applications"}, "slug", slug, func(app application) bool {
+	return findBySearch(ctx, api, []string{"core", "applications"}, slug, func(app application) bool {
 		return app.Slug == slug
 	})
 }
@@ -358,7 +371,7 @@ func removeProviderFromEmbeddedOutpost(ctx context.Context, api ManagedBlueprint
 }
 
 func findEmbeddedOutpost(ctx context.Context, api ManagedBlueprintClient) (outpost, error) {
-	return findByQuery(ctx, api, []string{"outposts", "instances"}, "name", embeddedOutpostName, func(candidate outpost) bool {
+	return findBySearch(ctx, api, []string{"outposts", "instances"}, embeddedOutpostName, func(candidate outpost) bool {
 		return candidate.Name == embeddedOutpostName
 	})
 }

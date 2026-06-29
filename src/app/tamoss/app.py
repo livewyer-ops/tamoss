@@ -8,6 +8,7 @@ from typing import Any
 
 import anyio
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jwt import PyJWKClientError
 from starlette.responses import Response
@@ -42,6 +43,15 @@ from tamoss.metrics import install_http_metrics, record_api_info, start_metrics_
 from tamoss.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+CORS_ALLOW_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOW_HEADERS = ["Authorization", "Content-Type", "Accept", "Origin"]
+CORS_EXPOSE_HEADERS = [
+    "Link",
+    "X-Paging-Count",
+    "X-Paging-Limit",
+    "X-Paging-NextKey",
+]
 
 
 def create_app(
@@ -82,6 +92,7 @@ def create_app(
     register_error_handlers(application)
     _install_runtime_auth(application, resolved_settings)
     install_http_metrics(application)
+    _install_cors(application, resolved_settings)
     record_api_info(resolved_settings)
     application.include_router(health.router)
     application.include_router(service.router)
@@ -94,6 +105,18 @@ def create_app(
     application.include_router(objects.router)
     _install_openapi_schema(application, resolved_settings)
     return application
+
+
+def _install_cors(application: FastAPI, settings: Settings) -> None:
+    if not settings.cors_allowed_origins:
+        return
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_methods=CORS_ALLOW_METHODS,
+        allow_headers=CORS_ALLOW_HEADERS,
+        expose_headers=CORS_EXPOSE_HEADERS,
+    )
 
 
 def _close_repository(application: FastAPI) -> None:

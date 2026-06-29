@@ -2,6 +2,7 @@ package workload_renderer
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,6 +21,9 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		corev1.EnvVar{Name: "TAMOSS_METRICS_BIND_ADDRESS", Value: "0.0.0.0"},
 		corev1.EnvVar{Name: "TAMOSS_METRICS_PORT", Value: fmt.Sprintf("%d", apiMetricsPort)},
 	)
+	if origins := apiCORSAllowedOrigins(tamoss.Spec.API.CORS.AllowedOrigins); origins != "" {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_CORS_ALLOWED_ORIGINS", Value: origins})
+	}
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
@@ -41,4 +45,14 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			},
 		),
 	}
+}
+
+func apiCORSAllowedOrigins(origins []string) string {
+	allowed := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		if trimmed := strings.TrimSpace(origin); trimmed != "" {
+			allowed = append(allowed, trimmed)
+		}
+	}
+	return strings.Join(allowed, ",")
 }

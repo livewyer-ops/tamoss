@@ -1059,6 +1059,15 @@ spec:
                     - message: maxReplicas must be greater than or equal to minReplicas
                         when autoscaling is enabled
                       rule: '!self.enabled || self.maxReplicas >= self.minReplicas'
+                  cors:
+                    properties:
+                      allowedOrigins:
+                        description: AllowedOrigins lists browser origins allowed
+                          to call the TAMOSS API.
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   enabled:
                     type: boolean
                   env:

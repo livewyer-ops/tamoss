@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v5
@@ -84,7 +84,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -130,7 +130,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Task
         uses: ./.github/actions/setup-task
@@ -154,7 +154,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: ./.github/actions/setup-node
@@ -181,7 +181,7 @@ jobs:
       actions: read
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7

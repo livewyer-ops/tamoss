@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -16,23 +17,7 @@ import (
 
 func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 	tamoss := proxyOutpostFixture()
-	state := proxyOutpostServerState{
-		oauth: oauthProvider{
-			PK:                5,
-			Name:              "tamoss-tams-example",
-			AuthorizationFlow: "authorization-flow",
-			InvalidationFlow:  "invalidation-flow",
-			PropertyMappings:  []string{"openid", "profile"},
-		},
-		outpost: outpost{
-			PK:        "outpost-id",
-			Name:      embeddedOutpostName,
-			Type:      "proxy",
-			Providers: []int{7},
-			Config:    map[string]any{"log_level": "info"},
-			Managed:   "goauthentik.io/outposts/embedded",
-		},
-	}
+	state := proxyOutpostServerState{oauth: proxyOutpostOAuth(), outpost: proxyOutpostEmbeddedOutpost()}
 	server := httptest.NewServer(http.HandlerFunc(state.handle))
 	defer server.Close()
 
@@ -60,6 +45,13 @@ func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 		t.Fatalf("expected public Authentik host in outpost config, got %#v", state.outpost.Config)
 	}
 
+	if err := client.Reconcile(context.Background(), tamoss); err != nil {
+		t.Fatalf("second reconcile failed: %v", err)
+	}
+	if state.applicationPutCount != 1 {
+		t.Fatalf("expected second reconcile to update proxy application, got %d PUTs", state.applicationPutCount)
+	}
+
 	if err := client.Delete(context.Background(), tamoss); err != nil {
 		t.Fatalf("delete failed: %v", err)
 	}
@@ -74,13 +66,45 @@ func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 	}
 }
 
+func TestProxyOutpostClientFindsExistingApplicationWithSearch(t *testing.T) {
+	tamoss := proxyOutpostFixture()
+	state := proxyOutpostServerState{
+		oauth:                     proxyOutpostOAuth(),
+		proxy:                     proxyProvider{PK: 42, Name: "tamoss-tams-example-ui-proxy"},
+		application:               application{PK: "existing-app-id", Name: "tamoss-tams-example-ui", Slug: "tamoss-tams-example-ui"},
+		applicationSlugQueryStale: true,
+		outpost:                   proxyOutpostEmbeddedOutpost(),
+	}
+	server := httptest.NewServer(http.HandlerFunc(state.handle))
+	defer server.Close()
+
+	client := ProxyOutpostClient{BaseURL: server.URL, Token: "test-token"}
+	if err := client.Reconcile(context.Background(), tamoss); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if state.applicationPostCount != 0 {
+		t.Fatalf("expected existing application to be updated, got %d POSTs", state.applicationPostCount)
+	}
+	if state.applicationPutCount != 1 {
+		t.Fatalf("expected existing application to be updated, got %d PUTs", state.applicationPutCount)
+	}
+	if !state.applicationSearchSeen {
+		t.Fatalf("expected application lookup to use Authentik search query")
+	}
+}
+
 type proxyOutpostServerState struct {
-	oauth              oauthProvider
-	proxy              proxyProvider
-	proxyRequest       proxyProviderRequest
-	application        application
-	applicationRequest applicationRequest
-	outpost            outpost
+	oauth                     oauthProvider
+	proxy                     proxyProvider
+	proxyRequest              proxyProviderRequest
+	application               application
+	applicationRequest        applicationRequest
+	applicationSlugQueryStale bool
+	applicationSearchSeen     bool
+	applicationPostCount      int
+	applicationPutCount       int
+	applicationDeleteCount    int
+	outpost                   outpost
 }
 
 func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request) {
@@ -112,23 +136,52 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 		s.proxy = proxyProvider{}
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/core/applications/":
+		query := r.URL.Query()
+		if query.Get("search") != "" {
+			s.applicationSearchSeen = true
+			_ = json.NewEncoder(w).Encode(applicationList{Results: applicationResults(s.application)})
+			return
+		}
+		if s.applicationSlugQueryStale && query.Get("slug") != "" {
+			_ = json.NewEncoder(w).Encode(applicationList{Results: []application{{
+				PK:   "other-app-id",
+				Name: "other-app",
+				Slug: "other-app",
+			}}})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(applicationList{Results: applicationResults(s.application)})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v3/core/applications/":
 		if err := json.NewDecoder(r.Body).Decode(&s.applicationRequest); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.applicationPostCount++
+		if s.application.PK != "" && s.application.Slug == s.applicationRequest.Slug {
+			http.Error(w, `{"slug":["Application with this slug already exists."],"provider":["Application with this provider already exists."]}`, http.StatusBadRequest)
+			return
+		}
 		s.application = application{PK: "app-id", Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(s.application)
-	case r.Method == http.MethodPut && r.URL.Path == "/api/v3/core/applications/tamoss-tams-example-ui/":
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v3/core/applications/"):
+		if strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/core/applications/"), "/") != s.application.Slug {
+			http.NotFound(w, r)
+			return
+		}
 		if err := json.NewDecoder(r.Body).Decode(&s.applicationRequest); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.application = application{PK: "app-id", Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug}
+		s.applicationPutCount++
+		s.application = application{PK: s.application.PK, Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug}
 		_ = json.NewEncoder(w).Encode(s.application)
-	case r.Method == http.MethodDelete && r.URL.Path == "/api/v3/core/applications/tamoss-tams-example-ui/":
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v3/core/applications/"):
+		if strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/core/applications/"), "/") != s.application.Slug {
+			http.NotFound(w, r)
+			return
+		}
+		s.applicationDeleteCount++
 		s.application = application{}
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/outposts/instances/":
@@ -147,6 +200,27 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(s.outpost)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func proxyOutpostOAuth() oauthProvider {
+	return oauthProvider{
+		PK:                5,
+		Name:              "tamoss-tams-example",
+		AuthorizationFlow: "authorization-flow",
+		InvalidationFlow:  "invalidation-flow",
+		PropertyMappings:  []string{"openid", "profile"},
+	}
+}
+
+func proxyOutpostEmbeddedOutpost() outpost {
+	return outpost{
+		PK:        "outpost-id",
+		Name:      embeddedOutpostName,
+		Type:      "proxy",
+		Providers: []int{7},
+		Config:    map[string]any{"log_level": "info"},
+		Managed:   "goauthentik.io/outposts/embedded",
 	}
 }
 
