@@ -148,8 +148,14 @@ type WorkloadCommonSpec struct {
 type APIComponentSpec struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	//+kubebuilder:default={repository:livewyer/tamoss-api,pullPolicy:IfNotPresent}
-	Image              ImageSpec `json:"image,omitempty"`
+	Image              ImageSpec   `json:"image,omitempty"`
+	CORS               APICORSSpec `json:"cors,omitempty"`
 	WorkloadCommonSpec `json:",inline"`
+}
+
+type APICORSSpec struct {
+	// AllowedOrigins lists browser origins allowed to call the TAMOSS API.
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
 }
 
 type WorkerComponentSpec struct {

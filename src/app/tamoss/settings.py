@@ -248,6 +248,10 @@ class Settings(BaseSettings):
         le=65535,
         validation_alias="TAMOSS_METRICS_PORT",
     )
+    cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        validation_alias="TAMOSS_CORS_ALLOWED_ORIGINS",
+    )
     min_object_timeout: str = Field(
         default="300:0",
         validation_alias="TAMOSS_MIN_OBJECT_TIMEOUT",
@@ -380,6 +384,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "oauth2_algorithms",
+        "cors_allowed_origins",
         "webhook_allowed_hosts",
         mode="before",
     )
@@ -473,6 +478,27 @@ class Settings(BaseSettings):
             invalid_text = ", ".join(invalid)
             raise ValueError(f"unsupported OAuth2 JWT algorithm(s): {invalid_text}")
         return algorithms or ["RS256"]
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: list[str]) -> list[str]:
+        origins = []
+        for origin in value:
+            candidate = origin.strip().rstrip("/")
+            parsed = urlparse(candidate)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "TAMOSS_CORS_ALLOWED_ORIGINS must contain absolute http(s) origins"
+                )
+            origins.append(candidate)
+        return origins
 
     @model_validator(mode="after")
     def validate_forward_auth_boundary(self) -> Settings:
