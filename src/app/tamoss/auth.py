@@ -10,7 +10,7 @@ from typing import Any
 
 import jwt
 from fastapi import Request
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from jwt import InvalidTokenError, PyJWKClientError
 from starlette.routing import Match
 
@@ -164,11 +164,11 @@ def authorize_request(request: Request, identity: Identity, settings: Settings) 
             "Forbidden. OAuth2 token is missing a required TAMOSS API scope."
         )
 
-    route = _matched_api_route(request)
-    if route is None:
+    route_path = _matched_api_route_path(request)
+    if route_path is None:
         return
 
-    route_key = (request.method.upper(), route.path)
+    route_key = (request.method.upper(), route_path)
     scope_groups = OAUTH2_ROUTE_SCOPE_GROUPS.get(route_key)
     if scope_groups is None:
         raise Forbidden(
@@ -345,13 +345,14 @@ def _claim_subject(claims: dict[str, Any]) -> str:
     return "oauth2-client"
 
 
-def _matched_api_route(request: Request) -> APIRoute | None:
-    for route in request.app.routes:
+def _matched_api_route_path(request: Request) -> str | None:
+    for route_context in iter_route_contexts(request.app.routes):
+        route = route_context.route
         if not isinstance(route, APIRoute):
             continue
-        match, _child_scope = route.matches(request.scope)
+        match, _child_scope = route_context.matches(request.scope)
         if match == Match.FULL:
-            return route
+            return route_context.path
     return None
 
 
