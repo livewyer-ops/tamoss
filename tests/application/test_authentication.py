@@ -4,7 +4,7 @@ import base64
 
 import pytest
 import tamoss.auth as auth_module
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
@@ -340,13 +340,14 @@ def test_oauth2_scope_policy_covers_tamoss_api_routes() -> None:
     client = _auth_client()
 
     missing = []
-    for route in client.app.routes:
-        if not isinstance(route, APIRoute) or route.path in route_exemptions:
+    for route_context in iter_route_contexts(client.app.routes):
+        route = route_context.route
+        if not isinstance(route, APIRoute) or route_context.path in route_exemptions:
             continue
         missing.extend(
-            f"{method} {route.path}"
-            for method in sorted((route.methods or set()) - {"OPTIONS"})
-            if (method, route.path) not in auth_module.OAUTH2_ROUTE_SCOPE_GROUPS
+            f"{method} {route_context.path}"
+            for method in sorted((route_context.methods or set()) - {"OPTIONS"})
+            if (method, route_context.path) not in auth_module.OAUTH2_ROUTE_SCOPE_GROUPS
         )
 
     assert missing == []
