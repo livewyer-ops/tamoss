@@ -35,6 +35,30 @@ def test_api_cors_preflight_allows_configured_browser_origin() -> None:
     assert "authorization" in response.headers["access-control-allow-headers"].lower()
 
 
+def test_api_cors_preflight_allows_head_requests() -> None:
+    client = _client(
+        bbc_parity_settings(
+            auth_required=True,
+            cors_allowed_origins=["https://cuttingroom.github.io"],
+        )
+    )
+
+    response = client.options(
+        "/sources?limit=1",
+        headers={
+            "Origin": "https://cuttingroom.github.io",
+            "Access-Control-Request-Method": "HEAD",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "https://cuttingroom.github.io"
+    )
+    assert "HEAD" in response.headers["access-control-allow-methods"]
+
+
 def test_api_cors_headers_are_added_to_auth_errors() -> None:
     client = _client(
         bbc_parity_settings(

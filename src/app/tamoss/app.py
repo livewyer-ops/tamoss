@@ -44,7 +44,7 @@ from tamoss.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOW_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 CORS_ALLOW_HEADERS = ["Authorization", "Content-Type", "Accept", "Origin"]
 CORS_EXPOSE_HEADERS = [
     "Link",
