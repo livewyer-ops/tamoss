@@ -86,8 +86,10 @@ task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
 Presigned URLs are temporary credentials. Do not paste complete URLs into public
 issues, logs, or documentation.
 
-Browser uploads to external S3-compatible buckets require provider-side CORS for
-the TAMOSS UI origin. See [Troubleshooting](operations/troubleshooting.md).
+Browser uploads and playback against external S3-compatible buckets require
+provider-side CORS for every browser origin that dereferences presigned object
+URLs. API CORS is configured separately on the `Tamoss` resource. See
+[Troubleshooting](operations/troubleshooting.md).
 
 For local Kind, browser uploads use presigned URLs on
 `https://s3.tamoss.localtest.me`. Accept or trust the local self-signed TLS

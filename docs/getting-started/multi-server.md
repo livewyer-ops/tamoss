@@ -65,8 +65,8 @@ Use the multi-server profile as the baseline for production choices:
   ACME email before applying.
 - Keep internal service URLs separate from public OAuth issuer and public S3
   URLs.
-- Confirm browser-facing S3 CORS permits the UI origin, `PUT`, and required
-  headers.
+- Confirm API CORS and browser-facing S3 CORS permit every browser origin that
+  will call the API or dereference presigned object URLs.
 - Test restore for PostgreSQL and object storage before accepting production
   data.
 
