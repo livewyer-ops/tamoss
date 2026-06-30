@@ -65,6 +65,31 @@ Use `.spec.advanced` only when a field is not represented elsewhere in the CR.
 Advanced resource patches are applied before the operator writes emitted
 resources, and advanced extra resources are owned by the `Tamoss` instance.
 
+## API CORS
+
+Use `.spec.api.cors.allowedOrigins` when a browser application hosted on a
+different origin needs to call the TAMOSS API directly:
+
+```yaml
+spec:
+  api:
+    cors:
+      allowedOrigins:
+        - https://app.tamoss.example.com
+        - https://tool.example.com
+```
+
+The operator renders these origins into `TAMOSS_CORS_ALLOWED_ORIGINS` for the
+API Deployment. The API then allows browser preflight and authenticated requests
+from those origins. Values must be absolute `http` or `https` origins without a
+path, query string, or fragment.
+
+This field only configures CORS on TAMOSS API responses. Browser uploads,
+playback, and downloads that use presigned object-store URLs are controlled by
+the object-store provider's CORS policy. For `external-s3` backends, update the
+bucket CORS policy separately for every browser origin that dereferences
+presigned `put_url` or `get_urls`.
+
 ## Immutability And Required Fields
 
 The API server rejects updates that change `.spec.fullnameOverride` after

@@ -101,20 +101,30 @@ and object IDs by `TAMOSS_STORAGE_OBJECT_ID_MAX_LENGTH`. Clients must upload,
 finalize, and then register segments; allocated-only controlled objects are not
 referenceable by Flow Segments.
 
-## External S3 Browser Uploads
+## External S3 Browser Access
 
-Browser ingest uploads directly to the presigned S3 URL. Curl and server-side
-tests can succeed while browser uploads fail if the external bucket CORS policy
-does not allow the TAMOSS UI origin.
+Browser clients access external object storage directly through presigned URLs.
+Ingest uses `put_url`; playback and downloads use `get_urls`. Curl and
+server-side tests can succeed while browsers fail if the external bucket CORS
+policy does not allow the browser origin, method, or requested headers.
 
-External S3 buckets must allow:
+External S3 buckets must allow every browser origin that will dereference
+presigned URLs. This can include the TAMOSS UI origin and external tools such as
+review, playback, or ingest clients. At minimum, configure:
 
-- Origin: the TAMOSS UI origin, such as `https://app.tamoss.example.com`.
-- Method: `PUT`.
-- Headers: at least `content-type`; `*` is simplest where acceptable.
-- Optional read methods: `GET` and `HEAD`.
+- Origins: browser origins such as `https://app.tamoss.example.com` and
+  `https://tool.example.com`.
+- Upload methods: `PUT`.
+- Read methods: `GET` and `HEAD`.
+- Upload headers: at least `content-type`; `*` is simplest where acceptable.
+- Read/playback headers: `range` is commonly required by media clients. Some
+  XHR-based clients also preflight `authorization`, `x-requested-with`,
+  `cache-control`, or `pragma` even when the presigned URL itself carries the
+  storage credentials.
 
-TAMOSS does not configure CORS for `external-s3` backends.
+TAMOSS API CORS and bucket CORS are separate. Configure API CORS with
+`.spec.api.cors.allowedOrigins` when browser tools call the TAMOSS API. TAMOSS
+does not configure bucket CORS for `external-s3` backends.
 
 ## Deletion
 

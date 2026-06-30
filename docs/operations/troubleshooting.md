@@ -251,7 +251,10 @@ For external S3:
 - Confirm the endpoint and region match the provider.
 - Confirm the referenced Secret and key names match the `StorageBackend`.
 - Confirm the public endpoint is reachable from browsers.
-- Confirm bucket CORS permits the TAMOSS UI origin, `PUT`, and `content-type`.
+- Confirm API CORS permits every browser origin that calls the TAMOSS API.
+- Confirm bucket CORS permits every browser origin that dereferences presigned
+  object URLs, plus the methods and request headers used by those browser
+  clients.
 
 The operator records a best-effort `ExternalS3DiagnosticReady` condition on
 external `StorageBackend` resources. `CORSMisconfigured`,
@@ -260,18 +263,91 @@ do not mutate external buckets and can be false positives or false negatives
 because browser behavior, presigned URL shape, and provider CORS evaluation are
 owned by the external service.
 
-The API can allocate storage successfully while browser ingest still fails. If
-the UI reports a CORS error, test the preflight against a fresh presigned URL
-without sharing the URL publicly:
+Browser clients usually cross two CORS boundaries:
+
+1. The TAMOSS API origin, configured by `.spec.api.cors.allowedOrigins`.
+2. The object-store origin, configured by the external bucket provider.
+
+First test the API preflight from the browser origin:
 
 ```bash
-curl -sS -o /tmp/preflight-body.txt -D /tmp/preflight-headers.txt \
+curl -sS -o /tmp/api-preflight-body.txt -D /tmp/api-preflight-headers.txt \
+  -X OPTIONS "$TAMOSS_API_URL/service/storage-backends" \
+  -H 'Origin: https://tool.example.com' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization,content-type'
+
+grep -i '^access-control' /tmp/api-preflight-headers.txt
+```
+
+Then test object-store preflight against a fresh presigned URL without sharing
+the URL publicly. For browser uploads:
+
+```bash
+curl -sS -o /tmp/put-preflight-body.txt -D /tmp/put-preflight-headers.txt \
   -X OPTIONS "$PRESIGNED_PUT_URL" \
-  -H 'Origin: https://app.tamoss.localtest.me' \
+  -H 'Origin: https://tool.example.com' \
   -H 'Access-Control-Request-Method: PUT' \
   -H 'Access-Control-Request-Headers: content-type'
 
-grep -i '^access-control' /tmp/preflight-headers.txt
+grep -i '^access-control' /tmp/put-preflight-headers.txt
+```
+
+For browser playback or download from `get_urls`:
+
+```bash
+curl -sS -o /tmp/get-preflight-body.txt -D /tmp/get-preflight-headers.txt \
+  -X OPTIONS "$PRESIGNED_GET_URL" \
+  -H 'Origin: https://tool.example.com' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: range,authorization,x-requested-with,cache-control,pragma'
+
+grep -i '^access-control' /tmp/get-preflight-headers.txt
+```
+
+An `OPTIONS` response with HTTP `200` but no `Access-Control-Allow-Origin` is
+still a CORS failure. Compare the browser's `Access-Control-Request-Headers`
+value with the bucket rule; providers such as GCS only return CORS headers when
+the origin, method, and requested headers all match.
+
+For GCS-backed `external-s3` buckets, keep a JSON policy with the environment
+overlay or operator runbook and apply it with `gcloud`:
+
+```json
+[
+  {
+    "origin": [
+      "https://app.tamoss.example.com",
+      "https://tool.example.com"
+    ],
+    "method": ["GET", "HEAD", "PUT"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Content-MD5",
+      "Accept-Ranges",
+      "Range",
+      "Authorization",
+      "X-Requested-With",
+      "Cache-Control",
+      "Pragma",
+      "ETag",
+      "x-amz-checksum-crc32",
+      "x-amz-checksum-crc32c",
+      "x-amz-checksum-sha1",
+      "x-amz-checksum-sha256",
+      "x-goog-hash",
+      "x-goog-generation",
+      "x-goog-metageneration"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
+```
+
+```bash
+gcloud storage buckets update gs://BUCKET --cors-file=cors.json
 ```
 
 For Backblaze B2, the web-console "share with every origin" setting can allow
