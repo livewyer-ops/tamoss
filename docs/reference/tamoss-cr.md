@@ -88,7 +88,9 @@ This field only configures CORS on TAMOSS API responses. Browser uploads,
 playback, and downloads that use presigned object-store URLs are controlled by
 the object-store provider's CORS policy. For `external-s3` backends, update the
 bucket CORS policy separately for every browser origin that dereferences
-presigned `put_url` or `get_urls`.
+presigned `put_url` or `get_urls`. Managed RustFS bucket CORS is configured
+automatically but is single-origin (the UI host); see
+[Storage Backends](../concepts/storage-backends.md).
 
 ## Immutability And Required Fields
 
