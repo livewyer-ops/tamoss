@@ -57,7 +57,7 @@ jobs:
 
       - name: Extract Git metadata
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: livewyer/tamoss-api
           tags: |
@@ -140,7 +140,7 @@ jobs:
 
       - name: Extract Git metadata
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: livewyer/tamoss-ui
           tags: |
@@ -232,7 +232,7 @@ jobs:
 
       - name: Extract Git metadata
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: livewyer/tamoss-operator
           tags: |
