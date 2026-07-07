@@ -123,25 +123,61 @@ func s3PublicIngressTLS(tamoss *tamossv1alpha1.Tamoss, endpoint tamossv1alpha1.S
 
 func s3TraefikCORSRequired(tamoss *tamossv1alpha1.Tamoss) bool {
 	return strings.EqualFold(strings.TrimSpace(tamoss.Spec.Ingress.ClassName), "traefik") &&
-		strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host) != ""
+		(len(s3CORSOrigins(tamoss)) > 0 || len(s3CORSOriginRegexes(tamoss)) > 0)
 }
 
 func s3CORSMiddleware(tamoss *tamossv1alpha1.Tamoss) client.Object {
 	return newTraefikMiddleware(tamoss.ResourceName("s3-cors"), tamoss.Namespace, labels(tamoss, "s3-cors"), traefikMiddlewareSpec{
 		Headers: &traefikHeadersSpec{
-			AccessControlAllowMethods:    []string{"GET", "HEAD", "PUT", "POST", "OPTIONS"},
-			AccessControlAllowHeaders:    []string{"*"},
-			AccessControlAllowOriginList: []string{s3CORSOrigin(tamoss)},
-			AccessControlExposeHeaders:   []string{"ETag"},
-			AddVaryHeader:                true,
+			AccessControlAllowMethods:         []string{"GET", "HEAD", "PUT", "POST", "OPTIONS"},
+			AccessControlAllowHeaders:         []string{"Accept", "Accept-Language", "Authorization", "Content-Language", "Content-Type", "Origin", "Range", "X-Requested-With", "X-Amz-Content-Sha256", "X-Amz-Date", "X-Amz-Security-Token", "X-Amz-User-Agent"},
+			AccessControlAllowOriginList:      s3CORSOrigins(tamoss),
+			AccessControlAllowOriginListRegex: s3CORSOriginRegexes(tamoss),
+			AccessControlExposeHeaders:        []string{"Accept-Ranges", "Content-Length", "Content-Range", "ETag"},
+			AddVaryHeader:                     true,
 		},
 	})
 }
 
-func s3CORSOrigin(tamoss *tamossv1alpha1.Tamoss) string {
-	scheme := "http"
-	if len(tamoss.Spec.Ingress.TLS) > 0 {
-		scheme = "https"
+func s3CORSOrigins(tamoss *tamossv1alpha1.Tamoss) []string {
+	seen := map[string]struct{}{}
+	origins := []string{}
+	if host := strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host); host != "" {
+		scheme := "http"
+		if len(tamoss.Spec.Ingress.TLS) > 0 {
+			scheme = "https"
+		}
+		origin := fmt.Sprintf("%s://%s", scheme, host)
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
 	}
-	return fmt.Sprintf("%s://%s", scheme, strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host))
+	for _, origin := range tamoss.Spec.API.CORS.AllowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+	}
+	return origins
+}
+
+func s3CORSOriginRegexes(tamoss *tamossv1alpha1.Tamoss) []string {
+	seen := map[string]struct{}{}
+	regexes := []string{}
+	for _, regex := range tamoss.Spec.API.CORS.AllowedOriginRegexes {
+		regex = strings.TrimSpace(regex)
+		if regex == "" {
+			continue
+		}
+		if _, ok := seen[regex]; ok {
+			continue
+		}
+		seen[regex] = struct{}{}
+		regexes = append(regexes, regex)
+	}
+	return regexes
 }

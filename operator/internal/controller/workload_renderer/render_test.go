@@ -314,17 +314,26 @@ func TestRenderAPICORSAllowedOrigins(t *testing.T) {
 		"https://cuttingroom.github.io",
 		" https://app.example.com ",
 	}
+	tamoss.Spec.API.CORS.AllowedOriginRegexes = []string{
+		" ^https://[a-z0-9-]+\\.example-pages\\.com$ ",
+	}
 
 	objects := Render(tamoss)
 	api := deploymentByName(t, objects, "example-api")
 	if got := envValue(api.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGINS"); got != "https://cuttingroom.github.io,https://app.example.com" {
 		t.Fatalf("expected API CORS origins env, got %q", got)
 	}
+	if got := envValue(api.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES"); got != "^https://[a-z0-9-]+\\.example-pages\\.com$" {
+		t.Fatalf("expected API CORS origin regex env, got %q", got)
+	}
 
 	for _, name := range []string{"example-ui", "example-worker"} {
 		deployment := deploymentByName(t, objects, name)
 		if hasEnv(deployment.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGINS") {
 			t.Fatalf("%s should not receive API CORS origins env", name)
+		}
+		if hasEnv(deployment.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES") {
+			t.Fatalf("%s should not receive API CORS origin regex env", name)
 		}
 	}
 }
@@ -680,11 +689,13 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 	tests := []struct {
 		name               string
 		mutate             func(*tamossv1alpha1.Tamoss)
+		corsOriginRegexes  []string
 		wantIngress        bool
 		wantService        string
 		wantMiddleware     bool
 		wantMiddlewareAnno bool
 		wantTLSSecret      string
+		wantOriginRegexes  []string
 	}{
 		{
 			name: "rustfs operator routes to service alias",
@@ -701,6 +712,24 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 			wantMiddleware:     true,
 			wantMiddlewareAnno: true,
 			wantTLSSecret:      "tamoss-tls",
+		},
+		{
+			name: "configured origin regexes are rendered",
+			mutate: func(tamoss *tamossv1alpha1.Tamoss) {
+				tamoss.Spec.Backends.S3 = tamossv1alpha1.S3BackendSpec{
+					ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator,
+					RustFSOperator: &tamossv1alpha1.S3RustFSOperatorSpec{
+						PublicEndpoint: tamossv1alpha1.S3PublicEndpointSpec{URL: "https://s3.example.com"},
+					},
+				}
+			},
+			corsOriginRegexes:  []string{" ", `^https://[a-z0-9-]+\.github\.io$`, `^https://[a-z0-9-]+\.github\.io$`},
+			wantIngress:        true,
+			wantService:        "example-s3",
+			wantMiddleware:     true,
+			wantMiddlewareAnno: true,
+			wantTLSSecret:      "tamoss-tls",
+			wantOriginRegexes:  []string{`^https://[a-z0-9-]+\.github\.io$`},
 		},
 		{
 			name: "external s3 does not render managed ingress",
@@ -758,6 +787,8 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 			}}
 			tamoss.Spec.Ingress.API.Host = "api.example.com"
 			tamoss.Spec.Ingress.UI.Web.Host = "app.example.com"
+			tamoss.Spec.API.CORS.AllowedOrigins = []string{"https://cuttingroom.github.io"}
+			tamoss.Spec.API.CORS.AllowedOriginRegexes = tt.corsOriginRegexes
 			tt.mutate(tamoss)
 
 			objects := Render(tamoss)
@@ -810,12 +841,30 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 			if tt.wantMiddleware {
 				middleware := unstructuredByName(t, objects, "Middleware", "example-s3-cors")
 				origins, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowOriginList")
-				if len(origins) != 1 || origins[0] != "https://app.example.com" {
-					t.Fatalf("expected CORS origin https://app.example.com, got %#v", origins)
+				if len(origins) != 2 ||
+					origins[0] != "https://app.example.com" ||
+					origins[1] != "https://cuttingroom.github.io" {
+					t.Fatalf("expected S3 CORS origins for UI and browser tools, got %#v", origins)
 				}
 				methods, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowMethods")
 				if len(methods) != 5 || methods[0] != "GET" || methods[4] != "OPTIONS" {
 					t.Fatalf("unexpected CORS methods: %#v", methods)
+				}
+				headers, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowHeaders")
+				if !slices.Contains(headers, "Range") || !slices.Contains(headers, "X-Requested-With") {
+					t.Fatalf("expected video/XHR request headers to be allowed, got %#v", headers)
+				}
+				expose, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlExposeHeaders")
+				if !slices.Contains(expose, "Content-Range") || !slices.Contains(expose, "Accept-Ranges") {
+					t.Fatalf("expected video range response headers to be exposed, got %#v", expose)
+				}
+				regexes, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowOriginListRegex")
+				if len(tt.wantOriginRegexes) == 0 {
+					if len(regexes) > 0 {
+						t.Fatalf("did not expect configured origin regexes, got %#v", regexes)
+					}
+				} else if !slices.Equal(regexes, tt.wantOriginRegexes) {
+					t.Fatalf("expected configured origin regexes %#v, got %#v", tt.wantOriginRegexes, regexes)
 				}
 			} else if hasObject(objects, "Middleware/example-s3-cors") {
 				t.Fatalf("did not expect Traefik S3 CORS middleware in %v", renderedIDs(objects))

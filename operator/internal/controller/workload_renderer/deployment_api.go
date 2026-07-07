@@ -24,6 +24,9 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if origins := apiCORSAllowedOrigins(tamoss.Spec.API.CORS.AllowedOrigins); origins != "" {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_CORS_ALLOWED_ORIGINS", Value: origins})
 	}
+	if regexes := apiCORSAllowedOriginRegexes(tamoss.Spec.API.CORS.AllowedOriginRegexes); regexes != "" {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES", Value: regexes})
+	}
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
@@ -55,4 +58,14 @@ func apiCORSAllowedOrigins(origins []string) string {
 		}
 	}
 	return strings.Join(allowed, ",")
+}
+
+func apiCORSAllowedOriginRegexes(regexes []string) string {
+	allowed := make([]string, 0, len(regexes))
+	for _, regex := range regexes {
+		if trimmed := strings.TrimSpace(regex); trimmed != "" {
+			allowed = append(allowed, trimmed)
+		}
+	}
+	return strings.Join(allowed, "\n")
 }

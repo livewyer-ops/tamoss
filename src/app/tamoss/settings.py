@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import socket
 from functools import lru_cache
 from pathlib import Path
@@ -252,6 +253,10 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias="TAMOSS_CORS_ALLOWED_ORIGINS",
     )
+    cors_allowed_origin_regexes: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        validation_alias="TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES",
+    )
     min_object_timeout: str = Field(
         default="300:0",
         validation_alias="TAMOSS_MIN_OBJECT_TIMEOUT",
@@ -396,6 +401,15 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("cors_allowed_origin_regexes", mode="before")
+    @classmethod
+    def multiline_env_values(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.splitlines() if item.strip()]
+        return value
+
     @field_validator(
         "oauth2_admin_scope",
         "oauth2_read_scope",
@@ -499,6 +513,23 @@ class Settings(BaseSettings):
                 )
             origins.append(candidate)
         return origins
+
+    @field_validator("cors_allowed_origin_regexes")
+    @classmethod
+    def validate_cors_allowed_origin_regexes(cls, value: list[str]) -> list[str]:
+        regexes = []
+        for regex in value:
+            candidate = regex.strip()
+            if not candidate:
+                continue
+            try:
+                re.compile(candidate)
+            except re.error as exc:
+                raise ValueError(
+                    "TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES must contain valid regexes"
+                ) from exc
+            regexes.append(candidate)
+        return regexes
 
     @model_validator(mode="after")
     def validate_forward_auth_boundary(self) -> Settings:

@@ -154,8 +154,11 @@ type APIComponentSpec struct {
 }
 
 type APICORSSpec struct {
-	// AllowedOrigins lists browser origins allowed to call the TAMOSS API.
+	// AllowedOrigins lists exact browser origins allowed by TAMOSS-managed CORS.
 	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
+	// AllowedOriginRegexes lists browser origin regexes allowed by TAMOSS-managed CORS where regex matching is supported.
+	// These regexes are applied to the API runtime and Traefik CORS middleware for managed S3 ingress, but not to bucket CORS rules.
+	AllowedOriginRegexes []string `json:"allowedOriginRegexes,omitempty"`
 }
 
 type WorkerComponentSpec struct {

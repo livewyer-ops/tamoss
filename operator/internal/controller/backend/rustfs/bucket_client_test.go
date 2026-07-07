@@ -36,12 +36,14 @@ func TestMinioEndpointParsing(t *testing.T) {
 }
 
 func TestCORSConfig(t *testing.T) {
-	config := corsConfig("https://app.tamoss.example.com")
+	config := corsConfig([]string{"https://app.tamoss.example.com", "https://cuttingroom.github.io"})
 	if len(config.CORSRules) != 1 {
 		t.Fatalf("expected one CORS rule, got %#v", config.CORSRules)
 	}
 	rule := config.CORSRules[0]
-	if len(rule.AllowedOrigin) != 1 || rule.AllowedOrigin[0] != "https://app.tamoss.example.com" {
+	if len(rule.AllowedOrigin) != 2 ||
+		rule.AllowedOrigin[0] != "https://app.tamoss.example.com" ||
+		rule.AllowedOrigin[1] != "https://cuttingroom.github.io" {
 		t.Fatalf("unexpected allowed origins: %#v", rule.AllowedOrigin)
 	}
 	if len(rule.AllowedHeader) != 1 || rule.AllowedHeader[0] != "*" {

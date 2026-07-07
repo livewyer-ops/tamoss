@@ -108,15 +108,26 @@ def create_app(
 
 
 def _install_cors(application: FastAPI, settings: Settings) -> None:
-    if not settings.cors_allowed_origins:
+    if not settings.cors_allowed_origins and not settings.cors_allowed_origin_regexes:
         return
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
+        allow_origin_regex=_combined_cors_origin_regex(
+            settings.cors_allowed_origin_regexes
+        ),
         allow_methods=CORS_ALLOW_METHODS,
         allow_headers=CORS_ALLOW_HEADERS,
         expose_headers=CORS_EXPOSE_HEADERS,
     )
+
+
+def _combined_cors_origin_regex(regexes: list[str]) -> str | None:
+    if not regexes:
+        return None
+    if len(regexes) == 1:
+        return regexes[0]
+    return "|".join(f"(?:{regex})" for regex in regexes)
 
 
 def _close_repository(application: FastAPI) -> None:

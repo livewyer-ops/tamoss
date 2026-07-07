@@ -102,7 +102,7 @@ func rustfsBucketTarget(tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.Stora
 		EndpointURL: spec.Endpoint.Default.URL,
 		BucketName:  spec.BucketName,
 		Region:      spec.Region,
-		CORSOrigin:  storageBackendCORSOrigin(tamoss),
+		CORSOrigins: storageBackendCORSOrigins(tamoss),
 	}
 }
 
@@ -152,7 +152,7 @@ func storageBackendBucketHash(target rustfs.BucketTarget) string {
 		target.EndpointURL,
 		target.BucketName,
 		target.Region,
-		target.CORSOrigin,
+		strings.Join(target.CORSOrigins, "\n"),
 	)
 }
 
@@ -169,16 +169,38 @@ func storageBackendExternalBucketHash(spec tamossv1alpha1.StorageBackendSpec) st
 	)
 }
 
-func storageBackendCORSOrigin(tamoss *tamossv1alpha1.Tamoss) string {
-	host := tamoss.Spec.Ingress.UI.Web.Host
-	if host == "" {
-		return "*"
+func storageBackendCORSOrigins(tamoss *tamossv1alpha1.Tamoss) []string {
+	origins := browserCORSOrigins(tamoss)
+	if len(origins) == 0 {
+		return []string{"*"}
 	}
-	scheme := "http"
-	if len(tamoss.Spec.Ingress.TLS) > 0 {
-		scheme = "https"
+	return origins
+}
+
+func browserCORSOrigins(tamoss *tamossv1alpha1.Tamoss) []string {
+	seen := map[string]struct{}{}
+	origins := []string{}
+	if host := strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host); host != "" {
+		scheme := "http"
+		if len(tamoss.Spec.Ingress.TLS) > 0 {
+			scheme = "https"
+		}
+		origin := fmt.Sprintf("%s://%s", scheme, host)
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
 	}
-	return fmt.Sprintf("%s://%s", scheme, host)
+	for _, origin := range tamoss.Spec.API.CORS.AllowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+	}
+	return origins
 }
 
 func storageBackendBucketDeletionPossible(spec tamossv1alpha1.StorageBackendSpec) bool {
