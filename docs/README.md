@@ -8,8 +8,8 @@ then stay on the matching install, configuration, usage, and operations path.
 | Goal | Start with | Next steps |
 | --- | --- | --- |
 | Validate TAMOSS locally | [Local Kind](getting-started/local-kind.md) | [Usage](usage.md), [Troubleshooting](operations/troubleshooting.md), [Task Commands](reference/task-commands.md) |
-| Install on an existing cluster | [Install](operations/install.md) | [Single Server](getting-started/single-server.md) or [Multi Server](getting-started/multi-server.md), then [Configuration](configuration.md) |
-| Choose a deployment shape | [Profiles](concepts/profiles.md) | `local-kind`, `single-server`, or `multi-server` |
+| Install on an existing cluster | [Install](operations/install.md) | [Edge](getting-started/edge.md), [Single Server](getting-started/single-server.md), or [Multi Server](getting-started/multi-server.md), then [Configuration](configuration.md) |
+| Choose a deployment shape | [Profiles](concepts/profiles.md) | `local-kind`, `edge`, `single-server`, or `multi-server` |
 | Configure providers and endpoints | [Configuration](configuration.md) | [Provider Ownership](concepts/provider-ownership.md), [Runtime Configuration](reference/runtime-configuration.md), [Tamoss CR](reference/tamoss-cr.md), [StorageBackend CR](reference/storagebackend-cr.md) |
 | Use the UI or API | [Usage](usage.md) | [API](reference/api.md), [Storage Backends](concepts/storage-backends.md) |
 | Operate an installed cluster | [Day 2](operations/day-2.md) | [Backup and Restore](operations/backup-restore.md), [Upgrades](operations/upgrades.md), [Troubleshooting](operations/troubleshooting.md) |
@@ -18,6 +18,8 @@ then stay on the matching install, configuration, usage, and operations path.
 ## Get Started
 
 - [Local Kind](getting-started/local-kind.md) - canonical local validation path.
+- [Edge](getting-started/edge.md) - single-node ARM64 self-contained
+  Kubernetes.
 - [Single Server](getting-started/single-server.md) - run on one node or a
   small self-managed Kubernetes cluster.
 - [Multi Server](getting-started/multi-server.md) - production-shaped
@@ -30,8 +32,8 @@ then stay on the matching install, configuration, usage, and operations path.
 
 - [Architecture](concepts/architecture.md) - operator, platform, and instance
   boundaries.
-- [Profiles](concepts/profiles.md) - `local-kind`, `single-server`, and
-  `multi-server`.
+- [Profiles](concepts/profiles.md) - `local-kind`, `edge`, `single-server`,
+  and `multi-server`.
 - [Provider Ownership](concepts/provider-ownership.md) - managed and external
   PostgreSQL, S3, authentication, and HTTP.
 - [Storage Backends](concepts/storage-backends.md) - default and additional
@@ -82,7 +84,7 @@ navigation becomes a clear maintenance burden.
 | --- | --- |
 | `Tamoss` | The namespaced custom resource reconciled into API, UI, worker, database, storage, identity, and routing resources. |
 | `StorageBackend` | A namespaced custom resource that represents a registered TAMS object-store backend and its readiness. |
-| Profile | A deployment shape such as `local-kind`, `single-server`, or `multi-server` that supplies defaults. |
+| Profile | A deployment shape such as `local-kind`, `edge`, `single-server`, or `multi-server` that supplies defaults. |
 | Environment | A checked-in Kustomize overlay under `deploy/environments/<name>` used for durable cluster configuration. |
 | Managed | TAMOSS reconciles the Kubernetes-side resource lifecycle after prerequisites exist. |
 | External | TAMOSS consumes references to a service owned outside TAMOSS and does not mutate that service. |

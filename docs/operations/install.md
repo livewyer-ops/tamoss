@@ -53,14 +53,16 @@ task kind:up PROFILE=local-kind
 Supported profiles are:
 
 - `local-kind`
+- `edge`
 - `single-server`
 - `multi-server`
 
-When `PROFILE=single-server` or `PROFILE=multi-server` is used with `task kind:up`,
-the task uses the matching Kind environment under `deploy/environments/` while
-keeping the public instance profile name. `PROFILE=multi-server` also uses the
-checked-in multi-node Kind configuration so local validation has separate worker
-nodes; the remote install path still uses normal environment compositions.
+When `PROFILE=edge`, `PROFILE=single-server`, or `PROFILE=multi-server` is used
+with `task kind:up`, the task uses the matching Kind environment under
+`deploy/environments/` while keeping the public instance profile name.
+`PROFILE=multi-server` also uses the checked-in multi-node Kind configuration so
+local validation has separate worker nodes; the remote install path still uses
+normal environment compositions.
 
 ## Existing Cluster
 
@@ -85,6 +87,17 @@ Use `tls.mode: existing` when cert-manager and the ClusterIssuer are managed
 outside the TAMOSS platform layer. Use `tls.mode: disabled` when TLS Secrets are
 pre-created and cert-manager annotations should be omitted from explicit
 `Tamoss` ingress overrides.
+
+`PROFILE=edge` generates a self-signed, Authentik-free platform composition from
+`deploy/platform/values/edge-reference.yaml`:
+
+```bash
+task env:init NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
+task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
+```
+
+Review the generated storage sizes and hostnames before applying to an ARM64
+single-node cluster.
 
 If automation cannot call Task, keep the same checked-in inputs and apply the
 same layers in order:

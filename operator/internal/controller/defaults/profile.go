@@ -21,6 +21,9 @@ const (
 	defaultPublicIssuerName            = "tamoss-public"
 	defaultLocalKindTLSSecretName      = "tamoss-localtest-tls"
 	defaultLocalKindS3TLSSecretName    = "tamoss-localtest-s3-tls"
+	defaultEdgeIssuerName              = "tamoss-edge-selfsigned"
+	defaultEdgeTLSSecretName           = "tamoss-edge-tls"
+	defaultEdgeS3TLSSecretName         = "tamoss-edge-s3-tls"
 	defaultPublicTLSSecretName         = "tamoss-public-tls"
 	defaultPublicS3TLSSecretName       = "tamoss-s3-public-tls"
 )
@@ -38,6 +41,8 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 		applySingleServer(tamoss)
 	case tamossv1alpha1.TamossProfileMultiServer:
 		applyMultiServer(tamoss)
+	case tamossv1alpha1.TamossProfileEdge:
+		applyEdge(tamoss)
 	}
 	applyPublicEndpointDefaults(tamoss)
 	applyBaseComponentDefaults(tamoss)
@@ -118,6 +123,39 @@ func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
 	defaultRustFSOperator(tamoss, 1, 4, "100Gi")
 }
 
+func applyEdge(tamoss *tamossv1alpha1.Tamoss) {
+	defaultPlatformPublicEndpointWithoutAuthentik(tamoss, publicEndpointProfileDefaults{
+		BaseDomain:      "tamoss.edge",
+		IssuerName:      defaultEdgeIssuerName,
+		TLSSecretName:   defaultEdgeTLSSecretName,
+		S3TLSSecretName: defaultEdgeS3TLSSecretName,
+	})
+	defaultTokenOnlyAuth(tamoss)
+	setBool(&tamoss.Spec.Worker.Enabled, true)
+	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_DATABASE_POOL_MAX_SIZE", "3")
+	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_API_THREAD_POOL_TOKENS", "16")
+	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_S3_CONNECT_TIMEOUT_SECONDS", "2")
+	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_S3_READ_TIMEOUT_SECONDS", "5")
+	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_WEBHOOK_ALLOWED_HOSTS", ".svc.cluster.local")
+	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_WORKER_POLL_INTERVAL_SECONDS", "5")
+	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_WORKER_MAX_REQUESTS", "5")
+	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_DATABASE_POOL_MAX_SIZE", "3")
+	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_WEBHOOK_ALLOWED_HOSTS", ".svc.cluster.local")
+	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
+	defaultEdgeWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "100m", "192Mi", "600m", "384Mi")
+	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
+	defaultWorkloadResources(&tamoss.Spec.UI.WorkloadCommonSpec, "25m", "32Mi", "150m", "96Mi")
+	defaultRestrictedWorkloadSecurity(&tamoss.Spec.API.WorkloadCommonSpec)
+	defaultRestrictedWorkloadSecurity(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultRestrictedWorkloadSecurity(&tamoss.Spec.UI.WorkloadCommonSpec)
+
+	defaultCNPG(tamoss, 1, "10Gi", false, false)
+	defaultCNPGResources(tamoss, "100m", "256Mi", "800m", "768Mi")
+	defaultRustFSOperator(tamoss, 1, 4, "10Gi")
+	setRustFSEnvDefault(tamoss, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK", "true")
+}
+
 func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	defaultPlatformPublicEndpoint(tamoss, publicEndpointProfileDefaults{
 		IssuerName:      defaultPublicIssuerName,
@@ -155,6 +193,11 @@ type publicEndpointProfileDefaults struct {
 }
 
 func defaultPlatformPublicEndpoint(tamoss *tamossv1alpha1.Tamoss, defaults publicEndpointProfileDefaults) {
+	defaultPlatformPublicEndpointWithoutAuthentik(tamoss, defaults)
+	defaultAuthentikBlueprints(tamoss)
+}
+
+func defaultPlatformPublicEndpointWithoutAuthentik(tamoss *tamossv1alpha1.Tamoss, defaults publicEndpointProfileDefaults) {
 	if tamoss.Spec.PublicEndpoint.BaseDomain == "" {
 		tamoss.Spec.PublicEndpoint.BaseDomain = defaults.BaseDomain
 	}
@@ -173,7 +216,23 @@ func defaultPlatformPublicEndpoint(tamoss *tamossv1alpha1.Tamoss, defaults publi
 			defaultCertManagerIssuerAnnotation: defaults.IssuerName,
 		}
 	}
-	defaultAuthentikBlueprints(tamoss)
+}
+
+func defaultTokenOnlyAuth(tamoss *tamossv1alpha1.Tamoss) {
+	if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByNone {
+		return
+	}
+	if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		return
+	}
+	tamoss.Spec.Auth.ProvidedBy = tamossv1alpha1.AuthProvidedByExternal
+	tamoss.Spec.Auth.Required = true
+	if tamoss.Spec.Auth.External == nil {
+		tamoss.Spec.Auth.External = &tamossv1alpha1.AuthExternalSpec{}
+	}
+	if len(tamoss.Spec.Auth.External.OAuth2.Algorithms) == 0 {
+		tamoss.Spec.Auth.External.OAuth2.Algorithms = []string{"RS256"}
+	}
 }
 
 func defaultAuthentikBlueprints(tamoss *tamossv1alpha1.Tamoss) {
@@ -354,6 +413,18 @@ func defaultCNPG(tamoss *tamossv1alpha1.Tamoss, instances int32, storageSize str
 	setBool(&cnpg.Monitoring.EnablePodMonitor, enablePodMonitor)
 }
 
+func defaultCNPGResources(tamoss *tamossv1alpha1.Tamoss, requestCPU, requestMemory, limitCPU, limitMemory string) {
+	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG ||
+		tamoss.Spec.Backends.DB.CNPG == nil {
+		return
+	}
+	resources := &tamoss.Spec.Backends.DB.CNPG.Resources
+	setResourceDefault(&resources.Requests, corev1.ResourceCPU, requestCPU)
+	setResourceDefault(&resources.Requests, corev1.ResourceMemory, requestMemory)
+	setResourceDefault(&resources.Limits, corev1.ResourceCPU, limitCPU)
+	setResourceDefault(&resources.Limits, corev1.ResourceMemory, limitMemory)
+}
+
 func defaultRustFSOperator(tamoss *tamossv1alpha1.Tamoss, servers, volumesPerServer int32, storageSize string) {
 	if tamoss.Spec.Backends.S3.ProvidedBy == "" {
 		tamoss.Spec.Backends.S3.ProvidedBy = tamossv1alpha1.S3BackendProvidedByRustFSOperator
@@ -400,6 +471,19 @@ func defaultWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 	if spec.StartupProbe == nil {
 		spec.StartupProbe = execProbe(command, 10, 5, 12)
+	}
+}
+
+func defaultEdgeWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
+	if spec.ReadinessProbe == nil {
+		spec.ReadinessProbe = execProbe(command, 30, 30, 3)
+	}
+	if spec.LivenessProbe == nil {
+		spec.LivenessProbe = execProbe(command, 60, 30, 3)
+	}
+	if spec.StartupProbe == nil {
+		spec.StartupProbe = execProbe(command, 30, 30, 12)
 	}
 }
 

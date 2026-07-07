@@ -15,7 +15,7 @@ type TamossSpec struct {
 
 	// Profile selects operator-owned defaults for a common installation shape.
 	// Explicit fields in the Tamoss spec override profile defaults.
-	//+kubebuilder:validation:Enum=local-kind;single-server;multi-server
+	//+kubebuilder:validation:Enum=local-kind;single-server;multi-server;edge
 	Profile TamossProfile `json:"profile,omitempty"`
 
 	// PublicEndpoint defines the public DNS defaults used by profile defaulting.
@@ -61,6 +61,7 @@ const (
 	TamossProfileLocalKind    TamossProfile = "local-kind"
 	TamossProfileSingleServer TamossProfile = "single-server"
 	TamossProfileMultiServer  TamossProfile = "multi-server"
+	TamossProfileEdge         TamossProfile = "edge"
 )
 
 type PublicEndpointSpec struct {
