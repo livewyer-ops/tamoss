@@ -13,7 +13,7 @@ belong in the CR references and the canonical CRD schemas under
 
 | Need | Use |
 | --- | --- |
-| Choose `local-kind`, `single-server`, or `multi-server` | [Profiles](concepts/profiles.md) |
+| Choose `local-kind`, `edge`, `single-server`, or `multi-server` | [Profiles](concepts/profiles.md) |
 | Configure managed or external providers | [Provider Ownership](concepts/provider-ownership.md) |
 | Configure storage backends and controlled storage allocation | [Storage Backends](concepts/storage-backends.md) |
 | Override runtime workload, image, and environment settings | [Runtime Configuration](reference/runtime-configuration.md) |
@@ -43,7 +43,8 @@ spec:
     baseDomain: tamoss.example.com
 ```
 
-The operator derives API, UI, S3, and Authentik endpoints from the base domain.
+The operator derives API, UI, and S3 endpoints from the base domain. Authentik
+endpoints are derived only for Authentik-backed profiles.
 
 ## Inspect Effective Configuration
 

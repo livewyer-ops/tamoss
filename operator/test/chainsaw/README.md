@@ -127,7 +127,7 @@ is the executable source of truth for label values and selector presets.
 | `test.tamoss.io/domain` | `install`, `instance`, `storage`, `db`, `auth`, `routing`, `schema`, `profile`, `observability`, `operations` |
 | `test.tamoss.io/lifecycle` | `read-only`, `ephemeral`, `destructive` |
 | `test.tamoss.io/provider` | `none`, `cnpg`, `rustfs`, `authentik`, `external`, `mixed` |
-| `test.tamoss.io/profile` | `none`, `local-kind`, `single-server`, `multi-server` |
+| `test.tamoss.io/profile` | `none`, `local-kind`, `edge`, `single-server`, `multi-server` |
 
 | Command | Selection |
 | --- | --- |

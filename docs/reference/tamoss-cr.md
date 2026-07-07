@@ -39,8 +39,8 @@ spec:
 
 | Field | Purpose |
 | --- | --- |
-| `.spec.profile` | Selects `local-kind`, `single-server`, or `multi-server` defaults. |
-| `.spec.publicEndpoint` | Derives public API, UI, S3, and Authentik endpoint defaults. |
+| `.spec.profile` | Selects `local-kind`, `edge`, `single-server`, or `multi-server` defaults. |
+| `.spec.publicEndpoint` | Derives public API, UI, S3, and Authentik endpoint defaults when the selected auth mode uses Authentik. |
 | `.spec.backends.db` | Selects managed CNPG or external PostgreSQL and configures database backup/restore when CNPG is used. |
 | `.spec.backends.s3` | Selects managed RustFS Operator or external S3-compatible storage for the default backend. |
 | `.spec.auth` | Selects Authentik Blueprints, external OAuth/OIDC, or no authentication. |

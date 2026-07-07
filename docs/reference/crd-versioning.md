@@ -58,7 +58,7 @@ complete schema:
 
 | Field area | Classification | Notes |
 | --- | --- | --- |
-| `.spec.profile` | Stable candidate | Profile names are core user-facing install shapes: `local-kind`, `single-server`, `multi-server`. Any rename is breaking. |
+| `.spec.profile` | Stable candidate | Profile names are core user-facing install shapes: `local-kind`, `edge`, `single-server`, `multi-server`. Any rename is breaking. |
 | `.spec.publicEndpoint` | Stable candidate | Base-domain driven endpoint derivation is the preferred low-boilerplate path. |
 | `.spec.backends.db.providedBy` | Stable candidate | `cnpg` and `external` are the supported product modes. |
 | `.spec.backends.db.cnpg` | Stable candidate | CNPG is the managed PostgreSQL provider. Backup, monitoring, storage, resources, and instance count are provider-native settings. |
