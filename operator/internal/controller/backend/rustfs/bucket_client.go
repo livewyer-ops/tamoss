@@ -15,7 +15,7 @@ type BucketTarget struct {
 	EndpointURL string
 	BucketName  string
 	Region      string
-	CORSOrigin  string
+	CORSOrigins []string
 }
 
 type BucketCredentials struct {
@@ -44,8 +44,8 @@ func (S3BucketClient) Ensure(ctx context.Context, target BucketTarget, creds Buc
 			return fmt.Errorf("create bucket %s: %w", target.BucketName, err)
 		}
 	}
-	if target.CORSOrigin != "" {
-		if err := client.SetBucketCors(ctx, target.BucketName, corsConfig(target.CORSOrigin)); err != nil {
+	if len(target.CORSOrigins) > 0 {
+		if err := client.SetBucketCors(ctx, target.BucketName, corsConfig(target.CORSOrigins)); err != nil {
 			return fmt.Errorf("configure bucket CORS for %s: %w", target.BucketName, err)
 		}
 	}
@@ -108,9 +108,9 @@ func minioEndpoint(raw string) (string, bool, error) {
 	return parsed.Host, parsed.Scheme == "https", nil
 }
 
-func corsConfig(origin string) *cors.Config {
+func corsConfig(origins []string) *cors.Config {
 	return cors.NewConfig([]cors.Rule{{
-		AllowedOrigin: []string{origin},
+		AllowedOrigin: origins,
 		AllowedMethod: []string{"GET", "HEAD", "PUT", "POST"},
 		AllowedHeader: []string{"*"},
 		ExposeHeader:  []string{"ETag"},

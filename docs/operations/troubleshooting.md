@@ -265,8 +265,11 @@ owned by the external service.
 
 Browser clients usually cross two CORS boundaries:
 
-1. The TAMOSS API origin, configured by `.spec.api.cors.allowedOrigins`.
-2. The object-store origin, configured by the external bucket provider.
+1. The TAMOSS API origin, configured by `.spec.api.cors.allowedOrigins` and
+   `.spec.api.cors.allowedOriginRegexes`.
+2. The object-store origin, configured by the external bucket provider or, for
+   managed RustFS, by exact origins from `.spec.api.cors.allowedOrigins` plus
+   Traefik-only regexes from `.spec.api.cors.allowedOriginRegexes`.
 
 First test the API preflight from the browser origin:
 

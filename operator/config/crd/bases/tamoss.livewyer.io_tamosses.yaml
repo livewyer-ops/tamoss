@@ -1061,9 +1061,16 @@ spec:
                       rule: '!self.enabled || self.maxReplicas >= self.minReplicas'
                   cors:
                     properties:
+                      allowedOriginRegexes:
+                        description: |-
+                          AllowedOriginRegexes lists browser origin regexes allowed by TAMOSS-managed CORS where regex matching is supported.
+                          These regexes are applied to the API runtime and Traefik CORS middleware for managed S3 ingress, but not to bucket CORS rules.
+                        items:
+                          type: string
+                        type: array
                       allowedOrigins:
-                        description: AllowedOrigins lists browser origins allowed
-                          to call the TAMOSS API.
+                        description: AllowedOrigins lists exact browser origins allowed
+                          by TAMOSS-managed CORS.
                         items:
                           type: string
                         type: array

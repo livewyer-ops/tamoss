@@ -28,11 +28,12 @@ type traefikForwardAuthSpec struct {
 }
 
 type traefikHeadersSpec struct {
-	AccessControlAllowMethods    []string `json:"accessControlAllowMethods,omitempty"`
-	AccessControlAllowHeaders    []string `json:"accessControlAllowHeaders,omitempty"`
-	AccessControlAllowOriginList []string `json:"accessControlAllowOriginList,omitempty"`
-	AccessControlExposeHeaders   []string `json:"accessControlExposeHeaders,omitempty"`
-	AddVaryHeader                bool     `json:"addVaryHeader,omitempty"`
+	AccessControlAllowMethods         []string `json:"accessControlAllowMethods,omitempty"`
+	AccessControlAllowHeaders         []string `json:"accessControlAllowHeaders,omitempty"`
+	AccessControlAllowOriginList      []string `json:"accessControlAllowOriginList,omitempty"`
+	AccessControlAllowOriginListRegex []string `json:"accessControlAllowOriginListRegex,omitempty"`
+	AccessControlExposeHeaders        []string `json:"accessControlExposeHeaders,omitempty"`
+	AddVaryHeader                     bool     `json:"addVaryHeader,omitempty"`
 }
 
 func newTraefikMiddleware(name, namespace string, labels map[string]string, spec traefikMiddlewareSpec) client.Object {

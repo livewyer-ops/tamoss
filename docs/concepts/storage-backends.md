@@ -123,22 +123,23 @@ review, playback, or ingest clients. At minimum, configure:
   storage credentials.
 
 TAMOSS API CORS and bucket CORS are separate. Configure API CORS with
-`.spec.api.cors.allowedOrigins` when browser tools call the TAMOSS API. TAMOSS
-does not configure bucket CORS for `external-s3` backends.
+`.spec.api.cors.allowedOrigins` and optional
+`.spec.api.cors.allowedOriginRegexes` when browser tools call the TAMOSS API.
+TAMOSS does not configure bucket CORS for `external-s3` backends.
 
 ## Managed RustFS Browser Access
 
 For managed RustFS backends the operator configures bucket CORS automatically,
-but only for a single origin: the UI web host from `.spec.ingress.ui.web.host`
-(`https` when `.spec.ingress.tls` is set, otherwise `http`). When that host is
-unset the operator falls back to a wildcard (`*`) origin; set the UI host to
-narrow bucket CORS to that one origin.
+including the UI web host from `.spec.ingress.ui.web.host` (`https` when
+`.spec.ingress.tls` is set, otherwise `http`) and exact origins from
+`.spec.api.cors.allowedOrigins`. When no exact origins are configured, the
+operator falls back to a wildcard (`*`) bucket CORS origin.
 
-Unlike `.spec.api.cors.allowedOrigins`, which accepts a list, managed bucket CORS
-is single-origin. Browser access to a managed bucket from an additional origin
-(for example a separate review or playback tool) is not expressible on a managed
-backend. Use an `external-s3` backend and configure the provider's bucket CORS
-policy directly when you need more than the UI origin.
+Regex origins from `.spec.api.cors.allowedOriginRegexes` are supported by the
+API and at the Traefik S3 ingress layer. They are not written to RustFS bucket
+CORS because S3-compatible bucket CORS rules are exact-origin based. Use an
+`external-s3` backend and configure the provider's bucket CORS policy directly
+when you need provider-specific CORS behavior.
 
 ## Deletion
 

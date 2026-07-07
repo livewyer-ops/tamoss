@@ -67,8 +67,10 @@ resources, and advanced extra resources are owned by the `Tamoss` instance.
 
 ## API CORS
 
-Use `.spec.api.cors.allowedOrigins` when a browser application hosted on a
-different origin needs to call the TAMOSS API directly:
+Use `.spec.api.cors.allowedOrigins` and, where regex matching is needed,
+`.spec.api.cors.allowedOriginRegexes` when a browser application hosted on a
+different origin needs to call the TAMOSS API directly or access
+operator-managed RustFS through the browser-facing S3 ingress:
 
 ```yaml
 spec:
@@ -77,19 +79,21 @@ spec:
       allowedOrigins:
         - https://app.tamoss.example.com
         - https://tool.example.com
+      allowedOriginRegexes:
+        - ^https://[a-z0-9-]+\.example-pages\.com$
 ```
 
-The operator renders these origins into `TAMOSS_CORS_ALLOWED_ORIGINS` for the
-API Deployment. The API then allows browser preflight and authenticated requests
-from those origins. Values must be absolute `http` or `https` origins without a
-path, query string, or fragment.
+The operator renders exact origins into `TAMOSS_CORS_ALLOWED_ORIGINS` and
+regexes into `TAMOSS_CORS_ALLOWED_ORIGIN_REGEXES` for the API Deployment. The
+API then allows browser preflight and authenticated requests from matching
+origins. Exact origin values must be absolute `http` or `https` origins without
+a path, query string, or fragment.
 
-This field only configures CORS on TAMOSS API responses. Browser uploads,
-playback, and downloads that use presigned object-store URLs are controlled by
-the object-store provider's CORS policy. For `external-s3` backends, update the
-bucket CORS policy separately for every browser origin that dereferences
-presigned `put_url` or `get_urls`. Managed RustFS bucket CORS is configured
-automatically but is single-origin (the UI host); see
+For managed RustFS backends, the operator also applies exact allowed origins to
+bucket CORS and to Traefik S3 ingress middleware. `allowedOriginRegexes` is
+also applied to Traefik S3 ingress middleware, but not to S3 bucket CORS. For
+`external-s3` backends, update the bucket CORS policy separately for every
+browser origin that dereferences presigned `put_url` or `get_urls`; see
 [Storage Backends](../concepts/storage-backends.md).
 
 ## Immutability And Required Fields
