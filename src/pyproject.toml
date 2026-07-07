@@ -50,7 +50,7 @@ dev = [
     "mypy>=1.13.0",
     "types-requests",
     "types-PyYAML",
-    "playwright>=1.60.0",
+    "playwright>=1.61.0",
     "datamodel-code-generator[ruff]>=0.66.0",
     "httpx2>=2.5.0",
 ]
