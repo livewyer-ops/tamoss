@@ -6,6 +6,7 @@ separate products and they do not change the operator install path.
 | Profile | Purpose | Backing services |
 | --- | --- | --- |
 | `local-kind` | Local evaluation and development on Kind. | CNPG and RustFS Operator with small single-node defaults, Authentik, cert-manager, and Traefik on host port 443. |
+| `edge` | Single-node ARM64 Kubernetes installs with local persistent storage, sized from a Raspberry Pi 4 Model B 4 GB floor. | CNPG and RustFS Operator with compact single-node defaults, token-only auth, cert-manager, and Traefik. |
 | `single-server` | One Kubernetes node or a small self-managed cluster. | CNPG and RustFS Operator with single-node durable defaults plus shared Authentik, cert-manager, and Traefik. |
 | `multi-server` | Production reference for multi-node Kubernetes. | Replicated workloads, CNPG, RustFS Operator, shared Authentik, cert-manager, and Traefik. |
 
@@ -16,12 +17,18 @@ those defaults.
 Profiles do not define tenant identity. In shared clusters, tenant boundaries
 come from Kubernetes namespaces and the `Tamoss` resources applied in them.
 
-All profiles default application authentication to managed Authentik. Omitting
-`spec.auth` selects `auth.providedBy: authentik-blueprints`, derives
-`https://auth.<baseDomain>` from `spec.publicEndpoint.baseDomain`, and expects
-the platform Authentik install in the `auth` namespace. Use an explicit
-`spec.auth.providedBy: external` or `spec.auth.providedBy: none` only when an
-environment intentionally opts out of the profile default.
+`local-kind`, `single-server`, and `multi-server` default application
+authentication to managed Authentik. Omitting `spec.auth` selects
+`auth.providedBy: authentik-blueprints`, derives `https://auth.<baseDomain>`
+from `spec.publicEndpoint.baseDomain`, and expects the platform Authentik
+install in the `auth` namespace. Use an explicit `spec.auth.providedBy:
+external` or `spec.auth.providedBy: none` only when an environment intentionally
+opts out of the profile default.
+
+`edge` intentionally does not default to Authentik. It selects
+`auth.providedBy: external` with OAuth2 disabled and uses the generated TAMOSS
+API token Secret for bearer-token access. Set `spec.auth.providedBy: none` only
+when the edge install should accept anonymous API requests.
 
 `deploy/profiles.yaml` is the profile registry used by Taskfile helpers. Each
 supported profile records its Kind environment composition, target environment
@@ -29,9 +36,13 @@ file, and the Kind cluster config used for local validation.
 
 `local-kind` is a local test adapter. It creates a Kind cluster, loads local
 development images, uses `localtest.me`, and exists to validate the operator
-flow quickly. `single-server` is the remote-capable single-node or small-cluster
-profile. Running `task kind:up PROFILE=single-server` validates that profile on
-Kind; it is not the remote install path.
+flow quickly. `edge` is a remote-capable single-node ARM64 profile for boards
+as small as a Raspberry Pi 4 Model B with 4 GB RAM; running
+`task kind:up PROFILE=edge` validates the profile shape on Kind, but the target
+install path is a normal ARM64 Kubernetes cluster such as K3s. `single-server`
+is the remote-capable single-node or small-cluster profile. Running
+`task kind:up PROFILE=single-server` validates that profile on Kind; it is not
+the remote install path.
 
 Running `task kind:up PROFILE=multi-server` validates the production reference
 profile on a disposable multi-node Kind cluster. That local harness exercises
@@ -40,7 +51,7 @@ remains normal Kubernetes through the `env:*` tasks.
 
 ## Security Defaults
 
-`single-server` and `multi-server` default TAMOSS application workloads to a
+`edge`, `single-server`, and `multi-server` default TAMOSS application workloads to a
 restricted-compatible security posture: non-root pods and containers, runtime
 default seccomp, no privilege escalation, and dropped Linux capabilities. The
 operator manager keeps the stricter read-only root filesystem default; API, UI,
@@ -85,7 +96,7 @@ The operator derives:
 - API: `https://api.<baseDomain>`
 - UI: `https://app.<baseDomain>`
 - S3: `https://s3.<baseDomain>`
-- Authentik: `https://auth.<baseDomain>`
+- Authentik: `https://auth.<baseDomain>` for Authentik-backed profiles
 
 Override a specific endpoint only when that endpoint must deviate from the
 standard shape.
@@ -93,10 +104,11 @@ standard shape.
 ## TLS Defaults
 
 `local-kind` defaults to `ClusterIssuer/tamoss-selfsigned` and local test TLS
-Secret names. `single-server` and `multi-server` default to
+Secret names. `edge` defaults to `ClusterIssuer/tamoss-edge-selfsigned` with
+edge TLS Secret names. `single-server` and `multi-server` default to
 `ClusterIssuer/tamoss-public` with public TLS Secret names. The matching
-platform values use `tls.mode: public` to render an ACME ClusterIssuer for
-remote environments:
+single-server and multi-server platform values use `tls.mode: public` to render
+an ACME ClusterIssuer for remote environments:
 
 ```yaml
 tls:
@@ -117,6 +129,7 @@ Run profiles one at a time on Kind:
 
 ```bash
 task kind:up PROFILE=local-kind
+task kind:up PROFILE=edge
 task kind:up PROFILE=single-server
 task kind:up PROFILE=multi-server
 ```
