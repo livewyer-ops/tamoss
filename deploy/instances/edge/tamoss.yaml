@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tams
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-edge
+  namespace: tams
+spec:
+  profile: edge

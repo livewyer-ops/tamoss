@@ -1,0 +1,23 @@
+certManager:
+  enabled: true
+
+cnpg:
+  enabled: true
+
+rustfsOperator:
+  enabled: true
+
+authentik:
+  enabled: false
+
+traefik:
+  enabled: true
+  deployment:
+    replicas: 1
+  service:
+    spec:
+      type: LoadBalancer
+
+tls:
+  mode: selfSigned
+  issuerName: tamoss-edge-selfsigned

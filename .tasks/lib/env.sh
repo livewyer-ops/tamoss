@@ -104,9 +104,9 @@ task_init_env() {
       ;;
   esac
   case "$profile" in
-    single-server|multi-server) ;;
+    single-server|multi-server|edge) ;;
     *)
-      echo "PROFILE must be single-server or multi-server for remote Kubernetes environments." >&2
+      echo "PROFILE must be single-server, multi-server, or edge for remote Kubernetes environments." >&2
       return 2
       ;;
   esac
@@ -129,6 +129,9 @@ task_init_env() {
       "$file" > "$tmp_file"
     mv "$tmp_file" "$file"
   done
+  if [ "$profile" = "edge" ]; then
+    cp deploy/platform/values/edge-reference.yaml "$environment_dir/platform-values.yaml"
+  fi
 
   printf 'Created %s\n' "$environment_dir"
   printf 'Edit the YAML files there, then run:\n'
@@ -366,7 +369,7 @@ task_apply_env() {
   namespace="${namespace:-tams}"
 
   case "$profile" in
-    local-kind|single-server|multi-server) ;;
+    local-kind|single-server|multi-server|edge) ;;
     *)
       echo "Unable to infer a supported Tamoss spec.profile from $environment_dir." >&2
       return 1
@@ -852,21 +855,29 @@ task_print_env_summary() {
   task_condition_summary "$kubeconfig" "$api_namespace" "Routes" tamoss "$tamoss_name" "RoutingReady"
   printf '\nAccess\n'
   printf '  App URL:          %s\n' "$app_url"
-  printf '  Auth Admin URL:   %s/if/admin/\n' "${auth_url%/}"
-  if [ -n "$app_username" ] || [ -n "$app_password" ]; then
-    printf '  App/Auth User:    %s\n' "${app_username:-<not configured>}"
-    printf '  App/Auth Pass:    %s\n' "${app_password:-<not available>}"
+  printf '  Auth Provider:    %s\n' "${auth_provider:-<not available>}"
+  if [ "$auth_provider" = "authentik-blueprints" ]; then
+    printf '  Auth Admin URL:   %s/if/admin/\n' "${auth_url%/}"
+    if [ -n "$app_username" ] || [ -n "$app_password" ]; then
+      printf '  App/Auth User:    %s\n' "${app_username:-<not configured>}"
+      printf '  App/Auth Pass:    %s\n' "${app_password:-<not available>}"
+    fi
   fi
   printf '\n'
   printf '  API URL:          %s\n' "${api_url%/}"
   printf '  API Token:        %s\n' "${bearer_token:-<not available>}"
   printf '\n'
-  printf 'OAuth2\n'
-  printf '  Client ID:        %s\n' "${oauth_client_id:-<not available>}"
-  printf '  Client Secret:    %s\n' "${oauth_client_secret:-<not available>}"
-  printf '  Issuer URL:       %s\n' "${oauth_issuer:-<not available>}"
-  printf '  Token URL:        %s\n' "${oauth_token_endpoint:-<not available>}"
-  printf '\n'
+  if [ -n "$oauth_client_id" ] ||
+    [ -n "$oauth_client_secret" ] ||
+    [ -n "$oauth_issuer" ] ||
+    [ -n "$oauth_token_endpoint" ]; then
+    printf 'OAuth2\n'
+    printf '  Client ID:        %s\n' "${oauth_client_id:-<not available>}"
+    printf '  Client Secret:    %s\n' "${oauth_client_secret:-<not available>}"
+    printf '  Issuer URL:       %s\n' "${oauth_issuer:-<not available>}"
+    printf '  Token URL:        %s\n' "${oauth_token_endpoint:-<not available>}"
+    printf '\n'
+  fi
   printf '  RustFS Admin URL: %s/rustfs/console/\n' "${s3_url%/}"
   printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
   printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"

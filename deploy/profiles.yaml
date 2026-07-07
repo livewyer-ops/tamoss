@@ -27,3 +27,12 @@ profiles:
     tamossName: tamoss-multi-server
     targetEnv: tests/targets/multi-server.env
     remoteEnvironment: true
+  - id: edge
+    # Edge validates on a single-node Kind harness, but the target install shape
+    # is a single ARM64 K3s node with local persistent storage.
+    kindConfig: deploy/kind.yaml
+    kindEnvironmentDir: deploy/environments/kind-edge
+    instanceKustomizeDir: deploy/instances/edge
+    tamossName: tamoss-edge
+    targetEnv: tests/targets/edge.env
+    remoteEnvironment: true
