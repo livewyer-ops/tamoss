@@ -6794,6 +6794,7 @@ spec:
                 - local-kind
                 - single-server
                 - multi-server
+                - edge
                 type: string
               publicEndpoint:
                 description: PublicEndpoint defines the public DNS defaults used by

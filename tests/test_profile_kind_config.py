@@ -19,6 +19,7 @@ def test_profile_registry_selects_kind_configurations() -> None:
     assert profiles["local-kind"]["kindConfig"] == "deploy/kind.yaml"
     assert profiles["single-server"]["kindConfig"] == "deploy/kind.yaml"
     assert profiles["multi-server"]["kindConfig"] == "deploy/kind-multi-server.yaml"
+    assert profiles["edge"]["kindConfig"] == "deploy/kind.yaml"
     assert (
         profiles["local-kind"]["kindEnvironmentDir"] == "deploy/environments/local-kind"
     )
@@ -30,6 +31,7 @@ def test_profile_registry_selects_kind_configurations() -> None:
         profiles["multi-server"]["kindEnvironmentDir"]
         == "deploy/environments/kind-multi-server"
     )
+    assert profiles["edge"]["kindEnvironmentDir"] == "deploy/environments/kind-edge"
     assert profiles["local-kind"]["instanceKustomizeDir"] == (
         "deploy/instances/local-kind"
     )
@@ -39,9 +41,11 @@ def test_profile_registry_selects_kind_configurations() -> None:
     assert profiles["multi-server"]["instanceKustomizeDir"] == (
         "deploy/instances/multi-server"
     )
+    assert profiles["edge"]["instanceKustomizeDir"] == "deploy/instances/edge"
     assert profiles["local-kind"]["targetEnv"] == "tests/targets/local-kind.env"
     assert profiles["single-server"]["targetEnv"] == "tests/targets/single-server.env"
     assert profiles["multi-server"]["targetEnv"] == "tests/targets/multi-server.env"
+    assert profiles["edge"]["targetEnv"] == "tests/targets/edge.env"
     for profile in profiles.values():
         assert "platformKustomizeDir" not in profile
         assert "remotePlatformKustomizeDir" not in profile
@@ -101,7 +105,7 @@ def test_profile_shell_validation_checks_supported_profile_paths() -> None:
     if shutil.which("bash") is None or shutil.which("yq") is None:
         pytest.skip("bash and yq are required for task profile helper checks")
 
-    for profile in ["local-kind", "single-server", "multi-server"]:
+    for profile in ["local-kind", "single-server", "multi-server", "edge"]:
         subprocess.run(
             [
                 "bash",
@@ -119,7 +123,7 @@ def test_kind_environments_allow_cluster_webhook_receiver() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for environment in ["kind-single-server", "kind-multi-server"]:
+    for environment in ["kind-single-server", "kind-multi-server", "kind-edge"]:
         tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert (
@@ -136,7 +140,7 @@ def test_canonical_profiles_do_not_default_to_localtest_domains() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for overlay in ["single-server", "multi-server"]:
+    for overlay in ["single-server", "multi-server", "edge"]:
         rendered = subprocess.run(
             ["kubectl", "kustomize", str(ROOT / "deploy/instances" / overlay)],
             cwd=ROOT,
@@ -152,7 +156,7 @@ def test_kind_environments_keep_localtest_domains() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for environment in ["kind-single-server", "kind-multi-server"]:
+    for environment in ["kind-single-server", "kind-multi-server", "kind-edge"]:
         tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert tamoss["spec"]["publicEndpoint"]["baseDomain"] == "tamoss.localtest.me"
@@ -186,7 +190,10 @@ def test_profile_platform_values_enable_authentik_by_default() -> None:
         values = _load_yaml(
             ROOT / profile["kindEnvironmentDir"] / "platform-values.yaml"
         )
-        assert values["authentik"]["enabled"] is True
+        if profile["id"] == "edge":
+            assert values["authentik"]["enabled"] is False
+        else:
+            assert values["authentik"]["enabled"] is True
 
     for values_file in [
         ROOT / "deploy/platform/values/local-kind.yaml",
@@ -195,6 +202,9 @@ def test_profile_platform_values_enable_authentik_by_default() -> None:
     ]:
         values = _load_yaml(values_file)
         assert values["authentik"]["enabled"] is True
+
+    values = _load_yaml(ROOT / "deploy/platform/values/edge-reference.yaml")
+    assert values["authentik"]["enabled"] is False
 
 
 def test_reference_platform_values_render_profile_authentik_host() -> None:
@@ -220,6 +230,18 @@ def test_reference_platform_values_render_profile_authentik_host() -> None:
             auth_ingresses[0]["spec"]["rules"][0]["host"] == "auth.tamoss.example.com"
         )
         assert "localtest" not in yaml.safe_dump(auth_ingresses[0])
+
+
+def test_edge_platform_values_do_not_render_authentik() -> None:
+    if shutil.which("helm") is None:
+        pytest.skip("helm is required for platform Helmfile checks")
+    if shutil.which("helmfile") is None:
+        pytest.skip("helmfile is required for platform Helmfile checks")
+
+    rendered = _render_platform(ROOT / "deploy/platform/values/edge-reference.yaml")
+    assert not [
+        item for item in rendered if item.get("metadata", {}).get("namespace") == "auth"
+    ]
 
 
 def test_multi_server_topology_guard_requires_two_ready_nodes(tmp_path: Path) -> None:
