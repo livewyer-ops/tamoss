@@ -38,8 +38,10 @@ backend integrations.
 
 ## Quickstart
 
-**Prerequisites:** Docker, `curl`, `openssl`, and `git`. The rest of the toolchain
-(`task`, `kind`, `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
+**Prerequisites:** Docker, `curl`, `openssl`, `git`, and
+[aqua](https://aquaproj.github.io/docs/install) — a single-binary CLI version
+manager. With aqua installed, the rest of the toolchain (`task`, `kind`,
+`kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
 
 Use the local Kind profile first:
 
