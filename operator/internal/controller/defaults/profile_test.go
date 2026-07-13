@@ -227,6 +227,92 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyEdgeDefaults(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileEdge,
+		},
+	}
+
+	Apply(tamoss)
+
+	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.edge" {
+		t.Fatalf("expected edge base domain, got %q", got)
+	}
+	if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-edge-selfsigned" {
+		t.Fatalf("expected edge cert issuer annotation, got %q", got)
+	}
+	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByExternal {
+		t.Fatalf("expected edge token auth to use external provider mode, got %s", got)
+	}
+	if !tamoss.Spec.Auth.RequiredForRuntime() {
+		t.Fatalf("expected edge runtime auth to be required")
+	}
+	if tamoss.Spec.Auth.AuthentikBlueprints != nil {
+		t.Fatalf("did not expect edge to default Authentik settings")
+	}
+	if tamoss.Spec.Auth.External == nil || tamoss.Spec.Auth.External.OAuth2.Enabled {
+		t.Fatalf("expected edge OAuth2 to remain disabled, got %#v", tamoss.Spec.Auth.External)
+	}
+	if got := tamoss.Spec.UI.Env["TAMOSS_API_URL"]; got != "/api" {
+		t.Fatalf("expected edge UI API URL default, got %q", got)
+	}
+	if got := tamoss.Spec.API.Env["TAMOSS_DATABASE_POOL_MAX_SIZE"]; got != "3" {
+		t.Fatalf("expected edge API database pool default, got %q", got)
+	}
+	if got := tamoss.Spec.Worker.Env["TAMOSS_WORKER_MAX_REQUESTS"]; got != "5" {
+		t.Fatalf("expected edge worker request default, got %q", got)
+	}
+	if got := tamoss.Spec.Worker.Resources.Requests[corev1.ResourceMemory]; got.String() != "128Mi" {
+		t.Fatalf("expected edge worker memory request, got %s", got.String())
+	}
+	if got := tamoss.Spec.Worker.Resources.Limits[corev1.ResourceMemory]; got.String() != "384Mi" {
+		t.Fatalf("expected edge worker memory limit, got %s", got.String())
+	}
+	if got := tamoss.Spec.Worker.ReadinessProbe.TimeoutSeconds; got != 30 {
+		t.Fatalf("expected edge worker readiness timeout 30, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.ReadinessProbe.PeriodSeconds; got != 30 {
+		t.Fatalf("expected edge worker readiness period 30, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.LivenessProbe.PeriodSeconds; got != 60 {
+		t.Fatalf("expected edge worker liveness period 60, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.StartupProbe.TimeoutSeconds; got != 30 {
+		t.Fatalf("expected edge worker startup timeout 30, got %d", got)
+	}
+	cnpg := tamoss.Spec.Backends.DB.CNPG
+	if cnpg == nil || cnpg.Instances != 1 || cnpg.Storage.Size != "10Gi" {
+		t.Fatalf("unexpected edge CNPG defaults: %#v", cnpg)
+	}
+	if got := cnpg.Resources.Requests[corev1.ResourceMemory]; got.String() != "256Mi" {
+		t.Fatalf("expected edge CNPG memory request, got %s", got.String())
+	}
+	if got := cnpg.Resources.Limits[corev1.ResourceMemory]; got.String() != "768Mi" {
+		t.Fatalf("expected edge CNPG memory limit, got %s", got.String())
+	}
+	rustfs := tamoss.Spec.Backends.S3.RustFSOperator
+	if rustfs == nil ||
+		rustfs.PublicEndpoint.URL != "https://s3.tamoss.edge" ||
+		rustfs.PublicEndpoint.TLSSecretName != "tamoss-edge-s3-tls" ||
+		len(rustfs.Pools) != 1 ||
+		rustfs.Pools[0].Servers != 1 ||
+		rustfs.Pools[0].VolumesPerServer != 4 ||
+		rustfs.Pools[0].Storage.Size != "10Gi" {
+		t.Fatalf("unexpected edge RustFS Operator defaults: %#v", rustfs)
+	}
+	if got := rustFSEnvValue(rustfs, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK"); got != "true" {
+		t.Fatalf("expected edge RustFS disk check bypass, got %q", got)
+	}
+	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
+	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
+	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
+	if tamoss.Spec.NetworkPolicy.IsEnabled() {
+		t.Fatalf("did not expect edge NetworkPolicy default enabled")
+	}
+}
+
 func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
 	profiles := []tamossv1alpha1.TamossProfile{
 		tamossv1alpha1.TamossProfileSingleServer,
@@ -261,7 +347,7 @@ func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
 	}
 }
 
-func TestSupportedProfilesDefaultToManagedAuthentik(t *testing.T) {
+func TestAuthentikProfilesDefaultToManagedAuthentik(t *testing.T) {
 	profiles := []tamossv1alpha1.TamossProfile{
 		tamossv1alpha1.TamossProfileLocalKind,
 		tamossv1alpha1.TamossProfileSingleServer,
@@ -327,6 +413,7 @@ func TestManagedRustFSProfileDefaultsMeetOperatorMinimum(t *testing.T) {
 		tamossv1alpha1.TamossProfileLocalKind,
 		tamossv1alpha1.TamossProfileSingleServer,
 		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
 	}
 
 	for _, profile := range profiles {
@@ -509,6 +596,7 @@ func TestSupportedProfilesUseOperatorManagedBackends(t *testing.T) {
 		tamossv1alpha1.TamossProfileLocalKind,
 		tamossv1alpha1.TamossProfileSingleServer,
 		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
 	}
 
 	for _, profile := range profiles {
