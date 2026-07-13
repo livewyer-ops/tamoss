@@ -70,8 +70,10 @@ packages:
     - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
     # nightly-slo, and src/scripts/
 
-# Notes: these OS/system tools are still required outside aqua:
+# Notes: aqua cannot provide these OS/system tools.
+# Required to build, test, and deploy:
 # - Docker or Podman (and docker compose) — container build + compose stack
 # - curl, openssl, git                    — setup and local scripts
-# - ffmpeg                                — ingest helper and k6 media seeding
-# - uuidgen (util-linux)                  — k6 media seeding helper
+# Optional, only for the ingest helper (src/scripts/ingest_video.sh):
+# - ffmpeg                                — segments local video files for ingest
+# - uuidgen (util-linux)                  — generates flow and source identifiers
