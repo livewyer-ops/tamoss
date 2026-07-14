@@ -14,6 +14,7 @@ from tamoss.api.presenters import (
 from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.api.routes.scalar_properties import register_scalar_property_routes
 from tamoss.application.contexts.sources import SourceUseCases
+from tamoss.domain.listings import SourceSortBy
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -35,13 +36,15 @@ def list_sources(
     response: Response,
     label: str | None = None,
     format: str | None = None,
+    sort_by: SourceSortBy = SourceSortBy.CREATED,
+    reverse_order: bool = False,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(
         request,
-        {"label", "format", "page", "limit"},
+        {"label", "format", "sort_by", "reverse_order", "page", "limit"},
         allowed_prefixes=("tag.", "tag_exists."),
     )
     try:
@@ -53,6 +56,8 @@ def list_sources(
         format=format,
         tag_values=tag_values,
         tag_exists=tag_exists,
+        sort_by=sort_by,
+        reverse_order=reverse_order,
         page=page,
         limit=limit,
     )

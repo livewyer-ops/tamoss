@@ -23,6 +23,7 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -51,6 +52,8 @@ def list_flows(
     format: str | None = None,
     codec: str | None = None,
     label: str | None = None,
+    sort_by: FlowSortBy = FlowSortBy.CREATED,
+    reverse_order: bool = False,
     frame_width: int | None = None,
     frame_height: int | None = None,
     page: str | None = None,
@@ -66,6 +69,8 @@ def list_flows(
             "format",
             "codec",
             "label",
+            "sort_by",
+            "reverse_order",
             "frame_width",
             "frame_height",
             "page",
@@ -87,6 +92,8 @@ def list_flows(
         frame_height=frame_height,
         tag_values=tag_values,
         tag_exists=tag_exists,
+        sort_by=sort_by,
+        reverse_order=reverse_order,
         page=page,
         limit=limit,
     )

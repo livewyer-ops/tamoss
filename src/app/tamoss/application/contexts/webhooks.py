@@ -43,12 +43,14 @@ class WebhookUseCases:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
         return self.repository.list_webhooks_page(
             tag_values=tag_values,
             tag_exists=tag_exists,
+            reverse_order=reverse_order,
             page=page,
             limit=limit,
         )

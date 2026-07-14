@@ -24,6 +24,7 @@ from tamoss.adapters.postgres_repository.mappers import (
 )
 from tamoss.adapters.postgres_repository.query_filters import (
     _append_tag_filter_clauses,
+    _listing_order_sql,
     _where_sql,
 )
 from tamoss.domain.model import (
@@ -59,6 +60,7 @@ class PostgresQueueMixin:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
@@ -76,6 +78,11 @@ class PostgresQueueMixin:
             existence_filters=tag_exists,
         )
         where_sql = _where_sql(clauses)
+        order_sql = _listing_order_sql(
+            sql.SQL("webhook.record #>> '{data,url}'"),
+            sql.SQL("webhook.id"),
+            descending=reverse_order,
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -83,11 +90,11 @@ class PostgresQueueMixin:
                     SELECT webhook.record
                     FROM tamoss_webhooks AS webhook
                     {}
-                    ORDER BY webhook.id
+                    ORDER BY {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, order_sql),
                 params,
             )
             rows = cur.fetchall()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.domain.model import (
+    DeletionRequestRecord,
     MediaObjectRecord,
     ObjectCopyRecord,
     ObjectInstance,
@@ -789,6 +790,72 @@ def test_segment_deletion_request_lifecycle(
     assert remaining.status_code == 200
     assert [item["object_id"] for item in remaining.json()] == [second_object]
     assert client.get(f"/objects/{first_object}").status_code == 404
+
+
+def test_delete_request_listing_supports_created_and_expiry_sorting(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    repository = tamoss_app.state.tamoss_use_cases.repository
+    request_ids = [
+        UUID("11111111-1111-4111-8111-111111111701"),
+        UUID("11111111-1111-4111-8111-111111111702"),
+        UUID("11111111-1111-4111-8111-111111111703"),
+    ]
+    flow_id = UUID("11111111-1111-4111-8111-111111111700")
+    for index, request_id in enumerate(request_ids, start=1):
+        repository.save_delete_request(
+            DeletionRequestRecord(
+                id=request_id,
+                flow_id=flow_id,
+                timerange_to_delete="[0:0_1:0)",
+                delete_flow=False,
+                status="done",
+                created=datetime(2026, 3, index, tzinfo=UTC),
+                updated=datetime(2026, 3, 4 - index, tzinfo=UTC),
+            )
+        )
+
+    default_listing = client.get("/flow-delete-requests")
+    created_ascending = client.get(
+        "/flow-delete-requests",
+        params={"reverse_order": "true"},
+    )
+    expiry_descending = client.get(
+        "/flow-delete-requests",
+        params={"sort_by": "expiry"},
+    )
+    expiry_ascending = client.get(
+        "/flow-delete-requests",
+        params={"sort_by": "expiry", "reverse_order": "true"},
+    )
+
+    assert [item["id"] for item in default_listing.json()] == [
+        str(request_id) for request_id in reversed(request_ids)
+    ]
+    assert [item["id"] for item in created_ascending.json()] == [
+        str(request_id) for request_id in request_ids
+    ]
+    assert [item["id"] for item in expiry_descending.json()] == [
+        str(request_id) for request_id in request_ids
+    ]
+    assert [item["id"] for item in expiry_ascending.json()] == [
+        str(request_id) for request_id in reversed(request_ids)
+    ]
+    assert (
+        client.head(
+            "/flow-delete-requests",
+            params={"sort_by": "expiry"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            "/flow-delete-requests",
+            params={"sort_by": "unsupported"},
+        ).status_code
+        == 400
+    )
 
 
 def test_segment_delete_timerange_coverage_respects_inclusive_endpoints(

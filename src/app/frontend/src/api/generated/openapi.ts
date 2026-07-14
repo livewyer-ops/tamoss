@@ -66,6 +66,8 @@ export interface paths {
         /**
          * Storage Backend Information
          * @description Provide information about the storage backends available on this service instance. These are populated on deployment of the service instance.
+         *
+         *     Storage Backends are sorted in alphabetical order of their `label` by default.
          */
         get: operations["GET_storage-backends"];
         put?: never;
@@ -92,6 +94,8 @@ export interface paths {
          * @description Get the list of registered webhook URLs.
          *     Service implementations SHOULD take steps to avoid displaying URLs to users other than those who have suitable permissions (e.g. the owning user).
          *     Availability of this endpoint is indicated by the name "webhooks" appearing in the `event_stream_mechanisms` list on the [/service](#/operations/GET_service) endpoint.
+         *
+         *     Webhooks are sorted in alphabetical order of their `url` by default.
          */
         get: operations["GET_webhooks"];
         put?: never;
@@ -2265,7 +2269,10 @@ export interface operations {
     };
     "GET_storage-backends": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return Storage Backends in reverse-alphabetical order of their `label`. */
+                reverse_order?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2307,7 +2314,10 @@ export interface operations {
     };
     "HEAD_storage-backends": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return Storage Backends in reverse-alphabetical order of their `label`. */
+                reverse_order?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2340,6 +2350,8 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Webhooks in reverse-alphabetical order of their `url`. */
+                reverse_order?: boolean;
             };
             header?: never;
             path?: never;
@@ -2469,6 +2481,8 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Webhooks in reverse-alphabetical order of their `url`. */
+                reverse_order?: boolean;
             };
             header?: never;
             path?: never;
@@ -2698,6 +2712,16 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Sources in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Sources by.
+                 *     `created` and `updated` sort most recent first by default.
+                 *     `label` sorts alphabetically by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "updated" | "label";
             };
             header?: never;
             path?: never;
@@ -2802,6 +2826,16 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Sources in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Sources by.
+                 *     `created` and `updated` sort most recent first by default.
+                 *     `label` sorts alphabetically by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "updated" | "label";
             };
             header?: never;
             path?: never;
@@ -3370,6 +3404,16 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Flows in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Flows by.
+                 *     `created` and `metadata_updated` sort most recent first by default.
+                 *     `label` sorts alphabetically by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "metadata_updated" | "label";
             };
             header?: never;
             path?: never;
@@ -3679,6 +3723,16 @@ export interface operations {
                 page?: components["parameters"]["trait_resource_paged_key"];
                 /** @description Restrict the response to the specified number of results. Service implementations may specify their own default and maximum for the limit */
                 limit?: components["parameters"]["trait_paged_limit"];
+                /** @description Return Flows in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Flows by.
+                 *     `created` and `metadata_updated` sort most recent first by default.
+                 *     `label` sorts alphabetically by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "metadata_updated" | "label";
             };
             header?: never;
             path?: never;
@@ -5550,7 +5604,17 @@ export interface operations {
     };
     "GET_flow-delete-requests": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return Flow Delete Requests in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Flow Delete Requests by.
+                 *     `created` and `expiry` sort most recent first by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "expiry";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5623,7 +5687,17 @@ export interface operations {
     };
     "HEAD_flow-delete-requests": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return Flow Delete Requests in reverse order. */
+                reverse_order?: boolean;
+                /**
+                 * @description Parameter to sort Flow Delete Requests by.
+                 *     `created` and `expiry` sort most recent first by default.
+                 *     Sorting may be reversed using the `reverse_order` query parameter.
+                 *     Assume `created` if not set.
+                 */
+                sort_by?: "created" | "expiry";
+            };
             header?: never;
             path?: never;
             cookie?: never;

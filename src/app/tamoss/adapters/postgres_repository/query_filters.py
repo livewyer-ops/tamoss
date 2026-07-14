@@ -17,6 +17,20 @@ def _where_sql(clauses: list[sql.Composable]) -> sql.Composable:
     return sql.SQL("WHERE ") + sql.SQL(" AND ").join(clauses)
 
 
+def _listing_order_sql(
+    value_sql: sql.Composable,
+    identity_sql: sql.Composable,
+    *,
+    descending: bool,
+) -> sql.Composable:
+    direction = sql.SQL("DESC") if descending else sql.SQL("ASC")
+    return sql.SQL("{} {} NULLS LAST, {} ASC").format(
+        value_sql,
+        direction,
+        identity_sql,
+    )
+
+
 def _append_tag_filter_clauses(
     clauses: list[sql.Composable],
     params: dict[str, Any],

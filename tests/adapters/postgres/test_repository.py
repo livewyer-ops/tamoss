@@ -8,6 +8,7 @@ import psycopg
 import pytest
 from tamoss.adapters.postgres import PostgresRepository
 from tamoss.domain.exceptions import SegmentOverlapError
+from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
@@ -541,6 +542,96 @@ def test_repository_pushes_source_webhook_and_object_flow_tag_filters(
         limit=10,
     )
     assert flow_id_page.items == [flow_id]
+
+
+def test_repository_sorts_paged_resource_listings_before_pagination(
+    postgres_repo: PostgresRepository,
+) -> None:
+    labels = ["charlie", "alpha", "bravo"]
+    flow_ids = []
+    source_ids = []
+    webhook_ids = []
+    for index, label in enumerate(labels, start=1):
+        source_id = UUID(f"11111111-1111-4111-8111-11111111160{index}")
+        flow_id = UUID(f"11111111-1111-4111-8111-11111111161{index}")
+        webhook_id = UUID(f"11111111-1111-4111-8111-11111111162{index}")
+        created = datetime(2026, 4, index, tzinfo=UTC)
+        updated = datetime(2026, 4, 4 - index, tzinfo=UTC)
+        postgres_repo.source_repository.save_source(
+            SourceRecord(
+                id=source_id,
+                format="urn:x-nmos:format:video",
+                label=label,
+                created=created,
+                metadata_updated=updated,
+            )
+        )
+        postgres_repo.flow_repository.save_flow(
+            FlowRecord(
+                id=flow_id,
+                source_id=source_id,
+                format="urn:x-nmos:format:video",
+                container="video/mp2t",
+                data={"label": label},
+                created=created,
+                metadata_updated=updated,
+            )
+        )
+        postgres_repo.webhook_repository.save_webhook(
+            WebhookRecord(
+                id=webhook_id,
+                data={"url": f"https://example.test/{label}"},
+                status="created",
+            )
+        )
+        source_ids.append(source_id)
+        flow_ids.append(flow_id)
+        webhook_ids.append(webhook_id)
+
+    flow_page = postgres_repo.flow_repository.list_flows_page(
+        source_id=None,
+        timerange_start=None,
+        timerange_end=None,
+        timerange_is_empty=False,
+        timerange_is_point=False,
+        format=None,
+        codec=None,
+        label=None,
+        frame_width=None,
+        frame_height=None,
+        tag_values={},
+        tag_exists={},
+        sort_by=FlowSortBy.LABEL,
+        reverse_order=False,
+        page=None,
+        limit=2,
+    )
+    source_page = postgres_repo.source_repository.list_sources_page(
+        label=None,
+        format=None,
+        tag_values={},
+        tag_exists={},
+        sort_by=SourceSortBy.UPDATED,
+        reverse_order=True,
+        page=None,
+        limit=10,
+    )
+    webhook_page = postgres_repo.webhook_repository.list_webhooks_page(
+        tag_values={},
+        tag_exists={},
+        reverse_order=True,
+        page=None,
+        limit=10,
+    )
+
+    assert [flow.id for flow in flow_page.items] == [flow_ids[1], flow_ids[2]]
+    assert flow_page.next_page == "2"
+    assert [source.id for source in source_page.items] == list(reversed(source_ids))
+    assert [webhook.id for webhook in webhook_page.items] == [
+        webhook_ids[0],
+        webhook_ids[2],
+        webhook_ids[1],
+    ]
 
 
 def test_repository_saves_registered_segment_batch(

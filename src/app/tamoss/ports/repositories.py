@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
@@ -72,6 +73,8 @@ class FlowRepository(FlowCollectionRepository, Protocol):
         frame_height: int | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: FlowSortBy = FlowSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]: ...
@@ -105,6 +108,8 @@ class SourceRepository(Protocol):
         format: str | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: SourceSortBy = SourceSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]: ...
@@ -148,6 +153,7 @@ class WebhookRepository(WebhookEventRepository, Protocol):
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]: ...

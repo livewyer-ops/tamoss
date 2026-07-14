@@ -19,6 +19,7 @@ from tamoss.domain.flow_collections import (
     flow_collection,
     flow_with_collected_by,
 )
+from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
@@ -196,6 +197,8 @@ class FlowUseCases:
         frame_height: int | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: FlowSortBy = FlowSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]:
@@ -217,6 +220,8 @@ class FlowUseCases:
             frame_height=frame_height,
             tag_values=tag_values,
             tag_exists=tag_exists,
+            sort_by=sort_by,
+            reverse_order=reverse_order,
             page=page,
             limit=limit,
         )

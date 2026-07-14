@@ -30,13 +30,14 @@ router = APIRouter(tags=["Webhooks"])
 def list_webhooks(
     request: Request,
     response: Response,
+    reverse_order: bool = False,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     validate_query_params(
         request,
-        {"page", "limit"},
+        {"reverse_order", "page", "limit"},
         allowed_prefixes=("tag.", "tag_exists."),
     )
     try:
@@ -46,6 +47,7 @@ def list_webhooks(
     webhook_page = webhooks.list_webhooks(
         tag_values=tag_values,
         tag_exists=tag_exists,
+        reverse_order=reverse_order,
         page=page,
         limit=limit,
     )

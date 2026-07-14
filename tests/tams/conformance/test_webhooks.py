@@ -61,6 +61,45 @@ def test_webhook_registration_lifecycle_hides_secret_material(
     assert missing.status_code == 404
 
 
+def test_webhook_listing_sorts_by_url_and_reverses(client: TestClient) -> None:
+    webhooks = [
+        client.post(
+            "/service/webhooks",
+            json=webhook_payload(url=url),
+        ).json()
+        for url in (
+            "https://example.test/charlie",
+            "https://example.test/alpha",
+            "https://example.test/bravo",
+        )
+    ]
+
+    listed = client.get("/service/webhooks")
+    reversed_listing = client.get(
+        "/service/webhooks",
+        params={"reverse_order": "true"},
+    )
+
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [
+        webhooks[1]["id"],
+        webhooks[2]["id"],
+        webhooks[0]["id"],
+    ]
+    assert [item["id"] for item in reversed_listing.json()] == [
+        webhooks[0]["id"],
+        webhooks[2]["id"],
+        webhooks[1]["id"],
+    ]
+    assert (
+        client.head(
+            "/service/webhooks",
+            params={"reverse_order": "true"},
+        ).status_code
+        == 200
+    )
+
+
 def test_webhook_configuration_rejects_invalid_bbc_event_or_header(
     client: TestClient,
 ) -> None:

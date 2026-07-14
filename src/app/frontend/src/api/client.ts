@@ -26,9 +26,18 @@ import {
 
 export { ApiError } from "@/api/transport";
 
-export type SourceListParams = PagingParams;
+export type StorageBackendListParams = QueryParams & {
+  reverse_order?: boolean | string;
+};
+
+export type SourceListParams = PagingParams & {
+  reverse_order?: boolean | string;
+  sort_by?: "created" | "updated" | "label";
+};
 
 export type FlowListParams = PagingParams & {
+  reverse_order?: boolean | string;
+  sort_by?: "created" | "metadata_updated" | "label";
   source_id?: string;
   timerange?: string;
 };
@@ -62,7 +71,14 @@ type PagedObjectParams = ObjectParams &
     | { limit?: string | number; page: string }
   );
 
-export type WebhookListParams = PagingParams;
+export type WebhookListParams = PagingParams & {
+  reverse_order?: boolean | string;
+};
+
+export type DeletionRequestListParams = QueryParams & {
+  reverse_order?: boolean | string;
+  sort_by?: "created" | "expiry";
+};
 
 export class TamossApiClient extends ApiTransport {
   async getService(): Promise<ServiceInfo> {
@@ -84,8 +100,14 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async getStorageBackends(): Promise<StorageBackend[]> {
-    return this.request<StorageBackend[]>("/service/storage-backends");
+  async getStorageBackends(
+    params?: StorageBackendListParams,
+  ): Promise<StorageBackend[]> {
+    return this.request<StorageBackend[]>(
+      "/service/storage-backends",
+      {},
+      params,
+    );
   }
 
   async getSources(
@@ -362,8 +384,10 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async getDeletionRequests(): Promise<DeletionRequest[]> {
-    return this.request<DeletionRequest[]>("/flow-delete-requests");
+  async getDeletionRequests(
+    params?: DeletionRequestListParams,
+  ): Promise<DeletionRequest[]> {
+    return this.request<DeletionRequest[]>("/flow-delete-requests", {}, params);
   }
 
   async getDeletionRequest(requestId: string): Promise<DeletionRequest> {

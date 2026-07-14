@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tamoss.contract.payloads import JsonPayload, without_none
+from tamoss.domain.listings import sorted_listing
 from tamoss.domain.model import ServiceMetadata, StorageBackend
 from tamoss.ports.repositories import ServiceRepository
 from tamoss.settings import Settings
@@ -49,5 +50,12 @@ class ServiceUseCases:
             )
         )
 
-    def list_storage_backends(self) -> list[StorageBackend]:
-        return self.repository.list_storage_backends()
+    def list_storage_backends(
+        self, *, reverse_order: bool = False
+    ) -> list[StorageBackend]:
+        return sorted_listing(
+            self.repository.list_storage_backends(),
+            value=lambda backend: backend.label,
+            identity=lambda backend: str(backend.id),
+            descending=reverse_order,
+        )

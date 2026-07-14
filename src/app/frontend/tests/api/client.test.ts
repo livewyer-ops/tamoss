@@ -101,6 +101,8 @@ describe("TamossApiClient", () => {
       await client.getFlows({
         limit: 25,
         page: "next-page",
+        reverse_order: true,
+        sort_by: "metadata_updated",
         source_id: "source-1",
         timerange: "[0:0_10:0)",
       });
@@ -109,8 +111,31 @@ describe("TamossApiClient", () => {
       expect(url.pathname).toBe("/flows");
       expect(url.searchParams.get("limit")).toBe("25");
       expect(url.searchParams.get("page")).toBe("next-page");
+      expect(url.searchParams.get("reverse_order")).toBe("true");
+      expect(url.searchParams.get("sort_by")).toBe("metadata_updated");
       expect(url.searchParams.get("source_id")).toBe("source-1");
       expect(url.searchParams.get("timerange")).toBe("[0:0_10:0)");
+    });
+  });
+
+  describe("listing sort controls", () => {
+    it("serializes fixed-key listing order params", async () => {
+      mockFetch.mockResolvedValue(mockResponse([]));
+      const client = createClient();
+
+      await client.getStorageBackends({ reverse_order: true });
+      expect(lastCalledUrl().searchParams.get("reverse_order")).toBe("true");
+
+      await client.getWebhooks({ reverse_order: true });
+      expect(lastCalledUrl().searchParams.get("reverse_order")).toBe("true");
+
+      await client.getDeletionRequests({
+        sort_by: "expiry",
+        reverse_order: true,
+      });
+      const deletionUrl = lastCalledUrl();
+      expect(deletionUrl.searchParams.get("sort_by")).toBe("expiry");
+      expect(deletionUrl.searchParams.get("reverse_order")).toBe("true");
     });
   });
 

@@ -167,11 +167,23 @@
           "200": {
             "$ref": "#/components/responses/trait_resource_listing_head_200"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Storage Backends in reverse-alphabetical order of their `label`.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          }
+        ]
       },
       "get": {
         "summary": "Storage Backend Information",
-        "description": "Provide information about the storage backends available on this service instance. These are populated on deployment of the service instance.",
+        "description": "Provide information about the storage backends available on this service instance. These are populated on deployment of the service instance.\n\nStorage Backends are sorted in alphabetical order of their `label` by default.",
         "operationId": "GET_storage-backends",
         "tags": [
           "Service"
@@ -190,7 +202,19 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Storage Backends in reverse-alphabetical order of their `label`.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          }
+        ]
       }
     },
     "/service/webhooks": {
@@ -227,6 +251,16 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Webhooks in reverse-alphabetical order of their `url`.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -270,7 +304,7 @@
       },
       "get": {
         "summary": "List Webhook URLs",
-        "description": "Get the list of registered webhook URLs.\nService implementations SHOULD take steps to avoid displaying URLs to users other than those who have suitable permissions (e.g. the owning user).\nAvailability of this endpoint is indicated by the name \"webhooks\" appearing in the `event_stream_mechanisms` list on the [/service](#/operations/GET_service) endpoint.\n",
+        "description": "Get the list of registered webhook URLs.\nService implementations SHOULD take steps to avoid displaying URLs to users other than those who have suitable permissions (e.g. the owning user).\nAvailability of this endpoint is indicated by the name \"webhooks\" appearing in the `event_stream_mechanisms` list on the [/service](#/operations/GET_service) endpoint.\n\nWebhooks are sorted in alphabetical order of their `url` by default.",
         "operationId": "GET_webhooks",
         "tags": [
           "Webhooks"
@@ -301,6 +335,16 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Webhooks in reverse-alphabetical order of their `url`.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -587,6 +631,30 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Sources in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Sources by.\n`created` and `updated` sort most recent first by default.\n`label` sorts alphabetically by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "updated",
+                "label"
+              ]
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -674,6 +742,30 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Sources in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Sources by.\n`created` and `updated` sort most recent first by default.\n`label` sorts alphabetically by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "updated",
+                "label"
+              ]
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -1334,6 +1426,30 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flows in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Flows by.\n`created` and `metadata_updated` sort most recent first by default.\n`label` sorts alphabetically by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "metadata_updated",
+                "label"
+              ]
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -1475,6 +1591,30 @@
           },
           {
             "$ref": "#/components/parameters/trait_paged_limit"
+          },
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flows in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Flows by.\n`created` and `metadata_updated` sort most recent first by default.\n`label` sorts alphabetically by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "metadata_updated",
+                "label"
+              ]
+            },
+            "x-tamoss-extension": true
           }
         ],
         "responses": {
@@ -3640,7 +3780,32 @@
           "200": {
             "$ref": "#/components/responses/trait_resource_listing_head_200"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flow Delete Requests in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Flow Delete Requests by.\n`created` and `expiry` sort most recent first by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "expiry"
+              ]
+            },
+            "x-tamoss-extension": true
+          }
+        ]
       },
       "get": {
         "summary": "List Flow Delete Requests",
@@ -3666,7 +3831,32 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flow Delete Requests in reverse order.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            },
+            "x-tamoss-extension": true
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Parameter to sort Flow Delete Requests by.\n`created` and `expiry` sort most recent first by default.\nSorting may be reversed using the `reverse_order` query parameter.\nAssume `created` if not set.\n",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "expiry"
+              ]
+            },
+            "x-tamoss-extension": true
+          }
+        ]
       }
     },
     "/flow-delete-requests/{request-id}": {

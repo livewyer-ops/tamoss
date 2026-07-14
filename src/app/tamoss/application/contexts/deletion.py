@@ -12,9 +12,11 @@ from tamoss.application.contexts.flows import (
     unlink_flow_collection_references,
 )
 from tamoss.auth import Identity
+from tamoss.domain.listings import DeleteRequestSortBy, sorted_listing
 from tamoss.domain.model import (
     DeletionRequestRecord,
     MediaObjectRecord,
+    deletion_request_expiry,
     utc_now,
 )
 from tamoss.domain.segments import segment_delete_filter
@@ -47,10 +49,26 @@ class DeletionUseCases:
         self.webhook_repository = webhook_repository
         self.settings = settings
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]:
+    def list_delete_requests(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy = DeleteRequestSortBy.CREATED,
+        reverse_order: bool = False,
+    ) -> list[DeletionRequestRecord]:
         requests = self.repository.list_delete_requests()
-        requests.sort(key=lambda request: str(request.id))
-        return requests
+        value = {
+            DeleteRequestSortBy.CREATED: lambda request: request.created,
+            DeleteRequestSortBy.EXPIRY: lambda request: deletion_request_expiry(
+                request,
+                self.settings.worker_queue_retention_seconds,
+            ),
+        }[sort_by]
+        return sorted_listing(
+            requests,
+            value=value,
+            identity=lambda request: str(request.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+        )
 
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord:
         request = self.repository.get_delete_request(request_id)

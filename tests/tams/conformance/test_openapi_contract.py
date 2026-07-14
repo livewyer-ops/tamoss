@@ -76,6 +76,44 @@ def test_runtime_openapi_documents_tag_filter_and_path_shapes(
 
 
 @pytest.mark.tamoss_extension
+def test_public_openapi_stages_pr_224_listing_sort_parameters(
+    tamoss_app: FastAPI,
+) -> None:
+    schema = tamoss_app.openapi()
+    expected_sort_values = {
+        "/service/storage-backends": None,
+        "/service/webhooks": None,
+        "/sources": ["created", "updated", "label"],
+        "/flows": ["created", "metadata_updated", "label"],
+        "/flow-delete-requests": ["created", "expiry"],
+    }
+
+    for path, sort_values in expected_sort_values.items():
+        for method in ("head", "get"):
+            parameters = {
+                parameter["name"]: parameter
+                for parameter in _operation_parameters(schema, path, method)
+            }
+            assert parameters["reverse_order"]["schema"] == {
+                "default": False,
+                "type": "boolean",
+            }
+            assert parameters["reverse_order"]["x-tamoss-extension"] is True
+            if sort_values is not None:
+                assert parameters["sort_by"]["schema"]["enum"] == sort_values
+                assert parameters["sort_by"]["x-tamoss-extension"] is True
+
+    assert (
+        "sorted in alphabetical order"
+        in schema["paths"]["/service/storage-backends"]["get"]["description"]
+    )
+    assert (
+        "sorted in alphabetical order"
+        in schema["paths"]["/service/webhooks"]["get"]["description"]
+    )
+
+
+@pytest.mark.tamoss_extension
 def test_runtime_openapi_distinguishes_core_and_compatibility_timerange_parameters(
     tamoss_app: FastAPI,
 ) -> None:

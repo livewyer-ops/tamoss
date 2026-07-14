@@ -11,6 +11,7 @@ from tamoss.domain.flow_collections import (
     collection_role,
     flow_collection,
 )
+from tamoss.domain.listings import SourceSortBy
 from tamoss.domain.model import SourceRecord, SourceRelationships, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
@@ -40,6 +41,8 @@ class SourceUseCases:
         format: str | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: SourceSortBy = SourceSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]:
@@ -52,6 +55,8 @@ class SourceUseCases:
             format=format,
             tag_values=tag_values,
             tag_exists=tag_exists,
+            sort_by=sort_by,
+            reverse_order=reverse_order,
             page=page,
             limit=limit,
         )

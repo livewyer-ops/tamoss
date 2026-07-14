@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -183,6 +183,15 @@ class DeletionRequestRecord:
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
+
+
+def deletion_request_expiry(
+    request: DeletionRequestRecord,
+    retention_seconds: int,
+) -> datetime | None:
+    if retention_seconds <= 0 or request.status != "done":
+        return None
+    return request.updated + timedelta(seconds=retention_seconds)
 
 
 @dataclass

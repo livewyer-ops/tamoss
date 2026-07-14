@@ -55,11 +55,14 @@ def post_service(
 @router.get("/service/storage-backends")
 @router.head("/service/storage-backends")
 def storage_backends(
-    request: Request, service: ServiceUseCases = Depends(get_service_use_cases)
+    request: Request,
+    reverse_order: bool = False,
+    service: ServiceUseCases = Depends(get_service_use_cases),
 ) -> Any:
-    validate_query_params(request, set())
+    validate_query_params(request, {"reverse_order"})
     if head := head_response(request):
         return head
     return [
-        storage_backend_response(backend) for backend in service.list_storage_backends()
+        storage_backend_response(backend)
+        for backend in service.list_storage_backends(reverse_order=reverse_order)
     ]

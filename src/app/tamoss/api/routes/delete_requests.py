@@ -9,6 +9,7 @@ from tamoss.api.dependencies import get_app_settings, get_deletion_use_cases
 from tamoss.api.presenters import deletion_request_response, head_response
 from tamoss.api.query_params import validate_query_params
 from tamoss.application.contexts.deletion import DeletionUseCases
+from tamoss.domain.listings import DeleteRequestSortBy
 from tamoss.errors import NotFound
 from tamoss.settings import Settings
 
@@ -19,10 +20,12 @@ router = APIRouter(tags=["FlowDeleteRequests"])
 @router.head("/flow-delete-requests")
 def list_delete_requests(
     request: Request,
+    sort_by: DeleteRequestSortBy = DeleteRequestSortBy.CREATED,
+    reverse_order: bool = False,
     deletion: DeletionUseCases = Depends(get_deletion_use_cases),
     settings: Settings = Depends(get_app_settings),
 ) -> Any:
-    validate_query_params(request, set())
+    validate_query_params(request, {"sort_by", "reverse_order"})
     if head := head_response(request):
         return head
     return [
@@ -30,7 +33,10 @@ def list_delete_requests(
             delete_request,
             retention_seconds=settings.worker_queue_retention_seconds,
         )
-        for delete_request in deletion.list_delete_requests()
+        for delete_request in deletion.list_delete_requests(
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+        )
     ]
 
 

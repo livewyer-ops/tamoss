@@ -13,6 +13,7 @@ from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.domain import flow_collections
 from tamoss.domain import segments as segment_domain
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
+from tamoss.domain.listings import FlowSortBy, SourceSortBy, sorted_listing
 from tamoss.domain.model import (
     DeletionRequestRecord,
     DomainErrorPayload,
@@ -197,6 +198,8 @@ class FakeTamossRepository:
         frame_height: int | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: FlowSortBy = FlowSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]:
@@ -257,7 +260,17 @@ class FakeTamossRepository:
         flows = [
             flow for flow in flows if tags_match(flow.tags, tag_values, tag_exists)
         ]
-        flows.sort(key=lambda flow: str(flow.id))
+        value = {
+            FlowSortBy.CREATED: lambda flow: flow.created,
+            FlowSortBy.METADATA_UPDATED: lambda flow: flow.metadata_updated,
+            FlowSortBy.LABEL: lambda flow: flow.data.get("label"),
+        }[sort_by]
+        flows = sorted_listing(
+            flows,
+            value=value,
+            identity=lambda flow: str(flow.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+        )
         return page_sequence(flows, page=page, limit=limit)
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
@@ -307,6 +320,8 @@ class FakeTamossRepository:
         format: str | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: SourceSortBy = SourceSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]:
@@ -321,7 +336,17 @@ class FakeTamossRepository:
             for source in sources
             if tags_match(source.tags, tag_values, tag_exists)
         ]
-        sources.sort(key=lambda source: str(source.id))
+        value = {
+            SourceSortBy.CREATED: lambda source: source.created,
+            SourceSortBy.UPDATED: lambda source: source.metadata_updated,
+            SourceSortBy.LABEL: lambda source: source.label,
+        }[sort_by]
+        sources = sorted_listing(
+            sources,
+            value=value,
+            identity=lambda source: str(source.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+        )
         return page_sequence(sources, page=page, limit=limit)
 
     def source_relationships_for(
@@ -622,6 +647,7 @@ class FakeTamossRepository:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
@@ -632,7 +658,12 @@ class FakeTamossRepository:
             for webhook in webhooks
             if tags_match(webhook.tags, tag_values, tag_exists)
         ]
-        webhooks.sort(key=lambda webhook: str(webhook.id))
+        webhooks = sorted_listing(
+            webhooks,
+            value=lambda webhook: webhook.data.get("url"),
+            identity=lambda webhook: str(webhook.id),
+            descending=reverse_order,
+        )
         return page_sequence(webhooks, page=page, limit=limit)
 
     def list_flow_ids_matching_tags_page(

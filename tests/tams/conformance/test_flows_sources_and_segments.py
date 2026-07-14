@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -98,6 +99,72 @@ def test_video_flow_write_creates_source_and_supports_read_filters(
         params={"tag_exists.editorial": "maybe"},
     )
     assert invalid_tag_exists.status_code == 400
+
+
+def test_flow_and_source_listings_support_pr_224_sorting(
+    client: TestClient,
+) -> None:
+    labels = ["alpha", "charlie", "bravo"]
+    flow_ids = []
+    source_ids = []
+    repository = client.app.state.tamoss_use_cases.repository
+    for index, label in enumerate(labels, start=1):
+        flow_id, source_id, _payload = create_video_flow(client, label=label)
+        flow = repository.get_flow(flow_id)
+        source = repository.get_source(source_id)
+        assert flow is not None
+        assert source is not None
+        flow.created = datetime(2026, 1, index, tzinfo=UTC)
+        flow.metadata_updated = datetime(2026, 1, 4 - index, tzinfo=UTC)
+        source.created = datetime(2026, 2, index, tzinfo=UTC)
+        source.metadata_updated = datetime(2026, 2, 4 - index, tzinfo=UTC)
+        repository.save_flow(flow)
+        repository.save_source(source)
+        flow_ids.append(flow_id)
+        source_ids.append(source_id)
+
+    flow_id_strings = [str(flow_id) for flow_id in flow_ids]
+    source_id_strings = [str(source_id) for source_id in source_ids]
+    assert _listed_ids(client, "/flows") == list(reversed(flow_id_strings))
+    assert _listed_ids(client, "/flows", reverse_order="true") == flow_id_strings
+    assert _listed_ids(client, "/flows", sort_by="metadata_updated") == flow_id_strings
+    assert _listed_ids(client, "/flows", sort_by="label") == [
+        flow_id_strings[0],
+        flow_id_strings[2],
+        flow_id_strings[1],
+    ]
+
+    first_page = client.get(
+        "/sources",
+        params={"sort_by": "label", "reverse_order": "true", "limit": "2"},
+    )
+    assert first_page.status_code == 200
+    assert [item["id"] for item in first_page.json()] == [
+        source_id_strings[1],
+        source_id_strings[2],
+    ]
+    second_page = client.get(
+        "/sources",
+        params={
+            "sort_by": "label",
+            "reverse_order": "true",
+            "limit": "2",
+            "page": first_page.headers["x-paging-nextkey"],
+        },
+    )
+    assert [item["id"] for item in second_page.json()] == [source_id_strings[0]]
+    assert _listed_ids(client, "/sources", sort_by="updated") == source_id_strings
+
+    assert client.head("/flows", params={"sort_by": "label"}).status_code == 200
+    assert client.head("/sources", params={"reverse_order": "true"}).status_code == 200
+    assert client.get("/flows", params={"sort_by": "unsupported"}).status_code == 400
+    assert client.get("/sources", params={"sort_by": "unsupported"}).status_code == 400
+
+
+def _listed_ids(client: TestClient, path: str, **params: str) -> list[str]:
+    response = client.get(path, params=params)
+    assert response.status_code == 200
+    return [item["id"] for item in response.json()]
 
 
 def test_core_api_responses_validate_against_contract_models(

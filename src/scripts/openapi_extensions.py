@@ -9,6 +9,7 @@ def apply_tamoss_contract_extensions(spec: dict[str, Any]) -> None:
     add_error_payload_contract(spec)
     add_tag_filter_parameters(spec)
     add_flow_list_timerange_extension(spec)
+    add_proposed_listing_sort_parameters(spec)
 
 
 def add_error_payload_contract(spec: dict[str, Any]) -> None:
@@ -177,3 +178,142 @@ def _query_parameter_insert_index(parameters: list[Any], *, after_name: str) -> 
         ):
             return index + 1
     return len(parameters)
+
+
+LISTING_SORT_PARAMETERS = {
+    "/service/storage-backends": (
+        {
+            "name": "reverse_order",
+            "in": "query",
+            "description": (
+                "Return Storage Backends in reverse-alphabetical order of their "
+                "`label`."
+            ),
+            "schema": {"default": False, "type": "boolean"},
+        },
+    ),
+    "/service/webhooks": (
+        {
+            "name": "reverse_order",
+            "in": "query",
+            "description": (
+                "Return Webhooks in reverse-alphabetical order of their `url`."
+            ),
+            "schema": {"default": False, "type": "boolean"},
+        },
+    ),
+    "/sources": (
+        {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Sources in reverse order.",
+            "schema": {"default": False, "type": "boolean"},
+        },
+        {
+            "name": "sort_by",
+            "in": "query",
+            "description": (
+                "Parameter to sort Sources by.\n"
+                "`created` and `updated` sort most recent first by default.\n"
+                "`label` sorts alphabetically by default.\n"
+                "Sorting may be reversed using the `reverse_order` query "
+                "parameter.\n"
+                "Assume `created` if not set.\n"
+            ),
+            "schema": {
+                "type": "string",
+                "enum": ["created", "updated", "label"],
+            },
+        },
+    ),
+    "/flows": (
+        {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flows in reverse order.",
+            "schema": {"default": False, "type": "boolean"},
+        },
+        {
+            "name": "sort_by",
+            "in": "query",
+            "description": (
+                "Parameter to sort Flows by.\n"
+                "`created` and `metadata_updated` sort most recent first by "
+                "default.\n"
+                "`label` sorts alphabetically by default.\n"
+                "Sorting may be reversed using the `reverse_order` query "
+                "parameter.\n"
+                "Assume `created` if not set.\n"
+            ),
+            "schema": {
+                "type": "string",
+                "enum": ["created", "metadata_updated", "label"],
+            },
+        },
+    ),
+    "/flow-delete-requests": (
+        {
+            "name": "reverse_order",
+            "in": "query",
+            "description": "Return Flow Delete Requests in reverse order.",
+            "schema": {"default": False, "type": "boolean"},
+        },
+        {
+            "name": "sort_by",
+            "in": "query",
+            "description": (
+                "Parameter to sort Flow Delete Requests by.\n"
+                "`created` and `expiry` sort most recent first by default.\n"
+                "Sorting may be reversed using the `reverse_order` query "
+                "parameter.\n"
+                "Assume `created` if not set.\n"
+            ),
+            "schema": {
+                "type": "string",
+                "enum": ["created", "expiry"],
+            },
+        },
+    ),
+}
+
+LISTING_SORT_DESCRIPTION_SUFFIXES = {
+    "/service/storage-backends": (
+        "Storage Backends are sorted in alphabetical order of their `label` by default."
+    ),
+    "/service/webhooks": (
+        "Webhooks are sorted in alphabetical order of their `url` by default."
+    ),
+}
+
+
+def add_proposed_listing_sort_parameters(spec: dict[str, Any]) -> None:
+    paths = spec.get("paths")
+    if not isinstance(paths, dict):
+        return
+
+    for path, proposed_parameters in LISTING_SORT_PARAMETERS.items():
+        path_item = paths.get(path)
+        if not isinstance(path_item, dict):
+            continue
+        for method in ("head", "get"):
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            if method == "get" and path in LISTING_SORT_DESCRIPTION_SUFFIXES:
+                suffix = LISTING_SORT_DESCRIPTION_SUFFIXES[path]
+                description = operation.get("description", "")
+                if isinstance(description, str) and suffix not in description:
+                    operation["description"] = f"{description.rstrip()}\n\n{suffix}"
+            parameters = operation.setdefault("parameters", [])
+            if not isinstance(parameters, list):
+                continue
+            existing = {
+                (parameter.get("name"), parameter.get("in"))
+                for parameter in parameters
+                if isinstance(parameter, dict)
+            }
+            for proposed in proposed_parameters:
+                key = (proposed["name"], proposed["in"])
+                if key in existing:
+                    continue
+                parameters.append({**proposed, "x-tamoss-extension": True})

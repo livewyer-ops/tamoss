@@ -20,8 +20,10 @@ from tamoss.adapters.postgres_repository.query_filters import (
     _append_flow_timerange_filter,
     _append_tag_filter_clauses,
     _flows_with_collected_by,
+    _listing_order_sql,
     _where_sql,
 )
+from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import FlowRecord, SourceRecord, SourceRelationships
 from tamoss.domain.pagination import Page, resolve_page_window
 
@@ -82,6 +84,8 @@ class PostgresFlowSourceMixin:
         frame_height: int | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: FlowSortBy = FlowSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]:
@@ -135,6 +139,16 @@ class PostgresFlowSourceMixin:
             existence_filters=tag_exists,
         )
         where_sql = _where_sql(clauses)
+        sort_expression = {
+            FlowSortBy.CREATED: sql.SQL("(flow.record->>'created')::timestamptz"),
+            FlowSortBy.METADATA_UPDATED: sql.SQL("flow.metadata_updated"),
+            FlowSortBy.LABEL: sql.SQL("flow.record #>> '{data,label}'"),
+        }[sort_by]
+        order_sql = _listing_order_sql(
+            sort_expression,
+            sql.SQL("flow.id"),
+            descending=sort_by.descending(reverse_order=reverse_order),
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -142,11 +156,11 @@ class PostgresFlowSourceMixin:
                     SELECT flow.record
                     FROM tamoss_flows AS flow
                     {}
-                    ORDER BY flow.id
+                    ORDER BY {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, order_sql),
                 params,
             )
             rows = cur.fetchall()
@@ -256,6 +270,8 @@ class PostgresFlowSourceMixin:
         format: str | None,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        sort_by: SourceSortBy = SourceSortBy.CREATED,
+        reverse_order: bool = False,
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]:
@@ -279,6 +295,16 @@ class PostgresFlowSourceMixin:
             existence_filters=tag_exists,
         )
         where_sql = _where_sql(clauses)
+        sort_expression = {
+            SourceSortBy.CREATED: sql.SQL("(source.record->>'created')::timestamptz"),
+            SourceSortBy.UPDATED: sql.SQL("source.metadata_updated"),
+            SourceSortBy.LABEL: sql.SQL("source.label"),
+        }[sort_by]
+        order_sql = _listing_order_sql(
+            sort_expression,
+            sql.SQL("source.id"),
+            descending=sort_by.descending(reverse_order=reverse_order),
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -286,11 +312,11 @@ class PostgresFlowSourceMixin:
                     SELECT source.record
                     FROM tamoss_sources AS source
                     {}
-                    ORDER BY source.id
+                    ORDER BY {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, order_sql),
                 params,
             )
             rows = cur.fetchall()

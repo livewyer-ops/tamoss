@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import Request, Response
@@ -18,6 +17,7 @@ from tamoss.domain.model import (
     SourceRelationships,
     StorageBackend,
     WebhookRecord,
+    deletion_request_expiry,
 )
 from tamoss.domain.pagination import Page
 from tamoss.errors import normalize_error_payload
@@ -102,23 +102,11 @@ def deletion_request_response(
             created=request.created,
             created_by=request.created_by,
             updated=request.updated,
-            expiry=_deletion_request_expiry(request, retention_seconds),
+            expiry=deletion_request_expiry(request, retention_seconds),
             status=request.status,
             error=normalize_error_payload(request.error),
         )
     )
-
-
-def _deletion_request_expiry(
-    request: DeletionRequestRecord,
-    retention_seconds: int,
-) -> datetime | None:
-    # Completed requests are removed by the worker retention purge; surface
-    # that window through the spec's optional expiry field so clients know
-    # how long the record remains queryable.
-    if retention_seconds <= 0 or request.status != "done":
-        return None
-    return request.updated + timedelta(seconds=retention_seconds)
 
 
 def deletion_request_accepted_response(

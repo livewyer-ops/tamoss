@@ -133,10 +133,22 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/trait_resource_listing_head_200'
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Storage Backends in reverse-alphabetical order of their
+          `label`.
+        schema: &id001
+          default: false
+          type: boolean
+        x-tamoss-extension: true
     get:
       summary: Storage Backend Information
-      description: Provide information about the storage backends available on this
+      description: 'Provide information about the storage backends available on this
         service instance. These are populated on deployment of the service instance.
+
+
+        Storage Backends are sorted in alphabetical order of their `label` by default.'
       operationId: GET_storage-backends
       tags:
       - Service
@@ -149,6 +161,13 @@ paths:
                 $ref: '#/components/schemas/StorageBackendsList'
               example:
                 $ref: vendor/bbc-tams/api/examples/storage-backends-get-200.json
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Storage Backends in reverse-alphabetical order of their
+          `label`.
+        schema: *id001
+        x-tamoss-extension: true
   /service/webhooks:
     head:
       summary: List Webhook URLs
@@ -198,6 +217,13 @@ paths:
         required: false
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Webhooks in reverse-alphabetical order of their `url`.
+        schema: &id002
+          default: false
+          type: boolean
+        x-tamoss-extension: true
       responses:
         '200':
           description: ''
@@ -238,7 +264,8 @@ paths:
         in the `event_stream_mechanisms` list on the [/service](#/operations/GET_service)
         endpoint.
 
-        '
+
+        Webhooks are sorted in alphabetical order of their `url` by default.'
       operationId: GET_webhooks
       tags:
       - Webhooks
@@ -284,6 +311,11 @@ paths:
         required: false
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Webhooks in reverse-alphabetical order of their `url`.
+        schema: *id002
+        x-tamoss-extension: true
       responses:
         '200':
           description: Return the list of known webhook URLs.
@@ -562,6 +594,33 @@ paths:
           $ref: '#/components/schemas/ContentFormat'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Sources in reverse order.
+        schema: &id003
+          default: false
+          type: boolean
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Sources by.
+
+          `created` and `updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: &id004
+          type: string
+          enum:
+          - created
+          - updated
+          - label
+        x-tamoss-extension: true
       responses:
         '200':
           description: ''
@@ -648,6 +707,26 @@ paths:
           $ref: '#/components/schemas/ContentFormat'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Sources in reverse order.
+        schema: *id003
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Sources by.
+
+          `created` and `updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: *id004
+        x-tamoss-extension: true
       responses:
         '200':
           description: ''
@@ -1134,6 +1213,33 @@ paths:
           type: integer
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Flows in reverse order.
+        schema: &id005
+          default: false
+          type: boolean
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flows by.
+
+          `created` and `metadata_updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: &id006
+          type: string
+          enum:
+          - created
+          - metadata_updated
+          - label
+        x-tamoss-extension: true
       responses:
         '200':
           description: ''
@@ -1255,6 +1361,26 @@ paths:
           type: integer
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
+      - name: reverse_order
+        in: query
+        description: Return Flows in reverse order.
+        schema: *id005
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flows by.
+
+          `created` and `metadata_updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: *id006
+        x-tamoss-extension: true
       responses:
         '200':
           description: ''
@@ -3322,6 +3448,31 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/trait_resource_listing_head_200'
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Flow Delete Requests in reverse order.
+        schema: &id007
+          default: false
+          type: boolean
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flow Delete Requests by.
+
+          `created` and `expiry` sort most recent first by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: &id008
+          type: string
+          enum:
+          - created
+          - expiry
+        x-tamoss-extension: true
     get:
       summary: List Flow Delete Requests
       description: 'List ongoing flow deletion requests.
@@ -3346,6 +3497,25 @@ paths:
                   $ref: '#/components/schemas/DeletionRequest'
               example:
                 $ref: vendor/bbc-tams/api/examples/deletion-requests-get-200.json
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Flow Delete Requests in reverse order.
+        schema: *id007
+        x-tamoss-extension: true
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flow Delete Requests by.
+
+          `created` and `expiry` sort most recent first by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          '
+        schema: *id008
+        x-tamoss-extension: true
   /flow-delete-requests/{request-id}:
     parameters:
     - name: request-id

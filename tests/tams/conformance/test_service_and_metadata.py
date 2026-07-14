@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from fastapi.testclient import TestClient
+from tamoss.app import create_app
+from tamoss.application.use_cases import TamossUseCases
+from tamoss.domain.model import StorageBackend
 
 from tests.support.fixtures import load_json_fixture
+from tests.support.memory_repository import FakeTamossRepository
+from tests.support.object_storage import InMemoryObjectStorage
+from tests.support.settings import bbc_parity_settings
 from tests.tams.support import PRIMARY_BACKEND_LABEL
 
 pytestmark = pytest.mark.tams_conformance
@@ -76,3 +84,57 @@ def test_storage_backend_listing_returns_configured_s3_backend(
     storage_head = client.head("/service/storage-backends")
     assert storage_head.status_code == 200
     assert storage_head.content == b""
+
+
+def test_storage_backend_listing_sorts_by_label_and_reverses() -> None:
+    settings = bbc_parity_settings()
+    primary = settings.storage_backend_record()
+    assert primary is not None
+    alpha = StorageBackend(
+        id=UUID("22222222-2222-4222-8222-222222222222"),
+        label="aaa-storage",
+        provider="example",
+        region="local",
+        store_product="s3",
+    )
+    zulu = StorageBackend(
+        id=UUID("33333333-3333-4333-8333-333333333333"),
+        label="zzz-storage",
+        provider="example",
+        region="local",
+        store_product="s3",
+    )
+    app = create_app(
+        settings,
+        use_cases=TamossUseCases(
+            repository=FakeTamossRepository(
+                primary,
+                storage_backends=[zulu, primary, alpha],
+            ),
+            object_storage=InMemoryObjectStorage(),
+            settings=settings,
+        ),
+    )
+
+    with TestClient(app) as local_client:
+        listed = local_client.get("/service/storage-backends")
+        reversed_listing = local_client.get(
+            "/service/storage-backends",
+            params={"reverse_order": "true"},
+        )
+        head = local_client.head(
+            "/service/storage-backends",
+            params={"reverse_order": "true"},
+        )
+
+    assert [item["label"] for item in listed.json()] == [
+        alpha.label,
+        primary.label,
+        zulu.label,
+    ]
+    assert [item["label"] for item in reversed_listing.json()] == [
+        zulu.label,
+        primary.label,
+        alpha.label,
+    ]
+    assert head.status_code == 200
