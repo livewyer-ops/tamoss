@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -38,6 +39,18 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 			Message: "External S3 diagnostic skipped because no endpoint URL is configured",
 		}
 	}
+	bucket := strings.TrimSpace(spec.BucketName)
+	if bucket == "" {
+		return &storageBackendDiagnosticResult{
+			Status:  metav1.ConditionUnknown,
+			Reason:  operatorstatus.ReasonExternalS3DiagnosticSkipped,
+			Message: "External S3 diagnostic skipped because no bucket name is configured",
+		}
+	}
+	// S3 CORS rules are evaluated per bucket, so the preflight must target the
+	// bucket URL; probing the bare service endpoint yields false negatives on
+	// stores such as AWS S3 and Backblaze B2.
+	probeURL := strings.TrimRight(endpoint, "/") + "/" + url.PathEscape(bucket)
 	originBase := strings.TrimSpace(tamoss.Spec.PublicEndpoint.BaseDomain)
 	if originBase == "" {
 		return &storageBackendDiagnosticResult{
@@ -47,12 +60,12 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 		}
 	}
 	origin := "https://app." + originBase
-	request, err := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodOptions, probeURL, nil)
 	if err != nil {
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionFalse,
 			Reason:  operatorstatus.ReasonEndpointUnreachable,
-			Message: fmt.Sprintf("External S3 diagnostic could not build request for %s: %v", endpoint, err),
+			Message: fmt.Sprintf("External S3 diagnostic could not build request for %s: %v", probeURL, err),
 		}
 	}
 	request.Header.Set("Origin", origin)
@@ -67,7 +80,7 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionFalse,
 			Reason:  reason,
-			Message: fmt.Sprintf("External S3 diagnostic failed for %s from origin %s: %v", endpoint, origin, err),
+			Message: fmt.Sprintf("External S3 diagnostic failed for %s from origin %s: %v", probeURL, origin, err),
 		}
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -75,13 +88,13 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionTrue,
 			Reason:  operatorstatus.ReasonExternalS3DiagnosticReady,
-			Message: fmt.Sprintf("External S3 diagnostic accepted browser upload preflight from origin %s", origin),
+			Message: fmt.Sprintf("External S3 diagnostic accepted browser upload preflight for %s from origin %s", probeURL, origin),
 		}
 	}
 	return &storageBackendDiagnosticResult{
 		Status:  metav1.ConditionFalse,
 		Reason:  operatorstatus.ReasonCORSMisconfigured,
-		Message: fmt.Sprintf("External S3 diagnostic did not observe CORS headers allowing PUT from origin %s", origin),
+		Message: fmt.Sprintf("External S3 diagnostic did not observe CORS headers allowing PUT for %s from origin %s", probeURL, origin),
 	}
 }
 
