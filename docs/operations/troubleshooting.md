@@ -261,7 +261,9 @@ external `StorageBackend` resources. `CORSMisconfigured`,
 `EndpointUnreachable`, and `TLSValidationFailed` are diagnostic warnings; they
 do not mutate external buckets and can be false positives or false negatives
 because browser behavior, presigned URL shape, and provider CORS evaluation are
-owned by the external service.
+owned by the external service. The diagnostic sends its preflight to
+`<endpoint>/<bucketName>` because S3 providers evaluate CORS rules per bucket,
+and the probed URL is included in the condition message.
 
 Browser clients usually cross two CORS boundaries:
 

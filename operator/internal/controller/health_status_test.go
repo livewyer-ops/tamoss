@@ -136,7 +136,9 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 }
 
 func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
+	var probedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probedPath = r.URL.Path
 		w.Header().Set("Access-Control-Allow-Origin", "https://app.tamoss.example.com")
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
 		w.WriteHeader(http.StatusNoContent)
@@ -146,12 +148,16 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	tamoss := recoveryTamoss()
 	tamoss.Spec.PublicEndpoint.BaseDomain = "tamoss.example.com"
 	spec := externalStorageBackendSpecFixture()
+	spec.BucketName = "archive"
 	spec.Endpoint.Public.URL = server.URL
 	reconciler := &StorageBackendReconciler{HTTPClient: server.Client()}
 
 	diagnostic := reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
 	if diagnostic.Status != metav1.ConditionTrue || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticReady {
 		t.Fatalf("expected successful diagnostic, got %#v", diagnostic)
+	}
+	if probedPath != "/archive" {
+		t.Fatalf("expected preflight against the bucket URL, got path %q", probedPath)
 	}
 
 	blockedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +175,13 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	diagnostic = reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
 	if diagnostic.Status != metav1.ConditionUnknown || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticSkipped {
 		t.Fatalf("expected skipped diagnostic, got %#v", diagnostic)
+	}
+
+	tamoss.Spec.PublicEndpoint.BaseDomain = "tamoss.example.com"
+	spec.BucketName = ""
+	diagnostic = reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
+	if diagnostic.Status != metav1.ConditionUnknown || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticSkipped {
+		t.Fatalf("expected skipped diagnostic without a bucket name, got %#v", diagnostic)
 	}
 }
 
