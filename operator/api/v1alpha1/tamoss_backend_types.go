@@ -76,9 +76,17 @@ type DBCNPGBackupSpec struct {
 }
 
 type DBCNPGObjectStoreSpec struct {
-	EndpointURL    string `json:"endpointURL,omitempty"`
-	Bucket         string `json:"bucket,omitempty"`
+	EndpointURL string `json:"endpointURL,omitempty"`
+	Bucket      string `json:"bucket,omitempty"`
+	// DestinationPath overrides the derived s3://<bucket>/<cluster> path.
+	DestinationPath string `json:"destinationPath,omitempty"`
+	// ServerName identifies the Barman server folder when it differs from the
+	// CNPG external cluster name.
+	ServerName string `json:"serverName,omitempty"`
+	// ExistingSecret contains object-store credentials for CNPG backup/restore.
 	ExistingSecret string `json:"existingSecret,omitempty"`
+	// SecretKeys overrides the access key and secret key names inside ExistingSecret.
+	SecretKeys SecretKeySpec `json:"secretKeys,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.source) && self.source.size() > 0 && has(self.objectStore) && has(self.objectStore.endpointURL) && self.objectStore.endpointURL.size() > 0 && has(self.objectStore.bucket) && self.objectStore.bucket.size() > 0 && has(self.objectStore.existingSecret) && self.objectStore.existingSecret.size() > 0)",message="restore requires source, objectStore.endpointURL, objectStore.bucket, and objectStore.existingSecret when enabled"
@@ -87,6 +95,10 @@ type DBCNPGRestoreSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// Source is the CNPG external cluster name and backup folder to recover from.
 	Source string `json:"source,omitempty"`
+	// BackupID pins recovery to the exact CNPG/Barman backup captured by a
+	// portable hibernation artifact. Empty retains CNPG's normal target-based
+	// backup selection for user-configured restores.
+	BackupID string `json:"backupID,omitempty"`
 	// TargetTime performs point-in-time recovery to an RFC3339 timestamp.
 	TargetTime string `json:"targetTime,omitempty"`
 	// TargetImmediate ends recovery as soon as a consistent state is reached.

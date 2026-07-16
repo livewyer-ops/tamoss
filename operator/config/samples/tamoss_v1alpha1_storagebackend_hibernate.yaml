@@ -1,0 +1,26 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  labels:
+    app.kubernetes.io/name: tamoss
+    app.kubernetes.io/managed-by: kustomize
+  name: tamoss-hibernate
+  namespace: tams
+spec:
+  tamossRef:
+    name: tamoss-cnpg
+  provider: external-s3
+  usage: hibernate
+  region: eu-west-2
+  bucketName: tamoss-hibernations
+  endpoint:
+    default:
+      url: https://s3.example.com
+  credentials:
+    existingSecret: tamoss-hibernate-s3
+    secretKeys:
+      accessKey: AWS_ACCESS_KEY_ID
+      secretKey: AWS_SECRET_ACCESS_KEY
+  hibernate:
+    retention:
+      mode: Retain

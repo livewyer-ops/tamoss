@@ -12,7 +12,7 @@ then stay on the matching install, configuration, usage, and operations path.
 | Choose a deployment shape | [Profiles](concepts/profiles.md) | `local-kind`, `edge`, `single-server`, or `multi-server` |
 | Configure providers and endpoints | [Configuration](configuration.md) | [Provider Ownership](concepts/provider-ownership.md), [Runtime Configuration](reference/runtime-configuration.md), [Tamoss CR](reference/tamoss-cr.md), [StorageBackend CR](reference/storagebackend-cr.md) |
 | Use the UI or API | [Usage](usage.md) | [API](reference/api.md), [Storage Backends](concepts/storage-backends.md) |
-| Operate an installed cluster | [Day 2](operations/day-2.md) | [Backup and Restore](operations/backup-restore.md), [Upgrades](operations/upgrades.md), [Troubleshooting](operations/troubleshooting.md) |
+| Operate an installed cluster | [Day 2](operations/day-2.md) | [Backup and Restore](operations/backup-restore.md), [Hibernate and Resume](operations/hibernate-resume.md), [Upgrades](operations/upgrades.md), [Troubleshooting](operations/troubleshooting.md) |
 | Develop or test TAMOSS | [Development Workflow](development/contributing.md) | [Testing](development/testing.md), [Task Commands](reference/task-commands.md) |
 
 ## Get Started
@@ -48,6 +48,8 @@ then stay on the matching install, configuration, usage, and operations path.
 - [Day 2](operations/day-2.md) - status, scaling, pausing, drift, and logs.
 - [Backup and Restore](operations/backup-restore.md) - data ownership and
   restore planning.
+- [Hibernate and Resume](operations/hibernate-resume.md) - on-demand managed
+  database hibernation artifacts and recovery.
 - [Upgrades](operations/upgrades.md) - change sequencing and rollback.
 - [Deletion Protection](operations/deletion-protection.md) - required
   confirmation annotations and finalizers.

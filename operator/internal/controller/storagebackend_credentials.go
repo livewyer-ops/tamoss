@@ -72,6 +72,9 @@ func storageBackendRuntimeCredentials(ctx context.Context, c client.Client, tamo
 		}
 		spec := storageBackend.Spec
 		spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
+		if spec.IsHibernateDestination() {
+			continue
+		}
 		if spec.TamossRef.Name != tamoss.Name || spec.Credentials.ExistingSecret == "" {
 			continue
 		}

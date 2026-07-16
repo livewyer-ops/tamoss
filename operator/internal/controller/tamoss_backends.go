@@ -110,9 +110,17 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 			Degraded: true,
 		}, nil
 	}
-	if err := cnpg.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
+	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
 		return applyAdvancedResourcePatches(tamoss, obj)
-	}); err != nil {
+	}}
+	preserveRecovery, err := r.preserveResumeRecoveryMutator(ctx, tamoss)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if preserveRecovery != nil {
+		mutators = append(mutators, preserveRecovery)
+	}
+	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
 	}
 
@@ -157,6 +165,39 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 		Ready:   true,
 		Reason:  operatorstatus.ReasonCNPGClusterReady,
 		Message: fmt.Sprintf("CNPG Cluster %s is ready", cluster.Name),
+	}, nil
+}
+
+func (r *TamossReconciler) preserveResumeRecoveryMutator(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (cnpg.ObjectMutator, error) {
+	cluster := &cnpgv1.Cluster{}
+	clusterKey := types.NamespacedName{Name: tamoss.ResourceName("db"), Namespace: tamoss.Namespace}
+	if err := r.Client.Get(ctx, clusterKey, cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	resumeOperation := cluster.Annotations[tamossResumeOperationAnnotation]
+	resumeOperationUID := cluster.Annotations[tamossResumeOperationUIDAnnotation]
+	if resumeOperation == "" || resumeOperationUID == "" {
+		return nil, nil
+	}
+	preserved := cluster.DeepCopy()
+	return func(obj client.Object) error {
+		desired, ok := obj.(*cnpgv1.Cluster)
+		if !ok {
+			return nil
+		}
+		desired.Spec.Bootstrap = preserved.Spec.Bootstrap
+		desired.Spec.ExternalClusters = preserved.Spec.ExternalClusters
+		annotations := desired.GetAnnotations()
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[tamossResumeOperationAnnotation] = resumeOperation
+		annotations[tamossResumeOperationUIDAnnotation] = resumeOperationUID
+		desired.SetAnnotations(annotations)
+		return nil
 	}, nil
 }
 

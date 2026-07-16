@@ -81,6 +81,21 @@ func (r *StorageBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if control, err := r.reconcileStorageBackendBucketStage(ctx, storageBackend, tamoss, spec); shouldStop(control, err) {
 		return control.Result, err
 	}
+	if spec.IsHibernateDestination() {
+		diagnostic := r.externalS3Diagnostic(ctx, tamoss, spec)
+		return r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStatusInput{
+			Ready:           true,
+			BucketReady:     true,
+			DatabaseReady:   true,
+			Reason:          operatorstatus.ReasonStorageBackendReady,
+			Message:         "StorageBackend hibernation destination is ready",
+			DatabaseReason:  operatorstatus.ReasonDatabaseRegistrationSkipped,
+			DatabaseMessage: "Hibernation destinations are not registered as TAMS media storage backends",
+			BackendID:       spec.ID,
+			BucketName:      spec.BucketName,
+			Diagnostic:      diagnostic,
+		})
+	}
 	if control, err := r.reconcileStorageBackendDatabaseStage(ctx, storageBackend, tamoss, spec); shouldStop(control, err) {
 		return control.Result, err
 	}

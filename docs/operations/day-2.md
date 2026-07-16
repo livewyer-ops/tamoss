@@ -30,6 +30,7 @@ kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system logs deploy/operator-control
 | `Upgradeable` | The desired schema state can complete safely. |
 | `RoutingReady` | Managed Ingress or Gateway API routes are configured and accepted. |
 | `HostnamesReady` | Managed routing hostnames are configured or admitted by the Gateway controller. |
+| `LifecycleReady` | No hibernate/resume lifecycle state is gating reconciliation; `False` while the instance is `Hibernating`, `Hibernated`, `Resuming`, or a lifecycle operation has failed. |
 | `Degraded` | A user-actionable or terminal reconcile problem occurred. |
 | `Paused` | `.spec.paused=true`; write reconciliation is suspended. |
 

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-api
+  namespace: ($namespace)
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-worker
+  namespace: ($namespace)
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-ui
+  namespace: ($namespace)
+spec:
+  replicas: 1

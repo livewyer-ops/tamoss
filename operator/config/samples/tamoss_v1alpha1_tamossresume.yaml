@@ -1,0 +1,19 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossResume
+metadata:
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+  labels:
+    app.kubernetes.io/name: tamoss
+    app.kubernetes.io/managed-by: kustomize
+  name: resume-sample
+  namespace: tams
+spec:
+  tamossRef:
+    name: tamoss-cnpg-restored
+  source:
+    artifact:
+      storageBackendRef:
+        name: tamoss-hibernate
+      manifestKey: hibernations/tamoss-cnpg/snapshot-sample/manifest.json
+      checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

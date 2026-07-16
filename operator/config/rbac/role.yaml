@@ -33,6 +33,8 @@ rules:
   resources:
   - storagebackends/finalizers
   - tamosses/finalizers
+  - tamosshibernations/finalizers
+  - tamossresumes/finalizers
   verbs:
   - update
 - apiGroups:
@@ -40,6 +42,8 @@ rules:
   resources:
   - storagebackends/status
   - tamosses/status
+  - tamosshibernations/status
+  - tamossresumes/status
   verbs:
   - get
   - patch
@@ -48,6 +52,8 @@ rules:
   - tamoss.livewyer.io
   resources:
   - tamosses
+  - tamosshibernations
+  - tamossresumes
   verbs:
   - get
   - list
@@ -146,6 +152,17 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups
+  verbs:
+  - create
   - get
   - list
   - patch

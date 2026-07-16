@@ -1,0 +1,12 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossResume
+metadata:
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+  name: resume
+spec:
+  tamossRef:
+    name: tamoss-restored
+  source:
+    hibernationRef:
+      name: snapshot

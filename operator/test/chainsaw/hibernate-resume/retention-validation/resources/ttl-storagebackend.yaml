@@ -1,0 +1,25 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: hibernate-ttl
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  tamossRef:
+    name: tamoss
+  provider: external-s3
+  usage: hibernate
+  region: us-east-1
+  bucketName: tamoss-hibernate
+  endpoint:
+    default:
+      url: https://s3.example.test
+  credentials:
+    existingSecret: hibernate-s3
+    secretKeys:
+      accessKey: accessKey
+      secretKey: secretKey
+  hibernate:
+    retention:
+      mode: TTL
+      ttlSecondsAfterResume: 3600

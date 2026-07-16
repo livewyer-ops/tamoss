@@ -1,0 +1,157 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: hibernate-resume-db-only-controller-flow
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: standard
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: apply source tamoss and hibernate destination
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/cnpg-crd.yaml
+        - apply:
+            file: ../../fixtures/cnpg-backup-crd.yaml
+        - assert:
+            file: assert/cnpg-crds-established.yaml
+            timeout: 30s
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - apply:
+            file: ../../fixtures/cnpg-secrets.yaml
+        - apply:
+            file: ../../fixtures/schema-state.yaml
+        - apply:
+            file: resources/source-tamoss.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+            timeout: 120s
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+            timeout: 120s
+        - patch:
+            subresource: status
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: tamoss-db
+                namespace: ($namespace)
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: ClusterReady
+                    message: Cluster is ready
+        - assert:
+            file: assert/source-workloads-present.yaml
+            timeout: 120s
+        - apply:
+            file: resources/hibernate-storagebackend.yaml
+        - assert:
+            file: assert/hibernate-storagebackend-ready.yaml
+            timeout: 120s
+
+    - name: hibernate source tamoss
+      try:
+        - apply:
+            file: resources/hibernate.yaml
+        - assert:
+            file: assert/hibernate-capturing.yaml
+            timeout: 120s
+        - assert:
+            file: assert/source-workloads-hibernated.yaml
+            timeout: 120s
+        - patch:
+            subresource: status
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Backup
+              metadata:
+                name: snapshot
+                namespace: ($namespace)
+              status:
+                phase: completed
+                backupId: "20260707T100000"
+                destinationPath: s3://tamoss/hibernations/tamoss/snapshot/cnpg
+        - assert:
+            file: assert/hibernate-completed.yaml
+            timeout: 120s
+        - wait:
+            apiVersion: postgresql.cnpg.io/v1
+            kind: Cluster
+            name: tamoss-db
+            timeout: 120s
+            for:
+              deletion: {}
+        # Give the gated Tamoss controller time to reconcile before confirming
+        # that hibernation continues to hold the workload scale-down.
+        - sleep:
+            duration: 15s
+        - assert:
+            file: assert/source-workloads-hibernated.yaml
+            timeout: 30s
+
+    - name: reject resume over an existing cnpg cluster
+      try:
+        - apply:
+            file: resources/conflict-target.yaml
+        - apply:
+            file: resources/conflict-resume.yaml
+        - assert:
+            file: assert/resume-conflict-failed.yaml
+            timeout: 120s
+
+    - name: resume into a clean target
+      try:
+        - apply:
+            file: resources/target-tamoss.yaml
+        - apply:
+            file: resources/resume.yaml
+        - assert:
+            file: assert/resume-recovering.yaml
+            timeout: 120s
+        - patch:
+            subresource: status
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: restored-db
+                namespace: ($namespace)
+              status:
+                phase: Cluster in healthy state
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: ClusterReady
+                    message: Cluster is ready
+        - assert:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: TamossResume
+              metadata:
+                name: resume
+                namespace: ($namespace)
+              status:
+                phase: StartingServices
+            timeout: 120s
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss-restored
+                namespace: ($namespace)
+              spec:
+                paused: false
+        - assert:
+            file: assert/resume-completed.yaml
+            timeout: 120s

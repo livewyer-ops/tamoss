@@ -180,6 +180,13 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 	}
 	resolved := tamoss.DeepCopy()
 	defaults.Apply(resolved)
+	if tamossLifecycleBlocksReconcile(resolved) {
+		if err := r.updateLifecycleGatedStatus(ctx, resolved); err != nil {
+			return nil, stopReconcile(ctrl.Result{}), err
+		}
+		recordPhase(resolved.Status.Phase)
+		return nil, stopReconcile(ctrl.Result{}), nil
+	}
 	if resolved.Spec.Paused {
 		if err := r.updatePausedStatus(ctx, resolved); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
@@ -188,6 +195,17 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		return nil, stopReconcile(ctrl.Result{}), nil
 	}
 	return resolved, continueReconcile(), nil
+}
+
+func tamossLifecycleBlocksReconcile(tamoss *tamossv1alpha1.Tamoss) bool {
+	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
+	case tamossv1alpha1.TamossLifecyclePhaseHibernating,
+		tamossv1alpha1.TamossLifecyclePhaseHibernated,
+		tamossv1alpha1.TamossLifecyclePhaseResuming:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *TamossReconciler) reconcileTamossBackendStages(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, desiredKeys map[string]struct{}, recordPhase func(string)) (reconcileControl, error) {

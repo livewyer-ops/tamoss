@@ -94,6 +94,30 @@ spec:
                         type: string
                     type: object
                 type: object
+              hibernate:
+                properties:
+                  retention:
+                    properties:
+                      mode:
+                        default: Retain
+                        description: |-
+                          Mode controls operator-managed deletion of completed hibernation artifacts.
+                          Retain keeps artifacts indefinitely. DeleteAfterResume removes the source
+                          artifact after a successful TamossResume. TTL removes it after the resume
+                          operation has been completed for ttlSecondsAfterResume.
+                        enum:
+                        - Retain
+                        - DeleteAfterResume
+                        - TTL
+                        type: string
+                      ttlSecondsAfterResume:
+                        description: TTLSecondsAfterResume is required when mode is
+                          TTL.
+                        format: int64
+                        minimum: 1
+                        type: integer
+                    type: object
+                type: object
               id:
                 description: |-
                   ID is the BBC TAMS storage backend UUID advertised to clients.
@@ -131,6 +155,17 @@ spec:
                     minLength: 1
                     type: string
                 type: object
+              usage:
+                default: media
+                description: |-
+                  Usage declares how this object store is consumed. Media backends are
+                  registered in the TAMS database and exposed to the application runtime.
+                  Hibernate backends are reserved for DB hibernation artifacts and are not
+                  registered as media storage.
+                enum:
+                - media
+                - hibernate
+                type: string
             type: object
             x-kubernetes-validations:
             - message: spec.id is immutable
@@ -146,11 +181,21 @@ spec:
                 > 0
             - message: spec.tamossRef.name is immutable
               rule: self.tamossRef.name == oldSelf.tamossRef.name
+            - message: spec.usage is immutable
+              rule: has(self.usage) == has(oldSelf.usage) && (!has(self.usage) ||
+                self.usage == oldSelf.usage)
             - message: spec.endpoint.default.url is required when spec.provider is
                 external-s3
               rule: self.provider != 'external-s3' || (has(self.endpoint) && has(self.endpoint.default)
                 && has(self.endpoint.default.url) && self.endpoint.default.url.size()
                 > 0)
+            - message: hibernate StorageBackends must use provider external-s3
+              rule: self.usage != 'hibernate' || self.provider == 'external-s3'
+            - message: hibernate.retention.ttlSecondsAfterResume is required when
+                retention mode is TTL
+              rule: '!has(self.hibernate) || !has(self.hibernate.retention) || !has(self.hibernate.retention.mode)
+                || self.hibernate.retention.mode != ''TTL'' || (has(self.hibernate.retention.ttlSecondsAfterResume)
+                && self.hibernate.retention.ttlSecondsAfterResume > 0)'
           status:
             properties:
               backendID:
@@ -236,6 +281,8 @@ spec:
                   provider:
                     type: string
                   publicEndpointURL:
+                    type: string
+                  usage:
                     type: string
                 type: object
             type: object

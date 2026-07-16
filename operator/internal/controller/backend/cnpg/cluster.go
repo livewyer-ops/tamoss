@@ -51,6 +51,7 @@ func BuildScheduledBackup(tamoss *tamossv1alpha1.Tamoss) *cnpgv1.ScheduledBackup
 	if !spec.Backup.Enabled {
 		return nil
 	}
+	suspended := false
 	return &cnpgv1.ScheduledBackup{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: cnpgv1.SchemeGroupVersion.String(),
@@ -63,6 +64,7 @@ func BuildScheduledBackup(tamoss *tamossv1alpha1.Tamoss) *cnpgv1.ScheduledBackup
 			OwnerReferences: resource.TamossOwnerReferences(tamoss),
 		},
 		Spec: cnpgv1.ScheduledBackupSpec{
+			Suspend:  &suspended,
 			Schedule: spec.Backup.Schedule,
 			Cluster: cnpgv1.LocalObjectReference{
 				Name: clusterName,
@@ -164,10 +166,11 @@ func bootstrap(spec tamossv1alpha1.DBCNPGSpec) *cnpgv1.BootstrapConfiguration {
 }
 
 func recoveryTarget(spec tamossv1alpha1.DBCNPGRestoreSpec) *cnpgv1.RecoveryTarget {
-	if spec.TargetTime == "" && spec.TargetImmediate == nil {
+	if spec.BackupID == "" && spec.TargetTime == "" && spec.TargetImmediate == nil {
 		return nil
 	}
 	return &cnpgv1.RecoveryTarget{
+		BackupID:        spec.BackupID,
 		TargetTime:      spec.TargetTime,
 		TargetImmediate: spec.TargetImmediate,
 	}
@@ -203,17 +206,36 @@ func restoreExternalClusters(spec tamossv1alpha1.DBCNPGRestoreSpec) []cnpgv1.Ext
 }
 
 func barmanObjectStore(clusterName string, spec tamossv1alpha1.DBCNPGObjectStoreSpec) cnpgv1.BarmanObjectStoreConfiguration {
+	destinationPath := spec.DestinationPath
+	if destinationPath == "" {
+		destinationPath = fmt.Sprintf("s3://%s/%s", spec.Bucket, clusterName)
+	}
 	store := cnpgv1.BarmanObjectStoreConfiguration{
 		EndpointURL:     spec.EndpointURL,
-		DestinationPath: fmt.Sprintf("s3://%s/%s", spec.Bucket, clusterName),
+		DestinationPath: destinationPath,
+		ServerName:      spec.ServerName,
 	}
 	if spec.ExistingSecret != "" {
 		store.AWS = &cnpgv1.S3Credentials{
-			AccessKeyIDReference:     secretKey(spec.ExistingSecret, "AWS_ACCESS_KEY_ID"),
-			SecretAccessKeyReference: secretKey(spec.ExistingSecret, "AWS_SECRET_ACCESS_KEY"),
+			AccessKeyIDReference:     secretKey(spec.ExistingSecret, cnpgObjectStoreAccessKey(spec)),
+			SecretAccessKeyReference: secretKey(spec.ExistingSecret, cnpgObjectStoreSecretKey(spec)),
 		}
 	}
 	return store
+}
+
+func cnpgObjectStoreAccessKey(spec tamossv1alpha1.DBCNPGObjectStoreSpec) string {
+	if spec.SecretKeys.AccessKey != "" {
+		return spec.SecretKeys.AccessKey
+	}
+	return "AWS_ACCESS_KEY_ID"
+}
+
+func cnpgObjectStoreSecretKey(spec tamossv1alpha1.DBCNPGObjectStoreSpec) string {
+	if spec.SecretKeys.SecretKey != "" {
+		return spec.SecretKeys.SecretKey
+	}
+	return "AWS_SECRET_ACCESS_KEY"
 }
 
 func secretKey(secretName, key string) *cnpgv1.SecretKeySelector {

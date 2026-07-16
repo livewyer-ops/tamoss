@@ -41,7 +41,7 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 			return ctrl.Result{RequeueAfter: defaultFinalizerPollInterval}, nil
 		}
 	}
-	if found && r.schemaStateReady(ctx, tamoss) {
+	if found && !spec.IsHibernateDestination() && r.schemaStateReady(ctx, tamoss) {
 		result, err := r.reconcileStorageBackendDatabaseDeletion(ctx, storageBackend, tamoss, spec)
 		if err != nil || !result.Ready {
 			if err != nil {
@@ -54,7 +54,7 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 	if err := r.deleteStorageBackendCleanupObjects(ctx, storageBackend); err != nil {
 		return ctrl.Result{}, err
 	}
-	if found && tamoss.DeletionTimestamp.IsZero() {
+	if found && !spec.IsHibernateDestination() && tamoss.DeletionTimestamp.IsZero() {
 		if err := r.reconcileRuntimeCredentialsSecret(ctx, tamoss); err != nil {
 			return ctrl.Result{}, err
 		}

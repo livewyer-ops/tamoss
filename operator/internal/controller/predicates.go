@@ -6,13 +6,27 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
 func tamossPrimaryPredicate() predicate.Predicate {
-	return primaryResourcePredicate(tamossFinalizer, []string{
-		AnnotationSchemaRetry,
-		AnnotationAPITokenRotate,
-	})
+	return predicate.Or(
+		primaryResourcePredicate(tamossFinalizer, []string{
+			AnnotationSchemaRetry,
+			AnnotationAPITokenRotate,
+		}),
+		predicate.Funcs{
+			UpdateFunc: func(evt event.UpdateEvent) bool {
+				oldTamoss, oldOK := evt.ObjectOld.(*tamossv1alpha1.Tamoss)
+				newTamoss, newOK := evt.ObjectNew.(*tamossv1alpha1.Tamoss)
+				if !oldOK || !newOK {
+					return false
+				}
+				return !reflect.DeepEqual(oldTamoss.Status.Lifecycle, newTamoss.Status.Lifecycle)
+			},
+		},
+	)
 }
 
 func storageBackendPrimaryPredicate() predicate.Predicate {

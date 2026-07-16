@@ -1,0 +1,26 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: tamoss-hibernate
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  tamossRef:
+    name: tamoss
+  provider: external-s3
+  usage: hibernate
+  region: us-east-1
+  storeProduct: s3
+  storeType: http_object_store
+  bucketName: tamoss
+  endpoint:
+    default:
+      url: (join('', ['http://rustfs-svc.', $namespace, '.svc:9000']))
+  credentials:
+    existingSecret: tams-rustfs-auth
+    secretKeys:
+      accessKey: RUSTFS_ACCESS_KEY
+      secretKey: RUSTFS_SECRET_KEY
+  hibernate:
+    retention:
+      mode: DeleteAfterResume

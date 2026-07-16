@@ -1,0 +1,33 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossHibernate
+metadata:
+  name: snapshot
+  namespace: ($namespace)
+status:
+  phase: CapturingDatabase
+  reason: TamossHibernating
+  artifact:
+    manifestKey: hibernations/tamoss/snapshot/manifest.json
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  namespace: ($namespace)
+status:
+  lifecycle:
+    phase: Hibernating
+    reason: TamossHibernating
+    activeOperationRef:
+      name: snapshot
+      kind: TamossHibernate
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: snapshot
+  namespace: ($namespace)
+spec:
+  cluster:
+    name: tamoss-db
+  method: barmanObjectStore

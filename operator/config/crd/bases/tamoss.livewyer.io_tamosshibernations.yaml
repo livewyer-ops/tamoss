@@ -1,0 +1,247 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: tamosshibernations.tamoss.livewyer.io
+spec:
+  group: tamoss.livewyer.io
+  names:
+    kind: TamossHibernate
+    listKind: TamossHibernateList
+    plural: tamosshibernations
+    shortNames:
+    - th
+    singular: tamosshibernate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tamossRef.name
+      name: Tamoss
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.artifact.driver
+      name: Driver
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          TamossHibernate records a request to export TAMOSS database state to an
+          external hibernation destination.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              destination:
+                properties:
+                  prefix:
+                    description: Prefix is the object-key prefix used for hibernation
+                      metadata.
+                    minLength: 1
+                    type: string
+                  storageBackendRef:
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                    type: object
+                type: object
+              driver:
+                default: cnpgPhysical
+                description: |-
+                  Driver selects the DB hibernation implementation. cnpgPhysical is the
+                  managed-CNPG native path. logicalDump is reserved for a later portable
+                  PostgreSQL dump implementation.
+                enum:
+                - cnpgPhysical
+                - logicalDump
+                type: string
+              tamossRef:
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                type: object
+            type: object
+            x-kubernetes-validations:
+            - message: spec.tamossRef.name is required
+              rule: has(self.tamossRef) && has(self.tamossRef.name) && self.tamossRef.name.size()
+                > 0
+            - message: spec.destination.storageBackendRef.name is required
+              rule: has(self.destination) && has(self.destination.storageBackendRef)
+                && has(self.destination.storageBackendRef.name) && self.destination.storageBackendRef.name.size()
+                > 0
+            - message: spec.destination.prefix is required
+              rule: has(self.destination) && has(self.destination.prefix) && self.destination.prefix.size()
+                > 0
+            - message: spec.tamossRef.name is immutable
+              rule: self.tamossRef.name == oldSelf.tamossRef.name
+            - message: spec.destination.storageBackendRef.name is immutable
+              rule: self.destination.storageBackendRef.name == oldSelf.destination.storageBackendRef.name
+            - message: spec.destination.prefix is immutable
+              rule: self.destination.prefix == oldSelf.destination.prefix
+            - message: spec.destination.prefix must be a normalized relative object-key
+                prefix
+              rule: '!has(self.destination.prefix) || (!self.destination.prefix.startsWith(''/'')
+                && !self.destination.prefix.endsWith(''/'') && !self.destination.prefix.contains(''//''))'
+            - message: spec.driver is immutable
+              rule: has(self.driver) == has(oldSelf.driver) && (!has(self.driver)
+                || self.driver == oldSelf.driver)
+          status:
+            properties:
+              artifact:
+                properties:
+                  checksum:
+                    type: string
+                  cleanup:
+                    properties:
+                      completedAt:
+                        format: date-time
+                        type: string
+                      message:
+                        type: string
+                      objectsDeleted:
+                        format: int64
+                        type: integer
+                      phase:
+                        type: string
+                      reason:
+                        type: string
+                    type: object
+                  cnpgBackup:
+                    properties:
+                      backupID:
+                        type: string
+                      destinationPath:
+                        type: string
+                      error:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                      phase:
+                        type: string
+                    type: object
+                  driver:
+                    type: string
+                  manifestKey:
+                    type: string
+                  manifestURI:
+                    type: string
+                type: object
+              completedAt:
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              message:
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - ResolvingSource
+                - PreparingTarget
+                - Quiescing
+                - CapturingDatabase
+                - WritingManifest
+                - DeprovisioningSource
+                - RecoveringDatabase
+                - StartingDatabase
+                - RunningMigrations
+                - StartingServices
+                - Verifying
+                - Completed
+                - Failed
+                type: string
+              reason:
+                type: string
+              startedAt:
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

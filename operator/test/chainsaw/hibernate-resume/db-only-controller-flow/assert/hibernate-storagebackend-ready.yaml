@@ -1,0 +1,10 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: tamoss-hibernate
+  namespace: ($namespace)
+(status.phase): Ready
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): StorageBackendReady
+(status.conditions[?type == 'DatabaseReady'] | [0].status): "True"
+(status.conditions[?type == 'DatabaseReady'] | [0].reason): DatabaseRegistrationSkipped

@@ -1,0 +1,30 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossResume
+metadata:
+  name: resume
+  namespace: ($namespace)
+status:
+  phase: RecoveringDatabase
+  artifact:
+    manifestKey: hibernations/tamoss/snapshot/manifest.json
+    cnpgBackup:
+      backupID: "20260707T100000"
+      destinationPath: s3://tamoss/hibernations/tamoss/snapshot/cnpg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: restored-db
+  namespace: ($namespace)
+  annotations:
+    tamoss.livewyer.io/resume-operation: resume
+spec:
+  bootstrap:
+    recovery:
+      source: tamoss-db
+  externalClusters:
+    - name: tamoss-db
+      barmanObjectStore:
+        destinationPath: s3://tamoss/hibernations/tamoss/snapshot/cnpg
+        serverName: tamoss-db
+        endpointURL: (join('', ['http://rustfs-svc.', $namespace, '.svc:9000']))
