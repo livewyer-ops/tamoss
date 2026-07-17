@@ -11,7 +11,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production
-FROM nginx:1.31.2-alpine
+FROM nginx:1.31.3-alpine
 
 # Remove default nginx config and the top-level user directive, which is only
 # valid when the nginx master process starts as root.
