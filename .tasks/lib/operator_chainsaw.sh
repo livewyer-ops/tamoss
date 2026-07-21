@@ -172,7 +172,6 @@ task_operator_chainsaw_apply_operator() {
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \
     crd/tamosshibernations.tamoss.livewyer.io \
-    crd/tamossresumes.tamoss.livewyer.io \
     --timeout=60s
   kubectl --kubeconfig "$kubeconfig" -n tamoss-system rollout status \
     deployment/operator-controller-manager \

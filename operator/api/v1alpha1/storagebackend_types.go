@@ -93,8 +93,8 @@ type StorageBackendHibernateSpec struct {
 type HibernationRetentionSpec struct {
 	// Mode controls operator-managed deletion of completed hibernation artifacts.
 	// Retain keeps artifacts indefinitely. DeleteAfterResume removes the source
-	// artifact after a successful TamossResume. TTL removes it after the resume
-	// operation has been completed for ttlSecondsAfterResume.
+	// artifact after a successful resume. TTL removes it once the resumed
+	// instance has been ready for ttlSecondsAfterResume.
 	//+kubebuilder:validation:Enum=Retain;DeleteAfterResume;TTL
 	//+kubebuilder:default=Retain
 	Mode HibernationRetentionMode `json:"mode,omitempty"`

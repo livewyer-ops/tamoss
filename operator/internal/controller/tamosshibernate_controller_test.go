@@ -699,7 +699,7 @@ func TestTamossHibernateFailsOnLifecycleConflict(t *testing.T) {
 		Reason: operatorstatus.ReasonTamossResuming,
 		ActiveOperationRef: &corev1.ObjectReference{
 			APIVersion: tamossv1alpha1.GroupVersion.String(),
-			Kind:       "TamossResume",
+			Kind:       "TamossHibernate",
 			Namespace:  "media",
 			Name:       "other-op",
 		},
