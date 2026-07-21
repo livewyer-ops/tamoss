@@ -15,7 +15,7 @@ lives under `Tamoss.spec.backends.db.cnpg`, and the operator renders CNPG
 resources.
 
 For on-demand hibernation artifacts and recovery through `TamossHibernate` and
-`TamossResume`, see [Hibernate and Resume](hibernate-resume.md).
+`spec.hibernation`, see [Hibernate and Resume](hibernate-resume.md).
 
 ## PostgreSQL Backup
 

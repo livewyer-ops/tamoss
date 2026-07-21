@@ -96,8 +96,8 @@ the object store is consumed.
   Bucket lifecycle, CORS, IAM, replication, backups, and bucket deletion remain
   provider-owned.
 
-`usage: hibernate` is reserved for `TamossHibernate` and `TamossResume`
-artifacts. Hibernate destinations are checked for bucket and credential
+`usage: hibernate` is reserved for hibernation artifacts and resume
+bootstraps. Hibernate destinations are checked for bucket and credential
 readiness, but they are not registered in the TAMS database and are not exposed
 to API or worker runtime credentials.
 
