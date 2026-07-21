@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -271,4 +273,64 @@ func TestTamossHibernateRetryAnnotationReArmsFailedOperation(t *testing.T) {
 
 func reconcileRequestFor(name types.NamespacedName) ctrl.Request {
 	return ctrl.Request{NamespacedName: name}
+}
+
+func TestLifecycleGateFreezesMigratedSchemaCondition(t *testing.T) {
+	ctx := context.Background()
+	scheme := hibernateTestScheme(t)
+
+	for name, tc := range map[string]struct {
+		prior          []metav1.Condition
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		"migrated schema stays true while gated": {
+			prior: []metav1.Condition{{
+				Type:               operatorstatus.ConditionSchemaMigrated,
+				Status:             metav1.ConditionTrue,
+				Reason:             "SchemaUpToDate",
+				LastTransitionTime: metav1.Now(),
+			}},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: "SchemaUpToDate",
+		},
+		"unobserved schema reports unknown": {
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: operatorstatus.ReasonTamossHibernating,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tamoss := hibernationSpecTamossFixture()
+			tamoss.Status.Lifecycle = tamossv1alpha1.TamossLifecycleStatus{
+				Phase: string(tamossv1alpha1.TamossLifecyclePhaseHibernating),
+			}
+			tamoss.Status.Conditions = tc.prior
+
+			reconciler := &TamossReconciler{
+				Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+					WithScheme(scheme).
+					WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
+					WithObjects(tamoss).
+					Build(),
+				Scheme:   scheme,
+				Recorder: record.NewFakeRecorder(8),
+			}
+
+			if err := reconciler.updateLifecycleGatedStatus(ctx, tamoss); err != nil {
+				t.Fatalf("expected gated status update without error, got %v", err)
+			}
+
+			updated := &tamossv1alpha1.Tamoss{}
+			if err := reconciler.Client.Get(ctx, client.ObjectKeyFromObject(tamoss), updated); err != nil {
+				t.Fatalf("expected to fetch tamoss, got %v", err)
+			}
+			condition := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionSchemaMigrated)
+			if condition == nil {
+				t.Fatalf("expected a SchemaMigrated condition")
+			}
+			if condition.Status != tc.expectedStatus || condition.Reason != tc.expectedReason {
+				t.Fatalf("expected SchemaMigrated %s/%s, got %s/%s", tc.expectedStatus, tc.expectedReason, condition.Status, condition.Reason)
+			}
+		})
+	}
 }

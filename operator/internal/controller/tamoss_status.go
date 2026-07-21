@@ -169,10 +169,17 @@ func (r *TamossReconciler) updatePausedStatus(ctx context.Context, tamoss *tamos
 func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	lifecycle := tamoss.Status.Lifecycle
 	phase, reason, message, progressing := lifecycleGateStatus(tamoss)
+	// A gated pass cannot re-evaluate the schema, but it cannot change it
+	// either: the workloads are quiesced. Keep a previously observed migrated
+	// schema so hibernation source validation can trust the frozen state.
+	schemaState := unknownCondition(reason, "Schema reconciliation is blocked by TAMOSS lifecycle state")
+	if existing := meta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated); existing != nil && existing.Status == metav1.ConditionTrue {
+		schemaState = boolCondition(true, existing.Reason, existing.Message)
+	}
 	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
 		Phase:            phase,
 		Lifecycle:        &lifecycle,
-		SchemaState:      unknownCondition(reason, "Schema reconciliation is blocked by TAMOSS lifecycle state"),
+		SchemaState:      schemaState,
 		BackendsFallback: unknownCondition(reason, "Backend checks are blocked by TAMOSS lifecycle state"),
 		Ready:            boolCondition(false, reason, message),
 		Progressing:      boolCondition(progressing, reason, message),
