@@ -37,6 +37,10 @@ type TamossSpec struct {
 	//+kubebuilder:default={providedBy:external,required:true,trustForwardAuthHeaders:false,external:{oauth2:{enabled:false,algorithms:{RS256}}}}
 	Auth AuthSpec `json:"auth,omitempty"`
 
+	// Hibernation declares the desired lifecycle state of this instance and,
+	// optionally, a hibernation artifact to bootstrap the database from.
+	Hibernation TamossHibernationSpec `json:"hibernation,omitempty"`
+
 	Ingress IngressSpec `json:"ingress,omitempty"`
 	//+kubebuilder:default={enabled:false}
 	HTTPRoute     HTTPRouteSpec     `json:"httpRoute,omitempty"`

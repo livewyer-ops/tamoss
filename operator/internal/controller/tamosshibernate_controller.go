@@ -292,11 +292,9 @@ func (r *TamossHibernateReconciler) failActiveHibernateLifecycle(ctx context.Con
 	if !operationRefMatches(tamoss.Status.Lifecycle.ActiveOperationRef, hibernate, "TamossHibernate") {
 		return nil
 	}
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseFailed),
-		Reason:           reason,
-		Message:          message,
-		LastHibernateRef: operationObjectReference(hibernate, "TamossHibernate"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle, tamossv1alpha1.TamossLifecyclePhaseFailed, reason, message, nil)
+		lifecycle.LastHibernateRef = operationObjectReference(hibernate, "TamossHibernate")
 	})
 }
 
@@ -412,13 +410,13 @@ func (r *TamossHibernateReconciler) acquireHibernateLifecycle(ctx context.Contex
 		message := fmt.Sprintf("Tamoss %s is already hibernated", tamoss.Name)
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseFailed, operatorstatus.ReasonLifecycleOperationConflict, message, tamossv1alpha1.HibernationArtifactStatus{})
 	}
-	lifecycle := tamossv1alpha1.TamossLifecycleStatus{
-		Phase:              string(tamossv1alpha1.TamossLifecyclePhaseHibernating),
-		Reason:             operatorstatus.ReasonTamossHibernating,
-		Message:            fmt.Sprintf("TamossHibernate %s is creating a hibernation artifact", hibernate.Name),
-		ActiveOperationRef: operationObjectReference(hibernate, "TamossHibernate"),
-	}
-	if err := patchTamossLifecycleStatus(ctx, r.Client, tamoss, lifecycle); err != nil {
+	if err := patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle,
+			tamossv1alpha1.TamossLifecyclePhaseHibernating,
+			operatorstatus.ReasonTamossHibernating,
+			fmt.Sprintf("TamossHibernate %s is creating a hibernation artifact", hibernate.Name),
+			operationObjectReference(hibernate, "TamossHibernate"))
+	}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -645,20 +643,20 @@ func (r *TamossHibernateReconciler) writeHibernateManifest(ctx context.Context, 
 }
 
 func (r *TamossHibernateReconciler) completeHibernateLifecycle(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, hibernate *tamossv1alpha1.TamossHibernate) error {
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseHibernated),
-		Reason:           operatorstatus.ReasonTamossHibernated,
-		Message:          fmt.Sprintf("TamossHibernate %s completed and TAMOSS is hibernated", hibernate.Name),
-		LastHibernateRef: operationObjectReference(hibernate, "TamossHibernate"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle,
+			tamossv1alpha1.TamossLifecyclePhaseHibernated,
+			operatorstatus.ReasonTamossHibernated,
+			fmt.Sprintf("TamossHibernate %s completed and TAMOSS is hibernated", hibernate.Name),
+			nil)
+		lifecycle.LastHibernateRef = operationObjectReference(hibernate, "TamossHibernate")
 	})
 }
 
 func (r *TamossHibernateReconciler) setHibernateLifecycleFailed(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, hibernate *tamossv1alpha1.TamossHibernate, reason, message string) error {
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseFailed),
-		Reason:           reason,
-		Message:          message,
-		LastHibernateRef: operationObjectReference(hibernate, "TamossHibernate"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle, tamossv1alpha1.TamossLifecyclePhaseFailed, reason, message, nil)
+		lifecycle.LastHibernateRef = operationObjectReference(hibernate, "TamossHibernate")
 	})
 }
 

@@ -20,6 +20,7 @@ rules:
   - tamoss.livewyer.io
   resources:
   - storagebackends
+  - tamosshibernations
   verbs:
   - create
   - delete
@@ -52,7 +53,6 @@ rules:
   - tamoss.livewyer.io
   resources:
   - tamosses
-  - tamosshibernations
   - tamossresumes
   verbs:
   - get

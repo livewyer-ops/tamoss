@@ -231,12 +231,9 @@ func (r *TamossResumeReconciler) failActiveResumeLifecycle(ctx context.Context, 
 	if !operationRefMatches(tamoss.Status.Lifecycle.ActiveOperationRef, resume, "TamossResume") {
 		return nil
 	}
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseFailed),
-		Reason:           reason,
-		Message:          message,
-		LastHibernateRef: tamoss.Status.Lifecycle.LastHibernateRef,
-		LastResumeRef:    operationObjectReference(resume, "TamossResume"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle, tamossv1alpha1.TamossLifecyclePhaseFailed, reason, message, nil)
+		lifecycle.LastResumeRef = operationObjectReference(resume, "TamossResume")
 	})
 }
 
@@ -487,14 +484,13 @@ func (r *TamossResumeReconciler) acquireResumeLifecycle(ctx context.Context, tam
 		message := fmt.Sprintf("Target Tamoss %s must be paused or hibernated before Resume can replace its database", tamoss.Name)
 		return false, r.updateResumeStatus(ctx, resume, tamossv1alpha1.TamossOperationPhaseFailed, operatorstatus.ReasonTargetNotQuiesced, message, tamossv1alpha1.HibernationArtifactStatus{})
 	}
-	lifecycle := tamossv1alpha1.TamossLifecycleStatus{
-		Phase:              string(tamossv1alpha1.TamossLifecyclePhaseResuming),
-		Reason:             operatorstatus.ReasonTamossResuming,
-		Message:            fmt.Sprintf("TamossResume %s is restoring the managed database", resume.Name),
-		ActiveOperationRef: operationObjectReference(resume, "TamossResume"),
-		LastHibernateRef:   tamoss.Status.Lifecycle.LastHibernateRef,
-	}
-	if err := patchTamossLifecycleStatus(ctx, r.Client, tamoss, lifecycle); err != nil {
+	if err := patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle,
+			tamossv1alpha1.TamossLifecyclePhaseResuming,
+			operatorstatus.ReasonTamossResuming,
+			fmt.Sprintf("TamossResume %s is restoring the managed database", resume.Name),
+			operationObjectReference(resume, "TamossResume"))
+	}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -645,22 +641,20 @@ func (r *TamossResumeReconciler) reconcileResumeServices(ctx context.Context, ta
 }
 
 func (r *TamossResumeReconciler) completeResumeLifecycle(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, resume *tamossv1alpha1.TamossResume) error {
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseRunning),
-		Reason:           operatorstatus.ReasonTamossReady,
-		Message:          fmt.Sprintf("TamossResume %s completed", resume.Name),
-		LastHibernateRef: tamoss.Status.Lifecycle.LastHibernateRef,
-		LastResumeRef:    operationObjectReference(resume, "TamossResume"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle,
+			tamossv1alpha1.TamossLifecyclePhaseRunning,
+			operatorstatus.ReasonTamossReady,
+			fmt.Sprintf("TamossResume %s completed", resume.Name),
+			nil)
+		lifecycle.LastResumeRef = operationObjectReference(resume, "TamossResume")
 	})
 }
 
 func (r *TamossResumeReconciler) setResumeLifecycleFailed(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, resume *tamossv1alpha1.TamossResume, reason, message string) error {
-	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, tamossv1alpha1.TamossLifecycleStatus{
-		Phase:            string(tamossv1alpha1.TamossLifecyclePhaseFailed),
-		Reason:           reason,
-		Message:          message,
-		LastHibernateRef: tamoss.Status.Lifecycle.LastHibernateRef,
-		LastResumeRef:    operationObjectReference(resume, "TamossResume"),
+	return patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		setLifecycleOperationState(lifecycle, tamossv1alpha1.TamossLifecyclePhaseFailed, reason, message, nil)
+		lifecycle.LastResumeRef = operationObjectReference(resume, "TamossResume")
 	})
 }
 

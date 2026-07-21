@@ -152,7 +152,9 @@ func TestPatchStatusSkipsUnchangedStatusWithoutClientWrite(t *testing.T) {
 		Message: "TAMOSS lifecycle is running",
 	}
 	tamoss.Status.Lifecycle = lifecycle
-	if err := patchTamossLifecycleStatus(context.TODO(), nil, tamoss, lifecycle); err != nil {
+	if err := patchTamossLifecycleStatus(context.TODO(), nil, tamoss, func(current *tamossv1alpha1.TamossLifecycleStatus) {
+		*current = lifecycle
+	}); err != nil {
 		t.Fatalf("expected unchanged Tamoss lifecycle status to skip client write: %v", err)
 	}
 	storageBackend := predicateStorageBackend("archive")

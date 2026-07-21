@@ -4758,6 +4758,12 @@ spec:
                             type: object
                           restore:
                             properties:
+                              backupID:
+                                description: |-
+                                  BackupID pins recovery to the exact CNPG/Barman backup captured by a
+                                  portable hibernation artifact. Empty retains CNPG's normal target-based
+                                  backup selection for user-configured restores.
+                                type: string
                               enabled:
                                 default: false
                                 type: boolean
@@ -5324,6 +5330,92 @@ spec:
                 type: object
               fullnameOverride:
                 type: string
+              hibernation:
+                description: |-
+                  Hibernation declares the desired lifecycle state of this instance and,
+                  optionally, a hibernation artifact to bootstrap the database from.
+                properties:
+                  destination:
+                    description: |-
+                      Destination selects the hibernate StorageBackend and object-key prefix
+                      used for hibernation artifacts. Required while enabled is true.
+                    properties:
+                      prefix:
+                        description: Prefix is the object-key prefix used for hibernation
+                          metadata.
+                        minLength: 1
+                        type: string
+                      storageBackendRef:
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enabled declares that this instance should be hibernated.
+                    type: boolean
+                  resumeFrom:
+                    description: |-
+                      ResumeFrom bootstraps the managed database from a hibernation artifact.
+                      It follows CNPG bootstrap semantics: it is honoured only while the
+                      database cluster does not exist yet and is ignored afterwards.
+                    properties:
+                      artifact:
+                        properties:
+                          checksum:
+                            description: |-
+                              Checksum is the trusted SHA-256 digest emitted by TamossHibernate. It is
+                              required for direct artifact restores because S3 object metadata is not an
+                              independent integrity anchor.
+                            pattern: ^sha256:[a-f0-9]{64}$
+                            type: string
+                          manifestKey:
+                            description: ManifestKey is the S3 object key of the hibernation
+                              manifest.
+                            minLength: 1
+                            type: string
+                          storageBackendRef:
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                            type: object
+                        type: object
+                      hibernationRef:
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: spec.hibernation.resumeFrom is immutable
+                  rule: has(self.resumeFrom) == has(oldSelf.resumeFrom)
+                - message: spec.hibernation.resumeFrom.hibernationRef is immutable
+                  rule: '!has(self.resumeFrom) || !has(self.resumeFrom.hibernationRef)
+                    || self.resumeFrom.hibernationRef.name == oldSelf.resumeFrom.hibernationRef.name'
+                - message: spec.hibernation.resumeFrom.artifact is immutable
+                  rule: '!has(self.resumeFrom) || !has(self.resumeFrom.artifact) ||
+                    (self.resumeFrom.artifact.storageBackendRef.name == oldSelf.resumeFrom.artifact.storageBackendRef.name
+                    && self.resumeFrom.artifact.manifestKey == oldSelf.resumeFrom.artifact.manifestKey)'
+                - message: spec.hibernation.destination is required when hibernation
+                    is enabled
+                  rule: '!self.enabled || (has(self.destination) && has(self.destination.storageBackendRef)
+                    && has(self.destination.storageBackendRef.name) && self.destination.storageBackendRef.name.size()
+                    > 0 && has(self.destination.prefix) && self.destination.prefix.size()
+                    > 0)'
+                - message: spec.hibernation.resumeFrom must set exactly one of hibernationRef
+                    or artifact
+                  rule: '!has(self.resumeFrom) || ((has(self.resumeFrom.hibernationRef)
+                    && has(self.resumeFrom.hibernationRef.name) && self.resumeFrom.hibernationRef.name.size()
+                    > 0 && !has(self.resumeFrom.artifact)) || (!has(self.resumeFrom.hibernationRef)
+                    && has(self.resumeFrom.artifact) && has(self.resumeFrom.artifact.storageBackendRef)
+                    && has(self.resumeFrom.artifact.storageBackendRef.name) && self.resumeFrom.artifact.storageBackendRef.name.size()
+                    > 0 && has(self.resumeFrom.artifact.manifestKey) && self.resumeFrom.artifact.manifestKey.size()
+                    > 0))'
               httpRoute:
                 default:
                   enabled: false
@@ -15339,6 +15431,12 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
+                  hibernationCycle:
+                    description: |-
+                      HibernationCycle counts spec-driven hibernation operations and names the
+                      materialised TamossHibernate for each cycle.
+                    format: int32
+                    type: integer
                   lastHibernateRef:
                     description: ObjectReference contains enough information to let
                       you inspect or modify the referred object.
@@ -15427,6 +15525,10 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
+                  lastTransitionTime:
+                    description: LastTransitionTime records when Phase last changed.
+                    format: date-time
+                    type: string
                   message:
                     type: string
                   phase:
@@ -15439,6 +15541,103 @@ spec:
                     type: string
                   reason:
                     type: string
+                  resolvedRestore:
+                    description: |-
+                      ResolvedRestore records the database bootstrap source resolved from
+                      spec.hibernation.resumeFrom (or from the latest hibernation artifact
+                      when waking), plus the retention state of that artifact.
+                    properties:
+                      checksum:
+                        type: string
+                      cleanup:
+                        properties:
+                          completedAt:
+                            format: date-time
+                            type: string
+                          message:
+                            type: string
+                          objectsDeleted:
+                            format: int64
+                            type: integer
+                          phase:
+                            type: string
+                          reason:
+                            type: string
+                        type: object
+                      manifestKey:
+                        type: string
+                      restore:
+                        properties:
+                          backupID:
+                            description: |-
+                              BackupID pins recovery to the exact CNPG/Barman backup captured by a
+                              portable hibernation artifact. Empty retains CNPG's normal target-based
+                              backup selection for user-configured restores.
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          objectStore:
+                            properties:
+                              bucket:
+                                type: string
+                              destinationPath:
+                                description: DestinationPath overrides the derived
+                                  s3://<bucket>/<cluster> path.
+                                type: string
+                              endpointURL:
+                                type: string
+                              existingSecret:
+                                description: ExistingSecret contains object-store
+                                  credentials for CNPG backup/restore.
+                                type: string
+                              secretKeys:
+                                description: SecretKeys overrides the access key and
+                                  secret key names inside ExistingSecret.
+                                properties:
+                                  accessKey:
+                                    type: string
+                                  password:
+                                    type: string
+                                  secretKey:
+                                    type: string
+                                  username:
+                                    type: string
+                                type: object
+                              serverName:
+                                description: |-
+                                  ServerName identifies the Barman server folder when it differs from the
+                                  CNPG external cluster name.
+                                type: string
+                            type: object
+                          source:
+                            description: Source is the CNPG external cluster name
+                              and backup folder to recover from.
+                            type: string
+                          targetImmediate:
+                            description: TargetImmediate ends recovery as soon as
+                              a consistent state is reached.
+                            type: boolean
+                          targetTime:
+                            description: TargetTime performs point-in-time recovery
+                              to an RFC3339 timestamp.
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: restore requires source, objectStore.endpointURL,
+                            objectStore.bucket, and objectStore.existingSecret when
+                            enabled
+                          rule: '!self.enabled || (has(self.source) && self.source.size()
+                            > 0 && has(self.objectStore) && has(self.objectStore.endpointURL)
+                            && self.objectStore.endpointURL.size() > 0 && has(self.objectStore.bucket)
+                            && self.objectStore.bucket.size() > 0 && has(self.objectStore.existingSecret)
+                            && self.objectStore.existingSecret.size() > 0)'
+                      resumedAt:
+                        format: date-time
+                        type: string
+                      storageBackendName:
+                        type: string
+                    type: object
                 type: object
               observedGeneration:
                 format: int64
@@ -15726,6 +15925,10 @@ spec:
               rule: self.destination.storageBackendRef.name == oldSelf.destination.storageBackendRef.name
             - message: spec.destination.prefix is immutable
               rule: self.destination.prefix == oldSelf.destination.prefix
+            - message: spec.destination.prefix must be a normalized relative object-key
+                prefix
+              rule: '!has(self.destination.prefix) || (!self.destination.prefix.startsWith(''/'')
+                && !self.destination.prefix.endsWith(''/'') && !self.destination.prefix.contains(''//''))'
             - message: spec.driver is immutable
               rule: has(self.driver) == has(oldSelf.driver) && (!has(self.driver)
                 || self.driver == oldSelf.driver)
@@ -15844,6 +16047,7 @@ spec:
                 - Quiescing
                 - CapturingDatabase
                 - WritingManifest
+                - DeprovisioningSource
                 - RecoveringDatabase
                 - StartingDatabase
                 - RunningMigrations
@@ -15924,6 +16128,13 @@ spec:
                 properties:
                   artifact:
                     properties:
+                      checksum:
+                        description: |-
+                          Checksum is the trusted SHA-256 digest emitted by TamossHibernate. It is
+                          required for direct artifact restores because S3 object metadata is not an
+                          independent integrity anchor.
+                        pattern: ^sha256:[a-f0-9]{64}$
+                        type: string
                       manifestKey:
                         description: ManifestKey is the S3 object key of the hibernation
                           manifest.
@@ -15954,13 +16165,15 @@ spec:
             - message: spec.tamossRef.name is required
               rule: has(self.tamossRef) && has(self.tamossRef.name) && self.tamossRef.name.size()
                 > 0
-            - message: spec.source must set exactly one of hibernationRef or artifact
+            - message: spec.source must set exactly one of hibernationRef or artifact;
+                artifact sources require checksum
               rule: has(self.source) && ((has(self.source.hibernationRef) && has(self.source.hibernationRef.name)
                 && self.source.hibernationRef.name.size() > 0 && !has(self.source.artifact))
                 || (!has(self.source.hibernationRef) && has(self.source.artifact)
                 && has(self.source.artifact.storageBackendRef) && has(self.source.artifact.storageBackendRef.name)
                 && self.source.artifact.storageBackendRef.name.size() > 0 && has(self.source.artifact.manifestKey)
-                && self.source.artifact.manifestKey.size() > 0))
+                && self.source.artifact.manifestKey.size() > 0 && has(self.source.artifact.checksum)
+                && self.source.artifact.checksum.size() > 0))
             - message: spec.tamossRef.name is immutable
               rule: self.tamossRef.name == oldSelf.tamossRef.name
             - message: spec.source.hibernationRef is immutable
@@ -15976,6 +16189,9 @@ spec:
             - message: spec.source.artifact.manifestKey is immutable
               rule: '!has(self.source.artifact) || self.source.artifact.manifestKey
                 == oldSelf.source.artifact.manifestKey'
+            - message: spec.source.artifact.checksum is immutable
+              rule: '!has(self.source.artifact) || self.source.artifact.checksum ==
+                oldSelf.source.artifact.checksum'
           status:
             properties:
               artifact:
@@ -16091,6 +16307,7 @@ spec:
                 - Quiescing
                 - CapturingDatabase
                 - WritingManifest
+                - DeprovisioningSource
                 - RecoveringDatabase
                 - StartingDatabase
                 - RunningMigrations
@@ -16449,6 +16666,7 @@ rules:
   - tamoss.livewyer.io
   resources:
   - storagebackends
+  - tamosshibernations
   verbs:
   - create
   - delete
@@ -16481,7 +16699,6 @@ rules:
   - tamoss.livewyer.io
   resources:
   - tamosses
-  - tamosshibernations
   - tamossresumes
   verbs:
   - get

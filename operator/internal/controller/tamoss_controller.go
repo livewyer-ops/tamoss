@@ -63,6 +63,7 @@ type TamossReconciler struct {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosshibernations,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=autoscaling,namespace=system,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;update;patch;delete
@@ -180,6 +181,9 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 	}
 	resolved := tamoss.DeepCopy()
 	defaults.Apply(resolved)
+	if err := r.reconcileHibernationSpec(ctx, resolved); err != nil {
+		return nil, stopReconcile(ctrl.Result{}), err
+	}
 	if tamossLifecycleBlocksReconcile(resolved) {
 		if err := r.updateLifecycleGatedStatus(ctx, resolved); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
@@ -198,6 +202,12 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 }
 
 func tamossLifecycleBlocksReconcile(tamoss *tamossv1alpha1.Tamoss) bool {
+	// Declared hibernation gates reconciliation regardless of how far the
+	// materialised operation has progressed, so a failed cycle cannot
+	// implicitly restore a supposedly hibernated instance.
+	if tamoss.Spec.Hibernation.Enabled {
+		return true
+	}
 	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
 	case tamossv1alpha1.TamossLifecyclePhaseHibernating,
 		tamossv1alpha1.TamossLifecyclePhaseHibernated,

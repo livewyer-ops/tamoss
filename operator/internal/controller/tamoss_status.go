@@ -168,7 +168,7 @@ func (r *TamossReconciler) updatePausedStatus(ctx context.Context, tamoss *tamos
 
 func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	lifecycle := tamoss.Status.Lifecycle
-	phase, reason, message, progressing := lifecycleGateStatus(lifecycle.Phase)
+	phase, reason, message, progressing := lifecycleGateStatus(tamoss)
 	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
 		Phase:            phase,
 		Lifecycle:        &lifecycle,
@@ -200,7 +200,7 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 	tamoss.Status.Phase = observation.Phase
 	if observation.Lifecycle != nil {
 		tamoss.Status.Lifecycle = *observation.Lifecycle
-	} else if tamoss.Status.Lifecycle.ActiveOperationRef == nil {
+	} else if tamoss.Status.Lifecycle.ActiveOperationRef == nil && !tamoss.Spec.Hibernation.Enabled {
 		tamoss.Status.Lifecycle.Phase = string(tamossv1alpha1.TamossLifecyclePhaseRunning)
 		tamoss.Status.Lifecycle.Reason = operatorstatus.ReasonTamossReady
 		tamoss.Status.Lifecycle.Message = "TAMOSS lifecycle is running"
@@ -300,15 +300,24 @@ func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss) {
 	setUpgradeUnknown(tamoss, operatorstatus.ReasonUpgradeNotEvaluated, "Upgrade readiness has not been evaluated in this reconcile")
 }
 
-func lifecycleGateStatus(phase string) (string, string, string, bool) {
-	switch tamossv1alpha1.TamossLifecyclePhase(phase) {
+func lifecycleGateStatus(tamoss *tamossv1alpha1.Tamoss) (string, string, string, bool) {
+	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
 	case tamossv1alpha1.TamossLifecyclePhaseHibernating:
 		return operatorstatus.PhaseHibernating, operatorstatus.ReasonTamossHibernating, "TAMOSS is hibernating", true
 	case tamossv1alpha1.TamossLifecyclePhaseHibernated:
 		return operatorstatus.PhaseHibernated, operatorstatus.ReasonTamossHibernated, "TAMOSS is hibernated", false
 	case tamossv1alpha1.TamossLifecyclePhaseResuming:
 		return operatorstatus.PhaseResuming, operatorstatus.ReasonTamossResuming, "TAMOSS is resuming", true
+	case tamossv1alpha1.TamossLifecyclePhaseFailed:
+		message := tamoss.Status.Lifecycle.Message
+		if message == "" {
+			message = "The hibernation operation failed; retry it or disable spec.hibernation"
+		}
+		return operatorstatus.PhaseHibernating, operatorstatus.ReasonLifecycleBlocked, message, false
 	default:
+		if tamoss.Spec.Hibernation.Enabled {
+			return operatorstatus.PhaseHibernating, operatorstatus.ReasonTamossHibernating, "Hibernation was requested by the spec", true
+		}
 		return operatorstatus.PhaseProgressing, operatorstatus.ReasonLifecycleBlocked, "TAMOSS lifecycle state blocks reconciliation", true
 	}
 }
