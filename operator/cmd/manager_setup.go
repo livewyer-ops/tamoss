@@ -135,14 +135,6 @@ func setupControllers(
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
-	if err := (&controller.TamossResumeReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "tamossresume-controller"),
-		WatchNamespaces: watchNamespaces,
-	}).SetupWithManager(mgr); err != nil {
-		return err
-	}
 	if dependencyDiscovery != nil {
 		dependencyDiscovery.AddObserver(func(ctx context.Context) {
 			if err := tamossReconciler.RegisterOptionalWatches(ctx); err != nil {
@@ -178,9 +170,6 @@ func registerDeleteProtectionWebhooks(mgr ctrl.Manager) {
 	})
 	server.Register(deleteprotection.TamossHibernateWebhookPath, &admission.Webhook{
 		Handler: deleteprotection.NewHandler("TamossHibernate"),
-	})
-	server.Register(deleteprotection.TamossResumeWebhookPath, &admission.Webhook{
-		Handler: deleteprotection.NewHandler("TamossResume"),
 	})
 }
 

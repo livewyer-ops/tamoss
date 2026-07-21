@@ -168,3 +168,23 @@ type LocalObjectReference struct {
 	//+kubebuilder:validation:MinLength=1
 	Name string `json:"name,omitempty"`
 }
+
+// TamossResumeSource selects the hibernation artifact used to bootstrap a
+// managed database, either through a completed TamossHibernate in the same
+// namespace or directly by manifest key and trusted checksum.
+type TamossResumeSource struct {
+	HibernationRef *LocalObjectReference       `json:"hibernationRef,omitempty"`
+	Artifact       *TamossResumeArtifactSource `json:"artifact,omitempty"`
+}
+
+type TamossResumeArtifactSource struct {
+	StorageBackendRef LocalObjectReference `json:"storageBackendRef,omitempty"`
+	// ManifestKey is the S3 object key of the hibernation manifest.
+	//+kubebuilder:validation:MinLength=1
+	ManifestKey string `json:"manifestKey,omitempty"`
+	// Checksum is the trusted SHA-256 digest emitted by TamossHibernate. It is
+	// required for direct artifact restores because S3 object metadata is not an
+	// independent integrity anchor.
+	//+kubebuilder:validation:Pattern=`^sha256:[a-f0-9]{64}$`
+	Checksum string `json:"checksum,omitempty"`
+}

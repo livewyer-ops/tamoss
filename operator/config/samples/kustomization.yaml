@@ -7,4 +7,3 @@ resources:
 - tamoss_v1alpha1_tamoss_remote.yaml
 - tamoss_v1alpha1_tamoss_rustfs.yaml
 - tamoss_v1alpha1_tamosshibernate.yaml
-- tamoss_v1alpha1_tamossresume.yaml

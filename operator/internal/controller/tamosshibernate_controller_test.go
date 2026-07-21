@@ -919,6 +919,15 @@ func TestValidateHibernationDestinationPrefix(t *testing.T) {
 	}
 }
 
+func hasFinalizer(finalizers []string, finalizer string) bool {
+	for _, value := range finalizers {
+		if value == finalizer {
+			return true
+		}
+	}
+	return false
+}
+
 func hibernateTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := storageBackendTestScheme(t)

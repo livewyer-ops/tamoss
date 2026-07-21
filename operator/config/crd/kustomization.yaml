@@ -4,5 +4,4 @@
 resources:
 - bases/tamoss.livewyer.io_storagebackends.yaml
 - bases/tamoss.livewyer.io_tamosshibernations.yaml
-- bases/tamoss.livewyer.io_tamossresumes.yaml
 - bases/tamoss.livewyer.io_tamosses.yaml

@@ -80,19 +80,6 @@ func (r *TamossHibernateReconciler) updateHibernateStatus(ctx context.Context, h
 	return nil
 }
 
-func (r *TamossResumeReconciler) updateResumeStatus(ctx context.Context, resume *tamossv1alpha1.TamossResume, phase tamossv1alpha1.TamossOperationPhase, reason, message string, artifact tamossv1alpha1.HibernationArtifactStatus) error {
-	original := resume.DeepCopy()
-	setOperationStatus(&resume.Status, resume.Generation, phase, reason, message, artifact)
-	if operationStatusSemanticEqual(original.Status, resume.Status) {
-		return nil
-	}
-	if err := r.Client.Status().Patch(ctx, resume, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return err
-	}
-	recordOperationEvents(r.Recorder, resume, original.Status, resume.Status)
-	return nil
-}
-
 func recordOperationEvents(recorder record.EventRecorder, obj operatorstatus.EventObject, original, updated tamossv1alpha1.TamossOperationStatus) {
 	if original.Phase == updated.Phase && original.Reason == updated.Reason && original.Message == updated.Message {
 		return

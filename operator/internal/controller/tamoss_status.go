@@ -200,7 +200,8 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 	tamoss.Status.Phase = observation.Phase
 	if observation.Lifecycle != nil {
 		tamoss.Status.Lifecycle = *observation.Lifecycle
-	} else if tamoss.Status.Lifecycle.ActiveOperationRef == nil && !tamoss.Spec.Hibernation.Enabled {
+	} else if tamoss.Status.Lifecycle.ActiveOperationRef == nil && !tamoss.Spec.Hibernation.Enabled &&
+		!lifecycleRestoreInProgress(tamoss.Status.Lifecycle) {
 		tamoss.Status.Lifecycle.Phase = string(tamossv1alpha1.TamossLifecyclePhaseRunning)
 		tamoss.Status.Lifecycle.Reason = operatorstatus.ReasonTamossReady
 		tamoss.Status.Lifecycle.Message = "TAMOSS lifecycle is running"
@@ -335,4 +336,13 @@ func setLifecycleCondition(conditions *[]metav1.Condition, generation int64, lif
 	default:
 		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(true, operatorstatus.ReasonTamossReady, "TAMOSS lifecycle is running"))
 	}
+}
+
+// lifecycleRestoreInProgress reports whether the instance is still restoring
+// its database from a hibernation artifact; the Resuming phase is held until
+// the restore is observed complete.
+func lifecycleRestoreInProgress(lifecycle tamossv1alpha1.TamossLifecycleStatus) bool {
+	return tamossv1alpha1.TamossLifecyclePhase(lifecycle.Phase) == tamossv1alpha1.TamossLifecyclePhaseResuming &&
+		lifecycle.ResolvedRestore != nil &&
+		lifecycle.ResolvedRestore.ResumedAt == nil
 }

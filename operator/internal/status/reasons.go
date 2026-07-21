@@ -98,6 +98,7 @@ const (
 	ReasonHibernateManifestUnavailable          = "HibernateManifestUnavailable"
 	ReasonHibernateManifestUploadFailed         = "HibernateManifestUploadFailed"
 	ReasonHibernateSourceInvalid                = "HibernateSourceInvalid"
+	ReasonResumeSourceIgnored                   = "ResumeSourceIgnored"
 	ReasonIngressConfigured                     = "IngressConfigured"
 	ReasonIngressHostnamesConfigured            = "IngressHostnamesConfigured"
 	ReasonNoRoutesRequired                      = "NoRoutesRequired"

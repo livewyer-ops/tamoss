@@ -56,6 +56,8 @@ type TamossReconciler struct {
 	AuthentikProbeInterval      time.Duration
 	DependencyProbeInterval     time.Duration
 	AuthentikHTTPClient         *http.Client
+	ManifestReader              HibernationManifestReader
+	ArtifactCleaner             HibernationArtifactCleaner
 	WarningEvents               operatorstatus.WarningEventDeduper
 	optionalWatches             *optionalWatchRegistrar
 }
@@ -146,9 +148,17 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	if err := r.emitImagePullEvents(ctx, tamoss); err != nil {
 		return ctrl.Result{}, err
 	}
+	retention, err := r.reconcileResumeArtifactRetention(ctx, tamoss)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	recordPhase(tamoss.Status.Phase)
 
-	return tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval()), nil
+	completion := tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval())
+	if retention.RequeueAfter > 0 && (completion.RequeueAfter == 0 || retention.RequeueAfter < completion.RequeueAfter) {
+		completion.RequeueAfter = retention.RequeueAfter
+	}
+	return completion, nil
 }
 
 func (r *TamossReconciler) loadTamoss(ctx context.Context, key client.ObjectKey) (*tamossv1alpha1.Tamoss, bool, error) {
@@ -184,6 +194,10 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 	if err := r.reconcileHibernationSpec(ctx, resolved); err != nil {
 		return nil, stopReconcile(ctrl.Result{}), err
 	}
+	if control, err := r.reconcileResumeBootstrap(ctx, resolved); shouldStop(control, err) {
+		recordPhase(operatorstatus.PhaseResuming)
+		return nil, control, err
+	}
 	if tamossLifecycleBlocksReconcile(resolved) {
 		if err := r.updateLifecycleGatedStatus(ctx, resolved); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
@@ -210,10 +224,12 @@ func tamossLifecycleBlocksReconcile(tamoss *tamossv1alpha1.Tamoss) bool {
 	}
 	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
 	case tamossv1alpha1.TamossLifecyclePhaseHibernating,
-		tamossv1alpha1.TamossLifecyclePhaseHibernated,
-		tamossv1alpha1.TamossLifecyclePhaseResuming:
+		tamossv1alpha1.TamossLifecyclePhaseHibernated:
 		return true
 	default:
+		// Resuming does not gate: restoring from an artifact is part of
+		// normal reconciliation now that the renderer emits the recovery
+		// bootstrap itself.
 		return false
 	}
 }

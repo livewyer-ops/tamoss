@@ -110,16 +110,13 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 			Degraded: true,
 		}, nil
 	}
+	// A resolved hibernation artifact renders the recovery bootstrap
+	// directly, so the emitted cluster spec is stable across reconciles
+	// without preserving live fields.
+	injectResolvedRestore(tamoss)
 	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
 		return applyAdvancedResourcePatches(tamoss, obj)
 	}}
-	preserveRecovery, err := r.preserveResumeRecoveryMutator(ctx, tamoss)
-	if err != nil {
-		return providerBackendResult{}, err
-	}
-	if preserveRecovery != nil {
-		mutators = append(mutators, preserveRecovery)
-	}
 	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
 	}
@@ -168,37 +165,19 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 	}, nil
 }
 
-func (r *TamossReconciler) preserveResumeRecoveryMutator(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (cnpg.ObjectMutator, error) {
-	cluster := &cnpgv1.Cluster{}
-	clusterKey := types.NamespacedName{Name: tamoss.ResourceName("db"), Namespace: tamoss.Namespace}
-	if err := r.Client.Get(ctx, clusterKey, cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
+// injectResolvedRestore copies the persisted restore source into the resolved
+// spec so the CNPG renderer emits the recovery bootstrap and external cluster
+// on every reconcile. It mutates the resolved deep copy only, never the
+// user's object.
+func injectResolvedRestore(tamoss *tamossv1alpha1.Tamoss) {
+	restore := tamoss.Status.Lifecycle.ResolvedRestore
+	if restore == nil || !restore.Restore.Enabled {
+		return
 	}
-	resumeOperation := cluster.Annotations[tamossResumeOperationAnnotation]
-	resumeOperationUID := cluster.Annotations[tamossResumeOperationUIDAnnotation]
-	if resumeOperation == "" || resumeOperationUID == "" {
-		return nil, nil
+	if tamoss.Spec.Backends.DB.CNPG == nil {
+		tamoss.Spec.Backends.DB.CNPG = &tamossv1alpha1.DBCNPGSpec{}
 	}
-	preserved := cluster.DeepCopy()
-	return func(obj client.Object) error {
-		desired, ok := obj.(*cnpgv1.Cluster)
-		if !ok {
-			return nil
-		}
-		desired.Spec.Bootstrap = preserved.Spec.Bootstrap
-		desired.Spec.ExternalClusters = preserved.Spec.ExternalClusters
-		annotations := desired.GetAnnotations()
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		annotations[tamossResumeOperationAnnotation] = resumeOperation
-		annotations[tamossResumeOperationUIDAnnotation] = resumeOperationUID
-		desired.SetAnnotations(annotations)
-		return nil
-	}, nil
+	tamoss.Spec.Backends.DB.CNPG.Restore = restore.Restore
 }
 
 func cnpgBackupPolicyMissingFields(tamoss *tamossv1alpha1.Tamoss) []string {

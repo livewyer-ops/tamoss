@@ -74,25 +74,3 @@ webhooks:
     scope: Namespaced
   sideEffects: None
   timeoutSeconds: 10
-- name: vdelete-tamossresume.tamoss.livewyer.io
-  admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: webhook-service
-      namespace: system
-      path: /validate-tamoss-livewyer-io-v1alpha1-tamossresume-delete
-  failurePolicy: Fail
-  matchPolicy: Equivalent
-  rules:
-  - apiGroups:
-    - tamoss.livewyer.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - DELETE
-    resources:
-    - tamossresumes
-    scope: Namespaced
-  sideEffects: None
-  timeoutSeconds: 10

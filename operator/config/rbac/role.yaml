@@ -35,7 +35,6 @@ rules:
   - storagebackends/finalizers
   - tamosses/finalizers
   - tamosshibernations/finalizers
-  - tamossresumes/finalizers
   verbs:
   - update
 - apiGroups:
@@ -44,7 +43,6 @@ rules:
   - storagebackends/status
   - tamosses/status
   - tamosshibernations/status
-  - tamossresumes/status
   verbs:
   - get
   - patch
@@ -53,7 +51,6 @@ rules:
   - tamoss.livewyer.io
   resources:
   - tamosses
-  - tamossresumes
   verbs:
   - get
   - list
