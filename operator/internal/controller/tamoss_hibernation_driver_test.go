@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
+	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 )
 
 func hibernationSpecTamossFixture() *tamossv1alpha1.Tamoss {

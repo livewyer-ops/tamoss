@@ -45,9 +45,11 @@ func storageBackendCredentialsSecretIndexValue(obj client.Object) []string {
 	return []string{spec.Credentials.ExistingSecret}
 }
 
+const appInstanceLabel = "app.kubernetes.io/instance"
+
 func tamossManagedLabelSelector(tamoss *tamossv1alpha1.Tamoss) client.MatchingLabels {
 	return client.MatchingLabels{
-		"app.kubernetes.io/instance":   tamoss.Name,
+		appInstanceLabel:               tamoss.Name,
 		"app.kubernetes.io/managed-by": "tamoss-operator",
 	}
 }

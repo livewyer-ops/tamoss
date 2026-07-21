@@ -150,6 +150,12 @@ func (r *TamossHibernateReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return result, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseQuiescing, operatorstatus.ReasonTamossHibernating, message, artifact)
 	}
 
+	result, err = r.reconcileHibernateCapture(ctx, tamoss, hibernate, cluster, destination, artifact)
+	return result, err
+}
+
+func (r *TamossHibernateReconciler) reconcileHibernateCapture(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, hibernate *tamossv1alpha1.TamossHibernate, cluster *cnpgv1.Cluster, destination *tamossv1alpha1.StorageBackend, artifact tamossv1alpha1.HibernationArtifactStatus) (ctrl.Result, error) {
+	var result ctrl.Result
 	backup, created, err := r.ensureHibernateCNPGBackup(ctx, hibernate, tamoss)
 	if err != nil {
 		return result, err
@@ -628,7 +634,7 @@ func (r *TamossHibernateReconciler) ensureHibernateCNPGBackup(ctx context.Contex
 				Namespace: hibernate.Namespace,
 				Labels: map[string]string{
 					"app.kubernetes.io/name":                    tamossAppName,
-					"app.kubernetes.io/instance":                tamoss.Name,
+					appInstanceLabel:                            tamoss.Name,
 					"app.kubernetes.io/component":               "hibernate",
 					"app.kubernetes.io/managed-by":              "tamoss-operator",
 					"tamoss.livewyer.io/tamosshibernate":        hibernate.Name,

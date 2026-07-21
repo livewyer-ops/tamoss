@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
+	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 )
 
 const hibernationCycleLabel = "tamoss.livewyer.io/hibernation-cycle"
@@ -81,7 +81,7 @@ func (r *TamossReconciler) ensureHibernationCycleOperation(ctx context.Context, 
 			Namespace: tamoss.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       tamossAppName,
-				"app.kubernetes.io/instance":   tamoss.Name,
+				appInstanceLabel:               tamoss.Name,
 				"app.kubernetes.io/managed-by": "tamoss-operator",
 				hibernationCycleLabel:          fmt.Sprintf("%d", cycle),
 			},

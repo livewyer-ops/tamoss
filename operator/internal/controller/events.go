@@ -99,7 +99,7 @@ func tamossObservedReady(tamoss *tamossv1alpha1.Tamoss) bool {
 func (r *TamossReconciler) emitImagePullEvents(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	pods := &corev1.PodList{}
 	if err := r.Client.List(ctx, pods, client.InNamespace(tamoss.Namespace), client.MatchingLabels{
-		"app.kubernetes.io/instance":   tamoss.Name,
+		appInstanceLabel:               tamoss.Name,
 		"app.kubernetes.io/managed-by": "tamoss-operator",
 	}); err != nil {
 		return err
