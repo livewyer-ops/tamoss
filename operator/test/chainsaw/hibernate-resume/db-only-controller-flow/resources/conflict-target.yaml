@@ -1,3 +1,18 @@
+# The database cluster is created first so the Tamoss below observes an
+# existing database on its first reconcile and must ignore resumeFrom.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: conflict-db
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+  bootstrap:
+    initdb:
+      database: tams
+      owner: tams
+---
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
@@ -6,7 +21,6 @@ metadata:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
   fullnameOverride: conflict
-  paused: true
   hibernation:
     resumeFrom:
       hibernationRef:
@@ -34,16 +48,3 @@ spec:
           secretKeys:
             accessKey: RUSTFS_ACCESS_KEY
             secretKey: RUSTFS_SECRET_KEY
----
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: conflict-db
-spec:
-  instances: 1
-  storage:
-    size: 1Gi
-  bootstrap:
-    initdb:
-      database: tams
-      owner: tams
