@@ -81,6 +81,12 @@ func (r *TamossHibernateReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		err = r.Client.Patch(ctx, hibernate, client.MergeFrom(original))
 		return result, err
 	}
+	if accepted, err := r.acceptOperationRetry(ctx, hibernate); err != nil {
+		return result, err
+	} else if accepted {
+		result = ctrl.Result{RequeueAfter: r.pollInterval()}
+		return result, nil
+	}
 	if hibernate.Status.Phase == string(tamossv1alpha1.TamossOperationPhaseCompleted) ||
 		hibernate.Status.Phase == string(tamossv1alpha1.TamossOperationPhaseFailed) {
 		return result, nil
@@ -381,8 +387,33 @@ func validateHibernationDestinationPrefix(prefix string) error {
 
 func (r *TamossHibernateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&tamossv1alpha1.TamossHibernate{}, builder.WithPredicates(primaryResourcePredicate(tamossHibernateFinalizer, nil))).
+		For(&tamossv1alpha1.TamossHibernate{}, builder.WithPredicates(primaryResourcePredicate(tamossHibernateFinalizer, []string{AnnotationOperationRetry}))).
 		Complete(r)
+}
+
+// acceptOperationRetry re-arms a Failed operation when the operation-retry
+// annotation carries a value that has not been honoured yet, mirroring the
+// schema-retry recovery flow.
+func (r *TamossHibernateReconciler) acceptOperationRetry(ctx context.Context, hibernate *tamossv1alpha1.TamossHibernate) (bool, error) {
+	value := strings.TrimSpace(hibernate.Annotations[AnnotationOperationRetry])
+	if value == "" || hibernate.Status.Phase != string(tamossv1alpha1.TamossOperationPhaseFailed) {
+		return false, nil
+	}
+	if hibernate.Status.AcceptedRetry == value {
+		return false, nil
+	}
+	original := hibernate.DeepCopy()
+	hibernate.Status.Phase = ""
+	hibernate.Status.Reason = operatorstatus.ReasonReconciling
+	hibernate.Status.Message = fmt.Sprintf("Retry %q accepted; the operation will run again", value)
+	hibernate.Status.CompletedAt = nil
+	hibernate.Status.StartedAt = nil
+	hibernate.Status.AcceptedRetry = value
+	if err := r.Client.Status().Patch(ctx, hibernate, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return false, err
+	}
+	operatorstatus.EmitNormalEvent(r.Recorder, hibernate, operatorstatus.ReasonReconciling, hibernate.Status.Message)
+	return true, nil
 }
 
 func (r *TamossHibernateReconciler) loadHibernateCNPGCluster(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, hibernate *tamossv1alpha1.TamossHibernate, artifact tamossv1alpha1.HibernationArtifactStatus) (*cnpgv1.Cluster, bool, error) {

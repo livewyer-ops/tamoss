@@ -8,6 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -212,4 +213,62 @@ func TestHibernationSpecGatesReconcile(t *testing.T) {
 	if tamossLifecycleBlocksReconcile(tamoss) {
 		t.Fatal("expected failed lifecycle without declared hibernation to un-gate")
 	}
+}
+
+func TestTamossHibernateRetryAnnotationReArmsFailedOperation(t *testing.T) {
+	ctx := context.Background()
+	scheme := hibernateTestScheme(t)
+	hibernate := hibernateFixture()
+	hibernate.Annotations = map[string]string{AnnotationOperationRetry: "retry-1"}
+	hibernate.Status.Phase = string(tamossv1alpha1.TamossOperationPhaseFailed)
+	hibernate.Status.Reason = operatorstatus.ReasonBackupPolicyFailed
+
+	reconciler := TamossHibernateReconciler{
+		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+			WithScheme(scheme).
+			WithStatusSubresource(&tamossv1alpha1.TamossHibernate{}).
+			WithObjects(hibernate).
+			Build(),
+		Scheme: scheme,
+	}
+
+	request := types.NamespacedName{Name: hibernate.Name, Namespace: hibernate.Namespace}
+	result, err := reconciler.Reconcile(ctx, reconcileRequestFor(request))
+	if err != nil {
+		t.Fatalf("expected retry acceptance without error, got %v", err)
+	}
+	if result.RequeueAfter <= 0 {
+		t.Fatalf("expected requeue after accepting retry, got %#v", result)
+	}
+
+	updated := &tamossv1alpha1.TamossHibernate{}
+	if err := reconciler.Client.Get(ctx, request, updated); err != nil {
+		t.Fatalf("get updated TamossHibernate: %v", err)
+	}
+	if updated.Status.Phase == string(tamossv1alpha1.TamossOperationPhaseFailed) {
+		t.Fatalf("expected failed phase to be cleared, got %#v", updated.Status)
+	}
+	if updated.Status.AcceptedRetry != "retry-1" {
+		t.Fatalf("expected accepted retry to be recorded, got %#v", updated.Status)
+	}
+
+	// The same annotation value is honoured only once.
+	updated.Status.Phase = string(tamossv1alpha1.TamossOperationPhaseFailed)
+	if err := reconciler.Client.Status().Update(ctx, updated); err != nil {
+		t.Fatalf("re-fail operation: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, reconcileRequestFor(request)); err != nil {
+		t.Fatalf("expected reconcile without error, got %v", err)
+	}
+	final := &tamossv1alpha1.TamossHibernate{}
+	if err := reconciler.Client.Get(ctx, request, final); err != nil {
+		t.Fatalf("get final TamossHibernate: %v", err)
+	}
+	if final.Status.Phase != string(tamossv1alpha1.TamossOperationPhaseFailed) {
+		t.Fatalf("expected already-honoured retry value to stay Failed, got %#v", final.Status)
+	}
+}
+
+func reconcileRequestFor(name types.NamespacedName) ctrl.Request {
+	return ctrl.Request{NamespacedName: name}
 }

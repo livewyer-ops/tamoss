@@ -83,8 +83,6 @@ type (
 	HibernationArtifactCleanupPhase string
 )
 
-// StartingDatabase, RunningMigrations, and Verifying are reserved for future
-// lifecycle stages.
 const (
 	TamossOperationPhasePending              TamossOperationPhase = "Pending"
 	TamossOperationPhaseResolvingSource      TamossOperationPhase = "ResolvingSource"
@@ -93,11 +91,6 @@ const (
 	TamossOperationPhaseCapturingDatabase    TamossOperationPhase = "CapturingDatabase"
 	TamossOperationPhaseWritingManifest      TamossOperationPhase = "WritingManifest"
 	TamossOperationPhaseDeprovisioningSource TamossOperationPhase = "DeprovisioningSource"
-	TamossOperationPhaseRecoveringDatabase   TamossOperationPhase = "RecoveringDatabase"
-	TamossOperationPhaseStartingDatabase     TamossOperationPhase = "StartingDatabase"
-	TamossOperationPhaseRunningMigrations    TamossOperationPhase = "RunningMigrations"
-	TamossOperationPhaseStartingServices     TamossOperationPhase = "StartingServices"
-	TamossOperationPhaseVerifying            TamossOperationPhase = "Verifying"
 	TamossOperationPhaseCompleted            TamossOperationPhase = "Completed"
 	TamossOperationPhaseFailed               TamossOperationPhase = "Failed"
 
@@ -111,7 +104,7 @@ type TamossOperationStatus struct {
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 
-	//+kubebuilder:validation:Enum=Pending;ResolvingSource;PreparingTarget;Quiescing;CapturingDatabase;WritingManifest;DeprovisioningSource;RecoveringDatabase;StartingDatabase;RunningMigrations;StartingServices;Verifying;Completed;Failed
+	//+kubebuilder:validation:Enum=Pending;ResolvingSource;PreparingTarget;Quiescing;CapturingDatabase;WritingManifest;DeprovisioningSource;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	Reason  string `json:"reason,omitempty"`
@@ -119,6 +112,11 @@ type TamossOperationStatus struct {
 
 	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// AcceptedRetry records the tamoss.livewyer.io/operation-retry annotation
+	// value most recently honoured, so each distinct value retries a Failed
+	// operation exactly once.
+	AcceptedRetry string `json:"acceptedRetry,omitempty"`
 
 	Artifact HibernationArtifactStatus `json:"artifact,omitempty"`
 }

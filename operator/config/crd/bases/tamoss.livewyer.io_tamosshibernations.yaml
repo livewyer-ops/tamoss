@@ -112,6 +112,12 @@ spec:
                 || self.driver == oldSelf.driver)
           status:
             properties:
+              acceptedRetry:
+                description: |-
+                  AcceptedRetry records the tamoss.livewyer.io/operation-retry annotation
+                  value most recently honoured, so each distinct value retries a Failed
+                  operation exactly once.
+                type: string
               artifact:
                 properties:
                   checksum:
@@ -226,11 +232,6 @@ spec:
                 - CapturingDatabase
                 - WritingManifest
                 - DeprovisioningSource
-                - RecoveringDatabase
-                - StartingDatabase
-                - RunningMigrations
-                - StartingServices
-                - Verifying
                 - Completed
                 - Failed
                 type: string
