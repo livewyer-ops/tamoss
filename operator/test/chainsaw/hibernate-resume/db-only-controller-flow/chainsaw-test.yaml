@@ -36,6 +36,11 @@ spec:
         - assert:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
             timeout: 120s
+        # The suite has no CNPG operator; wait for the operator to render the
+        # cluster, then stub its readiness through the status subresource.
+        - assert:
+            file: assert/source-db-cluster-present.yaml
+            timeout: 120s
         - patch:
             subresource: status
             resource:
