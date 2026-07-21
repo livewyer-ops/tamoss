@@ -1,24 +1,11 @@
 apiVersion: tamoss.livewyer.io/v1alpha1
-kind: TamossResume
-metadata:
-  name: resume
-  namespace: ($namespace)
-(status.phase): Completed
-(status.reason): TamossReady
-(status.artifact.cleanup.phase): Completed
-(status.artifact.cleanup.reason): ArtifactCleanupComplete
-"(status.artifact.cleanup.objectsDeleted > `0`)": true
-(status.artifact.cleanup.completedAt != null): true
----
-apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
   name: tamoss-restored
   namespace: ($namespace)
-status:
-  lifecycle:
-    phase: Running
-    reason: TamossReady
-    lastResumeRef:
-      name: resume
-      kind: TamossResume
+(status.lifecycle.phase): Running
+(status.lifecycle.reason): TamossReady
+(status.lifecycle.resolvedRestore.resumedAt != null): true
+(status.lifecycle.resolvedRestore.cleanup.phase): Completed
+(status.lifecycle.resolvedRestore.cleanup.reason): ArtifactCleanupComplete
+"(status.lifecycle.resolvedRestore.cleanup.objectsDeleted > `0`)": true

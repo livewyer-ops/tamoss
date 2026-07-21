@@ -59,10 +59,24 @@ spec:
             file: assert/hibernate-storagebackend-ready.yaml
             timeout: 120s
 
-    - name: hibernate source tamoss
+    - name: declare hibernation on the source tamoss
       try:
-        - apply:
-            file: resources/hibernate.yaml
+        # Spec-driven hibernation: the operator materialises the
+        # TamossHibernate operation for cycle 1 itself.
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+              spec:
+                hibernation:
+                  enabled: true
+                  destination:
+                    storageBackendRef:
+                      name: tamoss-hibernate
+                    prefix: hibernations/tamoss
         - assert:
             file: assert/hibernate-capturing.yaml
             timeout: 120s
@@ -75,12 +89,12 @@ spec:
               apiVersion: postgresql.cnpg.io/v1
               kind: Backup
               metadata:
-                name: snapshot
+                name: tamoss-hibernation-1
                 namespace: ($namespace)
               status:
                 phase: completed
                 backupId: "20260707T100000"
-                destinationPath: s3://tamoss/hibernations/tamoss/snapshot/cnpg
+                destinationPath: s3://tamoss/hibernations/tamoss/tamoss-hibernation-1/cnpg
         - assert:
             file: assert/hibernate-completed.yaml
             timeout: 120s
@@ -92,29 +106,25 @@ spec:
             for:
               deletion: {}
         # Give the gated Tamoss controller time to reconcile before confirming
-        # that hibernation continues to hold the workload scale-down.
+        # that declared hibernation continues to hold the workload scale-down.
         - sleep:
             duration: 15s
         - assert:
             file: assert/source-workloads-hibernated.yaml
             timeout: 30s
 
-    - name: reject resume over an existing cnpg cluster
+    - name: ignore resumeFrom when the database already exists
       try:
         - apply:
             file: resources/conflict-target.yaml
-        - apply:
-            file: resources/conflict-resume.yaml
         - assert:
-            file: assert/resume-conflict-failed.yaml
+            file: assert/resume-source-ignored.yaml
             timeout: 120s
 
-    - name: resume into a clean target
+    - name: bootstrap a clean target from the hibernation
       try:
         - apply:
             file: resources/target-tamoss.yaml
-        - apply:
-            file: resources/resume.yaml
         - assert:
             file: assert/resume-recovering.yaml
             timeout: 120s
@@ -134,24 +144,5 @@ spec:
                     reason: ClusterReady
                     message: Cluster is ready
         - assert:
-            resource:
-              apiVersion: tamoss.livewyer.io/v1alpha1
-              kind: TamossResume
-              metadata:
-                name: resume
-                namespace: ($namespace)
-              status:
-                phase: StartingServices
-            timeout: 120s
-        - patch:
-            resource:
-              apiVersion: tamoss.livewyer.io/v1alpha1
-              kind: Tamoss
-              metadata:
-                name: tamoss-restored
-                namespace: ($namespace)
-              spec:
-                paused: false
-        - assert:
             file: assert/resume-completed.yaml
-            timeout: 120s
+            timeout: 180s

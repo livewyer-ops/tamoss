@@ -7,6 +7,10 @@ metadata:
 spec:
   fullnameOverride: conflict
   paused: true
+  hibernation:
+    resumeFrom:
+      hibernationRef:
+        name: tamoss-hibernation-1
   auth:
     required: false
   backends:

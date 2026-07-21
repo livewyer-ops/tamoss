@@ -6,7 +6,10 @@ metadata:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
   fullnameOverride: restored
-  paused: true
+  hibernation:
+    resumeFrom:
+      hibernationRef:
+        name: tamoss-hibernation-1
   auth:
     required: false
   backends:
