@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
@@ -25,11 +27,13 @@ type ManagedBlueprintClient struct {
 }
 
 type ManagedBlueprint struct {
-	PK      string `json:"pk"`
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Status  string `json:"status"`
-	Content string `json:"content"`
+	PK          string `json:"pk"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Status      string `json:"status"`
+	LastApplied string `json:"last_applied"`
+	Enabled     bool   `json:"enabled"`
+	Content     string `json:"content"`
 }
 
 type managedBlueprintList struct {
@@ -106,9 +110,36 @@ func (c ManagedBlueprintClient) Reconcile(ctx context.Context, name, path string
 		Enabled: true,
 		Content: string(content),
 	}
+	if existing.PK != "" && managedBlueprintMatches(existing, request) {
+		// A queued apply backlog can leave an already-applied Blueprint in a
+		// transient status. Avoid adding duplicate work unless Authentik marks
+		// the instance as explicitly unhealthy.
+		if existing.Status == "successful" || (existing.LastApplied != "" && !managedBlueprintRequiresApply(existing.Status)) {
+			return existing, nil
+		}
+		log.FromContext(ctx).Info("reapplying matching Authentik managed Blueprint",
+			"name", name,
+			"status", existing.Status,
+			"previouslyApplied", existing.LastApplied != "",
+		)
+	} else if existing.PK != "" {
+		log.FromContext(ctx).Info("updating changed Authentik managed Blueprint",
+			"name", name,
+			"nameMatches", existing.Name == request.Name,
+			"pathMatches", existing.Path == request.Path,
+			"enabledMatches", existing.Enabled == request.Enabled,
+			"contentMatches", strings.TrimSpace(existing.Content) == strings.TrimSpace(request.Content),
+			"existingContentLength", len(strings.TrimSpace(existing.Content)),
+			"desiredContentLength", len(strings.TrimSpace(request.Content)),
+			"status", existing.Status,
+			"previouslyApplied", existing.LastApplied != "",
+		)
+	}
 	var blueprint ManagedBlueprint
 	if existing.PK == "" {
 		blueprint, err = c.create(ctx, request)
+	} else if managedBlueprintMatches(existing, request) {
+		blueprint = existing
 	} else {
 		blueprint, err = c.update(ctx, existing.PK, request)
 	}
@@ -123,6 +154,17 @@ func (c ManagedBlueprintClient) Reconcile(ctx context.Context, name, path string
 		return ManagedBlueprint{}, fmt.Errorf("authentik managed blueprint %q applied with status error", name)
 	}
 	return applied, nil
+}
+
+func managedBlueprintRequiresApply(status string) bool {
+	return status == "error" || status == "orphaned"
+}
+
+func managedBlueprintMatches(existing ManagedBlueprint, desired managedBlueprintRequest) bool {
+	return existing.Name == desired.Name &&
+		existing.Path == desired.Path &&
+		existing.Enabled == desired.Enabled &&
+		strings.TrimSpace(existing.Content) == strings.TrimSpace(desired.Content)
 }
 
 func (c ManagedBlueprintClient) DeleteByName(ctx context.Context, name string) error {
