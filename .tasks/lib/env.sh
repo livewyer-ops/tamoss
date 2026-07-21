@@ -51,15 +51,21 @@ task_k8s_secret_value() {
   local namespace="$2"
   local secret="$3"
   local key="$4"
+  local encoded
 
   if [ -z "$secret" ] || [ -z "$key" ]; then
     return 0
   fi
-  kubectl --kubeconfig "$kubeconfig" \
-    -n "$namespace" \
-    get secret "$secret" \
-    -o "jsonpath={.data.${key}}" 2>/dev/null \
-    | base64 --decode || true
+  encoded="$(
+    kubectl --kubeconfig "$kubeconfig" \
+      -n "$namespace" \
+      get secret "$secret" \
+      -o "jsonpath={.data.${key}}" 2>/dev/null || true
+  )"
+  if [ -n "$encoded" ]; then
+    printf '%s' "$encoded" | base64 --decode
+  fi
+  return 0
 }
 
 task_k8s_resource_value() {
@@ -88,6 +94,26 @@ task_k8s_secret_first_value() {
       return 0
     fi
   done
+  return 0
+}
+
+task_require_cluster_access() {
+  local kubeconfig="$1"
+  local environment_dir="$2"
+  local suggested_kubeconfig
+
+  if kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null 2>&1; then
+    return 0
+  fi
+
+  printf 'Unable to reach Kubernetes using kubeconfig %s.\n' "$kubeconfig" >&2
+  suggested_kubeconfig="$(basename "$environment_dir").kubeconfig"
+  if [ "$suggested_kubeconfig" != "$kubeconfig" ] && [ -f "$suggested_kubeconfig" ]; then
+    printf 'Try KUBECONFIG=%s for environment %s.\n' \
+      "$suggested_kubeconfig" \
+      "$(basename "$environment_dir")" >&2
+  fi
+  return 1
 }
 
 task_init_env() {
@@ -603,6 +629,20 @@ task_summary_oauth_issuer() {
   printf '%s/application/o/%s/\n' "${auth_url%/}" "$application_slug"
 }
 
+task_print_rustfs_access() {
+  local s3_provider="$1"
+  local s3_url="$2"
+  local rustfs_username="$3"
+  local rustfs_password="$4"
+
+  if [ "$s3_provider" != "rustfs-operator" ]; then
+    return 0
+  fi
+  printf '  RustFS Admin URL: %s/rustfs/console/\n' "${s3_url%/}"
+  printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
+  printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
+}
+
 task_print_env_summary() {
   local environment_dir="$1"
   local kubeconfig="$2"
@@ -610,7 +650,7 @@ task_print_env_summary() {
   local rendered profile api_namespace tamoss_name base_domain
   local app_url api_url auth_url token_key
   local token_resource_name token_secret bearer_token default_storagebackend ready_status phase
-  local s3_url app_username app_username_secret app_username_key app_username_namespace
+  local s3_url s3_provider app_username app_username_secret app_username_key app_username_namespace
   local app_password app_password_secret app_password_key app_password_namespace
   local generated_api_token_secret generated_oauth_secret oauth_secret oauth_secret_namespace
   local oauth_client_id oauth_client_secret oauth_issuer oauth_token_endpoint application_slug auth_provider
@@ -633,6 +673,7 @@ task_print_env_summary() {
     echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
     return 1
   fi
+  task_require_cluster_access "$kubeconfig" "$environment_dir"
 
   if [ -n "$target_file" ] && [ -f "$target_file" ]; then
     set -a
@@ -663,6 +704,9 @@ task_print_env_summary() {
   api_url="${TEST_TAMOSS_API:-${live_api_url:-$(task_summary_component_url api "$base_domain")}}"
   auth_url="${TEST_TAMOSS_AUTH:-${live_auth_url:-$(task_summary_component_url auth "$base_domain")}}"
   s3_url="${TEST_TAMOSS_S3:-${live_s3_url:-$(task_summary_component_url s3 "$base_domain")}}"
+  s3_provider="$(
+    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.providedBy}"
+  )"
   token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
   token_resource_name="$(
     kubectl --kubeconfig "$kubeconfig" \
@@ -786,45 +830,49 @@ task_print_env_summary() {
     oauth_token_endpoint="${auth_url%/}/application/o/token/"
   fi
 
-  rustfs_secret="${TEST_TAMOSS_RUSTFS_SECRET:-}"
-  if [ -z "$rustfs_secret" ]; then
-    rustfs_secret="$(
-      kubectl --kubeconfig "$kubeconfig" \
-        -n "$api_namespace" \
-        get tamoss "$tamoss_name" \
-        -o "jsonpath={.spec.backends.s3.rustfsOperator.credsSecret.existingSecret}" 2>/dev/null || true
-    )"
-  fi
-  rustfs_secret="${rustfs_secret:-${token_resource_name}-s3-creds}"
-  rustfs_username="${TEST_TAMOSS_RUSTFS_USERNAME:-${TEST_TAMOSS_RUSTFS_ACCESS_KEY:-}}"
-  rustfs_password="${TEST_TAMOSS_RUSTFS_PASSWORD:-${TEST_TAMOSS_RUSTFS_SECRET_KEY:-}}"
-  if [ -z "$rustfs_username" ]; then
-    rustfs_username="$(
-      task_k8s_secret_value \
-        "$kubeconfig" \
-        "$api_namespace" \
-        "$rustfs_secret" \
-        "${TEST_TAMOSS_RUSTFS_USERNAME_KEY:-RUSTFS_ACCESS_KEY}"
-    )"
-  fi
-  if [ -z "$rustfs_username" ]; then
-    rustfs_username="$(
-      task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" accesskey
-    )"
-  fi
-  if [ -z "$rustfs_password" ]; then
-    rustfs_password="$(
-      task_k8s_secret_value \
-        "$kubeconfig" \
-        "$api_namespace" \
-        "$rustfs_secret" \
-        "${TEST_TAMOSS_RUSTFS_PASSWORD_KEY:-RUSTFS_SECRET_KEY}"
-    )"
-  fi
-  if [ -z "$rustfs_password" ]; then
-    rustfs_password="$(
-      task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" secretkey
-    )"
+  rustfs_username=""
+  rustfs_password=""
+  if [ "$s3_provider" = "rustfs-operator" ]; then
+    rustfs_secret="${TEST_TAMOSS_RUSTFS_SECRET:-}"
+    if [ -z "$rustfs_secret" ]; then
+      rustfs_secret="$(
+        kubectl --kubeconfig "$kubeconfig" \
+          -n "$api_namespace" \
+          get tamoss "$tamoss_name" \
+          -o "jsonpath={.spec.backends.s3.rustfsOperator.credsSecret.existingSecret}" 2>/dev/null || true
+      )"
+    fi
+    rustfs_secret="${rustfs_secret:-${token_resource_name}-s3-creds}"
+    rustfs_username="${TEST_TAMOSS_RUSTFS_USERNAME:-${TEST_TAMOSS_RUSTFS_ACCESS_KEY:-}}"
+    rustfs_password="${TEST_TAMOSS_RUSTFS_PASSWORD:-${TEST_TAMOSS_RUSTFS_SECRET_KEY:-}}"
+    if [ -z "$rustfs_username" ]; then
+      rustfs_username="$(
+        task_k8s_secret_value \
+          "$kubeconfig" \
+          "$api_namespace" \
+          "$rustfs_secret" \
+          "${TEST_TAMOSS_RUSTFS_USERNAME_KEY:-RUSTFS_ACCESS_KEY}"
+      )"
+    fi
+    if [ -z "$rustfs_username" ]; then
+      rustfs_username="$(
+        task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" accesskey
+      )"
+    fi
+    if [ -z "$rustfs_password" ]; then
+      rustfs_password="$(
+        task_k8s_secret_value \
+          "$kubeconfig" \
+          "$api_namespace" \
+          "$rustfs_secret" \
+          "${TEST_TAMOSS_RUSTFS_PASSWORD_KEY:-RUSTFS_SECRET_KEY}"
+      )"
+    fi
+    if [ -z "$rustfs_password" ]; then
+      rustfs_password="$(
+        task_k8s_secret_value "$kubeconfig" "$api_namespace" "$rustfs_secret" secretkey
+      )"
+    fi
   fi
 
   phase="$(
@@ -878,7 +926,5 @@ task_print_env_summary() {
     printf '  Token URL:        %s\n' "${oauth_token_endpoint:-<not available>}"
     printf '\n'
   fi
-  printf '  RustFS Admin URL: %s/rustfs/console/\n' "${s3_url%/}"
-  printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
-  printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
+  task_print_rustfs_access "$s3_provider" "$s3_url" "$rustfs_username" "$rustfs_password"
 }
