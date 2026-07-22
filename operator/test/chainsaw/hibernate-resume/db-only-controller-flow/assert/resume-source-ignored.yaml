@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Event
+metadata:
+  namespace: ($namespace)
+reason: ResumeSourceIgnored
+type: Warning
+involvedObject:
+  kind: Tamoss
+  name: tamoss-conflict

@@ -1,0 +1,17 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossHibernate
+metadata:
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+  labels:
+    app.kubernetes.io/name: tamoss
+    app.kubernetes.io/managed-by: kustomize
+  name: snapshot-sample
+  namespace: tams
+spec:
+  tamossRef:
+    name: tamoss-cnpg
+  destination:
+    storageBackendRef:
+      name: tamoss-hibernate
+    prefix: hibernations/tamoss-cnpg

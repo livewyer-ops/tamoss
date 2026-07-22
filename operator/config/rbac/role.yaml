@@ -20,6 +20,7 @@ rules:
   - tamoss.livewyer.io
   resources:
   - storagebackends
+  - tamosshibernations
   verbs:
   - create
   - delete
@@ -33,6 +34,7 @@ rules:
   resources:
   - storagebackends/finalizers
   - tamosses/finalizers
+  - tamosshibernations/finalizers
   verbs:
   - update
 - apiGroups:
@@ -40,6 +42,7 @@ rules:
   resources:
   - storagebackends/status
   - tamosses/status
+  - tamosshibernations/status
   verbs:
   - get
   - patch
@@ -146,6 +149,17 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups
+  verbs:
+  - create
   - get
   - list
   - patch

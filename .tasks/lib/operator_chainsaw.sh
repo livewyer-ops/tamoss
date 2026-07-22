@@ -25,10 +25,16 @@ task_operator_chainsaw_up() {
   local platform_helmfile="${CHAINSAW_PLATFORM_HELMFILE:-deploy/platform/helmfile.yaml.gotmpl}"
   local schema_version="${SCHEMA_VERSION:-$version}"
   local tams_api_version="${TAMS_API_VERSION:-8.1}"
+  local kind_bin
+
+  kind_bin="$(task_resolve_aqua_binary "${KIND_BIN:-kind}")" || {
+    echo "kind required; run aqua install or add kind to PATH" >&2
+    return 127
+  }
 
   mkdir -p "$(dirname "$kubeconfig")" reports
 
-  task_operator_chainsaw_register_cleanup "$cluster" "$keep_cluster"
+  task_operator_chainsaw_register_cleanup "$kind_bin" "$cluster" "$keep_cluster"
 
   task_step "Operator Chainsaw: build operator image" \
     make -C operator docker-build IMG="$operator_image" VERSION="$version" SCHEMA_VERSION="$schema_version" TAMS_API_VERSION="$tams_api_version"
@@ -37,18 +43,18 @@ task_operator_chainsaw_up() {
   task_step "Operator Chainsaw: build API image" \
     docker build -t "$api_image" -f src/app/tamoss/Dockerfile .
 
-  kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+  "$kind_bin" delete cluster --name "$cluster" >/dev/null 2>&1 || true
   task_step "Operator Chainsaw: create Kind cluster" \
-    kind create cluster \
+    "$kind_bin" create cluster \
       --name "$cluster" \
       --kubeconfig "$kubeconfig" \
       --config operator/test/chainsaw/kind-config.yaml \
       --wait 120s
 
   task_step "Operator Chainsaw: load operator image" \
-    kind load docker-image "$chainsaw_image" --name "$cluster"
+    "$kind_bin" load docker-image "$chainsaw_image" --name "$cluster"
   task_step "Operator Chainsaw: load API image" \
-    kind load docker-image "$api_image" --name "$cluster"
+    "$kind_bin" load docker-image "$api_image" --name "$cluster"
 
   task_operator_chainsaw_apply_platform_prerequisites \
     "$kubeconfig" \
@@ -71,15 +77,23 @@ task_operator_chainsaw_up() {
 }
 
 task_operator_chainsaw_register_cleanup() {
-  local cluster="$1"
-  local keep_cluster="$2"
+  local kind_bin="$1"
+  local cluster="$2"
+  local keep_cluster="$3"
 
   if [ "$keep_cluster" = "true" ]; then
     return
   fi
+  TASK_OPERATOR_CHAINSAW_CLEANUP_KIND_BIN="$kind_bin"
   TASK_OPERATOR_CHAINSAW_CLEANUP_CLUSTER="$cluster"
+  export TASK_OPERATOR_CHAINSAW_CLEANUP_KIND_BIN
   export TASK_OPERATOR_CHAINSAW_CLEANUP_CLUSTER
-  trap 'kind delete cluster --name "$TASK_OPERATOR_CHAINSAW_CLEANUP_CLUSTER" >/dev/null 2>&1 || true' EXIT
+  trap 'task_operator_chainsaw_cleanup_cluster' EXIT
+}
+
+task_operator_chainsaw_cleanup_cluster() {
+  "${TASK_OPERATOR_CHAINSAW_CLEANUP_KIND_BIN:-kind}" delete cluster \
+    --name "$TASK_OPERATOR_CHAINSAW_CLEANUP_CLUSTER" >/dev/null 2>&1 || true
 }
 
 task_operator_chainsaw_apply_platform_prerequisites() {
@@ -157,6 +171,7 @@ task_operator_chainsaw_apply_operator() {
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \
+    crd/tamosshibernations.tamoss.livewyer.io \
     --timeout=60s
   kubectl --kubeconfig "$kubeconfig" -n tamoss-system rollout status \
     deployment/operator-controller-manager \

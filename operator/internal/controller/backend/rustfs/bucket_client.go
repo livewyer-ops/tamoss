@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/cors"
@@ -23,9 +24,14 @@ type BucketCredentials struct {
 	SecretKey string
 }
 
+type DeletePrefixResult struct {
+	ObjectsDeleted int64
+}
+
 type BucketClient interface {
 	Ensure(ctx context.Context, target BucketTarget, creds BucketCredentials) error
 	Delete(ctx context.Context, target BucketTarget, creds BucketCredentials) error
+	DeletePrefix(ctx context.Context, target BucketTarget, creds BucketCredentials, prefix string) (DeletePrefixResult, error)
 }
 
 type S3BucketClient struct{}
@@ -64,7 +70,7 @@ func (S3BucketClient) Delete(ctx context.Context, target BucketTarget, creds Buc
 	if !exists {
 		return nil
 	}
-	if err := emptyBucket(ctx, client, target.BucketName); err != nil {
+	if _, err := removeObjects(ctx, client, target.BucketName, minio.ListObjectsOptions{Recursive: true, WithVersions: true}); err != nil {
 		return err
 	}
 	if err := client.RemoveBucket(ctx, target.BucketName); err != nil {
@@ -75,6 +81,22 @@ func (S3BucketClient) Delete(ctx context.Context, target BucketTarget, creds Buc
 		return fmt.Errorf("delete bucket %s: %w", target.BucketName, err)
 	}
 	return nil
+}
+
+func (S3BucketClient) DeletePrefix(ctx context.Context, target BucketTarget, creds BucketCredentials, prefix string) (DeletePrefixResult, error) {
+	client, err := newBucketClient(target, creds)
+	if err != nil {
+		return DeletePrefixResult{}, err
+	}
+	result, err := removeObjects(ctx, client, target.BucketName, minio.ListObjectsOptions{
+		Prefix:       prefix,
+		Recursive:    true,
+		WithVersions: true,
+	})
+	if err != nil {
+		return DeletePrefixResult{}, fmt.Errorf("delete objects under prefix %s from bucket %s: %w", prefix, target.BucketName, err)
+	}
+	return result, nil
 }
 
 func newBucketClient(target BucketTarget, creds BucketCredentials) (*minio.Client, error) {
@@ -117,12 +139,37 @@ func corsConfig(origins []string) *cors.Config {
 	}})
 }
 
-func emptyBucket(ctx context.Context, client *minio.Client, bucketName string) error {
-	objects := client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{Recursive: true, WithVersions: true})
+func removeObjects(ctx context.Context, client *minio.Client, bucketName string, options minio.ListObjectsOptions) (DeletePrefixResult, error) {
+	listCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	objects := make(chan minio.ObjectInfo)
+	listErr := make(chan error, 1)
+	var count atomic.Int64
+	go func() {
+		defer close(objects)
+		for object := range client.ListObjects(listCtx, bucketName, options) {
+			if object.Err != nil {
+				listErr <- object.Err
+				return
+			}
+			count.Add(1)
+			select {
+			case objects <- object:
+			case <-listCtx.Done():
+				return
+			}
+		}
+	}()
 	for removal := range client.RemoveObjects(ctx, bucketName, objects, minio.RemoveObjectsOptions{}) {
 		if removal.Err != nil {
-			return fmt.Errorf("delete object %s from bucket %s: %w", removal.ObjectName, bucketName, removal.Err)
+			cancel()
+			return DeletePrefixResult{ObjectsDeleted: count.Load()}, fmt.Errorf("delete object %s from bucket %s: %w", removal.ObjectName, bucketName, removal.Err)
 		}
 	}
-	return nil
+	select {
+	case err := <-listErr:
+		return DeletePrefixResult{ObjectsDeleted: count.Load()}, fmt.Errorf("list objects in bucket %s: %w", bucketName, err)
+	default:
+	}
+	return DeletePrefixResult{ObjectsDeleted: count.Load()}, nil
 }

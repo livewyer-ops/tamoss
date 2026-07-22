@@ -110,9 +110,14 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 			Degraded: true,
 		}, nil
 	}
-	if err := cnpg.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
+	// A resolved hibernation artifact renders the recovery bootstrap
+	// directly, so the emitted cluster spec is stable across reconciles
+	// without preserving live fields.
+	injectResolvedRestore(tamoss)
+	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
 		return applyAdvancedResourcePatches(tamoss, obj)
-	}); err != nil {
+	}}
+	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
 	}
 
@@ -158,6 +163,21 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 		Reason:  operatorstatus.ReasonCNPGClusterReady,
 		Message: fmt.Sprintf("CNPG Cluster %s is ready", cluster.Name),
 	}, nil
+}
+
+// injectResolvedRestore copies the persisted restore source into the resolved
+// spec so the CNPG renderer emits the recovery bootstrap and external cluster
+// on every reconcile. It mutates the resolved deep copy only, never the
+// user's object.
+func injectResolvedRestore(tamoss *tamossv1alpha1.Tamoss) {
+	restore := tamoss.Status.Lifecycle.ResolvedRestore
+	if restore == nil || !restore.Restore.Enabled {
+		return
+	}
+	if tamoss.Spec.Backends.DB.CNPG == nil {
+		tamoss.Spec.Backends.DB.CNPG = &tamossv1alpha1.DBCNPGSpec{}
+	}
+	tamoss.Spec.Backends.DB.CNPG.Restore = restore.Restore
 }
 
 func cnpgBackupPolicyMissingFields(tamoss *tamossv1alpha1.Tamoss) []string {
@@ -261,7 +281,7 @@ func defaultStorageBackend(tamoss *tamossv1alpha1.Tamoss) *tamossv1alpha1.Storag
 			Namespace: tamoss.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       tamossAppName,
-				"app.kubernetes.io/instance":   tamoss.Name,
+				appInstanceLabel:               tamoss.Name,
 				"app.kubernetes.io/component":  "storage-backend",
 				"app.kubernetes.io/managed-by": "tamoss-operator",
 			},

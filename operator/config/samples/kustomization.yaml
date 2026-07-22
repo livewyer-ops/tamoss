@@ -1,7 +1,9 @@
 resources:
 - tamoss_v1alpha1_storagebackend.yaml
+- tamoss_v1alpha1_storagebackend_hibernate.yaml
 - tamoss_v1alpha1_tamoss.yaml
 - tamoss_v1alpha1_tamoss_authentik.yaml
 - tamoss_v1alpha1_tamoss_cnpg.yaml
 - tamoss_v1alpha1_tamoss_remote.yaml
 - tamoss_v1alpha1_tamoss_rustfs.yaml
+- tamoss_v1alpha1_tamosshibernate.yaml

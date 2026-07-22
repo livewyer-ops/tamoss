@@ -16,8 +16,9 @@ import (
 const (
 	ConfirmationAnnotation = "confirmation.tamoss.livewyer.io/deletion"
 
-	TamossWebhookPath         = "/validate-tamoss-livewyer-io-v1alpha1-tamoss-delete"
-	StorageBackendWebhookPath = "/validate-tamoss-livewyer-io-v1alpha1-storagebackend-delete"
+	TamossWebhookPath          = "/validate-tamoss-livewyer-io-v1alpha1-tamoss-delete"
+	StorageBackendWebhookPath  = "/validate-tamoss-livewyer-io-v1alpha1-storagebackend-delete"
+	TamossHibernateWebhookPath = "/validate-tamoss-livewyer-io-v1alpha1-tamosshibernate-delete"
 )
 
 type Handler struct {

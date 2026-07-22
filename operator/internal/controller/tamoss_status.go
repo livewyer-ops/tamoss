@@ -48,6 +48,7 @@ type tamossStatusObservation struct {
 	RefreshBackupPolicy bool
 	Phase               string
 	Paused              bool
+	Lifecycle           *tamossv1alpha1.TamossLifecycleStatus
 
 	// Schema carries a known schema outcome and also records the schema
 	// version and upgrade status; SchemaState is the SchemaMigrated
@@ -165,6 +166,27 @@ func (r *TamossReconciler) updatePausedStatus(ctx context.Context, tamoss *tamos
 	})
 }
 
+func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
+	lifecycle := tamoss.Status.Lifecycle
+	phase, reason, message, progressing := lifecycleGateStatus(tamoss)
+	// A gated pass cannot re-evaluate the schema, but it cannot change it
+	// either: the workloads are quiesced. Keep a previously observed migrated
+	// schema so hibernation source validation can trust the frozen state.
+	schemaState := unknownCondition(reason, "Schema reconciliation is blocked by TAMOSS lifecycle state")
+	if existing := meta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated); existing != nil && existing.Status == metav1.ConditionTrue {
+		schemaState = boolCondition(true, existing.Reason, existing.Message)
+	}
+	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
+		Phase:            phase,
+		Lifecycle:        &lifecycle,
+		SchemaState:      schemaState,
+		BackendsFallback: unknownCondition(reason, "Backend checks are blocked by TAMOSS lifecycle state"),
+		Ready:            boolCondition(false, reason, message),
+		Progressing:      boolCondition(progressing, reason, message),
+		Degraded:         boolCondition(false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed"),
+	})
+}
+
 func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, observation tamossStatusObservation) error {
 	original := tamoss.DeepCopy()
 	setCommonTamossStatus(tamoss)
@@ -183,6 +205,15 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 	generation := tamoss.Generation
 	conditions := &tamoss.Status.Conditions
 	tamoss.Status.Phase = observation.Phase
+	if observation.Lifecycle != nil {
+		tamoss.Status.Lifecycle = *observation.Lifecycle
+	} else if tamoss.Status.Lifecycle.ActiveOperationRef == nil && !tamoss.Spec.Hibernation.Enabled &&
+		!lifecycleRestoreInProgress(tamoss.Status.Lifecycle) {
+		tamoss.Status.Lifecycle.Phase = string(tamossv1alpha1.TamossLifecyclePhaseRunning)
+		tamoss.Status.Lifecycle.Reason = operatorstatus.ReasonTamossReady
+		tamoss.Status.Lifecycle.Message = "TAMOSS lifecycle is running"
+	}
+	setLifecycleCondition(conditions, generation, tamoss.Status.Lifecycle)
 	if observation.Replicas != nil {
 		tamoss.Status.Replicas = *observation.Replicas
 	}
@@ -275,4 +306,50 @@ func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss) {
 	tamoss.Status.Resolved = resolvedTamossStatus(tamoss)
 	setBackupPolicyCondition(&tamoss.Status.Conditions, tamoss)
 	setUpgradeUnknown(tamoss, operatorstatus.ReasonUpgradeNotEvaluated, "Upgrade readiness has not been evaluated in this reconcile")
+}
+
+func lifecycleGateStatus(tamoss *tamossv1alpha1.Tamoss) (string, string, string, bool) {
+	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
+	case tamossv1alpha1.TamossLifecyclePhaseHibernating:
+		return operatorstatus.PhaseHibernating, operatorstatus.ReasonTamossHibernating, "TAMOSS is hibernating", true
+	case tamossv1alpha1.TamossLifecyclePhaseHibernated:
+		return operatorstatus.PhaseHibernated, operatorstatus.ReasonTamossHibernated, "TAMOSS is hibernated", false
+	case tamossv1alpha1.TamossLifecyclePhaseResuming:
+		return operatorstatus.PhaseResuming, operatorstatus.ReasonTamossResuming, "TAMOSS is resuming", true
+	case tamossv1alpha1.TamossLifecyclePhaseFailed:
+		message := tamoss.Status.Lifecycle.Message
+		if message == "" {
+			message = "The hibernation operation failed; retry it or disable spec.hibernation"
+		}
+		return operatorstatus.PhaseHibernating, operatorstatus.ReasonLifecycleBlocked, message, false
+	default:
+		if tamoss.Spec.Hibernation.Enabled {
+			return operatorstatus.PhaseHibernating, operatorstatus.ReasonTamossHibernating, "Hibernation was requested by the spec", true
+		}
+		return operatorstatus.PhaseProgressing, operatorstatus.ReasonLifecycleBlocked, "TAMOSS lifecycle state blocks reconciliation", true
+	}
+}
+
+func setLifecycleCondition(conditions *[]metav1.Condition, generation int64, lifecycle tamossv1alpha1.TamossLifecycleStatus) {
+	switch tamossv1alpha1.TamossLifecyclePhase(lifecycle.Phase) {
+	case tamossv1alpha1.TamossLifecyclePhaseHibernating:
+		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(false, operatorstatus.ReasonTamossHibernating, "TAMOSS is hibernating"))
+	case tamossv1alpha1.TamossLifecyclePhaseHibernated:
+		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(false, operatorstatus.ReasonTamossHibernated, "TAMOSS is hibernated"))
+	case tamossv1alpha1.TamossLifecyclePhaseResuming:
+		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(false, operatorstatus.ReasonTamossResuming, "TAMOSS is resuming"))
+	case tamossv1alpha1.TamossLifecyclePhaseFailed:
+		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(false, operatorstatus.ReasonLifecycleBlocked, lifecycle.Message))
+	default:
+		setStatusCondition(conditions, generation, operatorstatus.ConditionLifecycleReady, boolCondition(true, operatorstatus.ReasonTamossReady, "TAMOSS lifecycle is running"))
+	}
+}
+
+// lifecycleRestoreInProgress reports whether the instance is still restoring
+// its database from a hibernation artifact; the Resuming phase is held until
+// the restore is observed complete.
+func lifecycleRestoreInProgress(lifecycle tamossv1alpha1.TamossLifecycleStatus) bool {
+	return tamossv1alpha1.TamossLifecyclePhase(lifecycle.Phase) == tamossv1alpha1.TamossLifecyclePhaseResuming &&
+		lifecycle.ResolvedRestore != nil &&
+		lifecycle.ResolvedRestore.ResumedAt == nil
 }

@@ -19,15 +19,17 @@ type storageBackendReconcileResult struct {
 }
 
 type storageBackendStatusInput struct {
-	Ready         bool
-	BucketReady   bool
-	DatabaseReady bool
-	Reason        string
-	Message       string
-	Degraded      bool
-	BackendID     string
-	BucketName    string
-	Diagnostic    *storageBackendDiagnosticResult
+	Ready           bool
+	BucketReady     bool
+	DatabaseReady   bool
+	Reason          string
+	Message         string
+	DatabaseReason  string
+	DatabaseMessage string
+	Degraded        bool
+	BackendID       string
+	BucketName      string
+	Diagnostic      *storageBackendDiagnosticResult
 }
 
 // storageBackendStageStatusInput fills the fields that are constant for a
@@ -107,6 +109,7 @@ func resolvedStorageBackendStatus(storageBackend *tamossv1alpha1.StorageBackend)
 		BackendID:         spec.ID,
 		BucketName:        spec.BucketName,
 		Provider:          spec.Provider,
+		Usage:             spec.Usage,
 		EndpointURL:       spec.Endpoint.Default.URL,
 		PublicEndpointURL: spec.Endpoint.Public.URL,
 		CredentialsSecret: spec.Credentials.ExistingSecret,
@@ -129,6 +132,9 @@ func bucketReadyMessage(input storageBackendStatusInput) string {
 
 func databaseReadyReason(input storageBackendStatusInput) string {
 	if input.DatabaseReady {
+		if input.DatabaseReason != "" {
+			return input.DatabaseReason
+		}
 		return operatorstatus.ReasonDatabaseRegistered
 	}
 	return input.Reason
@@ -136,6 +142,9 @@ func databaseReadyReason(input storageBackendStatusInput) string {
 
 func databaseReadyMessage(input storageBackendStatusInput) string {
 	if input.DatabaseReady {
+		if input.DatabaseMessage != "" {
+			return input.DatabaseMessage
+		}
 		return "TAMS storage backend row has been registered"
 	}
 	return input.Message

@@ -25,6 +25,14 @@ func storageBackendStatusSemanticEqual(a, b tamossv1alpha1.StorageBackendStatus)
 	return equality.Semantic.DeepEqual(a, b)
 }
 
+func operationStatusSemanticEqual(a, b tamossv1alpha1.TamossOperationStatus) bool {
+	a.Conditions = cloneConditions(a.Conditions)
+	b.Conditions = cloneConditions(b.Conditions)
+	normalizeConditionTimes(a.Conditions)
+	normalizeConditionTimes(b.Conditions)
+	return equality.Semantic.DeepEqual(a, b)
+}
+
 func cloneConditions(conditions []metav1.Condition) []metav1.Condition {
 	if conditions == nil {
 		return nil

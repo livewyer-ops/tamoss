@@ -120,5 +120,6 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | `.status.backupPolicy` | Managed CNPG backup policy state, CNPG resource names, and observed backup timestamps. |
 | `.status.schemaMigration` | Migration phase, attempts, applied revision, and final result. |
 | `.status.upgrade` | Upgrade readiness summary. |
+| `.status.lifecycle` | Hibernate/resume lifecycle phase (`Running`, `Hibernating`, `Hibernated`, `Resuming`, `Failed`), the active operation reference, and the last hibernate and resume references. `.status.phase` also reports `Hibernating`, `Hibernated`, and `Resuming` while the lifecycle gate is active. See [Hibernate and Resume](../operations/hibernate-resume.md). |
 
 Use [CRD Versioning](crd-versioning.md) for API stability and migration policy.

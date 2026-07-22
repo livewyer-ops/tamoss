@@ -1,8 +1,8 @@
 # Deletion Protection
 
-`Tamoss` and `StorageBackend` resources are protected by admission webhooks.
-Kubernetes delete requests are rejected until the confirmation annotation is
-present.
+`Tamoss`, `StorageBackend`, and `TamossHibernate` resources are protected by
+admission webhooks. Kubernetes delete requests are rejected
+until the confirmation annotation is present.
 
 ## Tamoss
 
@@ -31,6 +31,20 @@ registration during finalization.
 For `external-s3`, deletion removes only TAMOSS database registration and
 operator state. The external bucket, credentials, lifecycle rules, CORS rules,
 backups, and provider configuration remain outside TAMOSS.
+
+## TamossHibernate
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" -n tams annotate tamosshibernate snapshot \
+  confirmation.tamoss.livewyer.io/deletion=true --overwrite
+kubectl --kubeconfig "$KUBECONFIG" -n tams delete tamosshibernate snapshot
+```
+
+Operator-materialised operations (from `spec.hibernation.enabled`) carry
+the confirmation annotation already so the operator can abort its own
+cycles. Deleting an operation that has not reached `Completed` marks the parent
+`Tamoss` lifecycle `Failed` and lets normal reconciliation take over again;
+see [Hibernate and Resume](hibernate-resume.md) for the recovery flow.
 
 ## Break Glass
 

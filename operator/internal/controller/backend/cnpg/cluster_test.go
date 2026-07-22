@@ -110,6 +110,10 @@ func TestBuildClusterMapsBackupAndMonitoring(t *testing.T) {
 	if store.AWS == nil || store.AWS.AccessKeyIDReference.Name != "backup-creds" {
 		t.Fatalf("expected backup credential references, got %#v", store.AWS)
 	}
+	if store.AWS.AccessKeyIDReference.Key != "AWS_ACCESS_KEY_ID" ||
+		store.AWS.SecretAccessKeyReference.Key != "AWS_SECRET_ACCESS_KEY" {
+		t.Fatalf("expected default AWS credential key names, got %#v", store.AWS)
+	}
 	scheduled := BuildScheduledBackup(tamoss)
 	if scheduled == nil {
 		t.Fatalf("expected scheduled backup")
@@ -122,6 +126,9 @@ func TestBuildClusterMapsBackupAndMonitoring(t *testing.T) {
 	}
 	if scheduled.Spec.Schedule != "0 0 2 * * *" || scheduled.Spec.BackupOwnerReference != "cluster" {
 		t.Fatalf("unexpected scheduled backup spec: %#v", scheduled.Spec)
+	}
+	if scheduled.Spec.Suspend == nil || *scheduled.Spec.Suspend {
+		t.Fatalf("expected normal reconciliation to explicitly enable scheduled backups, got %#v", scheduled.Spec.Suspend)
 	}
 	if cluster.Spec.Monitoring == nil || !cluster.Spec.Monitoring.EnablePodMonitor { //nolint:staticcheck // The controller still sets the deprecated EnablePodMonitor knob deliberately; the test asserts it.
 		t.Fatalf("expected PodMonitor enabled")
@@ -139,6 +146,10 @@ func TestBuildClusterMapsRestore(t *testing.T) {
 			EndpointURL:    "https://s3.example.com",
 			Bucket:         "pg-backups",
 			ExistingSecret: "backup-creds",
+			SecretKeys: tamossv1alpha1.SecretKeySpec{
+				AccessKey: "accessKeyID",
+				SecretKey: "secretAccessKey",
+			},
 		},
 	}
 
@@ -167,8 +178,35 @@ func TestBuildClusterMapsRestore(t *testing.T) {
 		t.Fatalf("unexpected restore object store: %#v", external.BarmanObjectStore)
 	}
 	if external.BarmanObjectStore.AWS == nil ||
-		external.BarmanObjectStore.AWS.AccessKeyIDReference.Name != "backup-creds" {
+		external.BarmanObjectStore.AWS.AccessKeyIDReference.Name != "backup-creds" ||
+		external.BarmanObjectStore.AWS.AccessKeyIDReference.Key != "accessKeyID" ||
+		external.BarmanObjectStore.AWS.SecretAccessKeyReference.Key != "secretAccessKey" {
 		t.Fatalf("expected restore credential references, got %#v", external.BarmanObjectStore.AWS)
+	}
+}
+
+func TestBuildClusterMapsRestoreDestinationPathAndServerName(t *testing.T) {
+	tamoss := cnpgTamossFixture()
+	cnpg := tamoss.Spec.Backends.DB.CNPG
+	cnpg.Restore = tamossv1alpha1.DBCNPGRestoreSpec{
+		Enabled: true,
+		Source:  "tamoss-source-db",
+		ObjectStore: tamossv1alpha1.DBCNPGObjectStoreSpec{
+			EndpointURL:     "https://s3.example.com",
+			Bucket:          "pg-backups",
+			DestinationPath: "s3://pg-backups/hibernate/example/snap-1/cnpg",
+			ServerName:      "source-db",
+			ExistingSecret:  "backup-creds",
+		},
+	}
+
+	cluster := BuildCluster(tamoss)
+	external := cluster.Spec.ExternalClusters[0]
+	if external.BarmanObjectStore.DestinationPath != "s3://pg-backups/hibernate/example/snap-1/cnpg" {
+		t.Fatalf("expected explicit restore destination path, got %q", external.BarmanObjectStore.DestinationPath)
+	}
+	if external.BarmanObjectStore.ServerName != "source-db" {
+		t.Fatalf("expected restore server name source-db, got %q", external.BarmanObjectStore.ServerName)
 	}
 }
 

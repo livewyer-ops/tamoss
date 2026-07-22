@@ -1,3 +1,6 @@
+# Hand-maintained: the delete-protection webhooks are registered imperatively
+# in cmd/manager_setup.go, so controller-gen does not regenerate this file.
+# Keep one entry per server.Register call.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -46,6 +49,28 @@ webhooks:
     - DELETE
     resources:
     - storagebackends
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+- name: vdelete-tamosshibernate.tamoss.livewyer.io
+  admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-tamoss-livewyer-io-v1alpha1-tamosshibernate-delete
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  rules:
+  - apiGroups:
+    - tamoss.livewyer.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - DELETE
+    resources:
+    - tamosshibernations
     scope: Namespaced
   sideEffects: None
   timeoutSeconds: 10

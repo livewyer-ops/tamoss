@@ -102,6 +102,30 @@ spec:
                         type: string
                     type: object
                 type: object
+              hibernate:
+                properties:
+                  retention:
+                    properties:
+                      mode:
+                        default: Retain
+                        description: |-
+                          Mode controls operator-managed deletion of completed hibernation artifacts.
+                          Retain keeps artifacts indefinitely. DeleteAfterResume removes the source
+                          artifact after a successful resume. TTL removes it once the restored
+                          database has been ready for ttlSecondsAfterResume.
+                        enum:
+                        - Retain
+                        - DeleteAfterResume
+                        - TTL
+                        type: string
+                      ttlSecondsAfterResume:
+                        description: TTLSecondsAfterResume is required when mode is
+                          TTL.
+                        format: int64
+                        minimum: 1
+                        type: integer
+                    type: object
+                type: object
               id:
                 description: |-
                   ID is the BBC TAMS storage backend UUID advertised to clients.
@@ -139,6 +163,17 @@ spec:
                     minLength: 1
                     type: string
                 type: object
+              usage:
+                default: media
+                description: |-
+                  Usage declares how this object store is consumed. Media backends are
+                  registered in the TAMS database and exposed to the application runtime.
+                  Hibernate backends are reserved for DB hibernation artifacts and are not
+                  registered as media storage.
+                enum:
+                - media
+                - hibernate
+                type: string
             type: object
             x-kubernetes-validations:
             - message: spec.id is immutable
@@ -154,11 +189,21 @@ spec:
                 > 0
             - message: spec.tamossRef.name is immutable
               rule: self.tamossRef.name == oldSelf.tamossRef.name
+            - message: spec.usage is immutable
+              rule: has(self.usage) == has(oldSelf.usage) && (!has(self.usage) ||
+                self.usage == oldSelf.usage)
             - message: spec.endpoint.default.url is required when spec.provider is
                 external-s3
               rule: self.provider != 'external-s3' || (has(self.endpoint) && has(self.endpoint.default)
                 && has(self.endpoint.default.url) && self.endpoint.default.url.size()
                 > 0)
+            - message: hibernate StorageBackends must use provider external-s3
+              rule: self.usage != 'hibernate' || self.provider == 'external-s3'
+            - message: hibernate.retention.ttlSecondsAfterResume is required when
+                retention mode is TTL
+              rule: '!has(self.hibernate) || !has(self.hibernate.retention) || !has(self.hibernate.retention.mode)
+                || self.hibernate.retention.mode != ''TTL'' || (has(self.hibernate.retention.ttlSecondsAfterResume)
+                && self.hibernate.retention.ttlSecondsAfterResume > 0)'
           status:
             properties:
               backendID:
@@ -244,6 +289,8 @@ spec:
                   provider:
                     type: string
                   publicEndpointURL:
+                    type: string
+                  usage:
                     type: string
                 type: object
             type: object
@@ -4597,9 +4644,33 @@ spec:
                                 properties:
                                   bucket:
                                     type: string
+                                  destinationPath:
+                                    description: DestinationPath overrides the derived
+                                      s3://<bucket>/<cluster> path.
+                                    type: string
                                   endpointURL:
                                     type: string
                                   existingSecret:
+                                    description: ExistingSecret contains object-store
+                                      credentials for CNPG backup/restore.
+                                    type: string
+                                  secretKeys:
+                                    description: SecretKeys overrides the access key
+                                      and secret key names inside ExistingSecret.
+                                    properties:
+                                      accessKey:
+                                        type: string
+                                      password:
+                                        type: string
+                                      secretKey:
+                                        type: string
+                                      username:
+                                        type: string
+                                    type: object
+                                  serverName:
+                                    description: |-
+                                      ServerName identifies the Barman server folder when it differs from the
+                                      CNPG external cluster name.
                                     type: string
                                 type: object
                               retentionPolicy:
@@ -4687,6 +4758,12 @@ spec:
                             type: object
                           restore:
                             properties:
+                              backupID:
+                                description: |-
+                                  BackupID pins recovery to the exact CNPG/Barman backup captured by a
+                                  portable hibernation artifact. Empty retains CNPG's normal target-based
+                                  backup selection for user-configured restores.
+                                type: string
                               enabled:
                                 default: false
                                 type: boolean
@@ -4694,9 +4771,33 @@ spec:
                                 properties:
                                   bucket:
                                     type: string
+                                  destinationPath:
+                                    description: DestinationPath overrides the derived
+                                      s3://<bucket>/<cluster> path.
+                                    type: string
                                   endpointURL:
                                     type: string
                                   existingSecret:
+                                    description: ExistingSecret contains object-store
+                                      credentials for CNPG backup/restore.
+                                    type: string
+                                  secretKeys:
+                                    description: SecretKeys overrides the access key
+                                      and secret key names inside ExistingSecret.
+                                    properties:
+                                      accessKey:
+                                        type: string
+                                      password:
+                                        type: string
+                                      secretKey:
+                                        type: string
+                                      username:
+                                        type: string
+                                    type: object
+                                  serverName:
+                                    description: |-
+                                      ServerName identifies the Barman server folder when it differs from the
+                                      CNPG external cluster name.
                                     type: string
                                 type: object
                               source:
@@ -5229,6 +5330,92 @@ spec:
                 type: object
               fullnameOverride:
                 type: string
+              hibernation:
+                description: |-
+                  Hibernation declares the desired lifecycle state of this instance and,
+                  optionally, a hibernation artifact to bootstrap the database from.
+                properties:
+                  destination:
+                    description: |-
+                      Destination selects the hibernate StorageBackend and object-key prefix
+                      used for hibernation artifacts. Required while enabled is true.
+                    properties:
+                      prefix:
+                        description: Prefix is the object-key prefix used for hibernation
+                          metadata.
+                        minLength: 1
+                        type: string
+                      storageBackendRef:
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enabled declares that this instance should be hibernated.
+                    type: boolean
+                  resumeFrom:
+                    description: |-
+                      ResumeFrom bootstraps the managed database from a hibernation artifact.
+                      It follows CNPG bootstrap semantics: it is honoured only while the
+                      database cluster does not exist yet and is ignored afterwards.
+                    properties:
+                      artifact:
+                        properties:
+                          checksum:
+                            description: |-
+                              Checksum is the trusted SHA-256 digest emitted by TamossHibernate. It is
+                              required for direct artifact restores because S3 object metadata is not an
+                              independent integrity anchor.
+                            pattern: ^sha256:[a-f0-9]{64}$
+                            type: string
+                          manifestKey:
+                            description: ManifestKey is the S3 object key of the hibernation
+                              manifest.
+                            minLength: 1
+                            type: string
+                          storageBackendRef:
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                            type: object
+                        type: object
+                      hibernationRef:
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: spec.hibernation.resumeFrom is immutable
+                  rule: has(self.resumeFrom) == has(oldSelf.resumeFrom)
+                - message: spec.hibernation.resumeFrom.hibernationRef is immutable
+                  rule: '!has(self.resumeFrom) || !has(self.resumeFrom.hibernationRef)
+                    || self.resumeFrom.hibernationRef.name == oldSelf.resumeFrom.hibernationRef.name'
+                - message: spec.hibernation.resumeFrom.artifact is immutable
+                  rule: '!has(self.resumeFrom) || !has(self.resumeFrom.artifact) ||
+                    (self.resumeFrom.artifact.storageBackendRef.name == oldSelf.resumeFrom.artifact.storageBackendRef.name
+                    && self.resumeFrom.artifact.manifestKey == oldSelf.resumeFrom.artifact.manifestKey)'
+                - message: spec.hibernation.destination is required when hibernation
+                    is enabled
+                  rule: '!self.enabled || (has(self.destination) && has(self.destination.storageBackendRef)
+                    && has(self.destination.storageBackendRef.name) && self.destination.storageBackendRef.name.size()
+                    > 0 && has(self.destination.prefix) && self.destination.prefix.size()
+                    > 0)'
+                - message: spec.hibernation.resumeFrom must set exactly one of hibernationRef
+                    or artifact
+                  rule: '!has(self.resumeFrom) || ((has(self.resumeFrom.hibernationRef)
+                    && has(self.resumeFrom.hibernationRef.name) && self.resumeFrom.hibernationRef.name.size()
+                    > 0 && !has(self.resumeFrom.artifact)) || (!has(self.resumeFrom.hibernationRef)
+                    && has(self.resumeFrom.artifact) && has(self.resumeFrom.artifact.storageBackendRef)
+                    && has(self.resumeFrom.artifact.storageBackendRef.name) && self.resumeFrom.artifact.storageBackendRef.name.size()
+                    > 0 && has(self.resumeFrom.artifact.manifestKey) && self.resumeFrom.artifact.manifestKey.size()
+                    > 0))'
               httpRoute:
                 default:
                   enabled: false
@@ -15198,6 +15385,260 @@ spec:
                   ui:
                     type: string
                 type: object
+              lifecycle:
+                properties:
+                  activeOperationRef:
+                    description: ObjectReference contains enough information to let
+                      you inspect or modify the referred object.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  hibernationCycle:
+                    description: |-
+                      HibernationCycle counts spec-driven hibernation operations and names the
+                      materialised TamossHibernate for each cycle.
+                    format: int32
+                    type: integer
+                  lastHibernateRef:
+                    description: ObjectReference contains enough information to let
+                      you inspect or modify the referred object.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  lastResumeRef:
+                    description: ObjectReference contains enough information to let
+                      you inspect or modify the referred object.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: |-
+                          If referring to a piece of an object instead of an entire object, this string
+                          should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within a pod, this would take on a value like:
+                          "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]" (container with
+                          index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                          referencing a part of an object.
+                        type: string
+                      kind:
+                        description: |-
+                          Kind of the referent.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                        type: string
+                      name:
+                        description: |-
+                          Name of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                        type: string
+                      resourceVersion:
+                        description: |-
+                          Specific resourceVersion to which this reference is made, if any.
+                          More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                        type: string
+                      uid:
+                        description: |-
+                          UID of the referent.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  lastTransitionTime:
+                    description: LastTransitionTime records when Phase last changed.
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  phase:
+                    enum:
+                    - Running
+                    - Hibernating
+                    - Hibernated
+                    - Resuming
+                    - Failed
+                    type: string
+                  reason:
+                    type: string
+                  resolvedRestore:
+                    description: |-
+                      ResolvedRestore records the database bootstrap source resolved from
+                      spec.hibernation.resumeFrom (or from the latest hibernation artifact
+                      when waking), plus the retention state of that artifact.
+                    properties:
+                      checksum:
+                        type: string
+                      cleanup:
+                        properties:
+                          completedAt:
+                            format: date-time
+                            type: string
+                          message:
+                            type: string
+                          objectsDeleted:
+                            format: int64
+                            type: integer
+                          phase:
+                            type: string
+                          reason:
+                            type: string
+                        type: object
+                      manifestKey:
+                        type: string
+                      restore:
+                        properties:
+                          backupID:
+                            description: |-
+                              BackupID pins recovery to the exact CNPG/Barman backup captured by a
+                              portable hibernation artifact. Empty retains CNPG's normal target-based
+                              backup selection for user-configured restores.
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          objectStore:
+                            properties:
+                              bucket:
+                                type: string
+                              destinationPath:
+                                description: DestinationPath overrides the derived
+                                  s3://<bucket>/<cluster> path.
+                                type: string
+                              endpointURL:
+                                type: string
+                              existingSecret:
+                                description: ExistingSecret contains object-store
+                                  credentials for CNPG backup/restore.
+                                type: string
+                              secretKeys:
+                                description: SecretKeys overrides the access key and
+                                  secret key names inside ExistingSecret.
+                                properties:
+                                  accessKey:
+                                    type: string
+                                  password:
+                                    type: string
+                                  secretKey:
+                                    type: string
+                                  username:
+                                    type: string
+                                type: object
+                              serverName:
+                                description: |-
+                                  ServerName identifies the Barman server folder when it differs from the
+                                  CNPG external cluster name.
+                                type: string
+                            type: object
+                          source:
+                            description: Source is the CNPG external cluster name
+                              and backup folder to recover from.
+                            type: string
+                          targetImmediate:
+                            description: TargetImmediate ends recovery as soon as
+                              a consistent state is reached.
+                            type: boolean
+                          targetTime:
+                            description: TargetTime performs point-in-time recovery
+                              to an RFC3339 timestamp.
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: restore requires source, objectStore.endpointURL,
+                            objectStore.bucket, and objectStore.existingSecret when
+                            enabled
+                          rule: '!self.enabled || (has(self.source) && self.source.size()
+                            > 0 && has(self.objectStore) && has(self.objectStore.endpointURL)
+                            && self.objectStore.endpointURL.size() > 0 && has(self.objectStore.bucket)
+                            && self.objectStore.bucket.size() > 0 && has(self.objectStore.existingSecret)
+                            && self.objectStore.existingSecret.size() > 0)'
+                      resumedAt:
+                        format: date-time
+                        type: string
+                      storageBackendName:
+                        type: string
+                    type: object
+                type: object
               observedGeneration:
                 format: int64
                 type: integer
@@ -15208,6 +15649,9 @@ spec:
                 - Ready
                 - Degraded
                 - Paused
+                - Hibernating
+                - Hibernated
+                - Resuming
                 type: string
               providers:
                 properties:
@@ -15377,6 +15821,254 @@ spec:
     subresources:
       status: {}
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: tamosshibernations.tamoss.livewyer.io
+spec:
+  group: tamoss.livewyer.io
+  names:
+    kind: TamossHibernate
+    listKind: TamossHibernateList
+    plural: tamosshibernations
+    shortNames:
+    - th
+    singular: tamosshibernate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tamossRef.name
+      name: Tamoss
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.artifact.driver
+      name: Driver
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          TamossHibernate records a request to export TAMOSS database state to an
+          external hibernation destination.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              destination:
+                properties:
+                  prefix:
+                    description: Prefix is the object-key prefix used for hibernation
+                      metadata.
+                    minLength: 1
+                    type: string
+                  storageBackendRef:
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                    type: object
+                type: object
+              driver:
+                default: cnpgPhysical
+                description: |-
+                  Driver selects the DB hibernation implementation. cnpgPhysical is the
+                  managed-CNPG native path. logicalDump is reserved for a later portable
+                  PostgreSQL dump implementation.
+                enum:
+                - cnpgPhysical
+                - logicalDump
+                type: string
+              tamossRef:
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                type: object
+            type: object
+            x-kubernetes-validations:
+            - message: spec.tamossRef.name is required
+              rule: has(self.tamossRef) && has(self.tamossRef.name) && self.tamossRef.name.size()
+                > 0
+            - message: spec.destination.storageBackendRef.name is required
+              rule: has(self.destination) && has(self.destination.storageBackendRef)
+                && has(self.destination.storageBackendRef.name) && self.destination.storageBackendRef.name.size()
+                > 0
+            - message: spec.destination.prefix is required
+              rule: has(self.destination) && has(self.destination.prefix) && self.destination.prefix.size()
+                > 0
+            - message: spec.tamossRef.name is immutable
+              rule: self.tamossRef.name == oldSelf.tamossRef.name
+            - message: spec.destination.storageBackendRef.name is immutable
+              rule: self.destination.storageBackendRef.name == oldSelf.destination.storageBackendRef.name
+            - message: spec.destination.prefix is immutable
+              rule: self.destination.prefix == oldSelf.destination.prefix
+            - message: spec.destination.prefix must be a normalized relative object-key
+                prefix
+              rule: '!has(self.destination.prefix) || (!self.destination.prefix.startsWith(''/'')
+                && !self.destination.prefix.endsWith(''/'') && !self.destination.prefix.contains(''//''))'
+            - message: spec.driver is immutable
+              rule: has(self.driver) == has(oldSelf.driver) && (!has(self.driver)
+                || self.driver == oldSelf.driver)
+          status:
+            properties:
+              acceptedRetry:
+                description: |-
+                  AcceptedRetry records the tamoss.livewyer.io/operation-retry annotation
+                  value most recently honoured, so each distinct value retries a Failed
+                  operation exactly once.
+                type: string
+              artifact:
+                properties:
+                  checksum:
+                    type: string
+                  cleanup:
+                    properties:
+                      completedAt:
+                        format: date-time
+                        type: string
+                      message:
+                        type: string
+                      objectsDeleted:
+                        format: int64
+                        type: integer
+                      phase:
+                        type: string
+                      reason:
+                        type: string
+                    type: object
+                  cnpgBackup:
+                    properties:
+                      backupID:
+                        type: string
+                      destinationPath:
+                        type: string
+                      error:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                      phase:
+                        type: string
+                    type: object
+                  driver:
+                    type: string
+                  manifestKey:
+                    type: string
+                  manifestURI:
+                    type: string
+                type: object
+              completedAt:
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              message:
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - ResolvingSource
+                - PreparingTarget
+                - Quiescing
+                - CapturingDatabase
+                - WritingManifest
+                - DeprovisioningSource
+                - Completed
+                - Failed
+                type: string
+              reason:
+                type: string
+              startedAt:
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -15526,6 +16218,17 @@ rules:
 - apiGroups:
   - postgresql.cnpg.io
   resources:
+  - backups
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
   - clusters
   - scheduledbackups
   verbs:
@@ -15647,6 +16350,7 @@ rules:
 - apiGroups:
   - postgresql.cnpg.io
   resources:
+  - backups
   - clusters
   - scheduledbackups
   verbs:
@@ -15703,6 +16407,7 @@ rules:
   - tamoss.livewyer.io
   resources:
   - storagebackends
+  - tamosshibernations
   verbs:
   - create
   - delete
@@ -15716,6 +16421,7 @@ rules:
   resources:
   - storagebackends/finalizers
   - tamosses/finalizers
+  - tamosshibernations/finalizers
   verbs:
   - update
 - apiGroups:
@@ -15723,6 +16429,7 @@ rules:
   resources:
   - storagebackends/status
   - tamosses/status
+  - tamosshibernations/status
   verbs:
   - get
   - patch
@@ -16135,6 +16842,28 @@ webhooks:
     - DELETE
     resources:
     - storagebackends
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: operator-webhook-service
+      namespace: tamoss-system
+      path: /validate-tamoss-livewyer-io-v1alpha1-tamosshibernate-delete
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: vdelete-tamosshibernate.tamoss.livewyer.io
+  rules:
+  - apiGroups:
+    - tamoss.livewyer.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - DELETE
+    resources:
+    - tamosshibernations
     scope: Namespaced
   sideEffects: None
   timeoutSeconds: 10

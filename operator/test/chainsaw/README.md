@@ -37,10 +37,11 @@ exists.
 
 Scripts are reserved for behavior native Chainsaw cannot express cleanly:
 `task` wrappers, API ingest, S3 read-back, database row checks, Authentik
-fixture probes, render-only Kustomize checks, status-subresource simulation for
-absent provider controllers, recovery annotations, and before/after
-comparisons. When a scenario still needs a script for Kubernetes state, keep it
-narrow and leave a local comment explaining why the native form is not
+fixture probes, render-only Kustomize checks, recovery annotations, and
+before/after comparisons. Prefer native `patch` with `subresource: status` for
+straight status simulation when an absent provider controller is the only thing
+being simulated. When a scenario still needs a script for Kubernetes state, keep
+it narrow and leave a local comment explaining why the native form is not
 practical.
 
 Do not maintain a separate script inventory or script-style checker. The README

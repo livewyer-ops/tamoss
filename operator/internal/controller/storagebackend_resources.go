@@ -15,7 +15,7 @@ func storageBackendLabels(storageBackend *tamossv1alpha1.StorageBackend, tamoss 
 	}
 	return map[string]string{
 		"app.kubernetes.io/name":             tamossAppName,
-		"app.kubernetes.io/instance":         instance,
+		appInstanceLabel:                     instance,
 		"app.kubernetes.io/component":        "storage-backend",
 		"app.kubernetes.io/managed-by":       "tamoss-operator",
 		"tamoss.livewyer.io/storage-backend": storageBackend.Name,

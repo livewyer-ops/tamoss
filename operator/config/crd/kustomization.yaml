@@ -3,4 +3,5 @@
 # It should be run by config/default
 resources:
 - bases/tamoss.livewyer.io_storagebackends.yaml
+- bases/tamoss.livewyer.io_tamosshibernations.yaml
 - bases/tamoss.livewyer.io_tamosses.yaml

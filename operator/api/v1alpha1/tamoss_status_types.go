@@ -16,7 +16,8 @@ type TamossStatus struct {
 	SchemaVersion      string                `json:"schemaVersion,omitempty"`
 	Upgrade            UpgradeStatus         `json:"upgrade,omitempty"`
 	SchemaMigration    SchemaMigrationStatus `json:"schemaMigration,omitempty"`
-	//+kubebuilder:validation:Enum=Pending;Progressing;Ready;Degraded;Paused
+	Lifecycle          TamossLifecycleStatus `json:"lifecycle,omitempty"`
+	//+kubebuilder:validation:Enum=Pending;Progressing;Ready;Degraded;Paused;Hibernating;Hibernated;Resuming
 	Phase string `json:"phase,omitempty"`
 }
 

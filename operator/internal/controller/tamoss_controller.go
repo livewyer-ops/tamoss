@@ -56,6 +56,8 @@ type TamossReconciler struct {
 	AuthentikProbeInterval      time.Duration
 	DependencyProbeInterval     time.Duration
 	AuthentikHTTPClient         *http.Client
+	ManifestReader              HibernationManifestReader
+	ArtifactCleaner             HibernationArtifactCleaner
 	WarningEvents               operatorstatus.WarningEventDeduper
 	optionalWatches             *optionalWatchRegistrar
 }
@@ -63,6 +65,7 @@ type TamossReconciler struct {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosshibernations,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=autoscaling,namespace=system,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;update;patch;delete
@@ -113,6 +116,14 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	if shouldStop(control, err) {
 		return control.Result, err
 	}
+	// Retention only patches lifecycle status and must not wait behind the
+	// dependency gates below: a resumed instance records its restore
+	// completion as soon as the restored database is ready, even while
+	// schema, identity, or workload stages are still settling.
+	retention, err := r.reconcileResumeArtifactRetention(ctx, tamoss)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	desiredKeys := map[string]struct{}{}
 	if control, err := r.reconcileHTTPRouteInputGate(ctx, tamoss, recordPhase); shouldStop(control, err) {
@@ -147,7 +158,11 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	}
 	recordPhase(tamoss.Status.Phase)
 
-	return tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval()), nil
+	completion := tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval())
+	if retention.RequeueAfter > 0 && (completion.RequeueAfter == 0 || retention.RequeueAfter < completion.RequeueAfter) {
+		completion.RequeueAfter = retention.RequeueAfter
+	}
+	return completion, nil
 }
 
 func (r *TamossReconciler) loadTamoss(ctx context.Context, key client.ObjectKey) (*tamossv1alpha1.Tamoss, bool, error) {
@@ -180,6 +195,20 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 	}
 	resolved := tamoss.DeepCopy()
 	defaults.Apply(resolved)
+	if err := r.reconcileHibernationSpec(ctx, resolved); err != nil {
+		return nil, stopReconcile(ctrl.Result{}), err
+	}
+	if control, err := r.reconcileResumeBootstrap(ctx, resolved); shouldStop(control, err) {
+		recordPhase(operatorstatus.PhaseResuming)
+		return nil, control, err
+	}
+	if tamossLifecycleBlocksReconcile(resolved) {
+		if err := r.updateLifecycleGatedStatus(ctx, resolved); err != nil {
+			return nil, stopReconcile(ctrl.Result{}), err
+		}
+		recordPhase(resolved.Status.Phase)
+		return nil, stopReconcile(ctrl.Result{}), nil
+	}
 	if resolved.Spec.Paused {
 		if err := r.updatePausedStatus(ctx, resolved); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
@@ -188,6 +217,25 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		return nil, stopReconcile(ctrl.Result{}), nil
 	}
 	return resolved, continueReconcile(), nil
+}
+
+func tamossLifecycleBlocksReconcile(tamoss *tamossv1alpha1.Tamoss) bool {
+	// Declared hibernation gates reconciliation regardless of how far the
+	// materialised operation has progressed, so a failed cycle cannot
+	// implicitly restore a supposedly hibernated instance.
+	if tamoss.Spec.Hibernation.Enabled {
+		return true
+	}
+	switch tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) {
+	case tamossv1alpha1.TamossLifecyclePhaseHibernating,
+		tamossv1alpha1.TamossLifecyclePhaseHibernated:
+		return true
+	default:
+		// Resuming does not gate: restoring from an artifact is part of
+		// normal reconciliation now that the renderer emits the recovery
+		// bootstrap itself.
+		return false
+	}
 }
 
 func (r *TamossReconciler) reconcileTamossBackendStages(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, desiredKeys map[string]struct{}, recordPhase func(string)) (reconcileControl, error) {

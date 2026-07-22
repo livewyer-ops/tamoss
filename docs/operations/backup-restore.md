@@ -14,6 +14,9 @@ TAMOSS does not define a `Backup` CRD. Managed database backup configuration
 lives under `Tamoss.spec.backends.db.cnpg`, and the operator renders CNPG
 resources.
 
+For on-demand hibernation artifacts and recovery through `TamossHibernate` and
+`spec.hibernation`, see [Hibernate and Resume](hibernate-resume.md).
+
 ## PostgreSQL Backup
 
 For `providedBy: cnpg`, enable `.spec.backends.db.cnpg.backup` and provide a

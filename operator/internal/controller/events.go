@@ -32,6 +32,8 @@ func storageBackendWarningReason(reason string) bool {
 func tamossWarningReason(reason string) bool {
 	switch reason {
 	case operatorstatus.ReasonAPITokenRotationRejected,
+		operatorstatus.ReasonArtifactCleanupBlocked,
+		operatorstatus.ReasonArtifactCleanupRetrying,
 		operatorstatus.ReasonAuthentikAPITokenMissing,
 		operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed,
 		operatorstatus.ReasonAuthentikManagedBlueprintDeleteFailed,
@@ -46,8 +48,16 @@ func tamossWarningReason(reason string) bool {
 		operatorstatus.ReasonCORSMisconfigured,
 		operatorstatus.ReasonEndpointUnreachable,
 		operatorstatus.ReasonGatewayAPIUnavailable,
+		operatorstatus.ReasonHibernateDestinationInvalid,
+		operatorstatus.ReasonHibernateManifestChecksumMismatch,
+		operatorstatus.ReasonHibernateManifestUnavailable,
+		operatorstatus.ReasonHibernateManifestUploadFailed,
+		operatorstatus.ReasonHibernateSourceInvalid,
 		operatorstatus.ReasonImagePullFailed,
 		operatorstatus.ReasonIssuerUnreachable,
+		operatorstatus.ReasonLifecycleBlocked,
+		operatorstatus.ReasonLifecycleOperationDeleted,
+		operatorstatus.ReasonLifecycleOperationConflict,
 		operatorstatus.ReasonMissingDependencyOperator,
 		operatorstatus.ReasonMissingProviderConfiguration,
 		operatorstatus.ReasonMissingSecret,
@@ -77,6 +87,7 @@ func tamossWarningConditionTypes() []string {
 		operatorstatus.ConditionRoutingReady,
 		operatorstatus.ConditionHostnamesReady,
 		operatorstatus.ConditionBackupPolicyReady,
+		operatorstatus.ConditionLifecycleReady,
 	}
 }
 
@@ -88,7 +99,7 @@ func tamossObservedReady(tamoss *tamossv1alpha1.Tamoss) bool {
 func (r *TamossReconciler) emitImagePullEvents(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
 	pods := &corev1.PodList{}
 	if err := r.Client.List(ctx, pods, client.InNamespace(tamoss.Namespace), client.MatchingLabels{
-		"app.kubernetes.io/instance":   tamoss.Name,
+		appInstanceLabel:               tamoss.Name,
 		"app.kubernetes.io/managed-by": "tamoss-operator",
 	}); err != nil {
 		return err

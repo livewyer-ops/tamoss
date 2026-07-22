@@ -272,6 +272,54 @@ func TestStorageBackendRuntimeCredentialsSecretRendersReferencedSecrets(t *testi
 	}
 }
 
+func TestStorageBackendRuntimeCredentialsSecretSkipsHibernateDestinations(t *testing.T) {
+	ctx := context.Background()
+	scheme := storageBackendTestScheme(t)
+	tamoss := tamossFixture()
+	media := storageBackendFixture()
+	hibernate := storageBackendFixture()
+	hibernate.Name = "hibernate"
+	hibernate.Spec = externalStorageBackendSpecFixture()
+	hibernate.Spec.Usage = tamossv1alpha1.StorageBackendUsageHibernate
+	hibernate.Spec.ID = "55555555-5555-4555-8555-555555555555"
+	hibernate.Spec.Credentials = tamossv1alpha1.SecretReferenceSpec{
+		ExistingSecret: "hibernate-creds",
+		SecretKeys: tamossv1alpha1.SecretKeySpec{
+			AccessKey: "accessKeyID",
+			SecretKey: "secretAccessKey",
+		},
+	}
+	mediaCreds := storageBackendCredentialsSecret(media)
+	hibernateCreds := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "hibernate-creds", Namespace: "media"},
+		Data: map[string][]byte{
+			"accessKeyID":     []byte("hibernate-access"),
+			"secretAccessKey": []byte("hibernate-secret"),
+		},
+	}
+	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+		WithScheme(scheme).
+		WithObjects(tamoss, media, hibernate, mediaCreds, hibernateCreds).
+		Build()
+
+	secret, err := storageBackendRuntimeCredentialsSecret(ctx, client, tamoss)
+	if err != nil {
+		t.Fatalf("expected runtime credentials secret, got error %v", err)
+	}
+
+	var payload struct {
+		Credentials []struct {
+			StorageBackendID string `json:"storageBackendId"`
+		} `json:"credentials"`
+	}
+	if err := json.Unmarshal(secret.Data["credentials.json"], &payload); err != nil {
+		t.Fatalf("expected valid credentials JSON: %v", err)
+	}
+	if len(payload.Credentials) != 1 || payload.Credentials[0].StorageBackendID != media.Spec.ID {
+		t.Fatalf("expected only media credentials, got %#v", payload.Credentials)
+	}
+}
+
 func TestStorageBackendEventsAreEmittedAndDeduped(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
 	reconciler := &StorageBackendReconciler{Recorder: recorder}
@@ -310,6 +358,65 @@ func TestStorageBackendBucketCreatedEvent(t *testing.T) {
 	event := <-recorder.Events
 	if !strings.Contains(event, operatorstatus.ReasonStorageBackendBucketCreated) {
 		t.Fatalf("expected bucket-created event, got %q", event)
+	}
+}
+
+func TestHibernateStorageBackendSkipsDatabaseRegistration(t *testing.T) {
+	ctx := context.Background()
+	scheme := storageBackendTestScheme(t)
+	tamoss := tamossFixture()
+	storageBackend := storageBackendFixture()
+	storageBackend.Finalizers = []string{storageBackendFinalizer}
+	storageBackend.Spec = externalStorageBackendSpecFixture()
+	storageBackend.Spec.Usage = tamossv1alpha1.StorageBackendUsageHibernate
+	storageBackend.Spec.Credentials = tamossv1alpha1.SecretReferenceSpec{
+		ExistingSecret: "hibernate-creds",
+		SecretKeys: tamossv1alpha1.SecretKeySpec{
+			AccessKey: "accessKeyID",
+			SecretKey: "secretAccessKey",
+		},
+	}
+	creds := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "hibernate-creds", Namespace: "media"},
+		Data: map[string][]byte{
+			"accessKeyID":     []byte("hibernate-access"),
+			"secretAccessKey": []byte("hibernate-secret"),
+		},
+	}
+	reconciler := StorageBackendReconciler{
+		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+			WithScheme(scheme).
+			WithStatusSubresource(&tamossv1alpha1.StorageBackend{}).
+			WithObjects(tamoss, storageBackend, creds).
+			Build(),
+		Scheme: scheme,
+	}
+
+	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: storageBackend.Name, Namespace: storageBackend.Namespace}})
+	if err != nil {
+		t.Fatalf("expected hibernate StorageBackend reconcile to succeed, got error %v", err)
+	}
+	updated := &tamossv1alpha1.StorageBackend{}
+	if err := reconciler.Client.Get(ctx, types.NamespacedName{Name: storageBackend.Name, Namespace: storageBackend.Namespace}, updated); err != nil {
+		t.Fatalf("get updated StorageBackend: %v", err)
+	}
+	ready := findCondition(t, updated.Status.Conditions, operatorstatus.ConditionReady)
+	if ready.Status != metav1.ConditionTrue || ready.Reason != operatorstatus.ReasonStorageBackendReady {
+		t.Fatalf("expected ready hibernate destination, got %#v", ready)
+	}
+	database := findCondition(t, updated.Status.Conditions, operatorstatus.ConditionDatabaseReady)
+	if database.Status != metav1.ConditionTrue || database.Reason != operatorstatus.ReasonDatabaseRegistrationSkipped {
+		t.Fatalf("expected skipped database registration, got %#v", database)
+	}
+	job := &batchv1.Job{}
+	err = reconciler.Client.Get(ctx, types.NamespacedName{Name: storageBackendResourceName(storageBackend, "db-register"), Namespace: storageBackend.Namespace}, job)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no database registration Job, got %v", err)
+	}
+	secret := &corev1.Secret{}
+	err = reconciler.Client.Get(ctx, types.NamespacedName{Name: tamoss.ResourceName("storage-backend-credentials"), Namespace: tamoss.Namespace}, secret)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no runtime credentials Secret, got %v", err)
 	}
 }
 
@@ -808,10 +915,12 @@ func failedJobFixture(name, namespace string) *batchv1.Job {
 }
 
 type fakeBucketClient struct {
-	ensureCalls int
-	deleteCalls int
-	ensureErr   error
-	deleteErr   error
+	ensureCalls       int
+	deleteCalls       int
+	deletePrefixCalls int
+	ensureErr         error
+	deleteErr         error
+	deletePrefixErr   error
 }
 
 func (f *fakeBucketClient) Ensure(_ context.Context, _ rustfs.BucketTarget, _ rustfs.BucketCredentials) error {
@@ -822,6 +931,11 @@ func (f *fakeBucketClient) Ensure(_ context.Context, _ rustfs.BucketTarget, _ ru
 func (f *fakeBucketClient) Delete(_ context.Context, _ rustfs.BucketTarget, _ rustfs.BucketCredentials) error {
 	f.deleteCalls++
 	return f.deleteErr
+}
+
+func (f *fakeBucketClient) DeletePrefix(_ context.Context, _ rustfs.BucketTarget, _ rustfs.BucketCredentials, _ string) (rustfs.DeletePrefixResult, error) {
+	f.deletePrefixCalls++
+	return rustfs.DeletePrefixResult{}, f.deletePrefixErr
 }
 
 func succeededJobFixture(name, namespace string) *batchv1.Job {

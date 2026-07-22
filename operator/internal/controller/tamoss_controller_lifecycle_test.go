@@ -5,7 +5,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -79,6 +81,44 @@ var _ = Describe("Tamoss Controller lifecycle", func() {
 			err = k8sClient.Get(ctx, typeNamespacedName, probe)
 			return errors.IsNotFound(err)
 		}, "5s").Should(BeTrue())
+	})
+
+	It("blocks normal workload reconciliation while hibernated", func() {
+		resource := &tamossv1alpha1.Tamoss{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+		resource.Status.Lifecycle = tamossv1alpha1.TamossLifecycleStatus{
+			Phase:   string(tamossv1alpha1.TamossLifecyclePhaseHibernated),
+			Reason:  operatorstatus.ReasonTamossHibernated,
+			Message: "TAMOSS is hibernated",
+		}
+		Expect(k8sClient.Status().Update(ctx, resource)).To(Succeed())
+
+		controllerReconciler := &TamossReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &tamossv1alpha1.Tamoss{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(operatorstatus.PhaseHibernated))
+		lifecycle := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionLifecycleReady)
+		Expect(lifecycle).NotTo(BeNil())
+		Expect(lifecycle.Status).To(Equal(metav1.ConditionFalse))
+		Expect(lifecycle.Reason).To(Equal(operatorstatus.ReasonTamossHibernated))
+
+		schema := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionSchemaMigrated)
+		Expect(schema).NotTo(BeNil())
+		Expect(schema.Status).To(Equal(metav1.ConditionUnknown))
+		Expect(schema.Message).To(ContainSubstring("blocked by TAMOSS lifecycle state"))
+
+		deployment := &appsv1.Deployment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-api", Namespace: "default"}, deployment)
+		Expect(errors.IsNotFound(err)).To(BeTrue())
 	})
 
 	It("removes the finalizer when Authentik cleanup fails", func() {

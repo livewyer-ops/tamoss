@@ -12,7 +12,11 @@ func (r *TamossReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ownTamossManagedResources(
 		ctrl.NewControllerManagedBy(mgr).
 			For(&tamossv1alpha1.Tamoss{}, builder.WithPredicates(tamossPrimaryPredicate())),
-	)
+	).
+		// Spec-materialised hibernation operations re-trigger the gated
+		// instance as they progress; they are deliberately not part of the
+		// managed-resource policies so the pruner never touches them.
+		Owns(&tamossv1alpha1.TamossHibernate{})
 	controller, err := builder.Build(r)
 	if err != nil {
 		return err

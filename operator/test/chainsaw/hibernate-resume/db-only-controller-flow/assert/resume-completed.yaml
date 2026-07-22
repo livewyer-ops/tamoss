@@ -1,0 +1,11 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-restored
+  namespace: ($namespace)
+(status.lifecycle.phase): Running
+(status.lifecycle.reason): TamossReady
+(status.lifecycle.resolvedRestore.resumedAt != null): true
+(status.lifecycle.resolvedRestore.cleanup.phase): Completed
+(status.lifecycle.resolvedRestore.cleanup.reason): ArtifactCleanupComplete
+"(status.lifecycle.resolvedRestore.cleanup.objectsDeleted > `0`)": true

@@ -603,7 +603,7 @@ func schemaVersionForName() string {
 func schemaLabels(tamoss *tamossv1alpha1.Tamoss) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       tamossAppName,
-		"app.kubernetes.io/instance":   tamoss.Name,
+		appInstanceLabel:               tamoss.Name,
 		"app.kubernetes.io/component":  "schema",
 		"app.kubernetes.io/managed-by": "tamoss-operator",
 	}

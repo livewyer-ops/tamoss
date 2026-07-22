@@ -1,0 +1,35 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-restored
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  fullnameOverride: restored
+  hibernation:
+    resumeFrom:
+      hibernationRef:
+        name: tamoss-hibernation-1
+  auth:
+    required: false
+  backends:
+    db:
+      providedBy: cnpg
+      cnpg:
+        instances: 1
+        postgresVersion: "18"
+        storage:
+          size: 1Gi
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: (join('', ['http://rustfs-svc.', $namespace, '.svc:9000']))
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY

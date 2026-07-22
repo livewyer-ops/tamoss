@@ -1,0 +1,26 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: TamossHibernate
+metadata:
+  name: tamoss-hibernation-1
+  namespace: ($namespace)
+(status.phase): Completed
+(status.reason): TamossHibernated
+(status.artifact.checksum != ''): true
+(status.artifact.manifestKey): hibernations/tamoss/tamoss-hibernation-1/manifest.json
+(status.artifact.cnpgBackup.backupID): "20260707T100000"
+(status.artifact.cnpgBackup.destinationPath): s3://tamoss/hibernations/tamoss/tamoss-hibernation-1/cnpg
+(status.artifact.cnpgBackup.phase): completed
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  namespace: ($namespace)
+status:
+  lifecycle:
+    phase: Hibernated
+    reason: TamossHibernated
+    hibernationCycle: 1
+    lastHibernateRef:
+      name: tamoss-hibernation-1
+      kind: TamossHibernate

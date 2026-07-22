@@ -72,6 +72,9 @@ func storageBackendRuntimeCredentials(ctx context.Context, c client.Client, tamo
 		}
 		spec := storageBackend.Spec
 		spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
+		if spec.IsHibernateDestination() {
+			continue
+		}
 		if spec.TamossRef.Name != tamoss.Name || spec.Credentials.ExistingSecret == "" {
 			continue
 		}
@@ -107,7 +110,7 @@ func storageBackendRuntimeCredentialsLabels(tamoss *tamossv1alpha1.Tamoss) map[s
 	}
 	return map[string]string{
 		"app.kubernetes.io/name":       appName,
-		"app.kubernetes.io/instance":   tamoss.Name,
+		appInstanceLabel:               tamoss.Name,
 		"app.kubernetes.io/component":  "storage-backend-credentials",
 		"app.kubernetes.io/managed-by": "tamoss-operator",
 	}
