@@ -2,11 +2,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -332,5 +334,46 @@ func TestLifecycleGateFreezesMigratedSchemaCondition(t *testing.T) {
 				t.Fatalf("expected SchemaMigrated %s/%s, got %s/%s", tc.expectedStatus, tc.expectedReason, condition.Status, condition.Reason)
 			}
 		})
+	}
+}
+
+func TestPatchTamossLifecycleStatusRetriesOnConflict(t *testing.T) {
+	ctx := context.Background()
+	scheme := hibernateTestScheme(t)
+	tamoss := hibernationSpecTamossFixture()
+	tamoss.Status.Lifecycle = tamossv1alpha1.TamossLifecycleStatus{
+		Phase: string(tamossv1alpha1.TamossLifecyclePhaseResuming),
+	}
+
+	conflicts := 0
+	funcs := fakeApplyInterceptor()
+	funcs.SubResourcePatch = func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+		if conflicts == 0 {
+			conflicts++
+			return apierrors.NewConflict(k8sschema.GroupResource{Group: "tamoss.livewyer.io", Resource: "tamosses"}, obj.GetName(), fmt.Errorf("the object has been modified"))
+		}
+		return cl.SubResource(subResourceName).Patch(ctx, obj, patch, opts...)
+	}
+	fakeClient := fake.NewClientBuilder().WithInterceptorFuncs(funcs).
+		WithScheme(scheme).
+		WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
+		WithObjects(tamoss).
+		Build()
+
+	if err := patchTamossLifecycleStatus(ctx, fakeClient, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		lifecycle.Phase = string(tamossv1alpha1.TamossLifecyclePhaseRunning)
+		lifecycle.Reason = operatorstatus.ReasonTamossReady
+	}); err != nil {
+		t.Fatalf("expected conflict to be retried, got %v", err)
+	}
+	if conflicts != 1 {
+		t.Fatalf("expected exactly one injected conflict, got %d", conflicts)
+	}
+	updated := &tamossv1alpha1.Tamoss{}
+	if err := fakeClient.Get(ctx, client.ObjectKeyFromObject(tamoss), updated); err != nil {
+		t.Fatalf("expected to fetch tamoss, got %v", err)
+	}
+	if updated.Status.Lifecycle.Phase != string(tamossv1alpha1.TamossLifecyclePhaseRunning) {
+		t.Fatalf("expected lifecycle Running after retried patch, got %#v", updated.Status.Lifecycle)
 	}
 }
