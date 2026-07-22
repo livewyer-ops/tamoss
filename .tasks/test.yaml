@@ -88,7 +88,7 @@ tasks:
     cmds:
       - mkdir -p reports
       - printf 'test py.fast\n'
-      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
+      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_env_summary_helpers.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
 
   application:
     silent: true
