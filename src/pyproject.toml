@@ -51,7 +51,7 @@ dev = [
     "types-requests",
     "types-PyYAML",
     "playwright>=1.61.0",
-    "datamodel-code-generator[ruff]>=0.68.0",
+    "datamodel-code-generator[ruff]>=0.69.0",
     "httpx2>=2.5.0",
 ]
 
