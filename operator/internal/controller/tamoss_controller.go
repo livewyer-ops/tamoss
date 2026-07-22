@@ -116,6 +116,14 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	if shouldStop(control, err) {
 		return control.Result, err
 	}
+	// Retention only patches lifecycle status and must not wait behind the
+	// dependency gates below: a resumed instance records its restore
+	// completion as soon as the restored database is ready, even while
+	// schema, identity, or workload stages are still settling.
+	retention, err := r.reconcileResumeArtifactRetention(ctx, tamoss)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	desiredKeys := map[string]struct{}{}
 	if control, err := r.reconcileHTTPRouteInputGate(ctx, tamoss, recordPhase); shouldStop(control, err) {
@@ -146,10 +154,6 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 	if err := r.emitImagePullEvents(ctx, tamoss); err != nil {
-		return ctrl.Result{}, err
-	}
-	retention, err := r.reconcileResumeArtifactRetention(ctx, tamoss)
-	if err != nil {
 		return ctrl.Result{}, err
 	}
 	recordPhase(tamoss.Status.Phase)
