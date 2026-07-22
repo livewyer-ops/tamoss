@@ -323,7 +323,7 @@ func (r *TamossReconciler) reconcileTamossManagedAuthentikStage(ctx context.Cont
 		return stopReconcile(ctrl.Result{RequeueAfter: r.authentikProbeInterval()}), nil
 	}
 	log.FromContext(ctx).V(1).Info("applied Authentik managed Blueprint", "name", managedBlueprint.Name, "status", managedBlueprint.Status)
-	if err := authentik.NewProxyOutpostClient(tamoss, token.Token, r.AuthentikHTTPClient).Reconcile(ctx, tamoss); err != nil {
+	if err := authentik.NewProxyOutpostClient(tamoss, token.Token, r.AuthentikHTTPClient).Reconcile(ctx, tamoss, managedBlueprint); err != nil {
 		message := fmt.Sprintf("Authentik proxy outpost apply failed for %s: %v", authentik.ProxyProviderName(tamoss), err)
 		if err := r.updateIdentityBlockedStatus(ctx, tamoss, operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed, message); err != nil {
 			return stopReconcile(ctrl.Result{}), err

@@ -6,11 +6,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
@@ -38,8 +41,15 @@ type oauthProviderList struct {
 }
 
 type proxyProvider struct {
-	PK   int    `json:"pk"`
-	Name string `json:"name"`
+	PK                        int      `json:"pk"`
+	Name                      string   `json:"name"`
+	AuthorizationFlow         string   `json:"authorization_flow"`
+	InvalidationFlow          string   `json:"invalidation_flow"`
+	PropertyMappings          []string `json:"property_mappings"`
+	ExternalHost              string   `json:"external_host"`
+	InternalHost              string   `json:"internal_host"`
+	InternalHostSSLValidation bool     `json:"internal_host_ssl_validation"`
+	Mode                      string   `json:"mode"`
 }
 
 type proxyProviderList struct {
@@ -58,9 +68,10 @@ type proxyProviderRequest struct {
 }
 
 type application struct {
-	PK   string `json:"pk"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	PK       string `json:"pk"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Provider int    `json:"provider"`
 }
 
 type applicationList struct {
@@ -159,7 +170,7 @@ func OutpostExternalService(tamoss *tamossv1alpha1.Tamoss) (string, int32) {
 	return host, port
 }
 
-func (c ProxyOutpostClient) Reconcile(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) error {
+func (c ProxyOutpostClient) Reconcile(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, managedBlueprint ManagedBlueprint) error {
 	if !ForwardAuthRequired(tamoss) {
 		return nil
 	}
@@ -176,6 +187,26 @@ func (c ProxyOutpostClient) Reconcile(ctx context.Context, tamoss *tamossv1alpha
 	oauth, err := findOAuthProvider(ctx, api, slug)
 	if err != nil {
 		return err
+	}
+	// A successful Blueprint can retain its status after a managed object is
+	// deleted manually. Reapply only for that proven-drift case; transient
+	// Blueprint states remain protected from duplicate queued applies.
+	if oauth.PK == 0 && managedBlueprint.PK != "" && managedBlueprint.Status == "successful" {
+		log.FromContext(ctx).Info("reapplying Authentik managed Blueprint to repair missing OAuth2 provider",
+			"name", managedBlueprint.Name,
+			"provider", slug,
+		)
+		applied, err := api.apply(ctx, managedBlueprint.PK)
+		if err != nil {
+			return fmt.Errorf("reapply Authentik managed Blueprint %q: %w", managedBlueprint.Name, err)
+		}
+		if applied.Status == "error" {
+			return fmt.Errorf("authentik managed blueprint %q applied with status error", managedBlueprint.Name)
+		}
+		oauth, err = findOAuthProvider(ctx, api, slug)
+		if err != nil {
+			return err
+		}
 	}
 	if oauth.PK == 0 {
 		return fmt.Errorf("authentik OAuth2 provider %q was not found", slug)
@@ -291,6 +322,9 @@ func upsertProxyProvider(ctx context.Context, api ManagedBlueprintClient, tamoss
 	if err != nil {
 		return proxyProvider{}, err
 	}
+	if proxyProviderMatches(existing, request) {
+		return existing, nil
+	}
 	endpoint, err := api.apiURL("providers", "proxy")
 	if err != nil {
 		return proxyProvider{}, err
@@ -320,6 +354,9 @@ func upsertProxyApplication(ctx context.Context, api ManagedBlueprintClient, tam
 	existing, err := findApplication(ctx, api, slug)
 	if err != nil {
 		return err
+	}
+	if existing.PK != "" && existing.Name == request.Name && existing.Slug == request.Slug && existing.Provider == request.Provider {
+		return nil
 	}
 	endpoint, err := api.apiURL("core", "applications")
 	if err != nil {
@@ -355,6 +392,9 @@ func addProviderToEmbeddedOutpost(ctx context.Context, api ManagedBlueprintClien
 	publicHost := strings.TrimRight(tamoss.Spec.Auth.AuthentikBlueprints.IssuerURL, "/")
 	config["authentik_host"] = publicHost
 	config["authentik_host_browser"] = publicHost
+	if equalIntValues(outpost.Providers, providers) && reflect.DeepEqual(outpost.Config, config) {
+		return nil
+	}
 	return updateOutpost(ctx, api, outpost, providers, config)
 }
 
@@ -468,6 +508,41 @@ func copyMap(input map[string]any) map[string]any {
 		copied[key] = value
 	}
 	return copied
+}
+
+func proxyProviderMatches(existing proxyProvider, desired proxyProviderRequest) bool {
+	return existing.PK != 0 &&
+		existing.Name == desired.Name &&
+		existing.AuthorizationFlow == desired.AuthorizationFlow &&
+		existing.InvalidationFlow == desired.InvalidationFlow &&
+		containsStringValues(existing.PropertyMappings, desired.PropertyMappings) &&
+		existing.ExternalHost == desired.ExternalHost &&
+		existing.InternalHost == desired.InternalHost &&
+		existing.InternalHostSSLValidation == desired.InternalHostSSLValidation &&
+		existing.Mode == desired.Mode
+}
+
+func containsStringValues(existing, desired []string) bool {
+	// Authentik adds proxy-specific mappings, so desired values must be a
+	// subset; exact equality would cause a PUT on every reconciliation.
+	available := make(map[string]struct{}, len(existing))
+	for _, value := range existing {
+		available[value] = struct{}{}
+	}
+	for _, value := range desired {
+		if _, found := available[value]; !found {
+			return false
+		}
+	}
+	return true
+}
+
+func equalIntValues(left, right []int) bool {
+	left = append([]int(nil), left...)
+	right = append([]int(nil), right...)
+	sort.Ints(left)
+	sort.Ints(right)
+	return slices.Equal(left, right)
 }
 
 func ServicePortNameForOutpost(port int32) string {

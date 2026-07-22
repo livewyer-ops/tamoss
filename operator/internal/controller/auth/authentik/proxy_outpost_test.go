@@ -22,7 +22,7 @@ func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 	defer server.Close()
 
 	client := ProxyOutpostClient{BaseURL: server.URL, Token: "test-token"}
-	if err := client.Reconcile(context.Background(), tamoss); err != nil {
+	if err := client.Reconcile(context.Background(), tamoss, successfulManagedBlueprint()); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
 	}
 	if state.proxy.Name != "tamoss-tams-example-ui-proxy" {
@@ -44,12 +44,15 @@ func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 		state.outpost.Config["authentik_host_browser"] != "https://auth.example.com" {
 		t.Fatalf("expected public Authentik host in outpost config, got %#v", state.outpost.Config)
 	}
+	if state.proxyPostCount != 1 || state.applicationPostCount != 1 || state.outpostPutCount != 1 {
+		t.Fatalf("expected one create/update per resource, got proxy POSTs=%d application POSTs=%d outpost PUTs=%d", state.proxyPostCount, state.applicationPostCount, state.outpostPutCount)
+	}
 
-	if err := client.Reconcile(context.Background(), tamoss); err != nil {
+	if err := client.Reconcile(context.Background(), tamoss, successfulManagedBlueprint()); err != nil {
 		t.Fatalf("second reconcile failed: %v", err)
 	}
-	if state.applicationPutCount != 1 {
-		t.Fatalf("expected second reconcile to update proxy application, got %d PUTs", state.applicationPutCount)
+	if state.proxyPutCount != 0 || state.applicationPutCount != 0 || state.outpostPutCount != 1 {
+		t.Fatalf("expected second reconcile to make no updates, got proxy PUTs=%d application PUTs=%d outpost PUTs=%d", state.proxyPutCount, state.applicationPutCount, state.outpostPutCount)
 	}
 
 	if err := client.Delete(context.Background(), tamoss); err != nil {
@@ -71,7 +74,7 @@ func TestProxyOutpostClientFindsExistingApplicationWithSearch(t *testing.T) {
 	state := proxyOutpostServerState{
 		oauth:                     proxyOutpostOAuth(),
 		proxy:                     proxyProvider{PK: 42, Name: "tamoss-tams-example-ui-proxy"},
-		application:               application{PK: "existing-app-id", Name: "tamoss-tams-example-ui", Slug: "tamoss-tams-example-ui"},
+		application:               application{PK: "existing-app-id", Name: "tamoss-tams-example-ui", Slug: "tamoss-tams-example-ui", Provider: 41},
 		applicationSlugQueryStale: true,
 		outpost:                   proxyOutpostEmbeddedOutpost(),
 	}
@@ -79,7 +82,7 @@ func TestProxyOutpostClientFindsExistingApplicationWithSearch(t *testing.T) {
 	defer server.Close()
 
 	client := ProxyOutpostClient{BaseURL: server.URL, Token: "test-token"}
-	if err := client.Reconcile(context.Background(), tamoss); err != nil {
+	if err := client.Reconcile(context.Background(), tamoss, successfulManagedBlueprint()); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
 	}
 	if state.applicationPostCount != 0 {
@@ -93,10 +96,49 @@ func TestProxyOutpostClientFindsExistingApplicationWithSearch(t *testing.T) {
 	}
 }
 
+func TestProxyOutpostClientReappliesBlueprintWhenOAuthProviderIsMissing(t *testing.T) {
+	tamoss := proxyOutpostFixture()
+	state := proxyOutpostServerState{outpost: proxyOutpostEmbeddedOutpost()}
+	server := httptest.NewServer(http.HandlerFunc(state.handle))
+	defer server.Close()
+
+	client := ProxyOutpostClient{BaseURL: server.URL, Token: "test-token"}
+	if err := client.Reconcile(context.Background(), tamoss, successfulManagedBlueprint()); err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if state.blueprintApplyCount != 1 {
+		t.Fatalf("expected missing OAuth provider to force one Blueprint apply, got %d", state.blueprintApplyCount)
+	}
+	if state.proxy.PK == 0 {
+		t.Fatalf("expected proxy resources to reconcile after OAuth provider recovery")
+	}
+}
+
+func TestProxyOutpostClientDoesNotReapplyTransientBlueprintWhenOAuthProviderIsMissing(t *testing.T) {
+	tamoss := proxyOutpostFixture()
+	state := proxyOutpostServerState{outpost: proxyOutpostEmbeddedOutpost()}
+	server := httptest.NewServer(http.HandlerFunc(state.handle))
+	defer server.Close()
+
+	client := ProxyOutpostClient{BaseURL: server.URL, Token: "test-token"}
+	transient := successfulManagedBlueprint()
+	transient.Status = "unknown"
+	transient.LastApplied = "2026-07-21T19:19:28Z"
+	err := client.Reconcile(context.Background(), tamoss, transient)
+	if err == nil || !strings.Contains(err.Error(), "OAuth2 provider") {
+		t.Fatalf("expected missing OAuth provider error, got %v", err)
+	}
+	if state.blueprintApplyCount != 0 {
+		t.Fatalf("expected transient Blueprint not to be reapplied, got %d applies", state.blueprintApplyCount)
+	}
+}
+
 type proxyOutpostServerState struct {
 	oauth                     oauthProvider
 	proxy                     proxyProvider
 	proxyRequest              proxyProviderRequest
+	proxyPostCount            int
+	proxyPutCount             int
 	application               application
 	applicationRequest        applicationRequest
 	applicationSlugQueryStale bool
@@ -105,6 +147,8 @@ type proxyOutpostServerState struct {
 	applicationPutCount       int
 	applicationDeleteCount    int
 	outpost                   outpost
+	outpostPutCount           int
+	blueprintApplyCount       int
 }
 
 func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +158,11 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/providers/oauth2/":
-		_ = json.NewEncoder(w).Encode(oauthProviderList{Results: []oauthProvider{s.oauth}})
+		_ = json.NewEncoder(w).Encode(oauthProviderList{Results: oauthProviderResults(s.oauth)})
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v3/managed/blueprints/blueprint-id/apply/":
+		s.blueprintApplyCount++
+		s.oauth = proxyOutpostOAuth()
+		_ = json.NewEncoder(w).Encode(successfulManagedBlueprint())
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/providers/proxy/":
 		_ = json.NewEncoder(w).Encode(proxyProviderList{Results: proxyProviderResults(s.proxy)})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v3/providers/proxy/":
@@ -122,7 +170,8 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.proxy = proxyProvider{PK: 42, Name: s.proxyRequest.Name}
+		s.proxyPostCount++
+		s.proxy = proxyProviderFromRequest(42, s.proxyRequest)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(s.proxy)
 	case r.Method == http.MethodPut && r.URL.Path == "/api/v3/providers/proxy/42/":
@@ -130,7 +179,8 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.proxy = proxyProvider{PK: 42, Name: s.proxyRequest.Name}
+		s.proxyPutCount++
+		s.proxy = proxyProviderFromRequest(42, s.proxyRequest)
 		_ = json.NewEncoder(w).Encode(s.proxy)
 	case r.Method == http.MethodDelete && r.URL.Path == "/api/v3/providers/proxy/42/":
 		s.proxy = proxyProvider{}
@@ -161,7 +211,7 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 			http.Error(w, `{"slug":["Application with this slug already exists."],"provider":["Application with this provider already exists."]}`, http.StatusBadRequest)
 			return
 		}
-		s.application = application{PK: "app-id", Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug}
+		s.application = application{PK: "app-id", Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug, Provider: s.applicationRequest.Provider}
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(s.application)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v3/core/applications/"):
@@ -174,7 +224,7 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		s.applicationPutCount++
-		s.application = application{PK: s.application.PK, Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug}
+		s.application = application{PK: s.application.PK, Name: s.applicationRequest.Name, Slug: s.applicationRequest.Slug, Provider: s.applicationRequest.Provider}
 		_ = json.NewEncoder(w).Encode(s.application)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v3/core/applications/"):
 		if strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v3/core/applications/"), "/") != s.application.Slug {
@@ -197,6 +247,7 @@ func (s *proxyOutpostServerState) handle(w http.ResponseWriter, r *http.Request)
 		s.outpost.Providers = request.Providers
 		s.outpost.Config = request.Config
 		s.outpost.Managed = request.Managed
+		s.outpostPutCount++
 		_ = json.NewEncoder(w).Encode(s.outpost)
 	default:
 		http.NotFound(w, r)
@@ -229,6 +280,31 @@ func proxyProviderResults(current proxyProvider) []proxyProvider {
 		return nil
 	}
 	return []proxyProvider{current}
+}
+
+func oauthProviderResults(current oauthProvider) []oauthProvider {
+	if current.PK == 0 {
+		return nil
+	}
+	return []oauthProvider{current}
+}
+
+func successfulManagedBlueprint() ManagedBlueprint {
+	return ManagedBlueprint{PK: "blueprint-id", Name: "tamoss-tams-example", Status: "successful"}
+}
+
+func proxyProviderFromRequest(pk int, request proxyProviderRequest) proxyProvider {
+	return proxyProvider{
+		PK:                        pk,
+		Name:                      request.Name,
+		AuthorizationFlow:         request.AuthorizationFlow,
+		InvalidationFlow:          request.InvalidationFlow,
+		PropertyMappings:          append(append([]string(nil), request.PropertyMappings...), "authentik-managed"),
+		ExternalHost:              request.ExternalHost,
+		InternalHost:              request.InternalHost,
+		InternalHostSSLValidation: request.InternalHostSSLValidation,
+		Mode:                      request.Mode,
+	}
 }
 
 func applicationResults(current application) []application {
