@@ -117,7 +117,8 @@ reads and validates the manifest (checksum, schema version, TAMS API
 compatibility, completed CNPG backup), persists the resolved source in
 `.status.lifecycle.resolvedRestore`, and renders the CNPG recovery bootstrap
 from it on every reconcile. The lifecycle reports `Resuming` until the
-restored instance is fully ready, then `Running`.
+restored database is ready, then `Running` while the workloads finish
+starting up.
 
 If the database cluster already exists, `resumeFrom` is ignored and a
 `ResumeSourceIgnored` warning event is emitted — it can never rewire an
@@ -131,11 +132,13 @@ successful resume, through `.spec.hibernate.retention.mode`:
 | Mode | Behaviour |
 | --- | --- |
 | `Retain` | Default. Leave the hibernation artifact in the bucket. |
-| `DeleteAfterResume` | Delete the artifact prefix once the resumed instance is ready. |
-| `TTL` | Delete the artifact prefix `.spec.hibernate.retention.ttlSecondsAfterResume` seconds after the resumed instance became ready. |
+| `DeleteAfterResume` | Delete the artifact prefix once the restored database is ready. |
+| `TTL` | Delete the artifact prefix `.spec.hibernate.retention.ttlSecondsAfterResume` seconds after the restored database became ready. |
 
-Retention is applied by the **resumed** instance, which records the restore
-completion time first and reports progress in
+Retention is applied by the **resumed** instance, anchored on database
+readiness: the artifact has served its purpose once the database it carried
+runs again, so cleanup is not held up by unrelated workload start-up. The
+restore completion time is recorded first and progress is reported in
 `.status.lifecycle.resolvedRestore.cleanup`. Transient deletion failures
 retry every minute with a warning event; structural problems (an invalid
 manifest key, a missing or wrong-typed StorageBackend) set the terminal

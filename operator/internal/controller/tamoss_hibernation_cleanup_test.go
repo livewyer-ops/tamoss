@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -33,7 +34,7 @@ func (f *fakeHibernationArtifactCleaner) DeletePrefix(_ context.Context, namespa
 	return f.objectsDeleted, nil
 }
 
-func retentionTamossFixture(mode tamossv1alpha1.HibernationRetentionMode) (*tamossv1alpha1.Tamoss, *tamossv1alpha1.StorageBackend) {
+func retentionTamossFixture(mode tamossv1alpha1.HibernationRetentionMode) (*tamossv1alpha1.Tamoss, *tamossv1alpha1.StorageBackend, *cnpgv1.Cluster) {
 	tamoss := hibernateTamossFixture()
 	tamoss.Status.Lifecycle = tamossv1alpha1.TamossLifecycleStatus{
 		Phase:  string(tamossv1alpha1.TamossLifecyclePhaseResuming),
@@ -45,29 +46,32 @@ func retentionTamossFixture(mode tamossv1alpha1.HibernationRetentionMode) (*tamo
 			Checksum:           bootstrapTestChecksum,
 		},
 	}
-	tamoss.Status.Conditions = []metav1.Condition{{
-		Type:               operatorstatus.ConditionReady,
-		Status:             metav1.ConditionTrue,
-		Reason:             operatorstatus.ReasonAllComponentsReady,
-		Message:            "ready",
-		LastTransitionTime: metav1.Now(),
-	}}
 	destination := hibernateDestinationFixture()
 	destination.Spec.Hibernate.Retention.Mode = mode
-	return tamoss, destination
+	dbCluster := &cnpgv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("db"), Namespace: tamoss.Namespace},
+		Status: cnpgv1.ClusterStatus{Conditions: []metav1.Condition{{
+			Type:               string(cnpgv1.ConditionClusterReady),
+			Status:             metav1.ConditionTrue,
+			Reason:             "ClusterIsReady",
+			Message:            "ready",
+			LastTransitionTime: metav1.Now(),
+		}}},
+	}
+	return tamoss, destination, dbCluster
 }
 
 func TestResumeArtifactRetentionRecordsThenDeletes(t *testing.T) {
 	ctx := context.Background()
 	scheme := hibernateTestScheme(t)
-	tamoss, destination := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeDeleteAfterResume)
+	tamoss, destination, dbCluster := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeDeleteAfterResume)
 	cleaner := &fakeHibernationArtifactCleaner{objectsDeleted: 7}
 
 	reconciler := &TamossReconciler{
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
-			WithObjects(tamoss, destination).
+			WithObjects(tamoss, destination, dbCluster).
 			Build(),
 		Scheme:          scheme,
 		ArtifactCleaner: cleaner,
@@ -116,10 +120,39 @@ func TestResumeArtifactRetentionRecordsThenDeletes(t *testing.T) {
 	}
 }
 
+func TestResumeArtifactRetentionWaitsForDatabaseReadiness(t *testing.T) {
+	ctx := context.Background()
+	scheme := hibernateTestScheme(t)
+	tamoss, destination, _ := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeDeleteAfterResume)
+	cleaner := &fakeHibernationArtifactCleaner{}
+
+	reconciler := &TamossReconciler{
+		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+			WithScheme(scheme).
+			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
+			WithObjects(tamoss, destination).
+			Build(),
+		Scheme:          scheme,
+		ArtifactCleaner: cleaner,
+	}
+
+	result, err := reconciler.reconcileResumeArtifactRetention(ctx, tamoss)
+	if err != nil || result.RequeueAfter != 0 || cleaner.calls != 0 {
+		t.Fatalf("expected retention to wait for the restored database, got result %#v err %v calls %d", result, err, cleaner.calls)
+	}
+	updated := &tamossv1alpha1.Tamoss{}
+	if err := reconciler.Client.Get(ctx, types.NamespacedName{Name: tamoss.Name, Namespace: tamoss.Namespace}, updated); err != nil {
+		t.Fatalf("get updated Tamoss: %v", err)
+	}
+	if updated.Status.Lifecycle.ResolvedRestore.ResumedAt != nil {
+		t.Fatal("expected no restore completion before the database is ready")
+	}
+}
+
 func TestResumeArtifactRetentionTTLSchedulesAndRetries(t *testing.T) {
 	ctx := context.Background()
 	scheme := hibernateTestScheme(t)
-	tamoss, destination := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeTTL)
+	tamoss, destination, dbCluster := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeTTL)
 	destination.Spec.Hibernate.Retention.TTLSecondsAfterResume = 3600
 	resumedAt := metav1.NewTime(time.Now().Add(-time.Minute))
 	tamoss.Status.Lifecycle.ResolvedRestore.ResumedAt = &resumedAt
@@ -129,7 +162,7 @@ func TestResumeArtifactRetentionTTLSchedulesAndRetries(t *testing.T) {
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
-			WithObjects(tamoss, destination).
+			WithObjects(tamoss, destination, dbCluster).
 			Build(),
 		Scheme:          scheme,
 		ArtifactCleaner: cleaner,

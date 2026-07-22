@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,18 +56,38 @@ func (c S3HibernationArtifactCleaner) DeletePrefix(ctx context.Context, namespac
 	return result.ObjectsDeleted, nil
 }
 
+// restoredDatabaseReady reports whether the CNPG cluster that consumed the
+// restore bootstrap is ready.
+func (r *TamossReconciler) restoredDatabaseReady(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
+	cluster := &cnpgv1.Cluster{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: tamoss.ResourceName("db"), Namespace: tamoss.Namespace}, cluster)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, string(cnpgv1.ConditionClusterReady))
+	return ready != nil && ready.Status == metav1.ConditionTrue, nil
+}
+
 // reconcileResumeArtifactRetention applies the source artifact's retention
-// policy after an instance restored from a hibernation artifact becomes
-// ready. The restore completion time is recorded first so a crash between
-// recording and deleting can never lose the fact that the artifact was
-// consumed.
+// policy once the restored database is ready. The artifact has served its
+// purpose when the database it carried runs again; application readiness is
+// ordinary reconciliation and must not hold retention hostage. The restore
+// completion time is recorded first so a crash between recording and
+// deleting can never lose the fact that the artifact was consumed.
 func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (ctrl.Result, error) {
 	restore := tamoss.Status.Lifecycle.ResolvedRestore
 	if restore == nil || hibernationArtifactCleanupTerminal(restore.Cleanup.Phase) {
 		return ctrl.Result{}, nil
 	}
 	if restore.ResumedAt == nil {
-		if !tamossObservedReady(tamoss) {
+		ready, readyErr := r.restoredDatabaseReady(ctx, tamoss)
+		if readyErr != nil {
+			return ctrl.Result{}, readyErr
+		}
+		if !ready {
 			return ctrl.Result{}, nil
 		}
 		now := metav1.Now()
