@@ -8,7 +8,7 @@ import Skeleton from "@/components/Skeleton";
 import StateStrip from "@/components/StateStrip";
 import DashboardAttentionPanel from "@/components/dashboard/DashboardAttentionPanel";
 import { formatDate, formatRelativeTime } from "@/utils/format";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   DASHBOARD_COLLECTION_PAGE_SIZE,
   buildRecentActivity,

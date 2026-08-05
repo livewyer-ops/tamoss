@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import InlineEditField from "@/components/InlineEditField";
 import SectionHeading from "@/components/SectionHeading";
 import type { TamossApiClient } from "@/api/client";
