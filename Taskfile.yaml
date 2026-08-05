@@ -220,17 +220,23 @@ tasks:
   e2e:deployed:
     desc: "Validation: run deployed checks against the selected profile target without creating a cluster"
     silent: true
+    vars:
+      # TARGET_ENV points the deployed checks at a custom target env file for
+      # installs whose hostnames differ from the checked-in profile target.
+      # Start from tests/targets/remote.env.example and keep the file with the
+      # environment, for example deploy/environments/<name>/target.env.
+      TARGET_ENV: '{{default "" (default (env "TARGET_ENV") .TARGET_ENV)}}'
     cmds:
       - task: profile:validate
       - task: test:tams:deployed
         vars:
           PROFILE: "{{.PROFILE}}"
-          TARGET_FILE: "{{.PROFILE_TARGET_ENV}}"
+          TARGET_FILE: "{{default .PROFILE_TARGET_ENV .TARGET_ENV}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
       - task: test:product:deployed
         vars:
           PROFILE: "{{.PROFILE}}"
-          TARGET_FILE: "{{.PROFILE_TARGET_ENV}}"
+          TARGET_FILE: "{{default .PROFILE_TARGET_ENV .TARGET_ENV}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
 
   ingest:

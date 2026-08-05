@@ -52,11 +52,17 @@ func applyImageDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	if tamoss.Spec.API.Image.Repository == "" {
 		tamoss.Spec.API.Image.Repository = DefaultAPIRepository
 	}
+	if tamoss.Spec.API.Image.Tag == "" {
+		tamoss.Spec.API.Image.Tag = DefaultOperandTag
+	}
 	if tamoss.Spec.API.Image.PullPolicy == "" {
 		tamoss.Spec.API.Image.PullPolicy = corev1.PullIfNotPresent
 	}
 	if tamoss.Spec.UI.Image.Repository == "" {
 		tamoss.Spec.UI.Image.Repository = DefaultUIRepository
+	}
+	if tamoss.Spec.UI.Image.Tag == "" {
+		tamoss.Spec.UI.Image.Tag = DefaultOperandTag
 	}
 	if tamoss.Spec.UI.Image.PullPolicy == "" {
 		tamoss.Spec.UI.Image.PullPolicy = corev1.PullIfNotPresent
@@ -85,12 +91,6 @@ func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
 		S3TLSSecretName: defaultLocalKindS3TLSSecretName,
 	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
-	if tamoss.Spec.API.Image.Tag == "" {
-		tamoss.Spec.API.Image.Tag = DefaultOperandTag
-	}
-	if tamoss.Spec.UI.Image.Tag == "" {
-		tamoss.Spec.UI.Image.Tag = DefaultOperandTag
-	}
 	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_S3_CONNECT_TIMEOUT_SECONDS", "1")
 	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_S3_READ_TIMEOUT_SECONDS", "2")
 	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_WEBHOOK_ALLOWED_HOSTS", ".svc.cluster.local")
@@ -130,7 +130,13 @@ func applyEdge(tamoss *tamossv1alpha1.Tamoss) {
 		TLSSecretName:   defaultEdgeTLSSecretName,
 		S3TLSSecretName: defaultEdgeS3TLSSecretName,
 	})
-	defaultTokenOnlyAuth(tamoss)
+	// Edge defaults to bearer-token auth; declaring authentik-blueprints on
+	// the spec opts the install into the managed OAuth stack instead.
+	if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		defaultAuthentikBlueprints(tamoss)
+	} else {
+		defaultTokenOnlyAuth(tamoss)
+	}
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_DATABASE_POOL_MAX_SIZE", "3")
 	setEnvDefault(&tamoss.Spec.API.Env, "TAMOSS_API_THREAD_POOL_TOKENS", "16")

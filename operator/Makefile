@@ -14,7 +14,11 @@ ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
 TAMS_API_VERSION ?= 8.1
-GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=$(PREVIOUS_SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION)
+# OPERAND_VERSION sets the operand image tag the operator defaults to when a
+# Tamoss spec omits one. Release builds pass the release version; development
+# builds keep the "dev" fallback.
+OPERAND_VERSION ?= dev
+GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=$(PREVIOUS_SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=$(OPERAND_VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -117,6 +121,7 @@ docker-build: ## Build docker image with the manager.
 		--build-arg SCHEMA_VERSION=$(SCHEMA_VERSION) \
 		--build-arg PREVIOUS_SCHEMA_VERSION=$(PREVIOUS_SCHEMA_VERSION) \
 		--build-arg TAMS_API_VERSION=$(TAMS_API_VERSION) \
+		--build-arg OPERAND_VERSION=$(OPERAND_VERSION) \
 		-t ${IMG} -f Dockerfile ..
 
 ##@ Dependencies

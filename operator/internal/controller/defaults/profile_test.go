@@ -818,3 +818,108 @@ func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 		t.Fatalf("expected API startup path /healthz, got %q", spec.StartupProbe.HTTPGet.Path)
 	}
 }
+
+func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
+	profiles := []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileLocalKind,
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
+	}
+
+	for _, profile := range profiles {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{
+				ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+				Spec: tamossv1alpha1.TamossSpec{
+					Profile: profile,
+					PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+						BaseDomain: "tamoss.example.com",
+					},
+				},
+			}
+
+			Apply(tamoss)
+
+			if got := tamoss.Spec.API.Image.Tag; got != DefaultOperandTag {
+				t.Fatalf("expected API image tag %q for %s, got %q", DefaultOperandTag, profile, got)
+			}
+			if got := tamoss.Spec.UI.Image.Tag; got != DefaultOperandTag {
+				t.Fatalf("expected UI image tag %q for %s, got %q", DefaultOperandTag, profile, got)
+			}
+		})
+	}
+}
+
+func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
+	original := DefaultOperandTag
+	DefaultOperandTag = "8.1.0-test"
+	t.Cleanup(func() { DefaultOperandTag = original })
+
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileEdge,
+		},
+	}
+
+	Apply(tamoss)
+
+	if got := tamoss.Spec.API.Image.Tag; got != "8.1.0-test" {
+		t.Fatalf("expected API image tag to follow the build version, got %q", got)
+	}
+	if got := tamoss.Spec.UI.Image.Tag; got != "8.1.0-test" {
+		t.Fatalf("expected UI image tag to follow the build version, got %q", got)
+	}
+}
+
+func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileEdge,
+			API: tamossv1alpha1.APIComponentSpec{
+				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-api"},
+			},
+			UI: tamossv1alpha1.UIComponentSpec{
+				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-ui"},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	if got := tamoss.Spec.API.Image.Tag; got != "pinned-api" {
+		t.Fatalf("expected explicit API image tag preserved, got %q", got)
+	}
+	if got := tamoss.Spec.UI.Image.Tag; got != "pinned-ui" {
+		t.Fatalf("expected explicit UI image tag preserved, got %q", got)
+	}
+}
+
+func TestApplyEdgeHonoursAuthentikBlueprints(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileEdge,
+			Auth: tamossv1alpha1.AuthSpec{
+				ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		t.Fatalf("expected edge to keep the Authentik provider, got %s", got)
+	}
+	if !tamoss.Spec.Auth.RequiredForRuntime() {
+		t.Fatalf("expected edge OAuth runtime auth to be required")
+	}
+	if tamoss.Spec.Auth.AuthentikBlueprints == nil {
+		t.Fatalf("expected Authentik blueprint defaults to be applied")
+	}
+	if got := tamoss.Spec.API.Env["TAMOSS_DATABASE_POOL_MAX_SIZE"]; got != "3" {
+		t.Fatalf("expected edge API tuning to apply with OAuth, got %q", got)
+	}
+}
