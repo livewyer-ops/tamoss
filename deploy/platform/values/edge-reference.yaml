@@ -7,8 +7,44 @@ cnpg:
 rustfsOperator:
   enabled: true
 
+# OAuth on edge: set enabled to true here and declare
+# spec.auth.providedBy: authentik-blueprints on the Tamoss resource. The
+# authentikChart sizing below keeps the managed Authentik stack inside a
+# 4Gi single-node budget; it is inert while authentik stays disabled.
 authentik:
   enabled: false
+
+# Authentik 2026.x deploys no Redis: its cache and task queue run on the
+# bundled PostgreSQL, so that instance is sized for queue work as well as
+# relational load.
+authentikChart:
+  server:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+  worker:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  postgresql:
+    primary:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 192Mi
+        limits:
+          cpu: 300m
+          memory: 512Mi
 
 traefik:
   enabled: true

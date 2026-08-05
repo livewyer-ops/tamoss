@@ -7,6 +7,10 @@ ARG VERSION=0.0.1
 ARG SCHEMA_VERSION
 ARG PREVIOUS_SCHEMA_VERSION
 ARG TAMS_API_VERSION=8.1
+# Operand image tag the operator defaults to when a Tamoss spec omits one.
+# Release builds pass the release version; otherwise operands default to the
+# published "dev" tag.
+ARG OPERAND_VERSION=""
 
 WORKDIR /workspace/operator
 
@@ -25,8 +29,9 @@ COPY operator/internal/ internal/
 # architecture.
 RUN schema_version="${SCHEMA_VERSION:-$VERSION}" && \
     previous_schema_version="${PREVIOUS_SCHEMA_VERSION:-}" && \
+    operand_version="${OPERAND_VERSION:-dev}" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath \
-    -ldflags "-X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=${schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=${previous_schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=${TAMS_API_VERSION}" \
+    -ldflags "-X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=${schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=${previous_schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=${TAMS_API_VERSION} -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=${operand_version}" \
     -o /workspace/manager ./cmd
 
 # Use distroless as minimal base image to package the manager binary

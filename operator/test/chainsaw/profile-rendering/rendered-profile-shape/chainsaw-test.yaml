@@ -35,15 +35,15 @@ spec:
               printf '%s' "$edge_render" | grep -q 'name: tamoss-edge'
               ! printf '%s' "$edge_render" | grep -q 'tamoss.localtest.me'
 
-              single_kind_render="$(kubectl kustomize ../../../../../deploy/environments/kind-single-server)"
+              single_kind_render="$(kubectl kustomize ../../../../../deploy/environments/single-server)"
               printf '%s' "$single_kind_render" | grep -q 'profile: single-server'
               printf '%s' "$single_kind_render" | grep -q 'baseDomain: tamoss.localtest.me'
 
-              multi_kind_render="$(kubectl kustomize ../../../../../deploy/environments/kind-multi-server)"
+              multi_kind_render="$(kubectl kustomize ../../../../../deploy/environments/multi-server)"
               printf '%s' "$multi_kind_render" | grep -q 'profile: multi-server'
               printf '%s' "$multi_kind_render" | grep -q 'baseDomain: tamoss.localtest.me'
               printf '%s' "$multi_kind_render" | grep -q 'RUSTFS_UNSAFE_BYPASS_DISK_CHECK'
 
-              edge_kind_render="$(kubectl kustomize ../../../../../deploy/environments/kind-edge)"
+              edge_kind_render="$(kubectl kustomize ../../../../../deploy/environments/edge)"
               printf '%s' "$edge_kind_render" | grep -q 'profile: edge'
               printf '%s' "$edge_kind_render" | grep -q 'baseDomain: tamoss.localtest.me'

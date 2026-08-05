@@ -25,13 +25,13 @@ def test_profile_registry_selects_kind_configurations() -> None:
     )
     assert (
         profiles["single-server"]["kindEnvironmentDir"]
-        == "deploy/environments/kind-single-server"
+        == "deploy/environments/single-server"
     )
     assert (
         profiles["multi-server"]["kindEnvironmentDir"]
-        == "deploy/environments/kind-multi-server"
+        == "deploy/environments/multi-server"
     )
-    assert profiles["edge"]["kindEnvironmentDir"] == "deploy/environments/kind-edge"
+    assert profiles["edge"]["kindEnvironmentDir"] == "deploy/environments/edge"
     assert profiles["local-kind"]["instanceKustomizeDir"] == (
         "deploy/instances/local-kind"
     )
@@ -123,7 +123,7 @@ def test_kind_environments_allow_cluster_webhook_receiver() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for environment in ["kind-single-server", "kind-multi-server", "kind-edge"]:
+    for environment in ["single-server", "multi-server", "edge"]:
         tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert (
@@ -156,7 +156,7 @@ def test_kind_environments_keep_localtest_domains() -> None:
     if shutil.which("kubectl") is None:
         pytest.skip("kubectl is required for Kustomize overlay checks")
 
-    for environment in ["kind-single-server", "kind-multi-server", "kind-edge"]:
+    for environment in ["single-server", "multi-server", "edge"]:
         tamoss = _render_tamoss(ROOT / "deploy/environments" / environment)
 
         assert tamoss["spec"]["publicEndpoint"]["baseDomain"] == "tamoss.localtest.me"
@@ -169,7 +169,7 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
         pytest.skip("helmfile is required for platform Helmfile checks")
 
     rendered = _render_platform(
-        ROOT / "deploy/environments/kind-multi-server/platform-values.yaml"
+        ROOT / "deploy/environments/multi-server/platform-values.yaml"
     )
     service = _resource(rendered, "Service", "traefik", "traefik")
     websecure = next(

@@ -14,7 +14,7 @@ profiles:
     remoteEnvironment: false
   - id: single-server
     kindConfig: deploy/kind.yaml
-    kindEnvironmentDir: deploy/environments/kind-single-server
+    kindEnvironmentDir: deploy/environments/single-server
     instanceKustomizeDir: deploy/instances/single-server
     tamossName: tamoss-single-server
     targetEnv: tests/targets/single-server.env
@@ -22,7 +22,7 @@ profiles:
   - id: multi-server
     # Multi-server Kind validation intentionally uses a multi-node cluster.
     kindConfig: deploy/kind-multi-server.yaml
-    kindEnvironmentDir: deploy/environments/kind-multi-server
+    kindEnvironmentDir: deploy/environments/multi-server
     instanceKustomizeDir: deploy/instances/multi-server
     tamossName: tamoss-multi-server
     targetEnv: tests/targets/multi-server.env
@@ -31,7 +31,7 @@ profiles:
     # Edge validates on a single-node Kind harness, but the target install shape
     # is a single ARM64 K3s node with local persistent storage.
     kindConfig: deploy/kind.yaml
-    kindEnvironmentDir: deploy/environments/kind-edge
+    kindEnvironmentDir: deploy/environments/edge
     instanceKustomizeDir: deploy/instances/edge
     tamossName: tamoss-edge
     targetEnv: tests/targets/edge.env

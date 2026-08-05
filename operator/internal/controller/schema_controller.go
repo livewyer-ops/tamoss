@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,6 +86,9 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 		return result, err
 	}
 	if result, done, err := s.reconcileSchemaRetryStage(ctx, tamoss, state, managed, liveJob, jobFound); err != nil || done {
+		return result, err
+	}
+	if result, done, err := s.reconcileStaleSchemaJob(ctx, tamoss, state, managed, liveJob, jobFound, job); err != nil || done {
 		return result, err
 	}
 	if result, done, err := s.reconcileFailedSchemaJob(ctx, tamoss, state, managed, liveJob, jobFound); err != nil || done {
@@ -171,6 +176,58 @@ func (s *SchemaController) reconcileSchemaRetryStage(ctx context.Context, tamoss
 			Message: "Schema retry annotation accepted; failed migration Job was deleted and failure counter was cleared",
 		},
 	}, true, nil
+}
+
+// reconcileStaleSchemaJob deletes a live migration Job whose pod template no
+// longer matches the desired render. Job templates are immutable, so applying
+// the new template over the old Job is rejected and the controller would
+// otherwise wait forever on a Job built from superseded configuration, such as
+// a corrected image reference. Terminal failures are excluded: they keep
+// requiring the explicit retry annotation.
+func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, state *corev1.ConfigMap, managed []client.Object, liveJob *batchv1.Job, jobFound bool, desired *batchv1.Job) (SchemaResult, bool, error) {
+	if !jobFound || jobSucceeded(liveJob) || terminalSchemaFailure(state, tamoss) {
+		return SchemaResult{}, false, nil
+	}
+	if !schemaJobTemplateDrifted(liveJob, desired) {
+		return SchemaResult{}, false, nil
+	}
+	propagation := metav1.DeletePropagationBackground
+	if err := s.Client.Delete(ctx, liveJob, &client.DeleteOptions{PropagationPolicy: &propagation}); err != nil && !apierrors.IsNotFound(err) {
+		return SchemaResult{}, true, err
+	}
+	return SchemaResult{
+		Ready:           false,
+		Version:         schemabundle.SchemaVersion,
+		ManagedObjects:  managed,
+		Reason:          operatorstatus.ReasonMigrationInProgress,
+		Message:         "Schema migration job template changed; the stale job was deleted for recreation",
+		SchemaMigration: schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		RecoveryEvent: &recoveryActionEvent{
+			Type:    corev1.EventTypeNormal,
+			Reason:  operatorstatus.ReasonMigrationInProgress,
+			Message: "Schema migration job template changed; the stale job was deleted so the next reconcile recreates it",
+		},
+	}, true, nil
+}
+
+// schemaJobTemplateDrifted reports whether the fields the operator renders
+// into the migration Job template differ between the live Job and the desired
+// render. Server-defaulted template fields are deliberately ignored.
+func schemaJobTemplateDrifted(live, desired *batchv1.Job) bool {
+	liveContainers := live.Spec.Template.Spec.Containers
+	desiredContainers := desired.Spec.Template.Spec.Containers
+	if len(liveContainers) != len(desiredContainers) {
+		return true
+	}
+	for index := range desiredContainers {
+		if liveContainers[index].Image != desiredContainers[index].Image ||
+			!slices.Equal(liveContainers[index].Command, desiredContainers[index].Command) ||
+			!slices.Equal(liveContainers[index].Args, desiredContainers[index].Args) ||
+			!apiequality.Semantic.DeepEqual(liveContainers[index].Env, desiredContainers[index].Env) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SchemaController) reconcileFailedSchemaJob(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, state *corev1.ConfigMap, managed []client.Object, liveJob *batchv1.Job, jobFound bool) (SchemaResult, bool, error) {
