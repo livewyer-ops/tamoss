@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { useState } from "react";
 import { useApi } from "@/contexts/ApiContext";
 import { useApiQuery } from "@/hooks/useApiQuery";

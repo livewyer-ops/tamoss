@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import CopyButton from "@/components/CopyButton";
 import { segmentStorageSummary } from "@/pages/flowDetailModel";
 import { parseTimerange } from "@/utils/hls-manifest";

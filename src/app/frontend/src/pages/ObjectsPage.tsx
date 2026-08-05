@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import EmptyState from "@/components/EmptyState";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
