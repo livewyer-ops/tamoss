@@ -1,7 +1,7 @@
 # Operator
 
 The TAMOSS operator reconciles `Tamoss` and `StorageBackend` custom resources.
-Operator guidance is split across:
+Operator guidance is split across the following pages:
 
 - [Architecture](concepts/architecture.md)
 - [Install](operations/install.md)

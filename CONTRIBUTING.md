@@ -23,7 +23,7 @@ repo's tools.
 Required at OS level for the local development and Kubernetes paths:
 
 - Docker or Podman (+ `docker compose`)
-- `curl`, `openssl`, `git`
+- `curl`, `git`
 
 Also install `ffmpeg` and `uuidgen` if you use the ingest helper.
 
@@ -71,7 +71,8 @@ task operator:test
 task operator:manifests
 ```
 
-Use `task operator:test` for the normal operator gate. The detailed Chainsaw
+Use `task operator:test` for the normal operator gate. The detailed
+[Chainsaw](https://kyverno.github.io/chainsaw/)
 commands are CI/operator-maintainer tools; use them when changing reconciliation
 semantics or lifecycle behaviour. The test layout and contribution workflow are
 documented in
@@ -86,7 +87,8 @@ before touching the operator so `go`, `kubeconform`, and
 Test code lives under `tests/`, organised by what it tests:
 
 - `tests/tams/conformance/` — maintained in-process TAMS contract and semantic tests.
-- `tests/tams/integration/` — focused TAMS checks that need real Postgres and S3/RustFS.
+- `tests/tams/integration/` — focused TAMS checks that need real Postgres and
+  S3/[RustFS](https://github.com/rustfs/rustfs).
 - `tests/tams/deployed/` — deployed TAMS conformance checks against Kind or a
   remote target file.
 - `tests/e2e/` — deployed product API/UI checks against Kind or a remote target
@@ -138,7 +140,7 @@ Test markers in use:
 - `worker` — asynchronous deletion and webhook processing checks.
 
 Prefer adding new TAMS-facing behaviour coverage under the contract or semantic
-task that matches the failure mode. Add deployed checks only when the behavior
+task that matches the failure mode. Add deployed checks only when the behaviour
 requires a real ingress, browser, object store, or worker deployment.
 
 ## Code organisation

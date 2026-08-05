@@ -11,7 +11,8 @@ task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-Those workflows apply Helmfile-managed platform releases, then the Kustomize
+Those workflows apply [Helmfile](https://helmfile.readthedocs.io/)-managed
+platform releases, then the [Kustomize](https://kustomize.io/)
 operator install, then the Kustomize environment overlay containing `Tamoss`
 resources.
 
@@ -19,12 +20,12 @@ resources.
 
 | Layer | Owns | Notes |
 | --- | --- | --- |
-| Platform | cert-manager, Traefik, Authentik, CNPG, RustFS Operator, and other shared prerequisites | Installed once per cluster or profile. Third-party components follow their upstream lifecycle. |
+| Platform | [cert-manager](https://cert-manager.io/), [Traefik](https://traefik.io/), [Authentik](https://goauthentik.io/), [CNPG](https://cloudnative-pg.io/), [RustFS](https://github.com/rustfs/rustfs) Operator, and other shared prerequisites | Installed once per cluster or profile. Third-party components follow their upstream lifecycle. |
 | Operator | TAMOSS CRDs, controller, RBAC, webhooks, and reconciliation logic | Watches `Tamoss` and `StorageBackend` resources. |
 | Instance | API, worker, UI, schema migration, generated Secrets, routes, and selected backend resources | Declared through one or more namespaced `Tamoss` CRs. |
 
 The operator hides runtime complexity behind Kubernetes custom resources. A
-client applies a `Tamoss` CR; the operator renders the API, worker, UI, schema
+client applies a `Tamoss` CR. The operator renders the API, worker, UI, schema
 migration, backend integration, and status.
 
 For multi-instance clusters, tenant boundaries are Kubernetes namespaces. A
@@ -54,4 +55,4 @@ operator:
 - API and worker pods read a mounted credentials file from that Secret.
 
 This allows non-Kubernetes runtimes to provide the same file format without
-teaching the API to call Kubernetes APIs.
+requiring the API to call Kubernetes APIs.

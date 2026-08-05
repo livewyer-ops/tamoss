@@ -1,8 +1,8 @@
 # Deletion Protection
 
 `Tamoss`, `StorageBackend`, and `TamossHibernate` resources are protected by
-admission webhooks. Kubernetes delete requests are rejected
-until the confirmation annotation is present.
+admission webhooks. The webhooks reject Kubernetes delete requests until the
+confirmation annotation is present.
 
 ## Tamoss
 
@@ -25,8 +25,9 @@ kubectl --kubeconfig "$KUBECONFIG" -n tams annotate storagebackend archive \
 kubectl --kubeconfig "$KUBECONFIG" -n tams delete storagebackend archive
 ```
 
-For managed RustFS, the operator can remove the managed bucket and database
-registration during finalization.
+For managed [RustFS](https://github.com/rustfs/rustfs), the operator can
+remove the managed bucket and database
+registration when its finalizer runs.
 
 For `external-s3`, deletion removes only TAMOSS database registration and
 operator state. The external bucket, credentials, lifecycle rules, CORS rules,
@@ -40,14 +41,14 @@ kubectl --kubeconfig "$KUBECONFIG" -n tams annotate tamosshibernate snapshot \
 kubectl --kubeconfig "$KUBECONFIG" -n tams delete tamosshibernate snapshot
 ```
 
-Operator-materialised operations (from `spec.hibernation.enabled`) carry
-the confirmation annotation already so the operator can abort its own
+Operator-materialised operations (from `spec.hibernation.enabled`) already
+carry the confirmation annotation, so the operator can abort its own
 cycles. Deleting an operation that has not reached `Completed` marks the parent
 `Tamoss` lifecycle `Failed` and lets normal reconciliation take over again;
 see [Hibernate and Resume](hibernate-resume.md) for the recovery flow.
 
-## Break Glass
+## Webhook Removal
 
 If the validating webhook is unavailable and blocks recovery, fix or reapply the
-operator first. Removing the webhook bypasses destructive-action protection and
-should be treated as break-glass only.
+operator first. Removing the webhook bypasses destructive-action protection;
+treat it as a last resort.

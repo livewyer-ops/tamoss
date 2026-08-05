@@ -9,7 +9,8 @@ editing Secrets, or patching the `Tamoss` CR until the failing layer is clear.
 Before sharing diagnostics publicly, remove:
 
 - Secret values, bearer tokens, OAuth client secrets, private keys, database
-  passwords, S3 access keys, and Authentik API tokens.
+  passwords, S3 access keys, and [Authentik](https://goauthentik.io/) API
+  tokens.
 - Complete presigned S3 URLs.
 - Private hostnames or IP addresses that should not be disclosed.
 
@@ -34,14 +35,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system logs deploy/operator-control
 
 If Gateway API CRDs are not installed, the `httproute` query can fail. In that
 case, inspect `RoutingReady` and `HostnamesReady` on the `Tamoss` resource and
-use the Gateway API section below only when `spec.httpRoute.enabled=true`.
+use [Gateway API and HTTPRoute](#gateway-api-and-httproute) only when
+`spec.httpRoute.enabled=true`.
 
 Read `Tamoss` conditions first:
 
 | Condition | Typical area |
 | --- | --- |
 | `BackendsReady=False` | Database, S3, Authentik, or prerequisite CRDs. |
-| `BackupPolicyReady=False` | Managed CNPG backup policy or archiving health. |
+| `BackupPolicyReady=False` | Managed [CNPG](https://cloudnative-pg.io/) backup policy or archiving health. |
 | `SchemaMigrated=False` | PostgreSQL or schema migration Job. |
 | `IdentityBlueprintSubmitted=False` | Managed Authentik blueprint submission. |
 | `IdentityReady=False` | Authentik or external OAuth/OIDC. |
@@ -92,7 +94,7 @@ to the same status surface:
 - `tamoss_reconcile_errors_total` and `tamoss_reconcile_duration_seconds`
   identify controller-level failures or latency.
 
-## API Startup And Readiness
+## API Startup and Readiness
 
 The API separates process health from dependency readiness:
 
@@ -105,6 +107,16 @@ The API separates process health from dependency readiness:
 Readiness checks are read-only. They query database and storage metadata state
 and perform a lightweight object-store bucket check. They do not create schema,
 create buckets, register storage backends, write media, or mutate queue state.
+
+## API Returns 503 StorageBackendMetadataMissing
+
+An instance with `spec.backends.s3.providedBy: external` has no default
+storage backend registered. The operator does not create one for external
+providers. Create a `StorageBackend` for the bucket with
+`defaultStorage: true` and wait for it to report `Ready`; the API recovers
+without a restart. See the
+[StorageBackend CR Reference](../reference/storagebackend-cr.md) for the
+required fields.
 
 ## Platform
 
@@ -185,7 +197,7 @@ The bundle includes `Tamoss`, `StorageBackend`, CNPG backup resources, workload
 objects, routes, events, CRDs, webhook configuration, current logs, and previous
 container logs when Kubernetes has them. Operator namespace objects and events
 are collected separately from instance namespace objects. `bundle.json`
-summarizes the collected `Tamoss` schema, resolved runtime version fields, and
+summarises the collected `Tamoss` schema, resolved runtime version fields, and
 first-start lifecycle phases so version and startup state are visible without
 opening the full resource dump first.
 
@@ -218,7 +230,7 @@ For external PostgreSQL:
 
 ## S3 and StorageBackend
 
-For managed RustFS Operator:
+For managed [RustFS](https://github.com/rustfs/rustfs) Operator:
 
 ```bash
 DEFAULT_STORAGEBACKEND="$(kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
@@ -240,8 +252,9 @@ reports `ObjectStoreUnreachable`, inspect the `StorageBackend` `BucketReady`,
 `DatabaseReady`, and external diagnostic conditions plus the mounted runtime
 credentials Secret.
 
-For local Kind, browser ingest uploads directly to
-`https://s3.tamoss.localtest.me`. If the browser has accepted the app origin
+For local [Kind](https://kind.sigs.k8s.io/), browser ingest uploads directly
+to `https://s3.tamoss.localtest.me`. If the browser has accepted the app
+origin
 but not the S3 origin, uploads can fail as a CORS or generic network error even
 though the backend is healthy.
 
@@ -260,7 +273,7 @@ The operator records a best-effort `ExternalS3DiagnosticReady` condition on
 external `StorageBackend` resources. `CORSMisconfigured`,
 `EndpointUnreachable`, and `TLSValidationFailed` are diagnostic warnings; they
 do not mutate external buckets and can be false positives or false negatives
-because browser behavior, presigned URL shape, and provider CORS evaluation are
+because browser behaviour, presigned URL shape, and provider CORS evaluation are
 owned by the external service. The diagnostic sends its preflight to
 `<endpoint>/<bucketName>` because S3 providers evaluate CORS rules per bucket,
 and the probed URL is included in the condition message.
@@ -361,7 +374,8 @@ already has native CORS configuration.
 
 ## TLS and Ingress
 
-The local and reference profiles expose TAMOSS through Traefik on port 443.
+The local and reference profiles expose TAMOSS through
+[Traefik](https://traefik.io/) on port 443.
 They do not require application NodePorts or application port-forwarding.
 
 ```bash

@@ -12,9 +12,10 @@ overlay changes in order.
 5. Confirm the current `Tamoss` resource reports `Ready=True` and
    `Upgradeable=True`.
 
-For local validation, `task kind:e2e PROFILE=local-kind` creates a fresh Kind
-cluster with the current operator image and proves the deployed TAMS API/UI
-workflows.
+For local validation, `task kind:e2e PROFILE=local-kind` creates a fresh
+[Kind](https://kind.sigs.k8s.io/)
+cluster with the current operator image and runs the deployed TAMS API and UI
+checks.
 
 ## Sequence
 
@@ -61,6 +62,20 @@ kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
 ```
 
+## Upgrading a Pinned Environment Instance
+
+Environment instances pin `spec.api.image.tag` and `spec.ui.image.tag` to a
+release. To move an instance to a new release without touching the platform
+or operator layers, update the tags in the instance file, then apply the
+instance layer and wait for `Ready=True`:
+
+```bash
+task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+```
+
+Upgrade one instance at a time on shared clusters.
+
 ## Status Checks
 
 ```bash
@@ -99,15 +114,15 @@ POSTGRES_HOST=postgres POSTGRES_USER=tamoss POSTGRES_PASSWORD=secret POSTGRES_DB
 
 Fresh installs run from an empty database to the current head.
 
-## Operator Artifacts
+## Operator Manifests
 
-Maintainer commands:
+`task operator:template` renders the checked-in
+[Kustomize](https://kustomize.io/) operator install
+for review:
 
 ```bash
 task operator:template
 ```
-
-`task operator:template` renders the Kustomize operator install.
 
 ## Rollback
 
@@ -119,4 +134,4 @@ schema. Restore provider data from your backup plan when a failed migration
 requires a data rollback.
 
 For short investigations, pause reconciliation before manual edits and resume
-afterward. See [Day 2 Operations](day-2.md).
+afterwards. See [Day 2 Operations](day-2.md).

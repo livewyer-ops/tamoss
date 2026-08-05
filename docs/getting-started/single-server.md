@@ -4,17 +4,39 @@ Use `single-server` when TAMOSS runs on one Kubernetes node or a small
 self-managed cluster and should still use the same operator-managed backend
 shape as the larger profile.
 
-## Cluster Requirements
+## Requirements
 
 - A conformant Kubernetes cluster.
 - A working kubeconfig with permissions to apply platform, operator, and
   instance resources.
 - A default StorageClass or explicit storage classes in the `Tamoss` CR.
-- DNS and TLS planning for API, UI, S3, and Authentik hostnames.
+- DNS and TLS planning for API, UI, S3, and
+  [Authentik](https://goauthentik.io/) hostnames.
 
 ## Install
 
-For local validation on Kind:
+### Provision a single-node cluster
+
+Any conformant Kubernetes distribution works. On a blank Linux server,
+[K3s](https://k3s.io/) provisions a suitable single-node cluster; disable its
+bundled [Traefik](https://traefik.io/) so
+the TAMOSS platform can install the pinned Traefik release, and set
+`<node-address>` to the address you will manage the server through:
+
+```bash
+curl -sfL https://get.k3s.io | sh -s - --disable traefik --tls-san <node-address>
+ssh <user>@<node-address> sudo cat /etc/rancher/k3s/k3s.yaml \
+  | sed 's/127.0.0.1/<node-address>/' > ~/.kube/tamoss-single.yaml
+export KUBECONFIG=~/.kube/tamoss-single.yaml
+kubectl get nodes
+```
+
+Run the install commands from the workstation that holds this kubeconfig and
+a clone of this repository.
+
+### Validate the profile on Kind
+
+For local validation on [Kind](https://kind.sigs.k8s.io/):
 
 ```bash
 task kind:up PROFILE=single-server
@@ -36,19 +58,65 @@ task env:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 ```
 
-## Configure
+Work through the [Key Settings](#key-settings) while editing the two
+generated files, before `task env:apply`.
 
-Start from a generated environment composition under `deploy/environments/<name>`.
-Use `platform-values.yaml` to select platform components, and set a public base
-domain unless you configure every public endpoint directly.
+## Key Settings
 
-The operator derives `api`, `app`, `s3`, and `auth` hostnames from that base
-domain and applies profile defaults. The remote profile defaults to
-`ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`, or
-switch `tls.mode` to `existing`/`disabled` when certificate ownership is outside
-the TAMOSS platform layer. Override normal `Tamoss` YAML fields directly in
-`tamoss-patch.yaml` when you need different provider ownership, resources,
-storage, or routing.
+Start from the generated environment composition under
+`deploy/environments/<name>`. Use `platform-values.yaml` to select platform
+components, and set a public base domain unless you configure every public
+endpoint directly. The operator derives `api`, `app`, `s3`, and `auth`
+hostnames from that base domain and applies profile defaults.
+
+The profile defaults TLS to `ClusterIssuer/tamoss-public`; set the ACME email
+in `platform-values.yaml`, or switch `tls.mode` to `existing`/`disabled` when
+certificate ownership is outside the TAMOSS platform layer. Override normal
+`Tamoss` YAML fields directly in `tamoss-patch.yaml` when you need different
+provider ownership, resources, storage, or routing.
+
+### One replica of everything
+
+The profile runs one replica each of API, worker, and UI, one
+[CNPG](https://cloudnative-pg.io/) PostgreSQL
+instance, and one [RustFS](https://github.com/rustfs/rustfs) server. There
+are no PodDisruptionBudgets or
+anti-affinity rules; a node drain takes the service down until pods
+reschedule. The profile accepts that trade-off by design.
+
+### Scaling up without scaling out
+
+Raise the resources of the single pods in `tamoss-patch.yaml` when the
+defaults (API 384Mi request/768Mi limit, worker 128Mi/384Mi) run short:
+
+```yaml
+  api:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 768Mi
+      limits:
+        cpu: "2"
+        memory: 1536Mi
+  backends:
+    db:
+      cnpg:
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+```
+
+When one node is no longer enough, move to `multi-server` rather than adding
+replicas here. PodDisruptionBudgets, anti-affinity, and replicated CNPG
+PostgreSQL are profile defaults there.
+
+## Validate
+
+```bash
+task e2e:deployed PROFILE=single-server KUBECONFIG="$KUBECONFIG"
+```
 
 See also:
 

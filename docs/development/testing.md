@@ -1,7 +1,7 @@
 # Testing
 
 Use the smallest test that proves the change, then widen the scope when the
-change touches shared behavior or deployed contracts.
+change touches shared behaviour or deployed contracts.
 
 ## Fast Local Gate
 
@@ -13,7 +13,8 @@ task test:fast
 `task check` runs lint plus the fast focused test subset. `task test:fast`
 runs the pure local Python subset directly: local TAMS in-process checks,
 local storage adapters, application architecture checks, workers, scripts, and
-support helpers. It excludes database, S3/RustFS, media-tooling, deployed e2e,
+support helpers. It excludes database,
+S3/[RustFS](https://github.com/rustfs/rustfs), media-tooling, deployed e2e,
 and operator-cluster tests by marker.
 
 ## Unit and Contract Gates
@@ -31,8 +32,8 @@ checks, and focused real Postgres/S3 checks. `task test:tams:conformance` is an
 alias for the same local gate. Run `task deps` first when local Postgres and
 RustFS are not already running. `task test:tams:deployed` runs the deployed
 TAMS slice against a target env file.
-`task test:media:fixtures` validates the tiny managed-ingest media fixture with
-containerized `ffprobe`, so developers do not need unmanaged local media tools.
+`task test:media:fixtures` validates the small managed-ingest media fixture with
+containerised `ffprobe`, so developers do not need unmanaged local media tools.
 
 Validation tasks print compact suite labels before runner output. Common labels
 include `test py.tams.contract`, `test py.tams.semantics`,
@@ -56,7 +57,7 @@ The report names identify the affected quality area:
 
 ## Deployed Gates
 
-Run against an existing local Kind target:
+Run against an existing local [Kind](https://kind.sigs.k8s.io/) target:
 
 ```bash
 task test:smoke PROFILE=local-kind KUBECONFIG=tams.kubeconfig
@@ -66,7 +67,8 @@ task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
 
 `task test:smoke` runs the deployed smoke slice for the common API/UI workflows,
 including demo-media retrieval, storage lifecycle, webhook delivery, UI ingress,
-UI ingest, and playback preview, then validates the operator Chainsaw label set
+UI ingest, and playback preview, then validates the operator
+[Chainsaw](https://kyverno.github.io/chainsaw/) label set
 so the explicit operator smoke slice remains selectable. These tasks sync the
 Python dev dependencies and install Playwright Chromium on first run, then reuse
 them on later runs. Use the Chainsaw maintainer workflow when you specifically
@@ -102,8 +104,8 @@ Some operator tests use envtest. Use `task operator:test` rather than direct
 `go test ./...` for the full suite; the task delegates to `operator/Makefile`,
 which downloads the pinned `setup-envtest` helper and sets `KUBEBUILDER_ASSETS`
 for the downloaded Kubernetes control-plane binaries. Direct `go test` runs can
-reuse repo-local envtest binaries after they have been downloaded, but a clean
-checkout still needs `task operator:test` to bootstrap them first.
+reuse repository-local envtest binaries after they have been downloaded, but a
+clean checkout still needs `task operator:test` to bootstrap them first.
 
 The envtest suite installs TAMOSS CRDs plus the provider CRDs it needs for typed
 or unstructured test resources: CNPG CRDs from

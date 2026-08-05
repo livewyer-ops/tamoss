@@ -27,7 +27,8 @@ Use `.spec.api`, `.spec.worker`, and `.spec.ui` for resources, scheduling,
 labels, annotations, probes, environment variables, volumes, and security
 context.
 
-`single-server` and `multi-server` default API, worker, and UI pods to run as
+`edge`, `single-server`, and `multi-server` default API, worker, and UI pods
+to run as
 non-root with runtime default seccomp, no privilege escalation, and dropped
 Linux capabilities. Override `podSecurityContext` or `securityContext` only
 when a workload image requires a different setting.
@@ -60,15 +61,19 @@ spec:
 The API image also carries the TAMOSS database migration CLI used by the
 operator schema Job. `schemaMigrationPostgresClient` remains the helper image
 for storage-backend database registration Jobs. Managed provider images are
-configured where the provider is selected. For example, CNPG PostgreSQL uses
-`.spec.backends.db.cnpg.postgresVersion` and RustFS uses
+configured where the provider is selected. For example,
+[CNPG](https://cloudnative-pg.io/) PostgreSQL uses
+`.spec.backends.db.cnpg.postgresVersion` and
+[RustFS](https://github.com/rustfs/rustfs) uses
 `.spec.backends.s3.rustfsOperator.image`.
 
 Set API and UI image tags explicitly in non-local overlays. If a tag is omitted,
-the operator resolves the image to the repo development tag (`dev`) rather than
-letting Kubernetes implicitly pull `latest`.
+the operator resolves the image to the repository development tag (`dev`) rather
+than letting Kubernetes implicitly pull `latest`.
 
-Platform controllers such as cert-manager, Traefik, Authentik, CNPG Operator,
+Platform controllers such as [cert-manager](https://cert-manager.io/),
+[Traefik](https://traefik.io/), [Authentik](https://goauthentik.io/), CNPG
+Operator,
 and RustFS Operator are installed before TAMOSS and are versioned in the
 platform dependency source, not in the `Tamoss` CR.
 
