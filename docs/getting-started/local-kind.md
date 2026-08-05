@@ -102,6 +102,15 @@ task kind:down
 `task kind:down` deletes the disposable Kind cluster and local runtime state. It
 does not delete `Tamoss` resources individually before removing the cluster.
 
+## Key Settings
+
+Minimalism is the contract of this profile. Everything is bundled and
+disposable: self-signed TLS, `tamoss.localtest.me` hostnames, bundled
+PostgreSQL and RustFS, and the managed Authentik stack, all inside one Kind
+cluster that `task kind:up` creates and `task kind:down` deletes. Nothing in
+it is intended to survive or be tuned; if an override matters enough to keep,
+it belongs in an environment directory targeting one of the other profiles.
+
 See also:
 
 - [Install](../operations/install.md)

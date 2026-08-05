@@ -3,7 +3,7 @@
 `multi-server` is the production reference profile. Use it for durable,
 multi-node self-managed Kubernetes installs.
 
-## Preflight
+## Requirements
 
 Before applying the profile, confirm:
 
@@ -51,6 +51,30 @@ The platform layer installs the components enabled in
 `deploy/environments/my-prod/platform-values.yaml`. The TAMOSS operator
 reconciles the instance resources selected by the `Tamoss` CR; it does not
 install platform operators from inside a `Tamoss` reconcile.
+
+## Key Settings
+
+### High availability
+
+The profile defaults to two replicas each of API, worker, and UI with
+PodDisruptionBudgets, pod anti-affinity, and NetworkPolicies enabled, and
+three CNPG PostgreSQL instances with a 100 GiB volume each. Review these
+before overriding: lowering replicas or removing PDBs quietly gives up the
+zero-downtime upgrade behaviour the profile exists to provide.
+
+### Backups
+
+Decide backup ownership before accepting durable data. Scheduled CNPG
+backups and restore procedures are covered in
+[Backup and Restore](../operations/backup-restore.md); object storage
+replication stays with the S3 provider. For planned shutdowns of whole
+instances, see [Hibernate and Resume](../operations/hibernate-resume.md).
+
+### Identity
+
+The profile selects the managed Authentik stack by default. Set the ACME
+email and public hostnames before applying, and keep the OAuth issuer URL on
+its public hostname so browser logins and API token validation agree.
 
 ## Operate
 

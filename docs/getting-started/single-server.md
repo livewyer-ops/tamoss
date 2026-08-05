@@ -4,7 +4,7 @@ Use `single-server` when TAMOSS runs on one Kubernetes node or a small
 self-managed cluster and should still use the same operator-managed backend
 shape as the larger profile.
 
-## Cluster Requirements
+## Requirements
 
 - A conformant Kubernetes cluster.
 - A working kubeconfig with permissions to apply platform, operator, and
@@ -49,6 +49,49 @@ switch `tls.mode` to `existing`/`disabled` when certificate ownership is outside
 the TAMOSS platform layer. Override normal `Tamoss` YAML fields directly in
 `tamoss-patch.yaml` when you need different provider ownership, resources,
 storage, or routing.
+
+## Key Settings
+
+### One replica of everything
+
+The profile runs one replica each of API, worker, and UI, one CNPG PostgreSQL
+instance, and one RustFS server. There are no PodDisruptionBudgets or
+anti-affinity rules; a node drain takes the service down until pods
+reschedule. That trade is the point of the profile.
+
+### Scaling up without scaling out
+
+Raise the resources of the single pods in `tamoss-patch.yaml` when the
+defaults (API 384Mi request/768Mi limit, worker 128Mi/384Mi) run short:
+
+```yaml
+  api:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 768Mi
+      limits:
+        cpu: "2"
+        memory: 1536Mi
+  backends:
+    db:
+      cnpg:
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+```
+
+When one node stops being enough, move to `multi-server` rather than adding
+replicas here: the HA behaviours (PDBs, anti-affinity, replicated CNPG) are
+profile defaults there, not bolt-ons.
+
+## Validate
+
+```bash
+task e2e:deployed PROFILE=single-server KUBECONFIG="$KUBECONFIG"
+```
 
 See also:
 
