@@ -1,14 +1,14 @@
 # Local Kind
 
-Use this local Kind path to evaluate TAMOSS with the same operator flow used by
-the other profiles.
+Use this local [Kind](https://kind.sigs.k8s.io/) path to evaluate TAMOSS with
+the same operator flow used by the other profiles.
 
-## Prerequisites
+## Requirements
 
 - Docker or a compatible container runtime.
-- `aqua` for the pinned toolchain, or equivalent versions of Task, Kind,
-  kubectl, Go, uv, node, jq, and yamlfmt.
-- `curl`, `openssl`, and `git`.
+- [`aqua`](https://aquaproj.github.io/) for the pinned toolchain, or
+  equivalent versions of Task, Kind, kubectl, Helm, Helmfile, uv, yq, and jq.
+- `curl` and `git`.
 
 `aqua install` installs the pinned command-line tools used by the tasks. It
 does not preinstall project virtualenvs or browser binaries; validation tasks
@@ -25,15 +25,18 @@ task kind:up PROFILE=local-kind
 
 `task kind:up PROFILE=local-kind` does the following:
 
-1. Create or reuse the Kind cluster from `deploy/kind.yaml`.
-2. Build and load local API, UI, and operator images.
-3. Apply the Helmfile-managed platform from
+1. Creates or reuses the Kind cluster from `deploy/kind.yaml`.
+2. Builds and loads local API, UI, and operator images.
+3. Applies the Helmfile-managed platform from
    `deploy/environments/local-kind/platform-values.yaml`.
-4. Apply the TAMOSS operator from `deploy/operator/local`.
-5. Apply the `local-kind` instance overlay.
-6. Wait for `Tamoss/tamoss-kind` to report `Ready=True`.
-7. Ingest one tiny playable demo segment through the deployed API and storage
+4. Applies the TAMOSS operator from `deploy/operator/local`.
+5. Applies the `local-kind` instance overlay.
+6. Waits for `Tamoss/tamoss-kind` to report `Ready=True`.
+7. Ingests one small playable demo segment through the deployed API and storage
    backend, unless `KIND_DEMO_INGEST=false` is set.
+
+`task kind:up` writes the cluster kubeconfig to `tams.kubeconfig` in the
+repository root. The commands in this guide reference it explicitly.
 
 The summary prints first-start lifecycle status, the app URL, app
 username/password, API docs URL, API token, OAuth client details, and storage
@@ -51,9 +54,21 @@ To print the same access details and current Kubernetes status again:
 task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig
 ```
 
+## Key Settings
+
+Everything in this profile is bundled and disposable: self-signed TLS,
+`tamoss.localtest.me` hostnames, PostgreSQL and
+[RustFS](https://github.com/rustfs/rustfs), and the managed
+[Authentik](https://goauthentik.io/) stack, all inside one Kind cluster that
+`task kind:up` creates and
+`task kind:down` deletes. Nothing in it is intended to survive or be tuned. If
+an override matters enough to keep, it belongs in an environment directory
+targeting one of the other profiles.
+
 ## Access
 
-The local Kind profile uses Traefik on host port 443. It does not require
+The local Kind profile uses [Traefik](https://traefik.io/) on host port 443.
+It does not require
 application NodePorts or port-forwarding.
 
 - API docs: <https://api.tamoss.localtest.me/docs>

@@ -5,7 +5,7 @@ database and default S3 credentials. File-backed runtime secrets are kept only
 where the application intentionally reloads them during request or worker
 processing.
 
-| Secret class | Runtime path | Rotation behavior |
+| Secret class | Runtime path | Rotation behaviour |
 | --- | --- | --- |
 | API token | `TAMOSS_API_TOKEN_FILE` | Read on each authenticated request. |
 | Basic auth password | `TAMOSS_BASIC_AUTH_PASSWORD_FILE` | Read on each Basic auth request. |
@@ -13,10 +13,11 @@ processing.
 | Default S3 credentials | `TAMOSS_S3_ACCESS_KEY`, `TAMOSS_S3_SECRET_KEY` | Startup-only; rotate through the operator and roll pods. |
 | Additional StorageBackend credentials | `TAMOSS_STORAGE_BACKEND_CREDENTIALS_FILE` | Reloaded when the credential file changes. |
 | OAuth bearer validation keys | JWKS URL | Provider-owned; TAMOSS uses JWKS caching settings. |
-| TLS certificates | cert-manager or external TLS provider | Provider-owned. |
+| TLS certificates | [cert-manager](https://cert-manager.io/) or external TLS provider | Provider-owned. |
 
-Kubernetes installations should rotate referenced Secrets through the `Tamoss`
-CR or provider-owned Secret, then let the operator roll the affected workloads.
+For Kubernetes installs, rotate referenced Secrets through the `Tamoss`
+CR or the provider-owned Secret, then let the operator roll the affected
+workloads.
 
 The UI must only receive public runtime configuration. Sensitive OAuth client
 credentials, API tokens, database credentials, and S3 credentials stay in API or
@@ -25,7 +26,8 @@ worker server-side runtime files.
 ## Secret Sources
 
 Create Secrets in the namespace that contains the `Tamoss` CR unless a field
-explicitly points at a platform namespace, such as an Authentik API token
+explicitly points at a platform namespace, such as an
+[Authentik](https://goauthentik.io/) API token
 reference.
 
 Do not commit real Secret values. Use your cluster's normal secret-management

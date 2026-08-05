@@ -5,13 +5,13 @@
 # TAMOSS
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
 [![BBC TAMS v8.1](https://img.shields.io/badge/BBC%20TAMS-v8.1-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the
 [BBC TAMS v8.1 API specification](https://github.com/bbc/tams). It installs as
-an operator-driven product with three supported infrastructure profiles:
-`local-kind`, `single-server`, and `multi-server`.
+an operator-driven product with four supported infrastructure profiles:
+`local-kind`, `edge`, `single-server`, and `multi-server`.
 
 The operator reconciles `Tamoss` and `StorageBackend` custom resources into the
 API, worker, UI, schema migration, generated Secrets, routing, and selected
@@ -25,7 +25,7 @@ backend integrations.
 - **Operator-managed runtime**: Reconciles API, worker, UI, schema migration,
   generated Secrets, routing, and backend integration from Kubernetes custom
   resources.
-- **Deployment profiles**: Ships `local-kind`, `single-server`, and
+- **Deployment profiles**: Ships `local-kind`, `edge`, `single-server`, and
   `multi-server` profiles so the same operator path works from local evaluation
   through production-shaped clusters.
 - **Interchangeable platform services**: Supports managed or external
@@ -38,12 +38,12 @@ backend integrations.
 
 ## Quickstart
 
-**Prerequisites:** Docker, `curl`, `openssl`, `git`, and
+**Prerequisites:** Docker, `curl`, `git`, and
 [aqua](https://aquaproj.github.io/docs/install) — a single-binary CLI version
 manager. With aqua installed, the rest of the toolchain (`task`, `kind`,
 `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
 
-Use the local Kind profile first:
+Use the local [Kind](https://kind.sigs.k8s.io/) profile first:
 
 ```bash
 aqua install
@@ -66,7 +66,8 @@ Open:
 - S3 endpoint: <https://s3.tamoss.localtest.me>
 - Authentik: <https://auth.tamoss.localtest.me>
 
-The equivalent Kubernetes install shape is always:
+To install on an existing Kubernetes cluster instead of the disposable
+Kind cluster, use the environment workflow:
 
 ```bash
 task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
@@ -77,12 +78,14 @@ task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
 Remote environments are composition roots: `platform-values.yaml` configures the
-Helmfile-managed platform releases, and the Kustomize overlay applies the
+[Helmfile](https://helmfile.readthedocs.io/)-managed platform releases, and the
+[Kustomize](https://kustomize.io/) overlay applies the
 `Tamoss` resources.
 Generated remote environments default to public ACME TLS through
 `ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
 before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
-`tls.mode: disabled` when TLS Secrets are supplied outside cert-manager.
+`tls.mode: disabled` when TLS Secrets are supplied outside
+[cert-manager](https://cert-manager.io/).
 The raw apply sequence is:
 
 ```bash
@@ -105,7 +108,8 @@ kubectl apply -k deploy/environments/<name>
 
 | Profile | Use when | Default backing services |
 | --- | --- | --- |
-| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | Local reference platform with CNPG, RustFS Operator, Authentik, cert-manager, and Traefik on host port 443. |
+| `local-kind` | You want to evaluate or develop TAMOSS on Kind. | Local reference platform with [CNPG](https://cloudnative-pg.io/), [RustFS](https://github.com/rustfs/rustfs) Operator, [Authentik](https://goauthentik.io/), cert-manager, and [Traefik](https://traefik.io/) on host port 443. |
+| `edge` | You run one ARM64 node, such as a Raspberry Pi 4 with 4 GB memory. | Compact single-node ARM64 topology; bearer-token auth by default, with optional managed Authentik. |
 | `single-server` | You run one Kubernetes node or a small self-managed cluster. | Single-node workload topology; platform services are selected by the environment. |
 | `multi-server` | You run production-shaped self-managed Kubernetes. | Replicated workload topology; platform services are selected by the environment. |
 

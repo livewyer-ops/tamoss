@@ -1,7 +1,7 @@
 # Task Commands
 
 This is the supported command surface. Operator-facing workflows are listed
-first. Maintainer and helper commands are separated so internal plumbing is not
+first. Maintainer and helper commands are separated so internal tooling is not
 confused with the product install path.
 
 This page is manually maintained. Refresh it against `task -l` when task
@@ -13,7 +13,7 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task kind:up PROFILE=local-kind` | Local Kind evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment unless `KIND_DEMO_INGEST=false` is set. `PROFILE=multi-server` uses a multi-node Kind cluster. |
+| `task kind:up PROFILE=local-kind` | Local [Kind](https://kind.sigs.k8s.io/) evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment unless `KIND_DEMO_INGEST=false` is set. `PROFILE=multi-server` uses a multi-node Kind cluster. |
 | `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
 | `task kind:operator:reload` | Rebuild the operator image, load it into the existing Kind cluster, and restart the operator deployment without rerunning the full `task kind:up` flow. |
 | `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
@@ -26,7 +26,7 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task env:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. Use `PROFILE=edge` for the ARM64 single-node profile. |
-| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
+| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the [Helmfile](https://helmfile.readthedocs.io/) platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
 | `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
@@ -38,10 +38,10 @@ names or descriptions change.
 | --- | --- |
 | `task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Run deployed checks against an existing target without creating a cluster; first run syncs Python test dependencies and installs Playwright Chromium. |
 | `task test:tams:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig` | Run deployed TAMS conformance checks against an existing target without creating a cluster. |
-| `task test:media:fixtures` | Validate managed-ingest fixture timing with containerized `ffprobe`. |
+| `task test:media:fixtures` | Validate managed-ingest fixture timing with containerised `ffprobe`. |
 
 Validation commands print compact suite labels such as `test frontend.unit` and
-deployed checks such as `tams deployed.storage-object-lifecycle`. JUnit artifacts
+deployed checks such as `tams deployed.storage-object-lifecycle`. JUnit reports
 use stable `reports/junit-*.xml` names.
 
 ## Maintainer Workflows
@@ -55,7 +55,7 @@ use stable `reports/junit-*.xml` names.
 | `task deps` | Start local Compose dependencies only. |
 | `task check` | Fast confidence gate: lint plus focused tests. |
 | `task test` | Fast local test subset. |
-| `task test:smoke` | Run deployed API/UI smoke and verify the operator Chainsaw smoke labels. |
+| `task test:smoke` | Run deployed API/UI smoke and verify the operator [Chainsaw](https://kyverno.github.io/chainsaw/) smoke labels. |
 | `task lint` | Lint Python and frontend code. |
 | `task security:audit` | Run local security audits. |
 

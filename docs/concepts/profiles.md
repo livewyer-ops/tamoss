@@ -5,12 +5,12 @@ separate products and they do not change the operator install path.
 
 | Profile | Purpose | Backing services |
 | --- | --- | --- |
-| `local-kind` | Local evaluation and development on Kind. | CNPG and RustFS Operator with small single-node defaults, Authentik, cert-manager, and Traefik on host port 443. |
-| `edge` | Single-node ARM64 Kubernetes installs with local persistent storage, sized from a Raspberry Pi 4 Model B 4 GB floor. | CNPG and RustFS Operator with compact single-node defaults, token-only auth, cert-manager, and Traefik. |
+| `local-kind` | Local evaluation and development on [Kind](https://kind.sigs.k8s.io/). | [CNPG](https://cloudnative-pg.io/) and [RustFS](https://github.com/rustfs/rustfs) Operator with small single-node defaults, [Authentik](https://goauthentik.io/), [cert-manager](https://cert-manager.io/), and [Traefik](https://traefik.io/) on host port 443. |
+| `edge` | Single-node ARM64 Kubernetes installs with local persistent storage, sized from a Raspberry Pi 4 Model B 4 GB floor. | CNPG and RustFS Operator with compact single-node defaults, bearer-token auth by default or on-node managed Authentik, cert-manager, and Traefik. |
 | `single-server` | One Kubernetes node or a small self-managed cluster. | CNPG and RustFS Operator with single-node durable defaults plus shared Authentik, cert-manager, and Traefik. |
 | `multi-server` | Production reference for multi-node Kubernetes. | Replicated workloads, CNPG, RustFS Operator, shared Authentik, cert-manager, and Traefik. |
 
-Every checked-in instance manifest sets `.spec.profile`. The operator fills sane
+Every checked-in instance manifest sets `.spec.profile`. The operator fills in
 defaults for that profile, then explicit YAML fields in the `Tamoss` CR override
 those defaults.
 
@@ -25,10 +25,13 @@ install in the `auth` namespace. Use an explicit `spec.auth.providedBy:
 external` or `spec.auth.providedBy: none` only when an environment intentionally
 opts out of the profile default.
 
-`edge` intentionally does not default to Authentik. It selects
-`auth.providedBy: external` with OAuth2 disabled and uses the generated TAMOSS
-API token Secret for bearer-token access. Set `spec.auth.providedBy: none` only
-when the edge install should accept anonymous API requests.
+`edge` does not default to Authentik. It selects `auth.providedBy: external`
+with OAuth2 disabled and uses the generated TAMOSS API token Secret for
+bearer-token access. Declaring `spec.auth.providedBy: authentik-blueprints`
+opts the install into the managed Authentik stack on the same node; measured
+on a 4 GB ARM64 node, the OAuth mode holds roughly 2.8 GiB of memory at
+steady state against 2.3 GiB for token mode. Set `spec.auth.providedBy: none`
+only when the edge install should accept anonymous API requests.
 
 `deploy/profiles.yaml` is the profile registry used by Taskfile helpers. Each
 supported profile records its Kind environment composition, target environment
@@ -36,10 +39,11 @@ file, and the Kind cluster config used for local validation.
 
 `local-kind` is a local test adapter. It creates a Kind cluster, loads local
 development images, uses `localtest.me`, and exists to validate the operator
-flow quickly. `edge` is a remote-capable single-node ARM64 profile for boards
+flow quickly. `edge` is a remote-capable single-node ARM64 profile for nodes
 as small as a Raspberry Pi 4 Model B with 4 GB RAM; running
 `task kind:up PROFILE=edge` validates the profile shape on Kind, but the target
-install path is a normal ARM64 Kubernetes cluster such as K3s. `single-server`
+install path is a normal ARM64 Kubernetes cluster such as
+[K3s](https://k3s.io/). `single-server`
 is the remote-capable single-node or small-cluster profile. Running
 `task kind:up PROFILE=single-server` validates that profile on Kind; it is not
 the remote install path.
@@ -140,13 +144,13 @@ Run the sequential profile gate:
 task kind:profiles:e2e
 ```
 
-The Kind-specific environments, such as `deploy/environments/kind-multi-server`,
+The Kind-specific environments, such as `deploy/environments/multi-server`,
 are test adapters for local validation. They are not additional public profiles.
 The `multi-server` local validation path also uses `deploy/kind-multi-server.yaml`
 so Kind creates one control-plane node and three worker nodes while keeping host
 HTTPS ingress on port 443.
 
 Both checked-in Kind configs bind host port `443` to `0.0.0.0` for local browser
-and API testing. Treat that as local development exposure: other machines on the
+and API testing. Treat that as local development exposure. Other machines on the
 same network may be able to reach the test ingress while the Kind cluster is
 running.

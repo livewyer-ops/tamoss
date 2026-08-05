@@ -29,13 +29,13 @@ resources through conversion.
 - secret material in spec needs to move to Secret references
 - StorageBackend identity, endpoint, or credential fields need a different
   shape
-- conversion behavior cannot preserve existing resources without lossy mapping
+- conversion behaviour cannot preserve existing resources without lossy mapping
 
 Direct `v1beta1` promotion is appropriate only when all of these are true:
 
 - each spec field is classified and either stable or intentionally experimental
 - immutable identity fields have API-server validation
-- defaulting behavior is documented and tested
+- defaulting behaviour is documented and tested
 - status fields are documented as observational and do not carry secret values
 - upgrade tests cover existing `v1alpha1` fixtures
 - release notes include migration guidance for deprecated or removed alpha
@@ -43,7 +43,7 @@ Direct `v1beta1` promotion is appropriate only when all of these are true:
 
 `Tamoss` and `StorageBackend` may promote on different timelines. For example,
 `StorageBackend` can become beta first if its identity and provider model is
-stable while the larger `Tamoss` profile and routing API still needs cleanup.
+stable while the larger `Tamoss` profile and routing API still need cleanup.
 
 ## Spec Field Classification
 
@@ -61,13 +61,13 @@ complete schema:
 | `.spec.profile` | Stable candidate | Profile names are core user-facing install shapes: `local-kind`, `edge`, `single-server`, `multi-server`. Any rename is breaking. |
 | `.spec.publicEndpoint` | Stable candidate | Base-domain driven endpoint derivation is the preferred low-boilerplate path. |
 | `.spec.backends.db.providedBy` | Stable candidate | `cnpg` and `external` are the supported product modes. |
-| `.spec.backends.db.cnpg` | Stable candidate | CNPG is the managed PostgreSQL provider. Backup, monitoring, storage, resources, and instance count are provider-native settings. |
+| `.spec.backends.db.cnpg` | Stable candidate | [CNPG](https://cloudnative-pg.io/) is the managed PostgreSQL provider. Backup, monitoring, storage, resources, and instance count are provider-native settings. |
 | `.spec.backends.db.external` | Stable candidate | External SQL configuration is required for RDS and similar providers. Secret references should remain the only credential path. |
 | `.spec.backends.s3.providedBy` | Stable candidate | `rustfs-operator` and `external` are the supported product modes. |
-| `.spec.backends.s3.rustfsOperator` | Stable candidate | RustFS Operator is the managed S3-compatible provider. Pool, bucket, endpoint, and credential settings map to managed resources. |
+| `.spec.backends.s3.rustfsOperator` | Stable candidate | [RustFS](https://github.com/rustfs/rustfs) Operator is the managed S3-compatible provider. Pool, bucket, endpoint, and credential settings map to managed resources. |
 | `.spec.backends.s3.external` | Stable candidate | External S3-compatible storage uses provider-owned bucket lifecycle and TAMOSS-owned runtime registration. |
 | `.spec.auth.providedBy` | Stable candidate | `authentik-blueprints`, `external`, and `none` match managed, external, and disabled authentication modes. |
-| `.spec.auth.authentikBlueprints` | Experimental | The managed Authentik shape should settle after more operational use with shared platform Authentik. |
+| `.spec.auth.authentikBlueprints` | Experimental | The managed [Authentik](https://goauthentik.io/) shape should settle after more operational use with shared platform Authentik. |
 | `.spec.auth.external.oauth2` | Stable candidate | External OAuth/OIDC is a required provider mode. |
 | `.spec.auth.trustForwardAuthHeaders` | Experimental | Header trust is security-sensitive and may need tighter naming or validation. |
 | `.spec.httpRoute` | Stable candidate | Gateway API routing is the preferred future routing surface. |
@@ -78,8 +78,8 @@ complete schema:
 | `.spec.serviceAccount` | Stable candidate | Standard Kubernetes service-account settings. |
 | `.spec.imagePullSecrets` | Stable candidate | Standard Kubernetes image-pull secret references. |
 | `.spec.secrets.apiToken.generate` | Stable candidate | Secret generation is useful for day-zero installs. |
-| `.spec.secrets.apiToken.token` | Likely to change before beta | Inline secret values in spec should be reconsidered in favor of Secret references. |
-| `.spec.advanced` | Advanced | Operator-facing escape hatches for resource patches and additional resources. Compatibility with provider CRD changes is owned by the user of the advanced field. |
+| `.spec.secrets.apiToken.token` | Likely to change before beta | Inline secret values in spec should be reconsidered in favour of Secret references. |
+| `.spec.advanced` | Advanced | Operator-facing overrides for resource patches and additional resources. Compatibility with provider CRD changes is owned by the user of the advanced field. |
 | `.spec.nameOverride` | Likely to change before beta | Naming overrides should be reviewed with `fullnameOverride` before beta. |
 | `.spec.fullnameOverride` | Stable candidate, immutable | Controls generated resource names. Already protected as immutable after creation. |
 | `.spec.paused` | Stable candidate | Pausing reconciliation is a clear operational control. |
@@ -198,9 +198,9 @@ After a public beta API exists:
 Before promoting a CRD version, review the API against these rules:
 
 - spec is desired state; status is observed state
-- destructive behavior is protected by explicit confirmation where applicable
+- destructive behaviour is protected by explicit confirmation where applicable
 - immutable identity fields are enforced by API-server validation
-- provider-specific configuration is modeled as clear discriminated shapes
+- provider-specific configuration is modelled as clear discriminated shapes
 - references point to Kubernetes resources by name and namespace where needed
 - status uses conditions with actionable reasons and messages
 - no one-shot action fields are added to spec

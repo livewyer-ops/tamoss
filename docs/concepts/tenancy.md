@@ -9,7 +9,8 @@ Use Kubernetes namespaces and standard policy resources for tenant boundaries.
 
 ## Namespace Contract
 
-Create a namespace before applying tenant-owned resources. Recommended metadata:
+Create a namespace with identifying metadata before applying tenant-owned
+resources:
 
 ```yaml
 apiVersion: v1
@@ -81,10 +82,10 @@ platform capabilities; they do not own platform lifecycle.
 
 | Area | Tenant reference | Platform owner |
 | --- | --- | --- |
-| Authentication | `spec.auth.authentikBlueprints.platformNamespace` and token Secret reference | Authentik namespace and Authentik service lifecycle |
-| Routing | `Ingress` or `HTTPRoute` fields in each `Tamoss` CR | Traefik, GatewayClass, Gateway, DNS, and certificates |
-| PostgreSQL | CNPG `Cluster` resources created in the tenant namespace when managed | CNPG operator install and upgrades |
-| S3 | RustFS `Tenant` and `StorageBackend` resources in the tenant namespace when managed | RustFS Operator install and upgrades |
+| Authentication | `spec.auth.authentikBlueprints.platformNamespace` and token Secret reference | [Authentik](https://goauthentik.io/) namespace and Authentik service lifecycle |
+| Routing | `Ingress` or `HTTPRoute` fields in each `Tamoss` CR | [Traefik](https://traefik.io/), GatewayClass, Gateway, DNS, and certificates |
+| PostgreSQL | [CNPG](https://cloudnative-pg.io/) `Cluster` resources created in the tenant namespace when managed | CNPG operator install and upgrades |
+| S3 | [RustFS](https://github.com/rustfs/rustfs) `Tenant` and `StorageBackend` resources in the tenant namespace when managed | RustFS Operator install and upgrades |
 
 External providers follow the same namespace boundary for configuration:
 tenant-local Secrets and CRs reference services that are owned outside TAMOSS.
@@ -122,9 +123,9 @@ spec:
 
 ## Watch Scope
 
-The operator can run cluster-wide or with `WATCH_NAMESPACES` set to a comma
-separated namespace list. Cluster-wide mode is the simplest shared-operator
-shape.
+The operator can run cluster-wide or with `WATCH_NAMESPACES` set to a
+comma-separated namespace list. Cluster-wide mode avoids maintaining a
+namespace list for a shared operator.
 
 When watch scope is restricted, a `Tamoss` resource outside that namespace set
 is ignored. The operator logs the ignored namespace and does not update that

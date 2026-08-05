@@ -6,10 +6,10 @@ authentication, and HTTP ingress.
 
 | Area | Managed option | External option | TAMOSS operator responsibility |
 | --- | --- | --- | --- |
-| PostgreSQL | `backends.db.providedBy: cnpg` | `backends.db.providedBy: external` | Create and monitor CNPG instance resources, or consume external host/database/Secret references. |
-| S3 | `backends.s3.providedBy: rustfs-operator` and `StorageBackend.provider: rustfs` | `backends.s3.providedBy: external` and `StorageBackend.provider: external-s3` | Create RustFS instance and bucket resources for managed mode, or register external endpoint/bucket/Secret metadata. |
-| Authentication | `auth.providedBy: authentik-blueprints` | `auth.providedBy: external` | Reconcile Authentik Application/OAuth provider through managed Blueprints, or consume external OIDC metadata and client Secret references. |
-| HTTP | Reference Traefik platform with Kubernetes `Ingress` or `HTTPRoute` | External ingress or Gateway implementation | Render standard routing objects from the `Tamoss` CR; do not install or mutate external controllers. |
+| PostgreSQL | `backends.db.providedBy: cnpg` | `backends.db.providedBy: external` | Create and monitor [CNPG](https://cloudnative-pg.io/) instance resources, or consume external host/database/Secret references. |
+| S3 | `backends.s3.providedBy: rustfs-operator` and `StorageBackend.provider: rustfs` | `backends.s3.providedBy: external` and `StorageBackend.provider: external-s3` | Create [RustFS](https://github.com/rustfs/rustfs) instance and bucket resources for managed mode, or register external endpoint/bucket/Secret metadata. |
+| Authentication | `auth.providedBy: authentik-blueprints` | `auth.providedBy: external` | Reconcile [Authentik](https://goauthentik.io/) Application/OAuth provider through managed Blueprints, or consume external OIDC metadata and client Secret references. |
+| HTTP | Reference [Traefik](https://traefik.io/) platform with Kubernetes `Ingress` or `HTTPRoute` | External ingress or Gateway implementation | Render standard routing objects from the `Tamoss` CR; do not install or mutate external controllers. |
 
 ## Managed Means
 
@@ -20,7 +20,8 @@ generated Secrets, and runs schema migration.
 
 Managed does not mean the `Tamoss` reconcile installs third-party platform
 operators. Cluster administrators or the checked-in platform bootstrap path
-install CNPG, RustFS Operator, Authentik, cert-manager, Traefik, Gateway API
+install CNPG, RustFS Operator, Authentik,
+[cert-manager](https://cert-manager.io/), Traefik, Gateway API
 CRDs, and Gateway API providers.
 
 Managed integrations are not all CR-driven:
@@ -56,11 +57,11 @@ Use `providedBy: external` when PostgreSQL, S3, authentication, or HTTP ingress
 is owned outside TAMOSS. In external mode, provide endpoint and Secret
 references in the CR and manage provider lifecycle outside TAMOSS.
 
-## Advanced Resource Customization
+## Advanced Resource Customisation
 
 First-class `Tamoss` fields are the preferred configuration path for common
 operational controls. For provider fields that change faster than the TAMOSS
-API should, `spec.advanced` provides explicit operator-facing escape hatches:
+API should, `spec.advanced` provides explicit operator-facing overrides:
 
 - `spec.advanced.resourcePatches` applies JSON merge patches to matching
   TAMOSS-emitted resources before server-side apply.
@@ -74,9 +75,9 @@ spec fields, but not resource identity or controller ownership fields such as
 `metadata.ownerReferences`.
 
 The operator keeps first-class fields stable where possible. Advanced provider
-YAML remains the responsibility of the operator using it: if a third-party CRD
-changes field names or semantics, update the advanced YAML alongside that
-provider upgrade.
+YAML remains the responsibility of whoever maintains the environment. If a
+third-party CRD changes field names or semantics, update the advanced YAML
+alongside that provider upgrade.
 
 ## External Means
 

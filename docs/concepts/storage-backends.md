@@ -17,7 +17,8 @@ spec:
       providedBy: rustfs-operator
 ```
 
-The built-in profiles use CNPG and RustFS Operator by default. Use
+The built-in profiles use [CNPG](https://cloudnative-pg.io/) and
+[RustFS](https://github.com/rustfs/rustfs) Operator by default. Use
 `providedBy: external` when the default backend is an external S3-compatible
 bucket.
 
@@ -89,16 +90,16 @@ operator-managed API and worker pods set this to `false` and consume
 Controlled storage allocation has an explicit lifecycle. A `POST
 /flows/{flowId}/storage` response reserves object IDs and returns PUT upload
 requests, but those objects are not referenceable by Flow Segments until the
-client finalizes the controlled object with `POST /objects/{objectId}/instances`
+client finalises the controlled object with `POST /objects/{objectId}/instances`
 and the matching `storage_id`.
 
-Finalization verifies the object exists in the configured object store and
+Finalisation verifies the object exists in the configured object store and
 records available storage metadata such as content length, content type, ETag,
 checksum, and observation time.
 
 Allocation requests are bounded by `TAMOSS_STORAGE_ALLOCATION_MAX_OBJECTS`
 and object IDs by `TAMOSS_STORAGE_OBJECT_ID_MAX_LENGTH`. Clients must upload,
-finalize, and then register segments; allocated-only controlled objects are not
+finalise, and then register segments; allocated-only controlled objects are not
 referenceable by Flow Segments.
 
 ## External S3 Browser Access
@@ -110,13 +111,14 @@ policy does not allow the browser origin, method, or requested headers.
 
 External S3 buckets must allow every browser origin that will dereference
 presigned URLs. This can include the TAMOSS UI origin and external tools such as
-review, playback, or ingest clients. At minimum, configure:
+review, playback, or ingest clients. At minimum, configure the following:
 
 - Origins: browser origins such as `https://app.tamoss.example.com` and
   `https://tool.example.com`.
 - Upload methods: `PUT`.
 - Read methods: `GET` and `HEAD`.
-- Upload headers: at least `content-type`; `*` is simplest where acceptable.
+- Upload headers: at least `content-type`; `*` allows all headers where
+  acceptable.
 - Read/playback headers: `range` is commonly required by media clients. Some
   XHR-based clients also preflight `authorization`, `x-requested-with`,
   `cache-control`, or `pragma` even when the presigned URL itself carries the
@@ -136,10 +138,11 @@ including the UI web host from `.spec.ingress.ui.web.host` (`https` when
 operator falls back to a wildcard (`*`) bucket CORS origin.
 
 Regex origins from `.spec.api.cors.allowedOriginRegexes` are supported by the
-API and at the Traefik S3 ingress layer. They are not written to RustFS bucket
+API and at the [Traefik](https://traefik.io/) S3 ingress layer. They are not
+written to RustFS bucket
 CORS because S3-compatible bucket CORS rules are exact-origin based. Use an
 `external-s3` backend and configure the provider's bucket CORS policy directly
-when you need provider-specific CORS behavior.
+when you need provider-specific CORS behaviour.
 
 ## Deletion
 

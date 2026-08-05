@@ -3,30 +3,30 @@
 Hibernation captures the managed TAMOSS database into an external
 S3-compatible bucket as a portable, checksummed artifact, quiesces the
 workloads, and removes the database compute. Resuming bootstraps a managed
-database from such an artifact — waking the same instance, or seeding a new
-instance in another namespace or cluster.
+database from such an artifact, either waking the same instance or seeding a
+new instance in another namespace or cluster.
 
 The lifecycle is declared on the `Tamoss` spec. The operator materialises a
 `TamossHibernate` operation for each hibernation cycle; the operation records
 progress, the artifact identity, and its trusted checksum.
 
 This workflow is database-only. It does not copy TAMS media objects or
-Authentik state.
+[Authentik](https://goauthentik.io/) state.
 
-## Supported backend combinations
+## Supported Backend Combinations
 
 | Database | Media S3 | Hibernate and resume |
 | --- | --- | --- |
-| Managed (`providedBy: cnpg`) | External | **Supported** — the workflow on this page. |
-| Managed (`cnpg` or `bundled`) | Managed (RustFS) | Not supported — media would not survive. |
-| Managed (`providedBy: bundled`) | External | Not supported — capture needs the CNPG `Backup` machinery. |
-| External | External | Not needed — redeploy against the same database and bucket. |
+| Managed (`providedBy: cnpg`) | External | Supported. The workflow on this page. |
+| Managed (`cnpg` or `bundled`) | Managed ([RustFS](https://github.com/rustfs/rustfs)) | Not supported. Managed media would be lost. |
+| Managed (`providedBy: bundled`) | External | Not supported. Capture requires the [CNPG](https://cloudnative-pg.io/) `Backup` resource. |
+| External | External | Not needed. Redeploy against the same database and bucket. |
 
 The artifact captures only the database, so hibernation refuses managed
-RustFS media (the operation fails with `UnsupportedProvider`): the media
+RustFS media and the operation fails with `UnsupportedProvider`. The media
 objects would be removed with the source instance, leaving a resumed database
 referencing deleted segments. With an external database there is nothing
-managed to capture or deprovision — the database and media both outlive the
+managed to capture or deprovision. The database and media both outlive the
 instance, so deleting the `Tamoss` and redeploying with the same external
 connection details already achieves what hibernate and resume provide.
 
@@ -69,25 +69,24 @@ kubectl -n tams get tamoss tamoss-cnpg \
 ```
 
 The operation moves through `Quiescing`, `CapturingDatabase`,
-`WritingManifest`, and `DeprovisioningSource` before `Completed`; the parent
-lifecycle then reports `Hibernated` and reconciliation stays gated while
-`spec.hibernation.enabled` is true. Hibernation is destructive by design: the
-artifact in the bucket is the authoritative copy of the database once the
-source cluster is removed, so keep the default `Retain` retention until a
-resume has been verified.
+`WritingManifest`, and `DeprovisioningSource` before `Completed`. The parent
+lifecycle then reports `Hibernated`, and reconciliation stays gated while
+`spec.hibernation.enabled` is true. Hibernation is destructive by design.
+Once the source cluster is removed, the artifact in the bucket is the
+authoritative copy of the database, so keep the default `Retain` retention
+until a resume has been verified.
 
-Setting `enabled: false` again wakes the instance: the operator resolves the
+Setting `enabled: false` again wakes the instance. The operator resolves the
 most recent hibernation artifact, verifies its checksum, and bootstraps a new
 CNPG cluster from it before normal reconciliation restores the workloads.
 
-Creating a `TamossHibernate` directly (see
-`config/samples/tamoss_v1alpha1_tamosshibernate.yaml`) still works and
-behaves identically; the spec toggle is the recommended, GitOps-friendly
-path.
+Creating a `TamossHibernate` directly still works and behaves identically;
+the spec toggle is the recommended, GitOps-friendly path. See
+`operator/config/samples/tamoss_v1alpha1_tamosshibernate.yaml` for a sample.
 
-## Resume into a new instance
+## Resume Into a New Instance
 
-Declare the source on the new instance; it is honoured only while the
+Declare the source on the new instance. It is honoured only while the
 database cluster does not exist, exactly like CNPG bootstrap:
 
 ```yaml
@@ -98,7 +97,7 @@ spec:
         name: tamoss-cnpg-hibernation-1   # same-namespace TamossHibernate
 ```
 
-or, across namespaces or clusters, by artifact identity:
+Across namespaces or clusters, refer to the artifact identity instead:
 
 ```yaml
 spec:
@@ -111,8 +110,8 @@ spec:
         checksum: sha256:…   # from the TamossHibernate status.artifact.checksum
 ```
 
-The checksum is required for artifact restores: it is the trust anchor that
-the manifest in the bucket is the one the hibernation wrote. The operator
+The checksum is required for artifact restores. It proves that the manifest
+in the bucket is the one the hibernation wrote. The operator
 reads and validates the manifest (checksum, schema version, TAMS API
 compatibility, completed CNPG backup), persists the resolved source in
 `.status.lifecycle.resolvedRestore`, and renders the CNPG recovery bootstrap
@@ -120,11 +119,11 @@ from it on every reconcile. The lifecycle reports `Resuming` until the
 restored database is ready, then `Running` while the workloads finish
 starting up.
 
-If the database cluster already exists, `resumeFrom` is ignored and a
-`ResumeSourceIgnored` warning event is emitted — it can never rewire an
+If the database cluster already exists, the operator ignores `resumeFrom` and
+emits a `ResumeSourceIgnored` warning event. `resumeFrom` never replaces an
 existing database.
 
-## Artifact retention
+## Artifact Retention
 
 The hibernate `StorageBackend` controls what happens to the artifact after a
 successful resume, through `.spec.hibernate.retention.mode`:
@@ -135,67 +134,68 @@ successful resume, through `.spec.hibernate.retention.mode`:
 | `DeleteAfterResume` | Delete the artifact prefix once the restored database is ready. |
 | `TTL` | Delete the artifact prefix `.spec.hibernate.retention.ttlSecondsAfterResume` seconds after the restored database became ready. |
 
-Retention is applied by the **resumed** instance, anchored on database
-readiness: the artifact has served its purpose once the database it carried
-runs again, so cleanup is not held up by unrelated workload start-up. The
-restore completion time is recorded first and progress is reported in
+The resumed instance applies retention, anchored on database readiness.
+Cleanup does not wait for unrelated workload start-up; it proceeds once the
+database the artifact carried runs again. The restore completion time is
+recorded first and progress is reported in
 `.status.lifecycle.resolvedRestore.cleanup`. Transient deletion failures
-retry every minute with a warning event; structural problems (an invalid
-manifest key, a missing or wrong-typed StorageBackend) set the terminal
-`Blocked` phase, after which the objects must be removed manually. Cleanup
+retry every minute with a warning event. Structural problems, such as an
+invalid manifest key or a missing or wrong-typed `StorageBackend`, set the
+terminal `Blocked` phase. After that, remove the objects manually. Cleanup
 uses plain S3 list and delete calls, so it works identically on AWS S3, B2,
 RustFS, and similar stores.
 
-## Failure handling
+## Failure Handling
 
 - Waiting states (`Pending`, `ResolvingSource`, `PreparingTarget`,
   `Quiescing`, `CapturingDatabase`, `WritingManifest`,
-  `DeprovisioningSource`) poll until their dependencies settle; transient S3
-  errors during manifest upload or read stay non-terminal with the error in
+  `DeprovisioningSource`) poll until their dependencies settle. Transient S3
+  errors during manifest upload or read stay non-terminal, with the error in
   the status message.
-- A `Failed` operation is retried by annotating it with a fresh value:
+- Retry a `Failed` operation by annotating it with a fresh value:
 
   ```bash
   kubectl -n tams annotate tamosshibernate tamoss-cnpg-hibernation-1 \
     tamoss.livewyer.io/operation-retry="$(date +%s)" --overwrite
   ```
 
-  Each distinct value re-arms the operation exactly once
-  (`.status.acceptedRetry` records the last honoured value). Alternatively,
+  Each distinct value re-arms the operation exactly once;
+  `.status.acceptedRetry` records the last honoured value. Alternatively,
   toggling `spec.hibernation.enabled` off and on starts a fresh cycle with a
   new artifact.
-- While `spec.hibernation.enabled` is true the instance stays gated even if a
-  cycle fails — a failure can never implicitly restore a supposedly
-  hibernated instance. Disabling hibernation mid-capture aborts the
-  materialised operation and returns the instance to normal reconciliation.
-- A failed `resumeFrom` bootstrap (checksum mismatch, unsupported schema,
-  corrupt manifest) marks the lifecycle `Failed` with the reason; because
-  `resumeFrom` is immutable, recovery is recreating the instance with a
-  corrected source.
+- While `spec.hibernation.enabled` is true, the instance stays gated even if
+  a cycle fails. A failure never implicitly restores a hibernated instance.
+  Disabling hibernation mid-capture aborts the materialised operation and
+  returns the instance to normal reconciliation.
+- A failed `resumeFrom` bootstrap, such as a checksum mismatch, unsupported
+  schema, or corrupt manifest, marks the lifecycle `Failed` with the reason.
+  Because `resumeFrom` is immutable, recover by recreating the instance with
+  a corrected source.
 
-## Field notes
+## Field Notes
 
-- `spec.hibernation.resumeFrom` (and its nested fields) are immutable;
-  `destination` is required while `enabled` is true; `resumeFrom` must set
-  exactly one of `hibernationRef` or `artifact` — all enforced by the API
-  server.
+- The API server enforces these rules: `spec.hibernation.resumeFrom` and its
+  nested fields are immutable, `destination` is required while `enabled` is
+  true, and `resumeFrom` must set exactly one of `hibernationRef` or
+  `artifact`.
 - `TamossHibernate.spec` is immutable after creation. Operator-materialised
   operations carry the deletion confirmation annotation so the operator can
-  abort its own cycles; delete protection still applies to user-created
-  operations (see [Deletion Protection](deletion-protection.md)).
-- The parent `Tamoss` reports `.status.lifecycle` — phase, reason, message,
-  `lastTransitionTime`, `hibernationCycle`, the active/last operation
-  references, and `resolvedRestore` — plus a `LifecycleReady` condition.
+  abort its own cycles. Delete protection still applies to user-created
+  operations; see [Deletion Protection](deletion-protection.md).
+- The parent `Tamoss` reports a `LifecycleReady` condition and
+  `.status.lifecycle` with the phase, reason, message, `lastTransitionTime`,
+  `hibernationCycle`, the active and last operation references, and
+  `resolvedRestore`.
 - Keep completed `TamossHibernate` resources while any instance may still
-  `resumeFrom` them by reference; artifact-based restores only need the
+  `resumeFrom` them by reference. Artifact-based restores need only the
   bucket contents and the recorded checksum.
 
-## Current limits
+## Current Limits
 
-- `cnpgPhysical` is the implemented hibernation driver; `logicalDump` is
+- `cnpgPhysical` is the implemented hibernation driver. `logicalDump` is
   reserved for a later PostgreSQL logical dump path.
 - Provider support is limited to the combinations in
-  [Supported backend combinations](#supported-backend-combinations).
+  [Supported Backend Combinations](#supported-backend-combinations).
 - `resumeFrom` cannot restore into an existing database cluster; CNPG
   bootstrap semantics apply.
 

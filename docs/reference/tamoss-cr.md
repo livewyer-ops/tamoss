@@ -40,9 +40,9 @@ spec:
 | Field | Purpose |
 | --- | --- |
 | `.spec.profile` | Selects `local-kind`, `edge`, `single-server`, or `multi-server` defaults. |
-| `.spec.publicEndpoint` | Derives public API, UI, S3, and Authentik endpoint defaults when the selected auth mode uses Authentik. |
-| `.spec.backends.db` | Selects managed CNPG or external PostgreSQL and configures database backup/restore when CNPG is used. |
-| `.spec.backends.s3` | Selects managed RustFS Operator or external S3-compatible storage for the default backend. |
+| `.spec.publicEndpoint` | Derives public API, UI, S3, and [Authentik](https://goauthentik.io/) endpoint defaults when the selected auth mode uses Authentik. |
+| `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
+| `.spec.backends.s3` | Selects managed [RustFS](https://github.com/rustfs/rustfs) Operator or external S3-compatible storage for the default backend. |
 | `.spec.auth` | Selects Authentik Blueprints, external OAuth/OIDC, or no authentication. |
 | `.spec.api`, `.spec.ui`, `.spec.worker` | Component enablement, replicas, images, resources, scheduling, probes, env, volumes, and security context. |
 | `.spec.service`, `.spec.ingress`, `.spec.httpRoute` | Service and public routing configuration. |
@@ -90,13 +90,14 @@ origins. Exact origin values must be absolute `http` or `https` origins without
 a path, query string, or fragment.
 
 For managed RustFS backends, the operator also applies exact allowed origins to
-bucket CORS and to Traefik S3 ingress middleware. `allowedOriginRegexes` is
+bucket CORS and to [Traefik](https://traefik.io/) S3 ingress middleware.
+`allowedOriginRegexes` is
 also applied to Traefik S3 ingress middleware, but not to S3 bucket CORS. For
 `external-s3` backends, update the bucket CORS policy separately for every
 browser origin that dereferences presigned `put_url` or `get_urls`; see
 [Storage Backends](../concepts/storage-backends.md).
 
-## Immutability And Required Fields
+## Immutability and Required Fields
 
 The API server rejects updates that change `.spec.fullnameOverride` after
 creation because it controls generated Kubernetes resource names. Updates that

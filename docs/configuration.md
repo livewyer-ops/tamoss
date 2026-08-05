@@ -43,8 +43,32 @@ spec:
     baseDomain: tamoss.example.com
 ```
 
-The operator derives API, UI, and S3 endpoints from the base domain. Authentik
+The operator derives API, UI, and S3 endpoints from the base domain.
+[Authentik](https://goauthentik.io/)
 endpoints are derived only for Authentik-backed profiles.
+
+## Browser Origin Checklist
+
+Browser clients need CORS agreement in two places, and the two are owned by
+different layers:
+
+1. `spec.api.cors.allowedOrigins` on the `Tamoss` CR for API calls.
+2. The bucket CORS rules at the S3 provider for presigned object URLs. For
+   external buckets (for example Backblaze B2) these are evaluated per bucket
+   and stay provider-owned; the operator does not write them.
+
+After changing either side, the external S3 CORS diagnostic verifies both the
+bucket URL preflight and the configured origins. See
+[Troubleshooting](operations/troubleshooting.md#s3-and-storagebackend) for the
+diagnostic conditions and manual preflight checks.
+
+## OAuth Issuer Details for Clients
+
+With the managed Authentik provider, the issuer URL is per application, not
+the Authentik root: `https://<auth-host>/application/o/<application-slug>/`.
+OpenID discovery lives beneath it at `.well-known/openid-configuration`. The
+client id and secret are held in the instance's generated OAuth Secret;
+`task env:summary` prints the resolved values.
 
 ## Inspect Effective Configuration
 

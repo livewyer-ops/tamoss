@@ -5,13 +5,13 @@ BBC TAMS API as the authoritative protocol contract.
 
 ## Web UI
 
-After local Kind install, open:
+After local [Kind](https://kind.sigs.k8s.io/) install, open:
 
 ```text
 https://app.tamoss.localtest.me
 ```
 
-The UI can:
+The UI supports the following actions:
 
 - Browse flows, segments, objects, and service state.
 - Allocate storage and register uploaded media.
@@ -50,11 +50,11 @@ curl -k -H "Authorization: Bearer $TAMOSS_TOKEN" \
 
 ## Ingest Helper
 
-`task kind:up` creates one tiny playable demo ingest without requiring local media
+`task kind:up` creates one small playable demo ingest without requiring local media
 conversion tools. Set `KIND_DEMO_INGEST=false` when you need a clean validation
 target with no seeded flow/source. The demo segment is registered with probe-derived
 `object_timerange`, `ts_offset`, `last_duration`, and `key_frame_count`
-metadata. Browser-managed ingest also probes finalized MPEG-TS segments before
+metadata. Browser-managed ingest also probes finalised MPEG-TS segments before
 registering them, so registered segment timeranges come from measured media
 duration rather than desired segment length.
 
@@ -68,7 +68,7 @@ task ingest VIDEO=/path/to/video.mp4 LABEL="Example"
 The arbitrary ingest helper may require local media tooling such as `ffmpeg`
 because it segments user-supplied files before uploading them.
 
-Validate the checked-in managed-ingest fixture through containerized media
+Validate the checked-in managed-ingest fixture through containerised media
 tooling:
 
 ```bash

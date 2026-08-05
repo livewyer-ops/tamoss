@@ -73,7 +73,7 @@ packages:
 # Notes: aqua cannot provide these OS/system tools.
 # Required to build, test, and deploy:
 # - Docker or Podman (and docker compose) — container build + compose stack
-# - curl, openssl, git                    — setup and local scripts
+# - curl, git                             — setup and local scripts
 # Optional, only for the ingest helper (src/scripts/ingest_video.sh):
 # - ffmpeg                                — segments local video files for ingest
 # - uuidgen (util-linux)                  — generates flow and source identifiers

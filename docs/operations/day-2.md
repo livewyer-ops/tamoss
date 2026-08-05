@@ -22,8 +22,8 @@ kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system logs deploy/operator-control
 | --- | --- |
 | `Ready` | Enabled workloads and required integrations are available. |
 | `Progressing` | The operator is applying resources or waiting for rollout. |
-| `BackendsReady` | Database, S3, Authentik, and dependency references are configured. |
-| `BackupPolicyReady` | Managed CNPG backup policy and continuous archiving are ready, disabled, external, or report the reason they are not usable. |
+| `BackendsReady` | Database, S3, [Authentik](https://goauthentik.io/), and dependency references are configured. |
+| `BackupPolicyReady` | Managed [CNPG](https://cloudnative-pg.io/) backup policy and continuous archiving are ready, disabled, external, or report the reason they are not usable. |
 | `SchemaMigrated` | The embedded database schema has been applied. |
 | `IdentityBlueprintSubmitted` | Managed Authentik blueprint submission has completed or is not required. |
 | `IdentityReady` | Managed or external OAuth/OIDC readiness checks pass. |
@@ -59,8 +59,8 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" annotate tamoss "$TAMO
 ```
 
 The operator records the consumed value, clears the schema failure counter, and
-deletes the failed migration Job before launching a new attempt. Reusing the
-same annotation value is ignored.
+deletes the failed migration Job before launching a new attempt. The operator
+ignores a reused annotation value.
 
 ## Observability
 
@@ -121,7 +121,7 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" patch tamoss "$TAMOSS_
   --type=merge -p '{"spec":{"api":{"replicaCount":3},"worker":{"replicaCount":3},"ui":{"replicaCount":2}}}'
 ```
 
-Manual `kubectl scale deployment ...` is temporary. The operator will reconcile
+Manual `kubectl scale deployment ...` is temporary. The operator reconciles
 managed Deployments back to the CR.
 
 ## Pausing Reconciliation
@@ -167,6 +167,6 @@ clients that use the API token.
 
 ## Drift
 
-The operator renders canonical resources from the CR on every reconcile. Manual
-edits to managed Deployments, Services, Ingresses, Jobs, ConfigMaps, and Secrets
-will be corrected unless the instance is paused.
+The operator renders canonical resources from the CR on every reconcile. It
+corrects manual edits to managed Deployments, Services, Ingresses, Jobs,
+ConfigMaps, and Secrets unless the instance is paused.

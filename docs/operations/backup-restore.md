@@ -6,7 +6,8 @@ depends on the selected providers.
 ## Scope
 
 TAMOSS owns backup and restore configuration only for PostgreSQL databases
-managed through CNPG. External PostgreSQL services, RustFS, and external
+managed through [CNPG](https://cloudnative-pg.io/). External PostgreSQL
+services, [RustFS](https://github.com/rustfs/rustfs), and external
 S3-compatible object stores remain provider-owned. Configure and test those
 backups with the provider's documented tooling.
 
@@ -54,7 +55,7 @@ kubectl -n tams get tamoss tamoss-multi-server -o jsonpath='{.status.backupPolic
 Use this status as a readiness signal, not as proof that restore works. Restore
 testing remains a separate operational control.
 
-## Restore Into A New Instance
+## Restore Into a New Instance
 
 Prefer restoring into a new namespace or a new `Tamoss` instance first. This is
 the supported low-risk path because it lets operators verify recovery before
@@ -125,5 +126,6 @@ For managed RustFS Operator storage, follow RustFS backup, replication, and
 erasure-coding guidance for the selected pool layout. TAMOSS does not manage S3
 backup automation in the current operator.
 
-For managed Authentik Blueprints, back up the shared platform Authentik
+For managed [Authentik](https://goauthentik.io/) Blueprints, back up the
+shared platform Authentik
 database and the API token Secret needed to reapply managed Blueprints.

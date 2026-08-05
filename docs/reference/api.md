@@ -20,7 +20,7 @@ These endpoints are TAMOSS operational endpoints, not BBC TAMS resources:
 
 ## Authentication
 
-The operator-generated API token is accepted as:
+The API accepts the operator-generated token as a bearer token:
 
 ```bash
 curl -k -H "Authorization: Bearer $TAMOSS_TOKEN" \

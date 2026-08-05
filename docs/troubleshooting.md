@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Troubleshooting guidance now lives at
+Troubleshooting guidance lives at
 [operations/troubleshooting.md](operations/troubleshooting.md).
 
 Start with:

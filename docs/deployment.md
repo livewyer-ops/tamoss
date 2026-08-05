@@ -1,7 +1,6 @@
 # Deployment
 
-Deployment guidance now lives in the intent-based operations and getting-started
-docs.
+Deployment guidance lives in the operations and getting-started guides.
 
 Start here:
 

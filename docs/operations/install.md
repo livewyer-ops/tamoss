@@ -16,7 +16,8 @@ task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 
 The task workflow applies ordered layers. The platform layer uses
 `deploy/platform/helmfile.yaml.gotmpl` to install shared prerequisites as
-separate Helm releases, waits for the dependency operators, then applies
+separate [Helm](https://helm.sh/) releases, waits for the dependency
+operators, then applies
 TAMOSS-owned platform configuration through `deploy/platform/charts/config`.
 The platform state is built from `deploy/platform/values/defaults.yaml` plus the
 environment's `platform-values.yaml`. The operator layer installs the TAMOSS
@@ -37,9 +38,11 @@ they do not create storage backend rows during Kubernetes startup.
 
 The checked-in operator install includes leader election, voluntary leader
 release on shutdown, readiness/liveness probes, a startup probe for slower
-initial cache and webhook setup, and bounded Authentik HTTP clients. The
+initial cache and webhook setup, and bounded
+[Authentik](https://goauthentik.io/) HTTP clients. The
 manager defaults reserve `500m` CPU and `256Mi` memory with a `1` CPU and
-`512Mi` limit; tune these through a Kustomize patch only after checking
+`512Mi` limit; tune these through a [Kustomize](https://kustomize.io/) patch
+only after checking
 operator memory and CPU under your expected number of `Tamoss` resources.
 
 ## Local Convenience Path
@@ -72,7 +75,22 @@ from `deploy/instances/<profile>` and patches the `Tamoss` CR directly. Treat
 both files as the durable source of configuration for provider ownership,
 endpoints, resources, replicas, and routing.
 
-Generated remote environments default to trusted public TLS. The platform Helmfile
+`task env:init` generates this composition:
+
+```text
+deploy/environments/<name>/
+├── kustomization.yaml     # overlay: deploy/instances/<profile> plus the patch
+├── platform-values.yaml   # platform component selection for the Helmfile layer
+└── tamoss-patch.yaml      # instance overrides: profile and public base domain
+```
+
+The patch keeps the instance name `tamoss-<profile>` and the `tams`
+namespace from the checked-in instance manifest. A `multi-server`
+environment therefore contains the instance `tamoss-multi-server` in the
+`tams` namespace.
+
+Generated remote environments default to trusted public TLS. The platform
+[Helmfile](https://helmfile.readthedocs.io/)
 creates `ClusterIssuer/tamoss-public` when `tls.mode: public` is selected:
 
 ```yaml
@@ -83,7 +101,8 @@ tls:
     email: ops@example.com
 ```
 
-Use `tls.mode: existing` when cert-manager and the ClusterIssuer are managed
+Use `tls.mode: existing` when [cert-manager](https://cert-manager.io/) and
+the ClusterIssuer are managed
 outside the TAMOSS platform layer. Use `tls.mode: disabled` when TLS Secrets are
 pre-created and cert-manager annotations should be omitted from explicit
 `Tamoss` ingress overrides.
@@ -117,6 +136,48 @@ same layers in order:
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ```
+
+## Several Instances in One Environment
+
+An environment directory may hold several `Tamoss` instances on one cluster:
+one file per instance plus a shared `kustomization.yaml`, with each instance
+in its own namespace. Platform components (Authentik,
+[Traefik](https://traefik.io/), cert-manager,
+[CNPG](https://cloudnative-pg.io/),
+[RustFS](https://github.com/rustfs/rustfs) Operator) are installed once per
+cluster and shared; instance
+resources, buckets, and databases stay isolated per namespace.
+
+An environment with two instances looks like this:
+
+```text
+deploy/environments/<env>/
+├── kustomization.yaml         # lists every instance manifest below
+├── platform-values.yaml       # shared platform components, applied once
+├── prod-a.yaml                # Tamoss CR in namespace prod-a
+├── prod-a-storage.yaml        # default StorageBackend for prod-a
+├── prod-b.yaml                # Tamoss CR in namespace prod-b
+└── monitoring/
+    └── prod-a/                # optional per-instance dashboards and alerts
+```
+
+`task env:instance:apply` applies the whole kustomization; adding an
+instance is adding its manifest and listing it in `kustomization.yaml`.
+Instances using `s3.providedBy: external` need their default
+`StorageBackend` manifest alongside the CR, as `prod-a-storage.yaml` shows.
+
+## Environment Secrets
+
+The platform Authentik flow needs no secrets in the environment files: when
+`platform-values.yaml` leaves the Authentik secret key, bootstrap
+credentials, and database passwords unset, the platform chart generates that
+material in-cluster on first apply and preserves it across later applies.
+`task env:summary` prints the resolved admin credentials. Environment files
+carry secret material only when operators choose to set those values
+explicitly; in that case keep the environment directory out of version
+control, restrict file permissions, and take care with broad staging
+commands such as `git add -A` in a worktree that contains live environment
+directories.
 
 ## Expected Signals
 

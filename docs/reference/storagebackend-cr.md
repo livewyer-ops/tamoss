@@ -60,7 +60,7 @@ spec:
 | `.spec.credentials.secretKeys.accessKey` | Secret key name for the access key. |
 | `.spec.credentials.secretKeys.secretKey` | Secret key name for the secret key. |
 | `.spec.hibernate.retention.mode` | Hibernate artifact retention mode: `Retain`, `DeleteAfterResume`, or `TTL`. Defaults to `Retain`. |
-| `.spec.hibernate.retention.ttlSecondsAfterResume` | Required when retention mode is `TTL`; seconds to wait after successful Resume before deleting the artifact prefix. |
+| `.spec.hibernate.retention.ttlSecondsAfterResume` | Required when retention mode is `TTL`; seconds to wait after a successful resume before deleting the artifact prefix. |
 
 ## Immutable and Required Fields
 
@@ -89,9 +89,10 @@ the object store is consumed.
 | `.status.resolved.credentialsSecret` | Secret name containing backend credentials. Secret values and key names are not exposed. |
 | `.status.conditions` | `Ready`, `BucketReady`, and `DatabaseReady` condition details. |
 
-## Provider Behavior
+## Provider Behaviour
 
-- `rustfs`: the operator can create and delete managed RustFS bucket resources.
+- `rustfs`: the operator can create and delete managed
+  [RustFS](https://github.com/rustfs/rustfs) bucket resources.
 - `external-s3`: the operator registers metadata and runtime credentials only.
   Bucket lifecycle, CORS, IAM, replication, backups, and bucket deletion remain
   provider-owned.
@@ -102,12 +103,20 @@ readiness, but they are not registered in the TAMS database and are not exposed
 to API or worker runtime credentials.
 
 For hibernate destinations, `.spec.hibernate.retention.mode` controls
-operator-managed cleanup of completed hibernation artifacts after Resume.
+operator-managed cleanup of completed hibernation artifacts after resume.
 Cleanup deletes the artifact prefix with S3-compatible list/delete calls, which
 keeps the operator contract portable across supported S3-compatible backends.
 Use `Retain` when provider-native lifecycle, object lock, audit retention, or
 manual review should own deletion. Use `DeleteAfterResume` or `TTL` only when
 the referenced credentials can list and delete the hibernation prefix.
+
+## Default Backend for External S3
+
+The operator materialises a default storage backend automatically only for
+managed RustFS providers. With `spec.backends.s3.providedBy: external`, create
+a `StorageBackend` with `defaultStorage: true` alongside the instance; until
+one exists the API cannot allocate storage and returns
+`StorageBackendMetadataMissing`.
 
 See [Storage Backends](../concepts/storage-backends.md).
 See [Hibernate and Resume](../operations/hibernate-resume.md) for hibernation
