@@ -121,6 +121,9 @@ func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
 
 	defaultCNPG(tamoss, 1, "50Gi", false, false)
 	defaultRustFSOperator(tamoss, 1, 4, "100Gi")
+	// A single server places all four erasure volumes on one physical disk,
+	// which RustFS rejects unless the disk-distinctness check is bypassed.
+	setRustFSEnvDefault(tamoss, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK", "true")
 }
 
 func applyEdge(tamoss *tamossv1alpha1.Tamoss) {

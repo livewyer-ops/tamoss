@@ -219,6 +219,9 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 		rustfs.Pools[0].Storage.Size != "100Gi" {
 		t.Fatalf("unexpected single-server RustFS Operator defaults: %#v", rustfs)
 	}
+	if got := rustFSEnvValue(rustfs, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK"); got != "true" {
+		t.Fatalf("expected single-server RustFS disk check bypass, got %q", got)
+	}
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
