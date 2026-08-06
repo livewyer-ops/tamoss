@@ -112,6 +112,10 @@ func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
 	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
+	// Single-server hosts can be as small as edge boxes (the base 5s exec
+	// probe timeout crashlooped the worker on a 2-vCPU ARM host), so apply
+	// the same relaxed worker probe timings as edge.
+	defaultRelaxedWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "250m", "384Mi", "1", "768Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.UI.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
@@ -151,7 +155,7 @@ func applyEdge(tamoss *tamossv1alpha1.Tamoss) {
 	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_DATABASE_POOL_MAX_SIZE", "3")
 	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_WEBHOOK_ALLOWED_HOSTS", ".svc.cluster.local")
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
-	defaultEdgeWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultRelaxedWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "100m", "192Mi", "600m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.UI.WorkloadCommonSpec, "25m", "32Mi", "150m", "96Mi")
@@ -483,7 +487,11 @@ func defaultWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
-func defaultEdgeWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+// defaultRelaxedWorkerProbes stretches the worker exec probe periods and
+// timeouts for profiles that run on small hosts (edge, single-server), where
+// forking the probe interpreter can exceed the base 5s timeout and crashloop
+// an otherwise healthy worker.
+func defaultRelaxedWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
 	if spec.ReadinessProbe == nil {
 		spec.ReadinessProbe = execProbe(command, 30, 30, 3)
