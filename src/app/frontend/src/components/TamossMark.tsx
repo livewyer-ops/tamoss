@@ -7,7 +7,7 @@ export default function TamossMark({ className = "" }: TamossMarkProps) {
 
   return (
     <img
-      src="/tamoss-icon.png"
+      src="/tamoss-icon.svg"
       alt=""
       aria-hidden="true"
       className={classes}
