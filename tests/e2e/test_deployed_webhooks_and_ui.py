@@ -6,7 +6,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 from string import Template
-from subprocess import CompletedProcess
+from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
 from uuid import uuid4
 
@@ -181,6 +181,38 @@ def test_deployed_cert_manager_certificates_are_ready(e2e_target: E2ETarget) -> 
         assert ready.get("status") == "True", (
             f"Certificate {namespace}/{name} is not Ready: {ready}"
         )
+
+
+_MEMORY_UNIT_MIB = {"Ki": 1 / 1024, "Mi": 1.0, "Gi": 1024.0, "Ti": 1024.0 * 1024.0}
+
+
+def test_deployed_node_memory_usage_stays_within_budget(
+    e2e_target: E2ETarget,
+) -> None:
+    if e2e_target.memory_budget_mib is None:
+        pytest.skip("no TEST_TAMOSS_MEMORY_BUDGET_MIB configured for this target")
+    if not e2e_target.kubeconfig:
+        pytest.skip("node memory checks require Kubernetes access")
+
+    try:
+        result = _kubectl_for_target(e2e_target, "top", "node", "--no-headers")
+    except CalledProcessError as exc:
+        pytest.fail(f"kubectl top node failed: {exc.stderr or exc}")
+    rows = [line.split() for line in result.stdout.splitlines() if line.strip()]
+    assert rows, "kubectl top node returned no nodes"
+    for row in rows:
+        node_name, memory_raw = row[0], row[3]
+        memory_mib = _memory_quantity_to_mib(memory_raw)
+        assert memory_mib < e2e_target.memory_budget_mib, (
+            f"Node {node_name} memory usage {memory_raw} is not below the "
+            f"{e2e_target.memory_budget_mib}Mi budget"
+        )
+
+
+def _memory_quantity_to_mib(raw: str) -> float:
+    match = re.fullmatch(r"(\d+)(Ki|Mi|Gi|Ti)", raw)
+    assert match, f"Unrecognised kubectl top memory quantity: {raw!r}"
+    return int(match.group(1)) * _MEMORY_UNIT_MIB[match.group(2)]
 
 
 def test_deployed_oauth2_client_credentials_token_grants_api_access(

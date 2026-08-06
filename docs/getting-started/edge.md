@@ -243,7 +243,10 @@ changes to the environment and run the same deployed checks. The UI check
 expects a redirect to the Authentik login instead of a direct 200.
 
 The deployed checks exercise the API with the bearer token, certificate
-state, and UI availability against the running instance.
+state, and UI availability against the running instance. Set
+`TEST_TAMOSS_MEMORY_BUDGET_MIB` in the target file (the remote example uses
+3500) to also assert that `kubectl top node` memory usage stays below that
+budget.
 
 ## Operate
 

@@ -66,6 +66,7 @@ class E2ETarget:
     readiness_mode: str
     upload_checksum_header: bool
     timeout_seconds: float = 10.0
+    memory_budget_mib: int | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> E2ETarget:
@@ -144,6 +145,9 @@ class E2ETarget:
                 values.get("TEST_TAMOSS_UPLOAD_CHECKSUM_HEADER", "true")
             ),
             timeout_seconds=float(values.get("TEST_TIMEOUT_SECONDS", "10")),
+            memory_budget_mib=_memory_budget_mib(
+                values.get("TEST_TAMOSS_MEMORY_BUDGET_MIB")
+            ),
         )
 
 
@@ -250,6 +254,20 @@ def _readiness_mode(value: str) -> str:
             "TEST_TAMOSS_READINESS_MODE must be 'tamoss' or 'service'."
         )
     return mode
+
+
+def _memory_budget_mib(raw: str | None) -> int | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise pytest.UsageError(
+            "TEST_TAMOSS_MEMORY_BUDGET_MIB must be a positive integer number of MiB."
+        )
+    return value
 
 
 def _load_auth_password(

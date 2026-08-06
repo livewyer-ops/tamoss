@@ -65,6 +65,7 @@ def test_target_env_loads_token_command_and_service_readiness(
                 f"TEST_TAMOSS_TOKEN_COMMAND={token_command}",
                 "TEST_TAMOSS_READINESS_MODE=service",
                 "TEST_TAMOSS_UPLOAD_CHECKSUM_HEADER=false",
+                "TEST_TAMOSS_MEMORY_BUDGET_MIB=3500",
             ]
         ),
         encoding="utf-8",
@@ -75,6 +76,26 @@ def test_target_env_loads_token_command_and_service_readiness(
     assert loaded.auth_headers == {"Authorization": "Bearer command-token"}
     assert loaded.readiness_mode == "service"
     assert loaded.upload_checksum_header is False
+    assert loaded.memory_budget_mib == 3500
+
+
+def test_target_env_rejects_non_positive_memory_budget(tmp_path: Path) -> None:
+    target = tmp_path / "target.env"
+    target.write_text(
+        "\n".join(
+            [
+                "TEST_TAMOSS_API=https://api.example.test",
+                "TEST_TAMOSS_UI=https://ui.example.test",
+                "TEST_TAMOSS_AUTH_PASSWORD=unused",
+                "TEST_TAMOSS_TOKEN=token",
+                "TEST_TAMOSS_MEMORY_BUDGET_MIB=0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(pytest.UsageError, match="MEMORY_BUDGET_MIB"):
+        E2ETarget.from_file(target)
 
 
 def test_target_env_rejects_unknown_readiness_mode(tmp_path: Path) -> None:
