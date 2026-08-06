@@ -8,8 +8,8 @@ ARG SCHEMA_VERSION
 ARG PREVIOUS_SCHEMA_VERSION
 ARG TAMS_API_VERSION=8.1
 # Operand image tag the operator defaults to when a Tamoss spec omits one.
-# Release builds pass the release version; otherwise operands default to the
-# published "dev" tag.
+# CI passes the image tag it publishes for the build (release version, :main,
+# or :pr-N); plain local builds fall back to "dev".
 ARG OPERAND_VERSION=""
 
 WORKDIR /workspace/operator

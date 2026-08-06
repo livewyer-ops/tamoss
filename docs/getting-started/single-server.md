@@ -131,6 +131,12 @@ into the environment directory, set the API, UI, and auth URLs plus
 `TARGET_ENV=deploy/environments/my-single-server/target.env` to the same
 command.
 
+A fresh install has no demo media, so seed it first with the demo ingest
+helper that `task kind:up` runs —
+[`.tasks/lib/demo_ingest.sh`](../../.tasks/lib/demo_ingest.sh)
+`<target.env> <media-file> <kubeconfig>` — or expect the deployed media
+checks to fail on the first run.
+
 See also:
 
 - [Profiles](../concepts/profiles.md)

@@ -222,6 +222,21 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	if got := rustFSEnvValue(rustfs, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK"); got != "true" {
 		t.Fatalf("expected single-server RustFS disk check bypass, got %q", got)
 	}
+	if got := tamoss.Spec.Worker.ReadinessProbe.TimeoutSeconds; got != 30 {
+		t.Fatalf("expected single-server worker readiness timeout 30, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.ReadinessProbe.PeriodSeconds; got != 30 {
+		t.Fatalf("expected single-server worker readiness period 30, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.LivenessProbe.PeriodSeconds; got != 60 {
+		t.Fatalf("expected single-server worker liveness period 60, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.LivenessProbe.TimeoutSeconds; got != 30 {
+		t.Fatalf("expected single-server worker liveness timeout 30, got %d", got)
+	}
+	if got := tamoss.Spec.Worker.StartupProbe.TimeoutSeconds; got != 30 {
+		t.Fatalf("expected single-server worker startup timeout 30, got %d", got)
+	}
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
