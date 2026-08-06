@@ -19,6 +19,9 @@ _E2E_CHECK_IDS = {
         "e2e ui.ingress-auth-proxy"
     ),
     "test_deployed_cert_manager_certificates_are_ready": "e2e platform.certificates",
+    "test_deployed_node_memory_usage_stays_within_budget": (
+        "e2e platform.memory-budget"
+    ),
     "test_deployed_oauth2_client_credentials_token_grants_api_access": (
         "e2e auth.oauth2-client-scoped"
     ),
