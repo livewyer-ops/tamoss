@@ -92,8 +92,8 @@ export default function Layout() {
         <div className="relative overflow-hidden border-b border-white/10 px-4 pb-5 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white p-1 ring-1 ring-inset ring-white/20">
-                <TamossMark className="h-8 w-8" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-transparent p-0 ring-1 ring-white/20">
+                <TamossMark className="h-11 w-11" />
               </div>
               <div className="flex flex-col">
                 <span className="text-lg font-semibold leading-tight text-white">
@@ -216,8 +216,8 @@ export default function Layout() {
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white p-1 ring-1 ring-inset ring-lw-ink-100">
-              <TamossMark className="h-7 w-7" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-transparent p-0 ring-1 ring-lw-ink-100">
+              <TamossMark className="h-9 w-9" />
             </div>
             <span className="font-semibold text-lw-ink-900">TAMOSS</span>
           </div>
