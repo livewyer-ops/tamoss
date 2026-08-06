@@ -71,7 +71,9 @@ hostnames from that base domain and applies profile defaults.
 
 The profile defaults TLS to `ClusterIssuer/tamoss-public`; set the ACME email
 in `platform-values.yaml`, or switch `tls.mode` to `existing`/`disabled` when
-certificate ownership is outside the TAMOSS platform layer. Override normal
+certificate ownership is outside the TAMOSS platform layer. Switch `tls.mode`
+to `selfSigned` when port 80 is not reachable from the public internet, as
+ACME HTTP-01 issuance needs it. Override normal
 `Tamoss` YAML fields directly in `tamoss-patch.yaml` when you need different
 provider ownership, resources, storage, or routing.
 
@@ -117,6 +119,17 @@ PostgreSQL are profile defaults there.
 ```bash
 task e2e:deployed PROFILE=single-server KUBECONFIG="$KUBECONFIG"
 ```
+
+The checked-in target file behind this command,
+[`tests/targets/single-server.env`](../../tests/targets/single-server.env),
+carries the Kind validation hostnames; for a remote server whose hostnames
+differ, copy
+[`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
+into the environment directory, set the API, UI, and auth URLs plus
+`TEST_TAMOSS_TOKEN_SECRET=tams-api-token` and
+`TEST_TAMOSS_CR_NAME=tamoss-single-server`, and pass
+`TARGET_ENV=deploy/environments/my-single-server/target.env` to the same
+command.
 
 See also:
 
