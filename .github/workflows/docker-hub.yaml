@@ -45,14 +45,27 @@ jobs:
       - name: Resolve operator build metadata
         id: build-version
         shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             python3 .github/scripts/release-metadata.py "${version}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=dev" >> "$GITHUB_OUTPUT"
+            # Non-tag builds publish images tagged after the ref (:main for
+            # mainline pushes, :pr-N for internal PRs), so bake that same tag
+            # as the version instead of "dev". The TAMS API version comes from
+            # the newest compatibility release rather than a hard-coded value,
+            # which is how branch builds previously went stale at 8.0.
+            if [ -n "${PR_NUMBER}" ]; then
+              version="pr-${PR_NUMBER}"
+            else
+              version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
+            fi
+            tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
             echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
-            echo "tams_api=8.0" >> "$GITHUB_OUTPUT"
+            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
@@ -219,15 +232,32 @@ jobs:
       - name: Resolve build version
         id: build-version
         shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             python3 .github/scripts/release-metadata.py "${version}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=dev" >> "$GITHUB_OUTPUT"
+            # Non-tag builds publish images tagged after the ref (:main for
+            # mainline pushes, :pr-N for internal PRs), so bake that same tag
+            # as the version instead of "dev": OPERAND_VERSION then defaults
+            # operands to images this workflow actually publishes. The TAMS
+            # API version comes from the newest compatibility release rather
+            # than a hard-coded value, which is how branch builds previously
+            # went stale at 8.0. The schema revision stays on the "dev"
+            # development marker because branch builds are not a released
+            # schema.
+            if [ -n "${PR_NUMBER}" ]; then
+              version="pr-${PR_NUMBER}"
+            else
+              version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
+            fi
+            tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
             echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
             echo "previous_schema_revision=" >> "$GITHUB_OUTPUT"
-            echo "tams_api=8.0" >> "$GITHUB_OUTPUT"
+            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
