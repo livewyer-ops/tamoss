@@ -16,7 +16,8 @@ fi
 task_tamoss_field_from_rendered() {
   local rendered="$1"
   local field="$2"
-  local query
+  local instance="${3:-}"
+  local query selection
 
   case "$field" in
     baseDomain) query='.spec.publicEndpoint.baseDomain // ""' ;;
@@ -29,9 +30,51 @@ task_tamoss_field_from_rendered() {
       ;;
   esac
 
-  yq -r "select(.kind == \"Tamoss\") | ${query}" "$rendered" \
+  selection='select(.kind == "Tamoss")'
+  if [ -n "$instance" ]; then
+    selection="${selection} | select(.metadata.name == \"${instance}\")"
+  fi
+
+  yq -r "${selection} | ${query}" "$rendered" \
     | sed '/^---$/d; /^$/d' \
     | sed -n '1p'
+}
+
+# task_tamoss_names_from_rendered lists every Tamoss instance in a rendered
+# environment, in the order the environment composes them.
+task_tamoss_names_from_rendered() {
+  local rendered="$1"
+
+  yq -r 'select(.kind == "Tamoss") | .metadata.name // ""' "$rendered" \
+    | sed '/^---$/d; /^$/d'
+}
+
+# task_tamoss_instances_for resolves which instances a command acts on. With no
+# requested instance every instance in the environment is returned, so
+# single-instance environments behave as before and multi-instance environments
+# report on all of them. A requested instance must exist in the environment.
+task_tamoss_instances_for() {
+  local rendered="$1"
+  local requested="${2:-}"
+  local names
+
+  names="$(task_tamoss_names_from_rendered "$rendered")"
+  if [ -z "$names" ]; then
+    echo "No Tamoss instance was found in the rendered environment." >&2
+    return 1
+  fi
+  if [ -z "$requested" ]; then
+    printf '%s\n' "$names"
+    return 0
+  fi
+  if ! printf '%s\n' "$names" | grep -Fxq "$requested"; then
+    {
+      printf 'Instance %s was not found in this environment. Available instances:\n' "$requested"
+      printf '%s\n' "$names" | sed 's/^/  /'
+    } >&2
+    return 1
+  fi
+  printf '%s\n' "$requested"
 }
 
 task_render_environment() {
@@ -162,6 +205,71 @@ task_init_env() {
   printf 'Created %s\n' "$environment_dir"
   printf 'Edit the YAML files there, then run:\n'
   printf '  task env:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$name"
+}
+
+# task_init_env_instance adds an instance manifest to an existing environment
+# and registers it in the environment kustomization, so the environment always
+# composes every instance it holds.
+task_init_env_instance() {
+  local environment_dir="$1"
+  local instance="$2"
+  local profile="$3"
+  local domain="$4"
+  local namespace="${5:-}"
+  local manifest kustomization
+
+  namespace="${namespace:-$instance}"
+  manifest="$environment_dir/$instance.yaml"
+  kustomization="$environment_dir/kustomization.yaml"
+
+  case "$instance" in
+    *[!a-z0-9-]*|""|-*)
+      echo "INSTANCE must be a non-empty DNS-style name using lowercase letters, numbers, and hyphens." >&2
+      return 2
+      ;;
+  esac
+  case "$profile" in
+    single-server|multi-server|edge) ;;
+    *)
+      echo "PROFILE must be single-server, multi-server, or edge for remote Kubernetes environments." >&2
+      return 2
+      ;;
+  esac
+  if [ ! -d "$environment_dir" ]; then
+    echo "Environment $environment_dir was not found. Create it with task env:init." >&2
+    return 1
+  fi
+  if [ ! -f "$kustomization" ]; then
+    echo "Environment $environment_dir has no kustomization.yaml." >&2
+    return 1
+  fi
+  if [ -e "$manifest" ]; then
+    echo "Instance manifest $manifest already exists; refusing to overwrite it." >&2
+    return 1
+  fi
+
+  cat > "$manifest" <<YAML
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $namespace
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: $instance
+  namespace: $namespace
+spec:
+  profile: $profile
+  publicEndpoint:
+    baseDomain: $domain
+YAML
+
+  yq -i ".resources += [\"$instance.yaml\"]" "$kustomization"
+
+  printf 'Created %s and registered it in %s\n' "$manifest" "$kustomization"
+  printf 'Edit the instance manifest, then run:\n'
+  printf '  task env:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$(basename "$environment_dir")"
 }
 
 task_env_values_enabled() {
@@ -378,7 +486,7 @@ task_apply_env() {
   local helmfile_path="$3"
   local operator_kustomize_dir="$4"
   local platform_timeout="$5"
-  local rendered profile namespace name env_name
+  local rendered profile namespace name env_name instances
 
   env_name="$(basename "$environment_dir")"
   rendered="$(mktemp)"
@@ -389,22 +497,21 @@ task_apply_env() {
     "$rendered" \
     "Environment $environment_dir was not found. Create it with task env:init."
 
-  profile="$(task_tamoss_field_from_rendered "$rendered" profile)"
-  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
-  name="$(task_tamoss_field_from_rendered "$rendered" name)"
-  namespace="${namespace:-tams}"
+  instances="$(task_tamoss_instances_for "$rendered")" || return 1
 
-  case "$profile" in
-    local-kind|single-server|multi-server|edge) ;;
-    *)
-      echo "Unable to infer a supported Tamoss spec.profile from $environment_dir." >&2
-      return 1
-      ;;
-  esac
-  if [ -z "$name" ]; then
-    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
-    return 1
-  fi
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    profile="$(task_tamoss_field_from_rendered "$rendered" profile "$name")"
+    case "$profile" in
+      local-kind|single-server|multi-server|edge) ;;
+      *)
+        echo "Unable to infer a supported Tamoss spec.profile for $name in $environment_dir." >&2
+        return 1
+        ;;
+    esac
+  done <<EOF
+$instances
+EOF
 
   task_apply_env_platform \
     "$kubeconfig" \
@@ -415,7 +522,14 @@ task_apply_env() {
   task_wait_operator "$kubeconfig" tamoss-system operator-controller-manager
   task_apply_env_instance "$environment_dir" "$kubeconfig"
 
-  printf 'Applied %s/%s from %s\n' "$namespace" "$name" "$environment_dir"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$name")"
+    namespace="${namespace:-tams}"
+    printf 'Applied %s/%s from %s\n' "$namespace" "$name" "$environment_dir"
+  done <<EOF
+$instances
+EOF
 }
 
 task_apply_env_instance() {
@@ -432,7 +546,8 @@ task_wait_env() {
   local environment_dir="$1"
   local kubeconfig="$2"
   local timeout="$3"
-  local rendered namespace name
+  local instance="${4:-}"
+  local rendered namespace name instances
 
   rendered="$(mktemp)"
   trap "rm -f '$rendered'" EXIT
@@ -441,23 +556,25 @@ task_wait_env() {
     "$environment_dir" \
     "$rendered" \
     "Environment $environment_dir was not found. Create it with task env:init."
-  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
-  name="$(task_tamoss_field_from_rendered "$rendered" name)"
-  namespace="${namespace:-tams}"
-  if [ -z "$name" ]; then
-    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
-    return 1
-  fi
+  instances="$(task_tamoss_instances_for "$rendered" "$instance")" || return 1
 
-  task_step "wait for Tamoss instance" \
-    kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
-      wait --for=condition=Ready "tamoss/$name" --timeout="$timeout"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$name")"
+    namespace="${namespace:-tams}"
+    task_step "wait for Tamoss instance $name" \
+      kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
+        wait --for=condition=Ready "tamoss/$name" --timeout="$timeout"
+  done <<EOF
+$instances
+EOF
 }
 
 task_show_env_status() {
   local environment_dir="$1"
   local kubeconfig="$2"
-  local rendered namespace name
+  local instance="${3:-}"
+  local rendered namespace name instances multiple
 
   rendered="$(mktemp)"
   trap "rm -f '$rendered'" EXIT
@@ -466,20 +583,26 @@ task_show_env_status() {
     "$environment_dir" \
     "$rendered" \
     "Environment $environment_dir was not found. Create it with task env:init."
-  namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
-  name="$(task_tamoss_field_from_rendered "$rendered" name)"
-  namespace="${namespace:-tams}"
-  if [ -z "$name" ]; then
-    echo "Unable to infer Tamoss metadata.name from $environment_dir." >&2
-    return 1
-  fi
+  instances="$(task_tamoss_instances_for "$rendered" "$instance")" || return 1
+  multiple=0
+  [ "$(printf '%s\n' "$instances" | wc -l)" -gt 1 ] && multiple=1
 
-  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o wide
-  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods,svc,ingress
-  if kubectl --kubeconfig "$kubeconfig" api-resources --api-group=gateway.networking.k8s.io | grep -q '^httproutes'; then
-    kubectl --kubeconfig "$kubeconfig" -n "$namespace" get httproute
-  fi
-  kubectl --kubeconfig "$kubeconfig" -n "$namespace" get events --sort-by=.lastTimestamp | tail -40
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$name")"
+    namespace="${namespace:-tams}"
+    if [ "$multiple" -eq 1 ]; then
+      printf '\n=== %s (%s) ===\n' "$name" "$namespace"
+    fi
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o wide
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods,svc,ingress
+    if kubectl --kubeconfig "$kubeconfig" api-resources --api-group=gateway.networking.k8s.io | grep -q '^httproutes'; then
+      kubectl --kubeconfig "$kubeconfig" -n "$namespace" get httproute
+    fi
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" get events --sort-by=.lastTimestamp | tail -40
+  done <<EOF
+$instances
+EOF
 }
 
 task_diff_env() {
@@ -643,10 +766,44 @@ task_print_rustfs_access() {
   printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
 }
 
+# task_print_env_summary reports on every instance in the environment, or on
+# one when an instance is named.
 task_print_env_summary() {
   local environment_dir="$1"
   local kubeconfig="$2"
   local target_file="${3:-}"
+  local instance="${4:-}"
+  local rendered instances name multiple
+
+  rendered="$(mktemp)"
+  task_render_environment \
+    "$environment_dir" \
+    "$rendered" \
+    "Environment $environment_dir was not found. Create it with task env:init."
+  instances="$(task_tamoss_instances_for "$rendered" "$instance")" || {
+    rm -f "$rendered"
+    return 1
+  }
+  rm -f "$rendered"
+  multiple=0
+  [ "$(printf '%s\n' "$instances" | wc -l)" -gt 1 ] && multiple=1
+
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ "$multiple" -eq 1 ]; then
+      printf '\n=== %s ===\n' "$name"
+    fi
+    task_print_instance_summary "$environment_dir" "$kubeconfig" "$target_file" "$name"
+  done <<EOF
+$instances
+EOF
+}
+
+task_print_instance_summary() {
+  local environment_dir="$1"
+  local kubeconfig="$2"
+  local target_file="${3:-}"
+  local instance="${4:-}"
   local rendered profile api_namespace tamoss_name base_domain
   local app_url api_url auth_url token_key
   local token_resource_name token_secret bearer_token default_storagebackend ready_status phase
@@ -661,10 +818,10 @@ task_print_env_summary() {
     "$environment_dir" \
     "$rendered" \
     "Environment $environment_dir was not found. Create it with task env:init."
-  profile="$(task_tamoss_field_from_rendered "$rendered" profile)"
-  api_namespace="$(task_tamoss_field_from_rendered "$rendered" namespace)"
-  tamoss_name="$(task_tamoss_field_from_rendered "$rendered" name)"
-  base_domain="$(task_tamoss_field_from_rendered "$rendered" baseDomain)"
+  profile="$(task_tamoss_field_from_rendered "$rendered" profile "$instance")"
+  api_namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$instance")"
+  tamoss_name="$(task_tamoss_field_from_rendered "$rendered" name "$instance")"
+  base_domain="$(task_tamoss_field_from_rendered "$rendered" baseDomain "$instance")"
   rm -f "$rendered"
 
   api_namespace="${api_namespace:-tams}"
