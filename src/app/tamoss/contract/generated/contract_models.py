@@ -176,6 +176,16 @@ class StorageBackendsListItem(StorageBackend):
             description="If set to `true`, this is the default storage backend. The default storage backend will be used if the client does not specify a storage backend id when requesting the allocation of storage. If this parameter is not set, assume `false`. Service instances may either set one storage backend as default, or none - indicating that clients must always specify a storage backend."
         ),
     ] = None
+    store_type: Annotated[
+        StoreType,
+        Field(
+            description="The generic Storage Backend type. Used to identify the required workflow for reading and writing media. Any `store_product` should be compatible, as much is required for basic interoperability between TAMS implementations, with their associated generic `store_type`."
+        ),
+    ]
+    provider: Annotated[
+        str, Field(description="The cloud (or other) provider of the Storage Backend")
+    ]
+    store_product: Annotated[str, Field(description="The storage product name.")]
 
 
 class StorageBackendsList(RootModel[list[StorageBackendsListItem]]):
