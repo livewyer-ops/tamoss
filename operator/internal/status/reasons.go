@@ -26,6 +26,8 @@ const (
 
 // Reasons surfaced through Tamoss and StorageBackend status conditions,
 // Kubernetes events, and reason-bearing metrics.
+const ReasonAuthentikManagedBlueprintApplyRetrying = "AuthentikManagedBlueprintApplyRetrying"
+
 const (
 	ReasonAlreadyAtVersion                      = "AlreadyAtVersion"
 	ReasonAllComponentsReady                    = "AllComponentsReady"

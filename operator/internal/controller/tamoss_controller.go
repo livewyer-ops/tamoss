@@ -40,6 +40,7 @@ const (
 	tamossAppName = "tamoss"
 
 	defaultAuthentikProbeInterval         = 30 * time.Second
+	defaultAuthentikRetryGracePeriod      = 10 * time.Minute
 	defaultDependencyProbeInterval        = 5 * time.Minute
 	defaultFinalizerPollInterval          = 2 * time.Second
 	defaultProviderReadinessProbeInterval = 10 * time.Second
@@ -54,6 +55,7 @@ type TamossReconciler struct {
 	Discovery                   *operatordiscovery.Manager
 	AuthentikPlatformNamespaces *authentik.PlatformNamespacePolicy
 	AuthentikProbeInterval      time.Duration
+	AuthentikRetryGracePeriod   time.Duration
 	DependencyProbeInterval     time.Duration
 	AuthentikHTTPClient         *http.Client
 	ManifestReader              HibernationManifestReader
@@ -364,8 +366,8 @@ func (r *TamossReconciler) reconcileTamossManagedAuthentikStage(ctx context.Cont
 	managedBlueprint, err := authentik.NewManagedBlueprintClient(tamoss, token.Token, r.AuthentikHTTPClient).Reconcile(ctx, authentik.ManagedBlueprintName(tamoss), authentik.ManagedBlueprintPath(tamoss), blueprint)
 	if err != nil {
 		message := fmt.Sprintf("Authentik managed Blueprint apply failed for %s: %v", authentik.ManagedBlueprintName(tamoss), err)
-		if err := r.updateIdentityBlockedStatus(ctx, tamoss, operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed, message); err != nil {
-			return stopReconcile(ctrl.Result{}), err
+		if statusErr := r.updateAuthentikApplyFailureStatus(ctx, tamoss, err, message); statusErr != nil {
+			return stopReconcile(ctrl.Result{}), statusErr
 		}
 		recordPhase(tamoss.Status.Phase)
 		return stopReconcile(ctrl.Result{RequeueAfter: r.authentikProbeInterval()}), nil
@@ -373,8 +375,8 @@ func (r *TamossReconciler) reconcileTamossManagedAuthentikStage(ctx context.Cont
 	log.FromContext(ctx).V(1).Info("applied Authentik managed Blueprint", "name", managedBlueprint.Name, "status", managedBlueprint.Status)
 	if err := authentik.NewProxyOutpostClient(tamoss, token.Token, r.AuthentikHTTPClient).Reconcile(ctx, tamoss, managedBlueprint); err != nil {
 		message := fmt.Sprintf("Authentik proxy outpost apply failed for %s: %v", authentik.ProxyProviderName(tamoss), err)
-		if err := r.updateIdentityBlockedStatus(ctx, tamoss, operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed, message); err != nil {
-			return stopReconcile(ctrl.Result{}), err
+		if statusErr := r.updateAuthentikApplyFailureStatus(ctx, tamoss, err, message); statusErr != nil {
+			return stopReconcile(ctrl.Result{}), statusErr
 		}
 		recordPhase(tamoss.Status.Phase)
 		return stopReconcile(ctrl.Result{RequeueAfter: r.authentikProbeInterval()}), nil
