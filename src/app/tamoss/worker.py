@@ -10,9 +10,10 @@ from datetime import timedelta
 from tamoss.application.use_cases import TamossUseCases
 from tamoss.bootstrap import create_use_cases
 from tamoss.domain.model import utc_now
-from tamoss.metrics import record_worker_tasks_processed, start_metrics_server
+from tamoss.metrics import record_worker_tasks_processed
 from tamoss.settings import DEFAULT_WORKER_LEASE_SECONDS, Settings, get_settings
 from tamoss.storage_credentials import validate_credentials_file
+from tamoss.worker_health import WorkerHealthState, start_worker_http_server
 
 logger = logging.getLogger("tamoss.worker")
 _shutdown = False
@@ -204,11 +205,14 @@ def main(argv: list[str] | None = None) -> None:
         enable_delete,
         enable_webhook,
     )
-    metrics_server = start_metrics_server(settings)
-    use_cases = create_use_cases(settings)
+    health = WorkerHealthState(settings.worker_health_stale_after_seconds)
+    worker_http_server = start_worker_http_server(settings, health)
+    use_cases: TamossUseCases | None = None
     try:
+        use_cases = create_use_cases(settings)
         while not _shutdown:
             processed = 0
+            health.mark_poll_started()
             try:
                 delete_processed, webhook_processed = drain_once(
                     use_cases,
@@ -234,13 +238,18 @@ def main(argv: list[str] | None = None) -> None:
                 if purged:
                     logger.info("purged %s finished queue record(s)", purged)
             except Exception:
+                health.mark_poll_failed()
                 logger.exception("worker poll failed; retrying")
+            else:
+                health.mark_poll_succeeded()
             if not processed:
                 time.sleep(poll_interval)
     finally:
-        if metrics_server is not None:
-            metrics_server.close()
-        _close_use_cases(use_cases)
+        health.mark_stopping()
+        if worker_http_server is not None:
+            worker_http_server.close()
+        if use_cases is not None:
+            _close_use_cases(use_cases)
 
 
 if __name__ == "__main__":

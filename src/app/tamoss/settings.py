@@ -308,6 +308,11 @@ class Settings(BaseSettings):
         default=DEFAULT_WORKER_LEASE_SECONDS,
         validation_alias="TAMOSS_WORKER_LEASE_SECONDS",
     )
+    worker_health_stale_after_seconds: float = Field(
+        default=600.0,
+        ge=30.0,
+        validation_alias="TAMOSS_WORKER_HEALTH_STALE_AFTER_SECONDS",
+    )
     worker_id: str = Field(
         default_factory=_worker_id_from_env,
         validation_alias="TAMOSS_WORKER_ID",

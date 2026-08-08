@@ -153,8 +153,10 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" describe pod <pod-name
 kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <pod-name> --previous
 ```
 
-Worker pods use an exec probe that runs the same dependency check available
-from the container:
+Worker pods expose `/healthz` and `/readyz` on their metrics port. These
+constant-time probes report process progress and the result of the latest worker
+poll without opening new backend connections. For a deeper dependency check,
+run the diagnostic command in the container:
 
 ```bash
 WORKER_DEPLOYMENT="$(kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
