@@ -183,6 +183,15 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
         == "authentik"
     )
 
+    worker = _resource(rendered, "Deployment", "authentik-worker", "auth")
+    container = next(
+        item
+        for item in worker["spec"]["template"]["spec"]["containers"]
+        if item["name"] == "worker"
+    )
+    for probe_name in ["startupProbe", "livenessProbe", "readinessProbe"]:
+        assert container[probe_name]["timeoutSeconds"] == 30
+
 
 def test_profile_platform_values_enable_authentik_by_default() -> None:
     registry = _load_yaml(ROOT / "deploy/profiles.yaml")
@@ -205,6 +214,14 @@ def test_profile_platform_values_enable_authentik_by_default() -> None:
 
     values = _load_yaml(ROOT / "deploy/platform/values/edge-reference.yaml")
     assert values["authentik"]["enabled"] is False
+
+
+def test_default_authentik_worker_probe_timeouts_allow_slow_startup() -> None:
+    values = _load_yaml(ROOT / "deploy/platform/values/defaults.yaml")
+    worker = values["authentikChart"]["worker"]
+
+    for probe_name in ["startupProbe", "livenessProbe", "readinessProbe"]:
+        assert worker[probe_name]["timeoutSeconds"] == 30
 
 
 def test_reference_platform_values_render_profile_authentik_host() -> None:

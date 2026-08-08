@@ -389,6 +389,78 @@ var _ = Describe("Tamoss Controller", func() {
 			Eventually(recorder.Events).Should(Receive(ContainSubstring(operatorstatus.ReasonAuthentikAPITokenMissing)))
 		})
 
+		It("should recover from transient managed Authentik API failures", func() {
+			ensureNamespace(ctx, "auth")
+			ensureAuthentikTokenSecret(ctx, "auth")
+			server := authentikManagedServerWithCreateFailures(http.StatusMethodNotAllowed, http.StatusServiceUnavailable)
+			defer server.Close()
+			configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
+			controllerReconciler := &TamossReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			for range 2 {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				updated := &tamossv1alpha1.Tamoss{}
+				Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+				blueprint := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted)
+				progressing := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionProgressing)
+				degraded := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionDegraded)
+				Expect(updated.Status.Phase).To(Equal(operatorstatus.PhaseProgressing))
+				Expect(blueprint).NotTo(BeNil())
+				Expect(blueprint.Status).To(Equal(metav1.ConditionUnknown))
+				Expect(blueprint.Reason).To(Equal(operatorstatus.ReasonAuthentikManagedBlueprintApplyRetrying))
+				Expect(progressing).NotTo(BeNil())
+				Expect(progressing.Status).To(Equal(metav1.ConditionTrue))
+				Expect(degraded).NotTo(BeNil())
+				Expect(degraded.Status).To(Equal(metav1.ConditionFalse))
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			updated := &tamossv1alpha1.Tamoss{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			blueprint := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted)
+			Expect(blueprint).NotTo(BeNil())
+			Expect(blueprint.Status).To(Equal(metav1.ConditionTrue))
+			Expect(server.applied()).To(Equal(1))
+		})
+
+		It("should degrade persistent managed Authentik API failures while continuing retries", func() {
+			ensureNamespace(ctx, "auth")
+			ensureAuthentikTokenSecret(ctx, "auth")
+			server := authentikManagedServerWithCreateFailures(http.StatusServiceUnavailable, http.StatusServiceUnavailable)
+			defer server.Close()
+			configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
+			controllerReconciler := &TamossReconciler{
+				Client:                    k8sClient,
+				Scheme:                    k8sClient.Scheme(),
+				AuthentikRetryGracePeriod: time.Nanosecond,
+			}
+
+			for range 2 {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			updated := &tamossv1alpha1.Tamoss{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			blueprint := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted)
+			progressing := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionProgressing)
+			degraded := meta.FindStatusCondition(updated.Status.Conditions, operatorstatus.ConditionDegraded)
+			Expect(updated.Status.Phase).To(Equal(operatorstatus.PhaseDegraded))
+			Expect(blueprint).NotTo(BeNil())
+			Expect(blueprint.Status).To(Equal(metav1.ConditionFalse))
+			Expect(blueprint.Reason).To(Equal(operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed))
+			Expect(progressing).NotTo(BeNil())
+			Expect(progressing.Status).To(Equal(metav1.ConditionTrue))
+			Expect(degraded).NotTo(BeNil())
+			Expect(degraded.Status).To(Equal(metav1.ConditionTrue))
+		})
+
 		It("should report Gateway API unavailable when HTTPRoute CRDs are missing", func() {
 			instance := &tamossv1alpha1.Tamoss{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, instance)).To(Succeed())
@@ -1288,10 +1360,15 @@ type authentikManagedTestServer struct {
 	mu               sync.Mutex
 	blueprint        authentikbackend.ManagedBlueprint
 	appliedBlueprint int
+	createFailures   []int
 }
 
 func authentikManagedServer() *authentikManagedTestServer {
-	server := &authentikManagedTestServer{}
+	return authentikManagedServerWithCreateFailures()
+}
+
+func authentikManagedServerWithCreateFailures(statuses ...int) *authentikManagedTestServer {
+	server := &authentikManagedTestServer{createFailures: append([]int(nil), statuses...)}
 	server.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/v3/managed/blueprints/") {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
@@ -1331,6 +1408,12 @@ func (s *authentikManagedTestServer) handleBlueprintAPI(w http.ResponseWriter, r
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v3/managed/blueprints/":
+		if len(s.createFailures) > 0 {
+			status := s.createFailures[0]
+			s.createFailures = s.createFailures[1:]
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
 		var request struct {
 			Name    string `json:"name"`
 			Path    string `json:"path"`

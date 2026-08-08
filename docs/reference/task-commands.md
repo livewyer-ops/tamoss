@@ -26,11 +26,18 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task env:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. Use `PROFILE=edge` for the ARM64 single-node profile. |
+| `task env:instance:init ENV=my-prod INSTANCE=second PROFILE=single-server DOMAIN=second.example.com` | Add a `Tamoss` instance to an existing environment and register it in the environment kustomization. `NAMESPACE` defaults to the instance name. |
 | `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the [Helmfile](https://helmfile.readthedocs.io/) platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |
 | `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
 | `task env:summary ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for the selected environment. |
+
+`env:wait`, `env:status`, and `env:summary` act on every instance in the
+environment. Add `INSTANCE=<name>` to act on one, for example
+`task env:summary ENV=my-prod INSTANCE=second KUBECONFIG=/path/to/kubeconfig`.
+Naming an instance the environment does not compose fails with the list of
+instances it does.
 
 ### Additional Validation Commands
 

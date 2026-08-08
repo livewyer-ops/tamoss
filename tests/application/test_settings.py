@@ -9,6 +9,11 @@ from tamoss.settings import Settings, read_secret_file
     [
         ("TAMOSS_WORKER_MAX_REQUESTS", "many", "positive integer"),
         ("TAMOSS_WORKER_LEASE_SECONDS", "0", "positive integer"),
+        (
+            "TAMOSS_WORKER_HEALTH_STALE_AFTER_SECONDS",
+            "29",
+            "TAMOSS_WORKER_HEALTH_STALE_AFTER_SECONDS",
+        ),
         ("TAMOSS_WEBHOOK_TIMEOUT_SECONDS", "-1", "positive number"),
         ("TAMOSS_WORKER_ENABLE_DELETE", "sometimes", "boolean"),
         ("TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED", "sometimes", "boolean"),
@@ -46,6 +51,7 @@ def test_operator_rendered_runtime_env_values_parse(
         "TAMOSS_WEBHOOK_ALLOWED_HOSTS": ".svc.cluster.local",
         "TAMOSS_WORKER_POLL_INTERVAL_SECONDS": "1",
         "TAMOSS_WORKER_MAX_REQUESTS": "25",
+        "TAMOSS_WORKER_HEALTH_STALE_AFTER_SECONDS": "900",
         "TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED": "false",
         "TAMOSS_OAUTH2_ENABLED": "true",
         "TAMOSS_OAUTH2_ISSUER": "https://auth.example.test/application/o/tamoss/",
@@ -63,6 +69,7 @@ def test_operator_rendered_runtime_env_values_parse(
     assert settings.webhook_allowed_hosts == [".svc.cluster.local"]
     assert settings.worker_poll_interval_seconds == 1
     assert settings.worker_max_requests == 25
+    assert settings.worker_health_stale_after_seconds == 900
     assert settings.storage_backend_registration_enabled is False
     assert settings.oauth2_enabled is True
     assert settings.oauth2_algorithms == ["RS256", "PS256"]

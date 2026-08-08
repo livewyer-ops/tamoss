@@ -112,10 +112,6 @@ func applySingleServer(tamoss *tamossv1alpha1.Tamoss) {
 	})
 	setBool(&tamoss.Spec.Worker.Enabled, true)
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
-	// Single-server hosts can be as small as edge boxes (the base 5s exec
-	// probe timeout crashlooped the worker on a 2-vCPU ARM host), so apply
-	// the same relaxed worker probe timings as edge.
-	defaultRelaxedWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "250m", "384Mi", "1", "768Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.UI.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
@@ -155,7 +151,6 @@ func applyEdge(tamoss *tamossv1alpha1.Tamoss) {
 	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_DATABASE_POOL_MAX_SIZE", "3")
 	setEnvDefault(&tamoss.Spec.Worker.Env, "TAMOSS_WEBHOOK_ALLOWED_HOSTS", ".svc.cluster.local")
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
-	defaultRelaxedWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "100m", "192Mi", "600m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
 	defaultWorkloadResources(&tamoss.Spec.UI.WorkloadCommonSpec, "25m", "32Mi", "150m", "96Mi")
@@ -463,7 +458,7 @@ func defaultRustFSOperator(tamoss *tamossv1alpha1.Tamoss, servers, volumesPerSer
 		}}
 	}
 	if rustfs.Bucket.Name == "" {
-		rustfs.Bucket.Name = "tamoss"
+		rustfs.Bucket.Name = defaultAppName
 	}
 }
 
@@ -475,32 +470,14 @@ func defaultWorkloadResources(spec *tamossv1alpha1.WorkloadCommonSpec, requestCP
 }
 
 func defaultWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
-	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
 	if spec.ReadinessProbe == nil {
-		spec.ReadinessProbe = execProbe(command, 10, 5, 3)
+		spec.ReadinessProbe = httpProbeOnPort("/readyz", "metrics", 10, 5, 3)
 	}
 	if spec.LivenessProbe == nil {
-		spec.LivenessProbe = execProbe(command, 30, 10, 3)
+		spec.LivenessProbe = httpProbeOnPort("/healthz", "metrics", 30, 5, 3)
 	}
 	if spec.StartupProbe == nil {
-		spec.StartupProbe = execProbe(command, 10, 5, 12)
-	}
-}
-
-// defaultRelaxedWorkerProbes stretches the worker exec probe periods and
-// timeouts for profiles that run on small hosts (edge, single-server), where
-// forking the probe interpreter can exceed the base 5s timeout and crashloop
-// an otherwise healthy worker.
-func defaultRelaxedWorkerProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
-	command := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
-	if spec.ReadinessProbe == nil {
-		spec.ReadinessProbe = execProbe(command, 30, 30, 3)
-	}
-	if spec.LivenessProbe == nil {
-		spec.LivenessProbe = execProbe(command, 60, 30, 3)
-	}
-	if spec.StartupProbe == nil {
-		spec.StartupProbe = execProbe(command, 30, 30, 12)
+		spec.StartupProbe = httpProbeOnPort("/healthz", "metrics", 10, 5, 12)
 	}
 }
 
@@ -517,23 +494,16 @@ func defaultAPIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 }
 
 func httpProbe(path string, periodSeconds, timeoutSeconds, failureThreshold int32) *corev1.Probe {
+	return httpProbeOnPort(path, "http", periodSeconds, timeoutSeconds, failureThreshold)
+}
+
+func httpProbeOnPort(path, port string, periodSeconds, timeoutSeconds, failureThreshold int32) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: path,
-				Port: intstr.FromString("http"),
+				Port: intstr.FromString(port),
 			},
-		},
-		PeriodSeconds:    periodSeconds,
-		TimeoutSeconds:   timeoutSeconds,
-		FailureThreshold: failureThreshold,
-	}
-}
-
-func execProbe(command []string, periodSeconds, timeoutSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			Exec: &corev1.ExecAction{Command: append([]string{}, command...)},
 		},
 		PeriodSeconds:    periodSeconds,
 		TimeoutSeconds:   timeoutSeconds,

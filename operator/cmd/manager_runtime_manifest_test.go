@@ -76,6 +76,9 @@ func assertManagerRuntimeSettings(t *testing.T, manager map[string]any) {
 	if env["POD_SERVICE_ACCOUNT_NAME"] != "spec.serviceAccountName" {
 		t.Fatalf("expected POD_SERVICE_ACCOUNT_NAME downward API env, got %#v", env["POD_SERVICE_ACCOUNT_NAME"])
 	}
+	if env["TAMOSS_AUTHENTIK_PROBE_TIMEOUT"] != "30s" {
+		t.Fatalf("expected Authentik probe timeout 30s, got %#v", env["TAMOSS_AUTHENTIK_PROBE_TIMEOUT"])
+	}
 	startupProbe := asMap(t, manager["startupProbe"], "manager startupProbe")
 	failureThreshold := intValue(t, startupProbe["failureThreshold"], "startupProbe.failureThreshold")
 	periodSeconds := intValue(t, startupProbe["periodSeconds"], "startupProbe.periodSeconds")

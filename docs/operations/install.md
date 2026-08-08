@@ -161,10 +161,24 @@ deploy/environments/<env>/
     └── prod-a/                # optional per-instance dashboards and alerts
 ```
 
-`task env:instance:apply` applies the whole kustomization; adding an
-instance is adding its manifest and listing it in `kustomization.yaml`.
-Instances using `s3.providedBy: external` need their default
-`StorageBackend` manifest alongside the CR, as `prod-a-storage.yaml` shows.
+Add an instance with `task env:instance:init`, which writes the manifest and
+registers it in `kustomization.yaml`:
+
+```bash
+task env:instance:init ENV=<env> INSTANCE=prod-b PROFILE=multi-server \
+  DOMAIN=prod-b.example.com NAMESPACE=prod-b
+```
+
+`task env:instance:apply` then applies the whole kustomization. Instances
+using `s3.providedBy: external` need their default `StorageBackend` manifest
+alongside the CR, as `prod-a-storage.yaml` shows.
+
+`env:wait`, `env:status`, and `env:summary` report on every instance in the
+environment. Pass `INSTANCE=<name>` to work with one:
+
+```bash
+task env:summary ENV=<env> INSTANCE=prod-a KUBECONFIG="$KUBECONFIG"
+```
 
 ## Environment Secrets
 
