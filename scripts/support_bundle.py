@@ -57,6 +57,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root", default=".local/support-bundles", help="Bundle root directory"
     )
+    parser.add_argument(
+        "--additional-namespace",
+        action="append",
+        default=[],
+        help="Additional platform namespace to collect; may be repeated",
+    )
     parser.add_argument("--tail", default="500", help="Log lines per container")
     return parser.parse_args()
 
@@ -91,6 +97,7 @@ def main() -> int:
             "namespace": args.namespace,
             "tamossName": args.name or None,
             "operatorNamespace": args.operator_namespace,
+            "additionalNamespaces": args.additional_namespace,
             "versions": tamoss_version_summary(tamoss_document),
             "firstStart": first_start_summary(
                 tamoss_document, storage_backend_document
@@ -147,6 +154,26 @@ def main() -> int:
 
     collector.collect_logs(args.namespace, "namespace", args.tail)
     collector.collect_logs(args.operator_namespace, "operator", args.tail)
+    for namespace in args.additional_namespace:
+        if not collector.check_namespace(namespace):
+            continue
+        scope = f"platform/{safe_filename(namespace)}"
+        for resource in (
+            "pods",
+            "deployments",
+            "statefulsets",
+            "jobs",
+            "services",
+            "configmaps",
+            "secrets",
+            "events",
+        ):
+            collector.collect_json(
+                namespace,
+                [resource],
+                f"{scope}/{resource}.json",
+            )
+        collector.collect_logs(namespace, scope, args.tail)
     print(bundle_dir)
     return 0
 

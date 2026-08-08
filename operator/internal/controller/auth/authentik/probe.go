@@ -23,10 +23,6 @@ type discoveryDocument struct {
 	JWKSURI               string `json:"jwks_uri"`
 }
 
-func ProbeWithClient(ctx context.Context, client *http.Client, issuerURL, applicationSlug string) error {
-	return ProbeWithClientTimeout(ctx, client, issuerURL, applicationSlug, DefaultProbeTimeout)
-}
-
 func ProbeWithClientTimeout(ctx context.Context, client *http.Client, issuerURL, applicationSlug string, timeout time.Duration) error {
 	if client == nil {
 		client = http.DefaultClient

@@ -21,7 +21,7 @@ func TestProbeSucceedsWithValidDiscoveryDocument(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := ProbeWithClient(context.Background(), server.Client(), server.URL, "tamoss-prod"); err != nil {
+	if err := ProbeWithClientTimeout(context.Background(), server.Client(), server.URL, "tamoss-prod", DefaultProbeTimeout); err != nil {
 		t.Fatalf("expected probe to succeed: %v", err)
 	}
 }
@@ -41,7 +41,7 @@ func TestProbeReportsNonOKStatus(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
 
-	err := ProbeWithClient(context.Background(), server.Client(), server.URL, "missing")
+	err := ProbeWithClientTimeout(context.Background(), server.Client(), server.URL, "missing", DefaultProbeTimeout)
 	if err == nil || !strings.Contains(err.Error(), "unexpected HTTP status 404") {
 		t.Fatalf("expected 404 error, got %v", err)
 	}
@@ -52,7 +52,7 @@ func TestProbeReportsConnectionRefused(t *testing.T) {
 	url := server.URL
 	server.Close()
 
-	err := ProbeWithClient(context.Background(), server.Client(), url, "down")
+	err := ProbeWithClientTimeout(context.Background(), server.Client(), url, "down", DefaultProbeTimeout)
 	if err == nil {
 		t.Fatalf("expected connection error")
 	}
@@ -67,7 +67,7 @@ func TestProbeHonoursContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	err := ProbeWithClient(ctx, server.Client(), server.URL, "slow")
+	err := ProbeWithClientTimeout(ctx, server.Client(), server.URL, "slow", DefaultProbeTimeout)
 	if err == nil {
 		t.Fatalf("expected timeout error")
 	}

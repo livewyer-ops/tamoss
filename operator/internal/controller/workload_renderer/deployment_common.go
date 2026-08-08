@@ -176,9 +176,16 @@ func secretKeyEnv(name, secretName, key string) corev1.EnvVar {
 	}
 }
 
-func literalEnv(env map[string]string) []corev1.EnvVar {
+func literalEnv(env map[string]string, excluded ...string) []corev1.EnvVar {
+	excludedNames := make(map[string]struct{}, len(excluded))
+	for _, name := range excluded {
+		excludedNames[name] = struct{}{}
+	}
 	vars := make([]corev1.EnvVar, 0, len(env))
 	for _, key := range sortedEnv(env) {
+		if _, excluded := excludedNames[key]; excluded {
+			continue
+		}
 		vars = append(vars, corev1.EnvVar{Name: key, Value: env[key]})
 	}
 	return vars

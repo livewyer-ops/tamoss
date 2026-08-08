@@ -32,7 +32,11 @@ func renderWorkerDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		corev1.EnvVar{Name: "TAMOSS_METRICS_BIND_ADDRESS", Value: "0.0.0.0"},
 		corev1.EnvVar{Name: "TAMOSS_METRICS_PORT", Value: fmt.Sprintf("%d", apiMetricsPort)},
 	)
-	env = append(env, literalEnv(tamoss.Spec.Worker.Env)...)
+	env = append(env, literalEnv(
+		tamoss.Spec.Worker.Env,
+		"TAMOSS_METRICS_BIND_ADDRESS",
+		"TAMOSS_METRICS_PORT",
+	)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.Worker.WorkloadCommonSpec, tamoss)
 	deployment := deploymentFor(
 		tamoss,

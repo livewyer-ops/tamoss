@@ -62,6 +62,20 @@ jobs:
       - name: Run Kind E2E gate
         run: task kind:e2e PROFILE=local-kind KUBECONFIG=tams.kubeconfig KIND_SUMMARY=false
 
+      - name: Capture Kind diagnostics
+        if: failure() || cancelled()
+        run: |
+          python3 scripts/support_bundle.py \
+            --kubeconfig tams.kubeconfig \
+            --namespace tams \
+            --operator-namespace tamoss-system \
+            --additional-namespace auth \
+            --additional-namespace cert-manager \
+            --additional-namespace cnpg-system \
+            --additional-namespace rustfs-system \
+            --additional-namespace traefik \
+            --output-root reports/kind-support || true
+
       - name: Upload test reports
         uses: actions/upload-artifact@v7
         if: always()
