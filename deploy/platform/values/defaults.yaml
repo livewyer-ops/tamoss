@@ -80,6 +80,13 @@ authentikChart:
   server:
     ingress:
       enabled: false
+  worker:
+    startupProbe:
+      timeoutSeconds: 30
+    livenessProbe:
+      timeoutSeconds: 30
+    readinessProbe:
+      timeoutSeconds: 30
   serviceAccount:
     namespaceOverride: auth
 
