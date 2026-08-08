@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	defaultProbeTimeout        = 5 * time.Second
+	// DefaultProbeTimeout bounds OIDC discovery when callers do not provide a deadline.
+	DefaultProbeTimeout        = 30 * time.Second
 	defaultAPIOperationTimeout = 30 * time.Second
 )
 
@@ -23,6 +24,10 @@ type discoveryDocument struct {
 }
 
 func ProbeWithClient(ctx context.Context, client *http.Client, issuerURL, applicationSlug string) error {
+	return ProbeWithClientTimeout(ctx, client, issuerURL, applicationSlug, DefaultProbeTimeout)
+}
+
+func ProbeWithClientTimeout(ctx context.Context, client *http.Client, issuerURL, applicationSlug string, timeout time.Duration) error {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -31,8 +36,11 @@ func ProbeWithClient(ctx context.Context, client *http.Client, issuerURL, applic
 		return err
 	}
 	if _, ok := ctx.Deadline(); !ok {
+		if timeout <= 0 {
+			timeout = DefaultProbeTimeout
+		}
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultProbeTimeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 

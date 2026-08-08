@@ -54,6 +54,7 @@ type TamossReconciler struct {
 	Discovery                   *operatordiscovery.Manager
 	AuthentikPlatformNamespaces *authentik.PlatformNamespacePolicy
 	AuthentikProbeInterval      time.Duration
+	AuthentikProbeTimeout       time.Duration
 	DependencyProbeInterval     time.Duration
 	AuthentikHTTPClient         *http.Client
 	ManifestReader              HibernationManifestReader

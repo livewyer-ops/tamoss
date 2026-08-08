@@ -121,7 +121,13 @@ func (r *TamossReconciler) identityResult(ctx context.Context, tamoss *tamossv1a
 		}
 		slug := tamoss.Spec.Auth.ApplicationSlug(tamoss.Namespace, tamoss.Name)
 		issuerURL := authentik.APIBaseURL(tamoss)
-		err := authentik.ProbeWithClient(ctx, authentik.HTTPClientOrDefault(r.AuthentikHTTPClient), issuerURL, slug)
+		err := authentik.ProbeWithClientTimeout(
+			ctx,
+			authentik.HTTPClientOrDefault(r.AuthentikHTTPClient),
+			issuerURL,
+			slug,
+			r.authentikProbeTimeout(),
+		)
 		if err != nil {
 			result.Message = fmt.Sprintf("Authentik issuer is unreachable for application %s: %v", slug, err)
 			return result
@@ -159,4 +165,11 @@ func (r *TamossReconciler) authentikProbeInterval() time.Duration {
 		return r.AuthentikProbeInterval
 	}
 	return defaultAuthentikProbeInterval
+}
+
+func (r *TamossReconciler) authentikProbeTimeout() time.Duration {
+	if r.AuthentikProbeTimeout > 0 {
+		return r.AuthentikProbeTimeout
+	}
+	return authentik.DefaultProbeTimeout
 }
