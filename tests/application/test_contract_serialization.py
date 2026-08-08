@@ -13,6 +13,13 @@ from tests.tams.support import (
 )
 
 
+def test_generated_storage_backend_identity_fields_are_required() -> None:
+    fields = contract_models.StorageBackendsListItem.model_fields
+
+    for name in ("store_type", "provider", "store_product"):
+        assert fields[name].is_required()
+
+
 def test_generated_contract_models_validate_representative_bbc_payloads() -> None:
     flow_id = uuid4()
     source_id = uuid4()

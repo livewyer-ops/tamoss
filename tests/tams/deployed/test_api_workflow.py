@@ -36,6 +36,9 @@ def test_deployed_default_install_has_playable_demo_media(
     backends = e2e_client.request_json("GET", "/service/storage-backends")
     default_backend = next((item for item in backends if item["default_storage"]), None)
     assert default_backend is not None
+    assert default_backend["store_type"] == "http_object_store"
+    assert default_backend["provider"]
+    assert default_backend["store_product"]
 
     flow = e2e_client.request_json("GET", f"/flows/{DEMO_FLOW_ID}")
     assert flow["id"] == DEMO_FLOW_ID

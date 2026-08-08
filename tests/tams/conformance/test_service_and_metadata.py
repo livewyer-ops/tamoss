@@ -71,7 +71,9 @@ def test_storage_backend_listing_returns_configured_s3_backend(
     assert len(payload) == 1
     assert payload[0]["label"] == PRIMARY_BACKEND_LABEL
     assert payload[0]["default_storage"] is True
-    assert all(item["store_type"] == "http_object_store" for item in payload)
+    assert payload[0]["store_type"] == "http_object_store"
+    assert payload[0]["provider"] == "tamoss"
+    assert payload[0]["store_product"] == "s3"
 
     storage_head = client.head("/service/storage-backends")
     assert storage_head.status_code == 200
