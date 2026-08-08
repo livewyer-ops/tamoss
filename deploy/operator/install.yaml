@@ -16681,6 +16681,8 @@ spec:
           value: info
         - name: TAMOSS_OPERATOR_LOG_LEVEL_OVERRIDES
           value: ""
+        - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
+          value: 30s
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

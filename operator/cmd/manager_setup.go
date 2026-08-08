@@ -122,6 +122,7 @@ func setupControllers(
 		Discovery:                   dependencyDiscovery,
 		DependencyProbeInterval:     dependencyProbeInterval,
 		AuthentikPlatformNamespaces: authentik.NewPlatformNamespacePolicy(os.Getenv("TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES")),
+		AuthentikProbeTimeout:       authentikProbeTimeout(),
 		AuthentikHTTPClient:         authentik.NewHTTPClient(),
 	}
 	if err := tamossReconciler.SetupWithManager(mgr); err != nil {
@@ -206,4 +207,17 @@ func dependencyDiscoveryInterval() time.Duration {
 		return 5 * time.Minute
 	}
 	return interval
+}
+
+func authentikProbeTimeout() time.Duration {
+	value := os.Getenv("TAMOSS_AUTHENTIK_PROBE_TIMEOUT")
+	if value == "" {
+		return authentik.DefaultProbeTimeout
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		setupLog.Info("invalid TAMOSS_AUTHENTIK_PROBE_TIMEOUT; using default", "value", value)
+		return authentik.DefaultProbeTimeout
+	}
+	return timeout
 }

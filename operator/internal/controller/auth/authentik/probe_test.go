@@ -72,3 +72,15 @@ func TestProbeHonoursContextTimeout(t *testing.T) {
 		t.Fatalf("expected timeout error")
 	}
 }
+
+func TestProbeUsesConfiguredTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	err := ProbeWithClientTimeout(context.Background(), server.Client(), server.URL, "slow", 10*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected configured timeout error, got %v", err)
+	}
+}
