@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -97,6 +98,61 @@ func (r *TamossReconciler) updateIdentityBlockedStatus(ctx context.Context, tamo
 		Progressing:       boolCondition(false, reason, "Reconciliation is blocked by identity configuration"),
 		Degraded:          boolCondition(true, reason, message),
 	})
+}
+
+func (r *TamossReconciler) updateAuthentikApplyFailureStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, applyErr error, message string) error {
+	reason := operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed
+	degraded := true
+	if authentik.IsRetryableAPIError(applyErr) && !r.authentikRetryGracePeriodElapsed(tamoss) {
+		reason = operatorstatus.ReasonAuthentikManagedBlueprintApplyRetrying
+		degraded = false
+	}
+
+	identityBlueprint := boolCondition(false, reason, message)
+	if !degraded {
+		identityBlueprint = unknownCondition(reason, message)
+	}
+	identity := boolCondition(false, reason, message)
+	phase := operatorstatus.PhaseProgressing
+	degradedCondition := boolCondition(false, operatorstatus.ReasonNoError, "No terminal reconcile error has been observed")
+	if degraded {
+		phase = operatorstatus.PhaseDegraded
+		degradedCondition = boolCondition(true, reason, message)
+	}
+	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
+		Phase:             phase,
+		SchemaState:       unknownCondition(reason, "Schema reconciliation is blocked by identity configuration"),
+		Backends:          &statusConditionValue{Status: metav1.ConditionTrue, Reason: operatorstatus.ReasonBackendReferencesConfigured, Message: "Backend secret references are configured"},
+		IdentityBlueprint: &identityBlueprint,
+		Identity:          &identity,
+		Ready:             boolCondition(false, reason, message),
+		Progressing:       boolCondition(true, reason, "Retrying Authentik identity reconciliation"),
+		Degraded:          degradedCondition,
+	})
+}
+
+func (r *TamossReconciler) authentikRetryGracePeriodElapsed(tamoss *tamossv1alpha1.Tamoss) bool {
+	condition := meta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionIdentityBlueprintSubmitted)
+	if condition == nil || condition.ObservedGeneration != tamoss.Generation {
+		return false
+	}
+	if condition.Reason == operatorstatus.ReasonAuthentikManagedBlueprintApplyFailed {
+		return true
+	}
+	if condition.Status != metav1.ConditionUnknown || condition.Reason != operatorstatus.ReasonAuthentikManagedBlueprintApplyRetrying {
+		return false
+	}
+	if condition.LastTransitionTime.IsZero() {
+		return false
+	}
+	return time.Since(condition.LastTransitionTime.Time) >= r.authentikRetryGracePeriod()
+}
+
+func (r *TamossReconciler) authentikRetryGracePeriod() time.Duration {
+	if r.AuthentikRetryGracePeriod > 0 {
+		return r.AuthentikRetryGracePeriod
+	}
+	return defaultAuthentikRetryGracePeriod
 }
 
 func (r *TamossReconciler) identityResult(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) identityReconcileResult {
