@@ -30,7 +30,11 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
-	env = append(env, literalEnv(tamoss.Spec.API.Env)...)
+	env = append(env, literalEnv(
+		tamoss.Spec.API.Env,
+		"TAMOSS_METRICS_BIND_ADDRESS",
+		"TAMOSS_METRICS_PORT",
+	)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.API.WorkloadCommonSpec, tamoss)
 	return []client.Object{
 		deploymentFor(

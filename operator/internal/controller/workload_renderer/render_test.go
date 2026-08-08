@@ -247,6 +247,10 @@ func TestRenderAdvancedExtraResources(t *testing.T) {
 
 func TestRenderUsesServicePortForAPIContainer(t *testing.T) {
 	tamoss := rendererFixture()
+	tamoss.Spec.API.Env = map[string]string{
+		"TAMOSS_METRICS_BIND_ADDRESS": "127.0.0.1",
+		"TAMOSS_METRICS_PORT":         "0",
+	}
 	tamoss.Spec.Service.API.Ports = []corev1.ServicePort{{
 		Name:       "http",
 		Port:       9000,
@@ -275,6 +279,10 @@ func TestRenderUsesServicePortForAPIContainer(t *testing.T) {
 		if envValue(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != "0.0.0.0" {
 			t.Fatalf("expected API metrics bind address env, got %#v", container.Env)
 		}
+		if envCount(container.Env, "TAMOSS_METRICS_PORT") != 1 ||
+			envCount(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != 1 {
+			t.Fatalf("expected operator-managed API metrics env once, got %#v", container.Env)
+		}
 		return
 	}
 	t.Fatalf("expected API deployment in %v", renderedIDs(objects))
@@ -283,6 +291,10 @@ func TestRenderUsesServicePortForAPIContainer(t *testing.T) {
 func TestRenderExposesWorkerMetricsPort(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Worker.Enabled = ptr.To(true)
+	tamoss.Spec.Worker.Env = map[string]string{
+		"TAMOSS_METRICS_BIND_ADDRESS": "127.0.0.1",
+		"TAMOSS_METRICS_PORT":         "0",
+	}
 
 	objects := Render(tamoss)
 	for _, obj := range objects {
@@ -301,6 +313,10 @@ func TestRenderExposesWorkerMetricsPort(t *testing.T) {
 		}
 		if envValue(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != "0.0.0.0" {
 			t.Fatalf("expected worker metrics bind address env, got %#v", container.Env)
+		}
+		if envCount(container.Env, "TAMOSS_METRICS_PORT") != 1 ||
+			envCount(container.Env, "TAMOSS_METRICS_BIND_ADDRESS") != 1 {
+			t.Fatalf("expected operator-managed worker metrics env once, got %#v", container.Env)
 		}
 		return
 	}
@@ -1048,6 +1064,16 @@ func envValue(env []corev1.EnvVar, name string) string {
 		}
 	}
 	return ""
+}
+
+func envCount(env []corev1.EnvVar, name string) int {
+	count := 0
+	for _, item := range env {
+		if item.Name == name {
+			count++
+		}
+	}
+	return count
 }
 
 func envNames(env []corev1.EnvVar) []string {

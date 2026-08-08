@@ -102,6 +102,16 @@ name in the error. This applies equally to API and worker pods, including
 operator-rendered values such as webhook policy, OAuth2, S3 timeout, and worker
 poll settings.
 
+Worker `/healthz` reports unhealthy when the process has made no polling
+progress for `TAMOSS_WORKER_HEALTH_STALE_AFTER_SECONDS` (default `600`). Set it
+longer than the slowest expected poll batch when large request batches or slow
+external services can legitimately occupy a worker for more than ten minutes.
+This controls the worker's internal stale-progress decision; Kubernetes probe
+periods and failure thresholds control how quickly the pod is restarted after
+that decision. Operator-managed API and worker workloads reserve
+`TAMOSS_METRICS_BIND_ADDRESS` and `TAMOSS_METRICS_PORT` because metrics and HTTP
+health probes depend on their rendered values.
+
 PostgreSQL URLs derived from `POSTGRES_HOST`, `POSTGRES_USER`,
 `POSTGRES_PASSWORD`, `POSTGRES_DB`, and `POSTGRES_PORT` percent-encode the user,
 password, and database components. Prefer these component variables when the
