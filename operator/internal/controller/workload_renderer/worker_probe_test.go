@@ -1,7 +1,6 @@
 package workload_renderer
 
 import (
-	"reflect"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -10,36 +9,30 @@ import (
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 )
 
-func TestWorkerDeploymentRendersHealthCommandProbes(t *testing.T) {
+func TestWorkerDeploymentRendersHTTPProbes(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Worker.Enabled = ptr.To(true)
 	defaults.Apply(tamoss)
 
 	deployment := deploymentByName(t, Render(tamoss), "example-worker")
 	container := deployment.Spec.Template.Spec.Containers[0]
-	want := []string{"/bin/uv", "run", "python", "-m", "tamoss.worker", "health"}
-
-	assertProbeCommand(t, "readiness", container.ReadinessProbe, want)
-	assertProbeCommand(t, "liveness", container.LivenessProbe, want)
-	assertProbeCommand(t, "startup", container.StartupProbe, want)
-	assertProbeTimeout(t, "readiness", container.ReadinessProbe, 5)
-	assertProbeTimeout(t, "liveness", container.LivenessProbe, 10)
-	assertProbeTimeout(t, "startup", container.StartupProbe, 5)
+	assertHTTPProbe(t, "readiness", container.ReadinessProbe, "/readyz")
+	assertHTTPProbe(t, "liveness", container.LivenessProbe, "/healthz")
+	assertHTTPProbe(t, "startup", container.StartupProbe, "/healthz")
 }
 
-func assertProbeCommand(t *testing.T, name string, probe *corev1.Probe, want []string) {
+func assertHTTPProbe(t *testing.T, name string, probe *corev1.Probe, wantPath string) {
 	t.Helper()
-	if probe == nil || probe.Exec == nil {
-		t.Fatalf("expected %s probe exec command", name)
+	if probe == nil || probe.HTTPGet == nil {
+		t.Fatalf("expected %s HTTP probe", name)
 	}
-	if !reflect.DeepEqual(probe.Exec.Command, want) {
-		t.Fatalf("expected %s probe command %#v, got %#v", name, want, probe.Exec.Command)
+	if probe.HTTPGet.Path != wantPath {
+		t.Fatalf("expected %s probe path %q, got %q", name, wantPath, probe.HTTPGet.Path)
 	}
-}
-
-func assertProbeTimeout(t *testing.T, name string, probe *corev1.Probe, want int32) {
-	t.Helper()
-	if probe == nil || probe.TimeoutSeconds != want {
-		t.Fatalf("expected %s probe timeout %d, got %#v", name, want, probe)
+	if probe.HTTPGet.Port.StrVal != "metrics" {
+		t.Fatalf("expected %s probe port metrics, got %#v", name, probe.HTTPGet.Port)
+	}
+	if probe.TimeoutSeconds != 5 {
+		t.Fatalf("expected %s probe timeout 5, got %d", name, probe.TimeoutSeconds)
 	}
 }
