@@ -88,7 +88,7 @@ def record_presigned_url(operation: str) -> None:
 
 # Worker media-load metrics: the background worker is a separate process that
 # drains the delete and webhook queues, so it exports its own throughput signals
-# on the shared side port via start_metrics_server.
+# on the worker HTTP side port.
 WORKER_TASKS_PROCESSED_TOTAL = Counter(
     "tamoss_worker_tasks_processed_total",
     "Worker queue tasks drained per poll.",

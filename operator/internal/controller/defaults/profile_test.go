@@ -222,21 +222,6 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	if got := rustFSEnvValue(rustfs, "RUSTFS_UNSAFE_BYPASS_DISK_CHECK"); got != "true" {
 		t.Fatalf("expected single-server RustFS disk check bypass, got %q", got)
 	}
-	if got := tamoss.Spec.Worker.ReadinessProbe.TimeoutSeconds; got != 30 {
-		t.Fatalf("expected single-server worker readiness timeout 30, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.ReadinessProbe.PeriodSeconds; got != 30 {
-		t.Fatalf("expected single-server worker readiness period 30, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.LivenessProbe.PeriodSeconds; got != 60 {
-		t.Fatalf("expected single-server worker liveness period 60, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.LivenessProbe.TimeoutSeconds; got != 30 {
-		t.Fatalf("expected single-server worker liveness timeout 30, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.StartupProbe.TimeoutSeconds; got != 30 {
-		t.Fatalf("expected single-server worker startup timeout 30, got %d", got)
-	}
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
@@ -287,18 +272,6 @@ func TestApplyEdgeDefaults(t *testing.T) {
 	}
 	if got := tamoss.Spec.Worker.Resources.Limits[corev1.ResourceMemory]; got.String() != "384Mi" {
 		t.Fatalf("expected edge worker memory limit, got %s", got.String())
-	}
-	if got := tamoss.Spec.Worker.ReadinessProbe.TimeoutSeconds; got != 30 {
-		t.Fatalf("expected edge worker readiness timeout 30, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.ReadinessProbe.PeriodSeconds; got != 30 {
-		t.Fatalf("expected edge worker readiness period 30, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.LivenessProbe.PeriodSeconds; got != 60 {
-		t.Fatalf("expected edge worker liveness period 60, got %d", got)
-	}
-	if got := tamoss.Spec.Worker.StartupProbe.TimeoutSeconds; got != 30 {
-		t.Fatalf("expected edge worker startup timeout 30, got %d", got)
 	}
 	cnpg := tamoss.Spec.Backends.DB.CNPG
 	if cnpg == nil || cnpg.Instances != 1 || cnpg.Storage.Size != "10Gi" {
@@ -638,6 +611,60 @@ func TestSupportedProfilesUseOperatorManagedBackends(t *testing.T) {
 	}
 }
 
+func TestSupportedProfilesUseWorkerHTTPProbes(t *testing.T) {
+	profiles := []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileLocalKind,
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
+	}
+
+	for _, profile := range profiles {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{
+				ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+				Spec: tamossv1alpha1.TamossSpec{
+					Profile: profile,
+				},
+			}
+
+			Apply(tamoss)
+
+			assertWorkerHTTPProbe(t, "readiness", tamoss.Spec.Worker.ReadinessProbe, "/readyz", 10, 3)
+			assertWorkerHTTPProbe(t, "liveness", tamoss.Spec.Worker.LivenessProbe, "/healthz", 30, 3)
+			assertWorkerHTTPProbe(t, "startup", tamoss.Spec.Worker.StartupProbe, "/healthz", 10, 12)
+		})
+	}
+}
+
+func TestApplyPreservesExplicitWorkerProbes(t *testing.T) {
+	readiness := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{Command: []string{"/custom-ready"}},
+		},
+		PeriodSeconds:    7,
+		TimeoutSeconds:   3,
+		FailureThreshold: 4,
+	}
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileLocalKind,
+			Worker: tamossv1alpha1.WorkerComponentSpec{
+				WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{
+					ReadinessProbe: readiness,
+				},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	if tamoss.Spec.Worker.ReadinessProbe != readiness {
+		t.Fatalf("expected explicit worker readiness probe to be preserved")
+	}
+}
+
 func TestApplyPublicEndpointDefaultsPreserveExternalProviders(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-external", Namespace: "tams"},
@@ -834,6 +861,19 @@ func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 	}
 	if spec.StartupProbe.HTTPGet.Path != "/healthz" {
 		t.Fatalf("expected API startup path /healthz, got %q", spec.StartupProbe.HTTPGet.Path)
+	}
+}
+
+func assertWorkerHTTPProbe(t *testing.T, name string, probe *corev1.Probe, path string, periodSeconds, failureThreshold int32) {
+	t.Helper()
+	if probe == nil || probe.HTTPGet == nil {
+		t.Fatalf("expected worker %s HTTP probe, got %#v", name, probe)
+	}
+	if probe.HTTPGet.Path != path || probe.HTTPGet.Port.StrVal != "metrics" {
+		t.Fatalf("unexpected worker %s probe target: %#v", name, probe.HTTPGet)
+	}
+	if probe.PeriodSeconds != periodSeconds || probe.TimeoutSeconds != 5 || probe.FailureThreshold != failureThreshold {
+		t.Fatalf("unexpected worker %s probe timings: %#v", name, probe)
 	}
 }
 
