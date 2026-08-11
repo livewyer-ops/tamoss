@@ -14,29 +14,40 @@ import {
 import { useApi } from "@/contexts/ApiContext";
 import { useCursorPage } from "@/hooks/useCursorPage";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { formatDate, formatFormat } from "@/utils/format";
+import type { FlowEssenceParameters } from "@/types/tams";
+import {
+  formatBitRate,
+  formatCodec,
+  formatDate,
+  formatFormat,
+  formatFrameRate,
+  formatResolution,
+} from "@/utils/format";
 
 const DEFAULT_LIMIT = "50";
 
-export default function SourcesPage() {
-  usePageTitle("Sources");
+export default function ProfilesPage() {
+  usePageTitle("Profiles");
   const api = useApi();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [lookup, setLookup] = useState("");
-  const label = params.get("label") ?? "";
-  const format = params.get("format") ?? "";
-  const limit = params.get("limit") ?? DEFAULT_LIMIT;
   const cursor = params.get("cursor") ?? undefined;
+  const limit = params.get("limit") ?? DEFAULT_LIMIT;
+  const label = params.get("label") ?? "";
+  const codec = params.get("codec") ?? "";
+  const format = params.get("format") ?? "";
   const [draftLabel, setDraftLabel] = useState(label);
+  const [draftCodec, setDraftCodec] = useState(codec);
   const [draftFormat, setDraftFormat] = useState(format);
   const [draftLimit, setDraftLimit] = useState(limit);
 
   useEffect(() => {
     setDraftLabel(label);
+    setDraftCodec(codec);
     setDraftFormat(format);
     setDraftLimit(limit);
-  }, [format, label, limit]);
+  }, [codec, format, label, limit]);
 
   const setCursor = useCallback(
     (value?: string) => {
@@ -48,19 +59,19 @@ export default function SourcesPage() {
     },
     [setParams],
   );
-
   const load = useCallback(
     (page: string | undefined, signal: AbortSignal) =>
-      api.getSources(
+      api.getProfiles(
         {
           limit,
           page,
           label: label || undefined,
+          codec: codec || undefined,
           format: format || undefined,
         },
         { signal },
       ),
-    [api, format, label, limit],
+    [api, codec, format, label, limit],
   );
   const catalog = useCursorPage({ cursor, load, onCursorChange: setCursor });
 
@@ -69,6 +80,7 @@ export default function SourcesPage() {
     setParams((current) => {
       const next = new URLSearchParams(current);
       draftLabel ? next.set("label", draftLabel) : next.delete("label");
+      draftCodec ? next.set("codec", draftCodec) : next.delete("codec");
       draftFormat ? next.set("format", draftFormat) : next.delete("format");
       next.set("limit", draftLimit);
       next.delete("cursor");
@@ -79,6 +91,7 @@ export default function SourcesPage() {
 
   function clearFilters() {
     setDraftLabel("");
+    setDraftCodec("");
     setDraftFormat("");
     setParams(new URLSearchParams({ limit: draftLimit }));
     catalog.resetHistory();
@@ -86,23 +99,24 @@ export default function SourcesPage() {
 
   function inspect(event: FormEvent) {
     event.preventDefault();
-    if (lookup.trim())
-      navigate(`/sources/${encodeURIComponent(lookup.trim())}`);
+    if (lookup.trim()) {
+      navigate(`/profiles/${encodeURIComponent(lookup.trim())}`);
+    }
   }
 
   return (
     <Page>
       <PageHeader
-        title="Sources"
+        title="Profiles"
         actions={
           <form onSubmit={inspect} className={surfaceStyles.toolbar}>
-            <label className="srOnly" htmlFor="source-lookup">
-              Source ID
+            <label className="srOnly" htmlFor="profile-lookup">
+              Profile ID
             </label>
             <input
-              id="source-lookup"
+              id="profile-lookup"
               className={`${surfaceStyles.input} ${surfaceStyles.mono}`}
-              placeholder="Exact source ID"
+              placeholder="Exact profile ID"
               value={lookup}
               onChange={(event) => setLookup(event.target.value)}
             />
@@ -113,24 +127,34 @@ export default function SourcesPage() {
         }
       />
       <Panel
-        title="Source catalog"
+        title="Profile catalogue"
         actions={
           <form className={surfaceStyles.toolbar} onSubmit={applyFilters}>
-            <label className="srOnly" htmlFor="source-label">
+            <label className="srOnly" htmlFor="profile-label">
               Exact label
             </label>
             <input
-              id="source-label"
+              id="profile-label"
               className={surfaceStyles.input}
               placeholder="Exact label"
               value={draftLabel}
               onChange={(event) => setDraftLabel(event.target.value)}
             />
-            <label className="srOnly" htmlFor="source-format">
+            <label className="srOnly" htmlFor="profile-codec">
+              Exact codec
+            </label>
+            <input
+              id="profile-codec"
+              className={surfaceStyles.input}
+              placeholder="Exact codec"
+              value={draftCodec}
+              onChange={(event) => setDraftCodec(event.target.value)}
+            />
+            <label className="srOnly" htmlFor="profile-format">
               Format
             </label>
             <select
-              id="source-format"
+              id="profile-format"
               className={surfaceStyles.select}
               value={draftFormat}
               onChange={(event) => setDraftFormat(event.target.value)}
@@ -138,14 +162,14 @@ export default function SourcesPage() {
               <option value="">All formats</option>
               <option value="urn:x-nmos:format:video">Video</option>
               <option value="urn:x-nmos:format:audio">Audio</option>
-              <option value="urn:x-nmos:format:multi">Multi</option>
+              <option value="urn:x-tam:format:image">Image</option>
               <option value="urn:x-nmos:format:data">Data</option>
             </select>
-            <label className="srOnly" htmlFor="source-limit">
+            <label className="srOnly" htmlFor="profile-limit">
               Rows per page
             </label>
             <select
-              id="source-limit"
+              id="profile-limit"
               className={surfaceStyles.select}
               value={draftLimit}
               onChange={(event) => setDraftLimit(event.target.value)}
@@ -157,7 +181,12 @@ export default function SourcesPage() {
             <Button type="submit">
               <ListFilter size={14} aria-hidden="true" /> Apply
             </Button>
-            {label || format || draftLabel || draftFormat ? (
+            {label ||
+            codec ||
+            format ||
+            draftLabel ||
+            draftCodec ||
+            draftFormat ? (
               <Button type="button" onClick={clearFilters}>
                 <FilterX size={14} aria-hidden="true" /> Clear
               </Button>
@@ -172,62 +201,63 @@ export default function SourcesPage() {
             onRetry={catalog.refresh}
           />
         ) : catalog.data.length === 0 ? (
-          <QueryMessage
-            empty={{
-              title: "No sources found",
-            }}
-          />
+          <QueryMessage empty={{ title: "No profiles found" }} />
         ) : (
           <div className={surfaceStyles.tableWrap}>
             <table className={surfaceStyles.table}>
               <thead>
                 <tr>
-                  <th>Source</th>
+                  <th>Profile</th>
                   <th>Format</th>
-                  <th>Description</th>
-                  <th>Tags</th>
-                  <th>Updated</th>
+                  <th>Codec</th>
+                  <th>Technical</th>
+                  <th>Created</th>
                 </tr>
               </thead>
               <tbody>
-                {catalog.data.map((source) => (
-                  <tr key={source.id}>
-                    <td>
-                      <Link
-                        className={surfaceStyles.resourceLink}
-                        to={`/sources/${source.id}`}
-                      >
-                        {source.label || "Unlabelled source"}{" "}
-                        <ArrowRight size={12} aria-hidden="true" />
-                      </Link>
-                      <div
-                        className={`${surfaceStyles.secondary} ${surfaceStyles.mono}`}
-                      >
-                        {source.id}
-                      </div>
-                    </td>
-                    <td>
-                      <StatusBadge tone="info">
-                        {formatFormat(source.format)}
-                      </StatusBadge>
-                    </td>
-                    <td>
-                      {source.description || (
-                        <span className={surfaceStyles.secondary}>
-                          No description
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {Object.keys(source.tags ?? {})
-                        .slice(0, 3)
-                        .join(", ") || (
-                        <span className={surfaceStyles.secondary}>None</span>
-                      )}
-                    </td>
-                    <td>{formatDate(source.updated ?? source.created)}</td>
-                  </tr>
-                ))}
+                {catalog.data.map((profile) => {
+                  const metadata = profile.flow_metadata;
+                  const essence = metadata.essence_parameters as
+                    | FlowEssenceParameters
+                    | undefined;
+                  return (
+                    <tr key={profile.id}>
+                      <td>
+                        <Link
+                          className={surfaceStyles.resourceLink}
+                          to={`/profiles/${profile.id}`}
+                        >
+                          {profile.label || "Unlabelled profile"}{" "}
+                          <ArrowRight size={12} aria-hidden="true" />
+                        </Link>
+                        <div
+                          className={`${surfaceStyles.secondary} ${surfaceStyles.mono}`}
+                        >
+                          {profile.id}
+                        </div>
+                      </td>
+                      <td>
+                        <StatusBadge tone="info">
+                          {formatFormat(metadata.format)}
+                        </StatusBadge>
+                      </td>
+                      <td>{formatCodec(metadata.codec)}</td>
+                      <td>
+                        <div>
+                          {formatResolution(
+                            essence?.frame_width,
+                            essence?.frame_height,
+                          )}
+                        </div>
+                        <div className={surfaceStyles.secondary}>
+                          {formatFrameRate(essence?.frame_rate)} ·{" "}
+                          {formatBitRate(metadata.avg_bit_rate)}
+                        </div>
+                      </td>
+                      <td>{formatDate(profile.created)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

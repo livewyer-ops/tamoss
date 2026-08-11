@@ -63,6 +63,9 @@ export type Flow = Omit<
   collected_by?: string[];
 };
 
+export type FlowStatus = NonNullable<Flow["status"]>;
+export type Profile = ApiSchemas["profile"];
+
 export type FlowSegment = ApiSchemas["flow-segment"];
 export type FlowSegmentWrite = ApiSchemas["flow-segment-post"];
 export type ObjectUrl = NonNullable<

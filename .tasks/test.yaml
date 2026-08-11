@@ -236,6 +236,10 @@ tasks:
       - printf 'test frontend.unit\n'
       - test -d node_modules || npm ci
       - npm run test -- --reporter=default --reporter=junit --outputFile=../../../reports/junit-frontend-unit.xml
+      - printf 'test frontend.entrypoint\n'
+      - npm run test:entrypoint
+      - printf 'test frontend.build-budget\n'
+      - npm run build
 
   media:fixtures:
     silent: true

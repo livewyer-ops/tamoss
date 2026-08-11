@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  formatTimerange,
-  formatDate,
-  formatCodec,
-  formatFormat,
   formatBitRate,
-  formatResolution,
+  formatCodec,
+  formatDate,
+  formatFormat,
   formatFrameRate,
+  formatResolution,
+  formatTimerange,
   truncateId,
 } from "@/utils/format";
 

@@ -14,10 +14,12 @@
 interface TamossConfig {
   apiUrl: string;
   apiToken: string;
+  controlApiUrl: string;
 }
 
 interface RuntimeConfig {
   apiUrl: string;
+  controlApiUrl: string;
 }
 
 declare global {
@@ -45,4 +47,10 @@ export const config: TamossConfig = {
    * Dev-only API token sent as Authorization: Bearer header.
    */
   apiToken: (import.meta.env.VITE_API_TOKEN as string) || "",
+
+  /** Same-origin TAMOSS operational API. */
+  controlApiUrl:
+    resolve(runtimeConfig.controlApiUrl) ||
+    (import.meta.env.VITE_CONTROL_API_URL as string) ||
+    "/ui-api/v1",
 };

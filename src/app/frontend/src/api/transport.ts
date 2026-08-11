@@ -8,13 +8,17 @@ type QueryParamValue = QueryScalar | readonly QueryScalar[];
 export type QueryParams = Record<string, QueryParamValue | null | undefined>;
 type RequestHeaders = Record<string, string>;
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 export type PagingParams = QueryParams & {
   limit?: string | number;
   page?: string;
 };
 
 export function errorMessageFromText(text: string): string {
-  if (!text.trim()) return "Unknown error";
+  if (!text.trim()) return "Service request failed";
   try {
     const data = JSON.parse(text) as { summary?: unknown; detail?: unknown };
     if (typeof data.summary === "string") return data.summary;
@@ -60,7 +64,7 @@ export class ApiTransport {
   private token: string;
 
   constructor(baseUrl: string, token = "") {
-    this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+    this.baseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
     this.token = token;
   }
 
@@ -121,8 +125,9 @@ export class ApiTransport {
   protected async requestPaginated<T>(
     path: string,
     params?: QueryParams,
+    options: ApiRequestOptions = {},
   ): Promise<PaginatedResponse<T>> {
-    const response = await this.fetchResponse(path, {}, params);
+    const response = await this.fetchResponse(path, options, params);
     return {
       data: await this.readJson<T[]>(response),
       ...this.paging(response),
@@ -156,7 +161,7 @@ export class ApiTransport {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
+      const text = await response.text().catch(() => "Service request failed");
       throw new ApiError(response.status, errorMessageFromText(text));
     }
 
@@ -179,9 +184,8 @@ export class ApiTransport {
     limit?: number;
   } {
     const nextKey = response.headers.get("X-Paging-NextKey") ?? undefined;
-    const limit = response.headers.get("X-Paging-Limit")
-      ? parseInt(response.headers.get("X-Paging-Limit")!, 10)
-      : undefined;
+    const limitHeader = response.headers.get("X-Paging-Limit");
+    const limit = limitHeader ? parseInt(limitHeader, 10) : undefined;
     return { nextKey, limit };
   }
 }

@@ -22,11 +22,18 @@ json_escape() {
 
 api_url="${TAMOSS_API_URL:-/api}"
 api_url_json="$(json_escape "$api_url")"
+console_upstream="${TAMOSS_CONSOLE_UPSTREAM:-}"
 
 cp "$index_template" "$index_path"
-cat > "$runtime_config_path" <<EOF
+if [ -n "$console_upstream" ]; then
+  cat > "$runtime_config_path" <<EOF
+window.__TAMOSS_CONFIG__ = {"apiUrl":"${api_url_json}","controlApiUrl":"/ui-api/v1"};
+EOF
+else
+  cat > "$runtime_config_path" <<EOF
 window.__TAMOSS_CONFIG__ = {"apiUrl":"${api_url_json}"};
 EOF
+fi
 
 api_upstream="${TAMOSS_API_UPSTREAM:-}"
 if [ -z "$api_upstream" ]; then
@@ -62,6 +69,9 @@ location = /api {
 }
 
 location /api/ {
+    limit_except GET HEAD OPTIONS {
+        deny all;
+    }
     proxy_pass ${api_upstream}/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
@@ -71,5 +81,42 @@ location /api/ {
 ${auth_header}
 }
 EOF
+
+if [ -n "$console_upstream" ]; then
+  case "$console_upstream" in
+    http://*|https://*) ;;
+    *)
+      echo "TAMOSS_CONSOLE_UPSTREAM must start with http:// or https://" >&2
+      exit 1
+      ;;
+  esac
+  if ! printf '%s' "$console_upstream" | grep -Eq '^https?://[A-Za-z0-9._~:/?#@!&%()+,=-]+$'; then
+    echo "TAMOSS_CONSOLE_UPSTREAM contains characters unsafe for nginx proxy_pass" >&2
+    exit 1
+  fi
+  console_upstream="${console_upstream%/}"
+
+  cat >> "$runtime_conf_path" <<EOF
+
+location = /ui-api {
+    return 308 /ui-api/;
+}
+
+location /ui-api/ {
+    proxy_pass ${console_upstream};
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    add_header X-Accel-Buffering "no" always;
+}
+EOF
+fi
 
 exec "$@"

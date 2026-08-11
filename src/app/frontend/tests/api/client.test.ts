@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { TamossApiClient, ApiError } from "@/api/client";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, TamossApiClient } from "@/api/client";
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -34,7 +34,7 @@ describe("TamossApiClient", () => {
 
   describe("getService", () => {
     it("fetches service information", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.1" };
+      const serviceData = { name: "Test TAMS", api_version: "8.2" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = createClient();
@@ -52,7 +52,7 @@ describe("TamossApiClient", () => {
     });
 
     it("resolves relative API bases against the current origin", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.1" };
+      const serviceData = { name: "Test TAMS", api_version: "8.2" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = new TamossApiClient("/api");
@@ -68,6 +68,7 @@ describe("TamossApiClient", () => {
   describe("getSources", () => {
     it("fetches sources with pagination headers", async () => {
       const sources = [{ id: "source-1", label: "Test Source" }];
+      const controller = new AbortController();
       const responseHeaders = new Headers({
         "X-Paging-NextKey": "next-page-key",
         "X-Paging-Limit": "50",
@@ -80,16 +81,65 @@ describe("TamossApiClient", () => {
       });
 
       const client = createClient();
-      const result = await client.getSources({ limit: "50" });
+      const result = await client.getSources(
+        { limit: "50" },
+        { signal: controller.signal },
+      );
 
       expect(result.data).toEqual(sources);
       expect(result.nextKey).toBe("next-page-key");
       expect(result.limit).toBe(50);
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+  });
+
+  describe("profiles", () => {
+    it("fetches filtered pages and individual Profiles", async () => {
+      const profile = {
+        id: "00000000-0000-4000-8000-000000000101",
+        flow_metadata: { format: "urn:x-nmos:format:video" },
+      };
+      const controller = new AbortController();
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse([profile], 200, {
+            "X-Paging-NextKey": "next-profile-page",
+          }),
+        )
+        .mockResolvedValueOnce(mockResponse(profile));
+
+      const client = createClient();
+      const page = await client.getProfiles(
+        {
+          codec: "video/h264",
+          format: "urn:x-nmos:format:video",
+          label: "HD production video",
+          limit: 25,
+        },
+        { signal: controller.signal },
+      );
+      const listedUrl = lastCalledUrl();
+      const item = await client.getProfile(profile.id);
+
+      expect(page).toEqual({ data: [profile], nextKey: "next-profile-page" });
+      expect(listedUrl.pathname).toBe("/service/profiles");
+      expect(listedUrl.searchParams.get("codec")).toBe("video/h264");
+      expect(listedUrl.searchParams.get("format")).toBe(
+        "urn:x-nmos:format:video",
+      );
+      expect(listedUrl.searchParams.get("label")).toBe("HD production video");
+      expect(item).toEqual(profile);
+      expect(lastCalledUrl().pathname).toBe(
+        "/service/profiles/00000000-0000-4000-8000-000000000101",
+      );
     });
   });
 
   describe("getFlows", () => {
     it("serializes BBC flow discovery params", async () => {
+      const controller = new AbortController();
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -98,12 +148,15 @@ describe("TamossApiClient", () => {
       });
 
       const client = createClient();
-      await client.getFlows({
-        limit: 25,
-        page: "next-page",
-        source_id: "source-1",
-        timerange: "[0:0_10:0)",
-      });
+      await client.getFlows(
+        {
+          limit: 25,
+          page: "next-page",
+          source_id: "source-1",
+          timerange: "[0:0_10:0)",
+        },
+        { signal: controller.signal },
+      );
 
       const url = lastCalledUrl();
       expect(url.pathname).toBe("/flows");
@@ -111,6 +164,9 @@ describe("TamossApiClient", () => {
       expect(url.searchParams.get("page")).toBe("next-page");
       expect(url.searchParams.get("source_id")).toBe("source-1");
       expect(url.searchParams.get("timerange")).toBe("[0:0_10:0)");
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
   });
 
@@ -147,6 +203,19 @@ describe("TamossApiClient", () => {
       expect(url.pathname).toBe("/flows/flow-1");
       expect(url.searchParams.get("include_timerange")).toBe("true");
       expect(url.searchParams.get("timerange")).toBe("[0:0_10:0)");
+    });
+  });
+
+  describe("getObject", () => {
+    it("encodes reserved characters in BBC TAMS Object IDs", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ id: "folder/clip #1.ts" }),
+      );
+
+      const client = createClient();
+      await client.getObject("folder/clip #1.ts");
+
+      expect(lastCalledUrl().pathname).toBe("/objects/folder%2Fclip%20%231.ts");
     });
   });
 
@@ -274,7 +343,7 @@ describe("TamossApiClient", () => {
 
   describe("authorization", () => {
     it("sends Bearer token in Authorization header when token is set", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.1" };
+      const serviceData = { name: "Test TAMS", api_version: "8.2" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
       const client = new TamossApiClient("https://api.example.com", "my-token");
@@ -470,6 +539,44 @@ describe("TamossApiClient", () => {
       expect(url.searchParams.get("reverse_order")).toBe("false");
       expect(url.searchParams.get("timerange")).toBe("[0:0_60:0)");
       expect(url.searchParams.get("verbose_storage")).toBe("true");
+    });
+  });
+
+  describe("getDeletionRequests", () => {
+    it("preserves paging headers and listing parameters", async () => {
+      const controller = new AbortController();
+      const requests = [{ id: "delete-1", status: "started" }];
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(requests, 200, {
+          "X-Paging-NextKey": "next-delete-page",
+          "X-Paging-Limit": "50",
+        }),
+      );
+
+      const client = createClient();
+      const result = await client.getDeletionRequests(
+        {
+          limit: 50,
+          page: "current-page",
+          sort_by: "created",
+          reverse_order: true,
+        },
+        { signal: controller.signal },
+      );
+
+      expect(result).toEqual({
+        data: requests,
+        nextKey: "next-delete-page",
+        limit: 50,
+      });
+      const url = lastCalledUrl();
+      expect(url.pathname).toBe("/flow-delete-requests");
+      expect(url.searchParams.get("page")).toBe("current-page");
+      expect(url.searchParams.get("sort_by")).toBe("created");
+      expect(url.searchParams.get("reverse_order")).toBe("true");
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
   });
 

@@ -492,13 +492,22 @@ requirements:
 - id: TAMOSS-UI-002
   summary: Full UI Profile/filter/status/init/ordered-collection surfaces
   normative: false
-  disposition: not-applicable
+  disposition: implemented
   introducedIn: '8.2'
-  implementation: []
-  tests: []
-  rationale: The approved delivery sequence lands the API/operator compatibility foundation first, then
-    rebases the separate feat/ui-overhaul-8.2 branch. The generated client is validated here; product
-    UI surfaces are a release gate on that later branch, not this compatibility branch.
+  implementation:
+  - src/app/frontend/src/pages/ProfilesPage.tsx
+  - src/app/frontend/src/pages/ProfileDetailPage.tsx
+  - src/app/frontend/src/pages/FlowsPage.tsx
+  - src/app/frontend/src/pages/FlowDetailPage.tsx
+  - src/app/frontend/src/pages/ObjectDetailPage.tsx
+  - src/app/frontend/src/pages/DeletionsPage.tsx
+  - src/app/frontend/src/player/descriptor.ts
+  - src/app/frontend/src/player/hls-manifest.ts
+  tests:
+  - src/app/frontend/tests/pages/AppRoutes.test.tsx
+  - src/app/frontend/tests/api/client.test.ts
+  - src/app/frontend/tests/player/descriptor.test.ts
+  - src/app/frontend/tests/player/hls-manifest.test.ts
 - id: TAMS-GUIDANCE-001
   summary: Transform-on-request architecture guidance
   normative: false

@@ -1,36 +1,50 @@
-import type {
-  Source,
-  Flow,
-  FlowCollectionItem,
-  FlowSegment,
-  MediaObject,
-  ServiceInfo,
-  UpdateServiceInfo,
-  StorageBackend,
-  DeletionRequest,
-  WebhookDetail,
-  WebhookWritePayload,
-  PaginatedResponse,
-  PaginatedResourceResponse,
-  HttpRequest,
-  StorageAllocation,
-  StorageAllocationOptions,
-  FlowSegmentWrite,
-} from "@/types/tams";
 import {
   ApiError,
+  type ApiRequestOptions,
   ApiTransport,
   type PagingParams,
   type QueryParams,
 } from "@/api/transport";
+import type {
+  DeletionRequest,
+  Flow,
+  FlowCollectionItem,
+  FlowSegment,
+  FlowSegmentWrite,
+  HttpRequest,
+  MediaObject,
+  PaginatedResourceResponse,
+  PaginatedResponse,
+  Profile,
+  ServiceInfo,
+  Source,
+  StorageAllocation,
+  StorageAllocationOptions,
+  StorageBackend,
+  UpdateServiceInfo,
+  WebhookDetail,
+  WebhookWritePayload,
+} from "@/types/tams";
 
 export { ApiError } from "@/api/transport";
 
 export type SourceListParams = PagingParams;
 
 export type FlowListParams = PagingParams & {
+  profile_id?: string;
   source_id?: string;
+  status?:
+    | "awaiting_content"
+    | "ingesting"
+    | "replication_in_progress"
+    | "closed_complete";
   timerange?: string;
+};
+
+export type ProfileListParams = PagingParams & {
+  codec?: string;
+  format?: string;
+  label?: string;
 };
 
 export type FlowParams = QueryParams & {
@@ -64,6 +78,11 @@ type PagedObjectParams = ObjectParams &
 
 export type WebhookListParams = PagingParams;
 
+export type DeletionRequestListParams = PagingParams & {
+  reverse_order?: boolean | string;
+  sort_by?: "created" | "expiry";
+};
+
 export class TamossApiClient extends ApiTransport {
   async getService(): Promise<ServiceInfo> {
     return this.request<ServiceInfo>("/service");
@@ -90,12 +109,24 @@ export class TamossApiClient extends ApiTransport {
 
   async getSources(
     params?: SourceListParams,
+    options?: ApiRequestOptions,
   ): Promise<PaginatedResponse<Source>> {
-    return this.requestPaginated<Source>("/sources", params);
+    return this.requestPaginated<Source>("/sources", params, options);
   }
 
   async getSource(sourceId: string): Promise<Source> {
     return this.request<Source>(`/sources/${sourceId}`);
+  }
+
+  async getProfiles(
+    params?: ProfileListParams,
+    options?: ApiRequestOptions,
+  ): Promise<PaginatedResponse<Profile>> {
+    return this.requestPaginated<Profile>("/service/profiles", params, options);
+  }
+
+  async getProfile(profileId: string): Promise<Profile> {
+    return this.request<Profile>(path`/service/profiles/${profileId}`);
   }
 
   async getSourceTags(
@@ -146,8 +177,11 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async getFlows(params?: FlowListParams): Promise<PaginatedResponse<Flow>> {
-    return this.requestPaginated<Flow>("/flows", params);
+  async getFlows(
+    params?: FlowListParams,
+    options?: ApiRequestOptions,
+  ): Promise<PaginatedResponse<Flow>> {
+    return this.requestPaginated<Flow>("/flows", params, options);
   }
 
   async getFlow(flowId: string, params?: FlowParams): Promise<Flow> {
@@ -309,13 +343,14 @@ export class TamossApiClient extends ApiTransport {
     objectId: string,
     params?: ObjectParams,
   ): Promise<MediaObject | PaginatedResourceResponse<MediaObject>> {
+    const encodedObjectId = encodeURIComponent(objectId);
     if (params?.limit !== undefined || params?.page !== undefined) {
       return this.requestPaginatedResource<MediaObject>(
-        `/objects/${objectId}`,
+        `/objects/${encodedObjectId}`,
         params,
       );
     }
-    return this.request<MediaObject>(`/objects/${objectId}`, {}, params);
+    return this.request<MediaObject>(`/objects/${encodedObjectId}`, {}, params);
   }
 
   async deleteObjectInstance(
@@ -362,8 +397,15 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async getDeletionRequests(): Promise<DeletionRequest[]> {
-    return this.request<DeletionRequest[]>("/flow-delete-requests");
+  async getDeletionRequests(
+    params?: DeletionRequestListParams,
+    options?: ApiRequestOptions,
+  ): Promise<PaginatedResponse<DeletionRequest>> {
+    return this.requestPaginated<DeletionRequest>(
+      "/flow-delete-requests",
+      params,
+      options,
+    );
   }
 
   async getDeletionRequest(requestId: string): Promise<DeletionRequest> {
