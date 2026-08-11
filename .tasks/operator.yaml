@@ -6,7 +6,9 @@ vars:
   PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
   SCHEMA_VERSION: '{{default .VERSION (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
-  TAMS_API_VERSION: '{{default "8.1" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
+  PREVIOUS_SCHEMA_VERSION: '{{default "" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
+  TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
+  OPERAND_VERSION: '{{default "dev" (default (env "OPERAND_VERSION") .OPERAND_VERSION)}}'
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   PLATFORM_DEPENDENCIES_FILE: '{{default "deploy/platform/dependencies.yaml" .PLATFORM_DEPENDENCIES_FILE}}'
   OPERATOR_NAMESPACE: '{{default "tamoss-system" .OPERATOR_NAMESPACE}}'
@@ -44,7 +46,7 @@ tasks:
         set -euo pipefail
         . .tasks/lib/progress.sh
         task_step "{{.STEP_LABEL}}" \
-          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}"
+          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" PREVIOUS_SCHEMA_VERSION="{{.PREVIOUS_SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}" OPERAND_VERSION="{{.OPERAND_VERSION}}"
 
   test:
     desc: "Operator: run unit and envtest suites"
