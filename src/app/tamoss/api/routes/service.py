@@ -10,10 +10,12 @@ from tamoss.api.presenters import (
     storage_backend_response,
     with_page_headers,
 )
-from tamoss.api.query_params import validate_query_params
+from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.domain.tags import parse_tag_filters
+from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Service"])
 
@@ -56,8 +58,14 @@ def post_service(
     return Response()
 
 
-@router.get("/service/storage-backends")
-@router.head("/service/storage-backends")
+@router.get(
+    "/service/storage-backends",
+    dependencies=[Depends(tag_filter_parameters)],
+)
+@router.head(
+    "/service/storage-backends",
+    dependencies=[Depends(tag_filter_parameters)],
+)
 def storage_backends(
     request: Request,
     response: Response,
@@ -66,10 +74,18 @@ def storage_backends(
     limit: int | None = Query(default=None, gt=0),
     service: ServiceUseCases = Depends(get_service_use_cases),
 ) -> Any:
-    validate_query_params(request, {"reverse_order", "page", "limit"})
+    validate_query_params(
+        request,
+        {"reverse_order", "page", "limit"},
+        allowed_prefixes=("tag.", "tag_exists."),
+    )
+    try:
+        tag_values, tag_exists = parse_tag_filters(request.query_params)
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
     backend_page = service.list_storage_backends_page(
-        tag_values={},
-        tag_exists={},
+        tag_values=tag_values,
+        tag_exists=tag_exists,
         reverse_order=reverse_order,
         page=page,
         limit=limit,

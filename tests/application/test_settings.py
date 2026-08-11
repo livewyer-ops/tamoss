@@ -94,6 +94,9 @@ def test_local_kind_runtime_env_values_parse(
         "TAMOSS_S3_SECRET_KEY": "rustfs-secret",
         "TAMOSS_S3_BUCKET": "tamoss",
         "TAMOSS_STORAGE_LABEL": "tamoss.local-kind:s3:tamoss",
+        "TAMOSS_STORAGE_BACKEND_TAGS": (
+            '{"access":["programme","archive"],"tier":"hot"}'
+        ),
         "TAMOSS_AUTH_REQUIRED": "true",
         "TAMOSS_BASIC_AUTH_USERNAME": "tamoss",
         "TAMOSS_BASIC_AUTH_PASSWORD": "tamoss-pass",
@@ -126,6 +129,23 @@ def test_local_kind_runtime_env_values_parse(
     assert storage_backend.public_endpoint_url == "https://s3.tamoss.localtest.me"
     assert storage_backend.access_key == "rustfs-access"
     assert storage_backend.secret_key == "rustfs-secret"
+    assert storage_backend.tags == {
+        "access": ["programme", "archive"],
+        "tier": "hot",
+    }
+
+
+@pytest.mark.parametrize("raw_tags", ["not-json", "[]", '{"bad": 1}'])
+def test_storage_backend_tags_reject_invalid_env(
+    monkeypatch: pytest.MonkeyPatch, raw_tags: str
+) -> None:
+    monkeypatch.setenv("TAMOSS_S3_BUCKET", "tamoss")
+    monkeypatch.setenv("TAMOSS_S3_ACCESS_KEY", "access")
+    monkeypatch.setenv("TAMOSS_S3_SECRET_KEY", "secret")
+    monkeypatch.setenv("TAMOSS_STORAGE_BACKEND_TAGS", raw_tags)
+
+    with pytest.raises(ValueError, match=r"TAMOSS_STORAGE_BACKEND_TAGS|validation"):
+        Settings()
 
 
 def test_disabled_oauth_accepts_empty_operator_url_env(

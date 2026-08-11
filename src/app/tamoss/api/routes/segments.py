@@ -17,7 +17,9 @@ from tamoss.api.presenters import (
 )
 from tamoss.api.query_params import (
     parse_get_url_labels,
+    parse_storage_backend_tag_filters,
     parse_storage_ids,
+    storage_backend_tag_filter_parameters,
     validate_query_params,
 )
 from tamoss.application.contexts.deletion import DeletionUseCases
@@ -46,6 +48,7 @@ def _flow_id_or_404(value: str, message: str) -> UUID:
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The Flow ID in the path is invalid."},
     },
+    dependencies=[Depends(storage_backend_tag_filter_parameters)],
 )
 @router.head(
     "/flows/{flowId}/segments",
@@ -53,6 +56,7 @@ def _flow_id_or_404(value: str, message: str) -> UUID:
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The Flow ID in the path is invalid."},
     },
+    dependencies=[Depends(storage_backend_tag_filter_parameters)],
 )
 def list_segments(
     flow_id_path: Annotated[str, Path(alias="flowId")],
@@ -85,9 +89,14 @@ def list_segments(
             "page",
             "limit",
         },
+        allowed_prefixes=(
+            "storage_backend_tag.",
+            "storage_backend_tag_exists.",
+        ),
     )
     accepted_labels = parse_get_url_labels(accept_get_urls)
     accepted_storage_ids = parse_storage_ids(accept_storage_ids)
+    storage_tag_values, storage_tag_exists = parse_storage_backend_tag_filters(request)
     segment_page = segments.list_segments(
         flow_id=flow_id,
         object_id=object_id,
@@ -110,6 +119,8 @@ def list_segments(
         accept_storage_ids=accepted_storage_ids,
         presigned=presigned,
         verbose_storage=verbose_storage,
+        storage_tag_values=storage_tag_values,
+        storage_tag_exists=storage_tag_exists,
     )
     return [
         segment_response(

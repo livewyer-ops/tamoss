@@ -12,7 +12,9 @@ from tamoss.api.query_params import (
     flow_tag_filter_parameters,
     parse_flow_tag_filters,
     parse_get_url_labels,
+    parse_storage_backend_tag_filters,
     parse_storage_ids,
+    storage_backend_tag_filter_parameters,
     validate_query_params,
 )
 from tamoss.application.contexts.flows import FlowUseCases
@@ -76,7 +78,10 @@ def delete_object_instance(
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The requested Media Object does not exist."},
     },
-    dependencies=[Depends(flow_tag_filter_parameters)],
+    dependencies=[
+        Depends(flow_tag_filter_parameters),
+        Depends(storage_backend_tag_filter_parameters),
+    ],
 )
 @router.head(
     "/objects/{objectId:path}",
@@ -84,7 +89,10 @@ def delete_object_instance(
         400: {"description": "Bad request. Invalid query options."},
         404: {"description": "The requested Media Object does not exist."},
     },
-    dependencies=[Depends(flow_tag_filter_parameters)],
+    dependencies=[
+        Depends(flow_tag_filter_parameters),
+        Depends(storage_backend_tag_filter_parameters),
+    ],
 )
 def get_object(
     object_id: Annotated[str, Path(alias="objectId")],
@@ -109,12 +117,18 @@ def get_object(
             "page",
             "limit",
         },
-        allowed_prefixes=("flow_tag.", "flow_tag_exists."),
+        allowed_prefixes=(
+            "flow_tag.",
+            "flow_tag_exists.",
+            "storage_backend_tag.",
+            "storage_backend_tag_exists.",
+        ),
     )
     media_object = objects.get_object(object_id)
     accepted_labels = parse_get_url_labels(accept_get_urls)
     accepted_storage_ids = parse_storage_ids(accept_storage_ids)
     tag_values, tag_exists = parse_flow_tag_filters(request)
+    storage_tag_values, storage_tag_exists = parse_storage_backend_tag_filters(request)
     flow_page = flows.referenced_flows_matching_tags_page(
         media_object,
         tag_values,
@@ -134,5 +148,7 @@ def get_object(
             accept_storage_ids=accepted_storage_ids,
             presigned=presigned,
             verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values,
+            storage_tag_exists=storage_tag_exists,
         ),
     )

@@ -207,6 +207,8 @@ class ObjectUseCases:
         accept_storage_ids: set[str] | None = None,
         presigned: bool | None = None,
         verbose_storage: bool = False,
+        storage_tag_values: dict[str, set[str]] | None = None,
+        storage_tag_exists: dict[str, bool] | None = None,
     ) -> list[dict[str, Any]]:
         return objects_get_urls(
             [media_object],
@@ -215,6 +217,8 @@ class ObjectUseCases:
             accept_storage_ids=accept_storage_ids,
             presigned=presigned,
             verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values,
+            storage_tag_exists=storage_tag_exists,
         ).get(media_object.id, [])
 
 

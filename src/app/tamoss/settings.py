@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import socket
@@ -66,6 +67,7 @@ class StorageBackendSettings(BaseModel):
     public_endpoint_url: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
+    tags: dict[str, str | list[str]] = Field(default_factory=dict)
 
     def to_storage_backend(self) -> StorageBackend:
         return StorageBackend(
@@ -81,6 +83,7 @@ class StorageBackendSettings(BaseModel):
             public_endpoint_url=self.public_endpoint_url,
             access_key=self.access_key,
             secret_key=self.secret_key,
+            tags=self.tags,
         )
 
 
@@ -101,6 +104,13 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
             str(DEFAULT_TAMOSS_S3_STORAGE_BACKEND_ID),
         )
     )
+    raw_tags = _env_str("TAMOSS_STORAGE_BACKEND_TAGS", "{}")
+    try:
+        tags = json.loads(raw_tags)
+    except ValueError as exc:
+        raise ValueError("TAMOSS_STORAGE_BACKEND_TAGS must be valid JSON") from exc
+    if not isinstance(tags, dict):
+        raise ValueError("TAMOSS_STORAGE_BACKEND_TAGS must be a JSON object")
     return StorageBackendSettings(
         id=storage_backend_id,
         label=label,
@@ -114,6 +124,7 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
         public_endpoint_url=public_endpoint_url,
         access_key=access_key,
         secret_key=secret_key,
+        tags=tags,
     )
 
 

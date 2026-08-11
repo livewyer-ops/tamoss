@@ -62,6 +62,7 @@ def storage_backend_response(backend: StorageBackend) -> JsonPayload:
             provider=backend.provider,
             region=backend.region,
             store_product=backend.store_product,
+            tags=backend.tags,
         )
     )
 
