@@ -8,10 +8,12 @@ diagnosis for operator-led TAMOSS deployments.
 - [Backup and Restore](backup-restore.md) - data ownership and restore paths.
 - [Hibernate and Resume](hibernate-resume.md) - on-demand managed database
   hibernation artefacts and recovery.
+- [Manage Ingest Runs](manage-ingest-runs.md) - inspect durable history, follow
+  operator-owned Jobs, and cancel active runs.
 - [Deletion Protection](deletion-protection.md) - finalizers and confirmation
   annotations.
 - [Secret Rotation](secret-rotation.md) - runtime secret classes and rotation.
 - [Troubleshooting](troubleshooting.md) - readiness and runtime diagnostics.
 - [Upgrades](upgrades.md) - upgrade sequence, checks, and rollback.
-- [Canary Images](preview-images.md) - private branch-image publishing outside
-  the normal Docker Hub workflow.
+- [Publish and Deploy Preview Images](preview-images.md) - private branch-image
+  publishing outside the normal Docker Hub workflow.

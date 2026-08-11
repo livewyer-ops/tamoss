@@ -9,5 +9,6 @@ from the operations guides for runnable workflows.
   runtime environment overrides.
 - [StorageBackend CR](storagebackend-cr.md) - additional object-store backend
   resource.
+- [IngestRun CR](ingestrun-cr.md) - durable ingest request and status resource.
 - [Tamoss CR](tamoss-cr.md) - primary instance resource.
 - [Task Commands](task-commands.md) - supported Taskfile command surface.

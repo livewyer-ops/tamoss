@@ -16,10 +16,12 @@ belong in the CR references and the canonical CRD schemas under
 | Choose `local-kind`, `edge`, `single-server`, or `multi-server` | [Profiles](concepts/profiles.md) |
 | Configure managed or external providers | [Provider Ownership](concepts/provider-ownership.md) |
 | Configure storage backends and controlled storage allocation | [Storage Backends](concepts/storage-backends.md) |
+| Approve media inputs for `IngestRun` resources | [IngestRun CR Reference](reference/ingestrun-cr.md) |
 | Override runtime workload, image, and environment settings | [Runtime Configuration](reference/runtime-configuration.md) |
 | Rotate or mount sensitive values | [Secret Rotation](operations/secret-rotation.md) |
 | Look up `Tamoss` fields | [Tamoss CR Reference](reference/tamoss-cr.md) |
 | Look up `StorageBackend` fields | [StorageBackend CR Reference](reference/storagebackend-cr.md) |
+| Look up `IngestRun` fields | [IngestRun CR Reference](reference/ingestrun-cr.md) |
 
 ## Minimal CR
 

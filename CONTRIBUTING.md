@@ -82,6 +82,17 @@ Work in `src/app/` normally does not require Go. Install the aqua toolchain
 before touching the operator so `go`, `kubeconform`, and
 `chainsaw` match CI.
 
+## Documentation
+
+Use the [documentation structure](docs/development/documentation.md) before
+adding or substantially rewriting a page. Documentation follows Diataxis:
+getting-started tutorials, operations how-to guides, reference contracts, and
+conceptual explanations remain distinct and link to one another. Public docs
+describe current behaviour; unresolved designs stay in development records.
+
+Write prose and commit messages in British English. Preserve literal API field
+names, commands, error codes, and upstream product names exactly.
+
 ## Testing
 
 Test code lives under `tests/`, organised by what it tests:
@@ -215,7 +226,7 @@ Include:
 - [ ] Code follows style guide (pre-commit passes).
 - [ ] Tests added or updated.
 - [ ] `task check` and relevant focused suites are green.
-- [ ] Docs updated (README, usage, deployment, or configuration as relevant).
+- [ ] Docs updated and placed in the appropriate Diataxis section.
 
 ## Commit messages
 

@@ -92,6 +92,31 @@ task kind:e2e PROFILE=local-kind
 the selected cluster, deploys the current images, and runs deployed TAMS plus
 product API/UI checks. `task kind:e2e` is the destructive fresh-cluster variant.
 
+## Profile Matrix
+
+Run one profile at a time when developing profile defaults or rendered
+resources:
+
+```bash
+task kind:up PROFILE=local-kind
+task kind:up PROFILE=edge
+task kind:up PROFILE=single-server
+task kind:up PROFILE=multi-server
+```
+
+Run the sequential profile gate when a change spans the shared defaulting or
+environment machinery:
+
+```bash
+task kind:profiles:e2e
+```
+
+The `multi-server` adapter uses `deploy/kind-multi-server.yaml` to create one
+control-plane node and three workers. Both checked-in Kind configurations bind
+host port 443 to `0.0.0.0` for local browser and API testing. Other machines on
+the same network may therefore reach the test ingress while the cluster is
+running.
+
 ## Operator Gates
 
 ```bash

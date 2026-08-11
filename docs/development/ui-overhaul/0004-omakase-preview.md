@@ -26,7 +26,7 @@ As checked on 9 August 2026, `@byomakase/omakase-tams-player` `1.0.6` and
 declarations that deep-import paths absent from core 1.1.1. Installing that
 combination with ignored peer dependencies is not accepted.
 
-The reviewed core artifact has npm integrity
+The reviewed core artefact has npm integrity
 `sha512-Bc5Md7N3hpeSBeTJgjg1/qNeUmm2MNmSv2cgxmrOoTzXYjoySjczlfRZQG0Rwyz+qarYTcwMCqt9yvLOhGapHA==`,
 contains seven published files, and is 15,635,122 bytes unpacked. A clean
 fixture added 112 packages; npm classified 111 as production dependencies. A
@@ -114,7 +114,7 @@ Omakase 1.1.1's public sidecar API cannot play the segmented HLS audio media
 playlist used by the Kind fixture in Chromium, and a master playlist spanning
 video time with no matching early audio stalls while waiting for its declared
 rendition. The accepted adapter therefore keeps a standards-correct master as
-a tested playback artifact, loads a video-only media playlist into Omakase,
+a tested playback artefact, loads a video-only media playlist into Omakase,
 and maps each separate audio clock to the common video window. A sidecar must
 reach both HLS manifest and media readiness within 15 seconds; any declared
 audio rendition failure fails the preview rather than silently continuing
@@ -214,7 +214,7 @@ accessibility, and `cnm-tamoss-1` evidence are still outstanding.
   integrity checks, generate an SBOM, and ship the checked-in Apache-2.0 and
   MPL-2.0 third-party notices.
 - Resolve or formally accept the three moderate audit entries, and separately
-  account for vulnerable dependency code prebundled into the reviewed artifact.
+  account for vulnerable dependency code prebundled into the reviewed artefact.
   No subtitle conversion may be enabled before this evidence is approved.
 - Test MP4 and HLS, single and Multi-Flow media, separate video/audio,
   audio-only, subtitles, discontinuities, gaps, and long Segment lists.

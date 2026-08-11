@@ -4,9 +4,8 @@
 
 - The declarative run, Job ownership, cancellation, result, and event
   boundaries are accepted for TAMOSS 8.2.
-- The `IngestRun` CRD and fail-closed controller scaffold are implemented. Job
-  creation remains disabled until the approved input and HTTPS endpoint
-  resolvers are wired.
+- The `IngestRun` CRD, approved HTTP input resolver, HTTPS endpoint resolver,
+  and operator-owned Tamsin Job path are implemented.
 - The Console API and UI expose bounded durable history, detail, session
   capabilities, and audited one-way cancellation. Create and retry remain
   unavailable rather than presenting controls that cannot execute safely.
@@ -32,7 +31,7 @@
   a run reaching its terminal phase, and the Console service account still
   receives no log access.
 - Live progress during a run is not collected; counters appear when the Job
-  finishes. Streaming collection remains open alongside the durable artifact:
+  finishes. Streaming collection remains open alongside the durable artefact:
   Tamsin 0.1.0-rc.2 writes its journal to the Job's own filesystem and
   publishes neither a digest nor a size for it, so there is nothing for the
   operator to fetch and verify. Digest verification therefore applies only
@@ -57,8 +56,9 @@ near-equivalent envelope or parsing human progress text.
 ## Accepted Decisions
 
 `IngestRun` is a namespaced TAMOSS custom resource representing one immutable
-ingest attempt. The Console API creates it from a typed request. The operator
-validates it and creates a fixed-purpose Tamsin Job.
+ingest attempt. A trusted client creates it from a typed request; the current
+Console API advertises creation as unavailable. The operator validates the
+resource and creates a fixed-purpose Tamsin Job.
 
 Users cannot submit a Job spec, image, command, environment variable, volume,
 service account, Secret name, or security context. The operator owns those
@@ -123,7 +123,7 @@ codes for acceptance, scheduling, progress, result availability, event gaps,
 and failure. Status updates are coalesced; the collector does not write to the
 Kubernetes API for every progress event.
 
-## Input and Artifact Flow
+## Input and Artefact Flow
 
 For local files, the Console API creates a short-lived multipart staging grant.
 The browser uploads directly to the staging object store, then creates an
@@ -137,7 +137,7 @@ Job arguments. Large input lists live in staging or managed object storage,
 never in the CRD or Pod spec.
 
 The complete event stream, Tamsin journal, and final batch result are persisted
-outside the Pod in operator-managed artifact storage. `resultRef` contains an
+outside the Pod in operator-managed artefact storage. `resultRef` contains an
 opaque key, digest, size, media type, and collector-set verification state,
 never a presigned URL. A completed Job does not become `Succeeded` or
 `PartiallySucceeded` until this durable result passes digest and size
@@ -204,7 +204,7 @@ The event stream is the live machine contract. Tamsin's durable journal and
 strict batch-result schema remain separate recovery and archival inputs. The
 collector persists accepted events before advancing its checkpoint and builds
 one bounded `IngestRun.status` projection plus a digest-verified external
-artifact; it does not recreate a competing event model.
+artefact; it does not recreate a competing event model.
 
 ## Cancellation, Retry, and Failure
 
@@ -218,7 +218,7 @@ The Console cancellation endpoint requires an operator-capable authenticated
 session, exact same-origin proof, the run UID, and its current resource revision.
 It performs only the one-way desired-state patch, handles a repeated request as
 an idempotent replay, and emits a bounded audit record without request bodies or
-artifact data.
+artefact data.
 
 `run.finished` maps to `Succeeded` when every input succeeds,
 `PartiallySucceeded` when execution completes with terminal input failures, and
@@ -226,7 +226,7 @@ artifact data.
 when cancellation was requested.
 
 Pod loss, duplicate log delivery, collector restart, missing terminal events,
-and artifact upload failure all have explicit conditions. Tamsin does not write
+and artefact upload failure all have explicit conditions. Tamsin does not write
 `IngestRun.status` directly.
 
 Every run must reach a terminal phase. Waiting indefinitely for evidence is not
@@ -253,11 +253,10 @@ Instance readiness gates admit new work only. Once an attempt has a Job, its
 phase is tracked from that Job alone, so a transient readiness dip neither
 regresses a running attempt to `Pending` nor hides the Job's completion.
 
-## 8.2 Release Gates
+## Remaining Validation
 
-- Promote an immutable Tamsin image and pin its `ingestevent` module and JSON
-  Schema to the same released revision; no Tamsin release currently contains
-  the newly merged protocol.
+- Keep the immutable Tamsin image, `ingestevent` module, and JSON Schema pinned
+  to the same promoted revision.
 - Fixture-test protocol compatibility, redaction, stdout/stderr separation,
   `hello`, sequence gaps, compatible minors, unsupported majors, incomplete
   EOF, and `run.finished`/container exit-code agreement.
@@ -270,11 +269,11 @@ regresses a running attempt to `Pending` nor hides the Job's completion.
   plaintext HTTP.
 - Test graceful cancellation, hard Pod loss, Job retry, collector restart,
   duplicates, gaps, unsupported schema versions, partial success, stranded
-  verification, and artifact failure.
+  verification, and artefact failure.
 - Run at least 10,000 inputs through one staged manifest or approved prefix
   while keeping Job arguments, CR status, event queues, and Kubernetes API
   writes bounded.
-- Verify artifact digests and retention, Job TTL cleanup, staging multipart
+- Verify artefact digests and retention, Job TTL cleanup, staging multipart
   cleanup, and retry lineage.
 - Define and test hibernation coordination. Hibernation must either reject an
   instance with active runs or cancel them and wait for terminal, verified
@@ -284,6 +283,10 @@ regresses a running attempt to `Pending` nor hides the Job's completion.
   `cnm-tamoss-1`.
 
 ## References
+
+- [Public IngestRun explanation](../../concepts/ingest-runs.md)
+- [Manage Ingest Runs](../../operations/manage-ingest-runs.md)
+- [IngestRun CR reference](../../reference/ingestrun-cr.md)
 
 - [Tamsin result contract](https://github.com/livewyer-ops/tamsin/blob/main/docs/reference/result-contract.md)
 - [Tamsin ingest event schema](https://github.com/livewyer-ops/tamsin/blob/main/contracts/tamsin/ingest-events-v1.json)

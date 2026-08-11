@@ -109,7 +109,7 @@ The implemented command surface is deliberately narrower: cancellation accepts
 only an exact run name, UID, and resource revision, verifies same-origin browser
 provenance, and optimistically patches `spec.desiredState` from `Running` to
 `Cancelled`. Replays are idempotent. Create and retry remain unavailable and are
-advertised as such by `/ui-api/v1/session` until their resolver and artifact
+advertised as such by `/ui-api/v1/session` until their resolver and artefact
 contracts are complete.
 
 ## Identity and Authorisation

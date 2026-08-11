@@ -60,6 +60,7 @@ spec:
 | `.spec.networkPolicy` | Profile default NetworkPolicy settings, component overrides, and destination-scoped Kubernetes API IP blocks for Console. |
 | `.spec.secrets.apiToken` | Generated or explicit API token configuration. |
 | `.spec.images` | Shared helper images that are not owned by one component. |
+| `.spec.ingest.approvedInputs` | Fail-closed mapping from opaque `IngestRun` input IDs to approved HTTPS media locations. See [IngestRun CR](ingestrun-cr.md). |
 | `.spec.advanced` | Advanced resource patches and additional resources for provider fields that do not have first-class TAMOSS fields. |
 | `.spec.paused` | Stops reconcile writes while still allowing status updates. |
 

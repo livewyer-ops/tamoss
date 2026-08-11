@@ -1,8 +1,9 @@
 # UI Overhaul Design Records
 
-These records define or propose the TAMOSS 8.2 UI architecture and the evidence
-required to release it. Accepted records are product contracts; each status
-section states whether its boundary is proposed, accepted, or implemented.
+These internal records define or propose the TAMOSS 8.2 UI architecture and the
+evidence required to release it. They preserve decisions and unresolved work;
+they are not current user guides or field reference. Each status section states
+whether its boundary is proposed, accepted, or implemented.
 
 Each record separates:
 
@@ -22,3 +23,10 @@ Each record separates:
 The records may be amended before 8.2 while a release gate is unresolved. A
 change to an accepted boundary must update the relevant record and explain the
 trade-off; implementation drift alone is not a new decision.
+
+Current public documentation for ingest is split by reader need:
+
+- [Ingest Runs](../../concepts/ingest-runs.md) explains the resource model.
+- [Manage Ingest Runs](../../operations/manage-ingest-runs.md) provides the
+  operational workflow.
+- [IngestRun CR](../../reference/ingestrun-cr.md) lists the exact contract.

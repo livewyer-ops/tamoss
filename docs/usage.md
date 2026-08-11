@@ -14,9 +14,15 @@ https://app.tamoss.localtest.me
 The UI supports the following actions:
 
 - Browse flows, segments, objects, and service state.
+- Browse Flow Profiles, follow Profile-backed Flows, and filter by Flow status.
+- Inspect initialisation Objects linked to fragmented media.
 - Allocate storage and register uploaded media.
 - Select from registered storage backends where supported.
 - Inspect deletion requests and runtime health.
+- Inspect paginated `IngestRun` history and cancel active runs when authorised.
+
+See [Manage Ingest Runs](operations/manage-ingest-runs.md) for the Console and
+`kubectl` workflow. The current Console does not create or retry runs.
 
 ## API
 
@@ -59,7 +65,7 @@ registering them, so registered segment timeranges come from measured media
 duration rather than desired segment length.
 
 `task ingest` is the optional helper for arbitrary local media files, not the
-public deployment path:
+public deployment path and not an `IngestRun` producer:
 
 ```bash
 task ingest VIDEO=/path/to/video.mp4 LABEL="Example"

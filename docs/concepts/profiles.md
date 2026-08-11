@@ -1,7 +1,10 @@
-# Profiles
+# Deployment Profiles
 
 Profiles are named default sets for common infrastructure shapes. They are not
 separate products and they do not change the operator install path.
+
+These are deployment profiles. TAMS [Flow Profiles](flow-profiles.md) are a
+separate media-metadata capability.
 
 | Profile | Purpose | Backing services |
 | --- | --- | --- |
@@ -136,30 +139,12 @@ provides cert-manager, a different ClusterIssuer name, or pre-created TLS
 Secrets. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
 instead of receiving the profile default.
 
-## Local Profile Validation
+## Validation Adapters
 
-Run profiles one at a time on Kind:
+Kind-specific environments, such as `deploy/environments/multi-server`, are
+test adapters for these public profiles, not additional deployment profiles.
+The `multi-server` adapter uses one control-plane node and three workers to
+exercise its scheduling shape.
 
-```bash
-task kind:up PROFILE=local-kind
-task kind:up PROFILE=edge
-task kind:up PROFILE=single-server
-task kind:up PROFILE=multi-server
-```
-
-Run the sequential profile gate:
-
-```bash
-task kind:profiles:e2e
-```
-
-The Kind-specific environments, such as `deploy/environments/multi-server`,
-are test adapters for local validation. They are not additional public profiles.
-The `multi-server` local validation path also uses `deploy/kind-multi-server.yaml`
-so Kind creates one control-plane node and three worker nodes while keeping host
-HTTPS ingress on port 443.
-
-Both checked-in Kind configs bind host port `443` to `0.0.0.0` for local browser
-and API testing. Treat that as local development exposure. Other machines on the
-same network may be able to reach the test ingress while the Kind cluster is
-running.
+For the runnable profile matrix and its local network exposure, use the
+[Profile Matrix](../development/testing.md#profile-matrix) development guide.
