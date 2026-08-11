@@ -135,7 +135,7 @@ Test markers in use:
 
 - `tams_conformance` — TAMS API, ADR, or AppNote conformance requirement.
 - `tams_contract` — generated and runtime TAMS contract parity requirement.
-- `tams_semantics` — executable TAMS behavior and capability requirement.
+- `tams_semantics` — executable TAMS behaviour and capability requirement.
 - `tamoss_extension` — TAMOSS compatibility or operational extension outside core TAMS conformance.
 - `tamoss_security` — TAMOSS authentication, authorisation, or hardening policy.
 - `e2e` — deployed TAMS-facing black-box checks.

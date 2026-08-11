@@ -1,14 +1,14 @@
 # Hibernate and Resume
 
 Hibernation captures the managed TAMOSS database into an external
-S3-compatible bucket as a portable, checksummed artifact, quiesces the
+S3-compatible bucket as a portable, checksummed artefact, quiesces the
 workloads, and removes the database compute. Resuming bootstraps a managed
-database from such an artifact, either waking the same instance or seeding a
+database from such an artefact, either waking the same instance or seeding a
 new instance in another namespace or cluster.
 
 The lifecycle is declared on the `Tamoss` spec. The operator materialises a
 `TamossHibernate` operation for each hibernation cycle; the operation records
-progress, the artifact identity, and its trusted checksum.
+progress, the artefact identity, and its trusted checksum.
 
 This workflow is database-only. It does not copy TAMS media objects or
 [Authentik](https://goauthentik.io/) state.
@@ -22,7 +22,7 @@ This workflow is database-only. It does not copy TAMS media objects or
 | Managed (`providedBy: bundled`) | External | Not supported. Capture requires the [CNPG](https://cloudnative-pg.io/) `Backup` resource. |
 | External | External | Not needed. Redeploy against the same database and bucket. |
 
-The artifact captures only the database, so hibernation refuses managed
+The artefact captures only the database, so hibernation refuses managed
 RustFS media and the operation fails with `UnsupportedProvider`. The media
 objects would be removed with the source instance, leaving a resumed database
 referencing deleted segments. With an external database there is nothing
@@ -72,12 +72,12 @@ The operation moves through `Quiescing`, `CapturingDatabase`,
 `WritingManifest`, and `DeprovisioningSource` before `Completed`. The parent
 lifecycle then reports `Hibernated`, and reconciliation stays gated while
 `spec.hibernation.enabled` is true. Hibernation is destructive by design.
-Once the source cluster is removed, the artifact in the bucket is the
+Once the source cluster is removed, the artefact in the bucket is the
 authoritative copy of the database, so keep the default `Retain` retention
 until a resume has been verified.
 
 Setting `enabled: false` again wakes the instance. The operator resolves the
-most recent hibernation artifact, verifies its checksum, and bootstraps a new
+most recent hibernation artefact, verifies its checksum, and bootstraps a new
 CNPG cluster from it before normal reconciliation restores the workloads.
 
 Creating a `TamossHibernate` directly still works and behaves identically;
@@ -97,7 +97,7 @@ spec:
         name: tamoss-cnpg-hibernation-1   # same-namespace TamossHibernate
 ```
 
-Across namespaces or clusters, refer to the artifact identity instead:
+Across namespaces or clusters, refer to the artefact identity instead:
 
 ```yaml
 spec:
@@ -110,7 +110,7 @@ spec:
         checksum: sha256:…   # from the TamossHibernate status.artifact.checksum
 ```
 
-The checksum is required for artifact restores. It proves that the manifest
+The checksum is required for artefact restores. It proves that the manifest
 in the bucket is the one the hibernation wrote. The operator
 reads and validates the manifest (checksum, schema version, TAMS API
 compatibility, completed CNPG backup), persists the resolved source in
@@ -123,20 +123,20 @@ If the database cluster already exists, the operator ignores `resumeFrom` and
 emits a `ResumeSourceIgnored` warning event. `resumeFrom` never replaces an
 existing database.
 
-## Artifact Retention
+## Artefact Retention
 
-The hibernate `StorageBackend` controls what happens to the artifact after a
+The hibernate `StorageBackend` controls what happens to the artefact after a
 successful resume, through `.spec.hibernate.retention.mode`:
 
 | Mode | Behaviour |
 | --- | --- |
-| `Retain` | Default. Leave the hibernation artifact in the bucket. |
-| `DeleteAfterResume` | Delete the artifact prefix once the restored database is ready. |
-| `TTL` | Delete the artifact prefix `.spec.hibernate.retention.ttlSecondsAfterResume` seconds after the restored database became ready. |
+| `Retain` | Default. Leave the hibernation artefact in the bucket. |
+| `DeleteAfterResume` | Delete the artefact prefix once the restored database is ready. |
+| `TTL` | Delete the artefact prefix `.spec.hibernate.retention.ttlSecondsAfterResume` seconds after the restored database became ready. |
 
 The resumed instance applies retention, anchored on database readiness.
 Cleanup does not wait for unrelated workload start-up; it proceeds once the
-database the artifact carried runs again. The restore completion time is
+database the artefact carried runs again. The restore completion time is
 recorded first and progress is reported in
 `.status.lifecycle.resolvedRestore.cleanup`. Transient deletion failures
 retry every minute with a warning event. Structural problems, such as an
@@ -162,7 +162,7 @@ RustFS, and similar stores.
   Each distinct value re-arms the operation exactly once;
   `.status.acceptedRetry` records the last honoured value. Alternatively,
   toggling `spec.hibernation.enabled` off and on starts a fresh cycle with a
-  new artifact.
+  new artefact.
 - While `spec.hibernation.enabled` is true, the instance stays gated even if
   a cycle fails. A failure never implicitly restores a hibernated instance.
   Disabling hibernation mid-capture aborts the materialised operation and
@@ -187,7 +187,7 @@ RustFS, and similar stores.
   `hibernationCycle`, the active and last operation references, and
   `resolvedRestore`.
 - Keep completed `TamossHibernate` resources while any instance may still
-  `resumeFrom` them by reference. Artifact-based restores need only the
+  `resumeFrom` them by reference. Artefact-based restores need only the
   bucket contents and the recorded checksum.
 
 ## Current Limits

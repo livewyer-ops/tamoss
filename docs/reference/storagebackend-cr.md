@@ -50,6 +50,7 @@ spec:
 | `.spec.usage` | `media` or `hibernate`. Defaults to `media`. |
 | `.spec.defaultStorage` | Whether this backend should be registered as the default backend. |
 | `.spec.label` | Public backend label. Defaults to `tamoss.<region>:s3:<bucket>`. |
+| `.spec.tags` | Freeform metadata with string or string-array values, advertised read-only by the TAMS storage-backend API and used by storage selection filters. |
 | `.spec.region` | S3 region value. Defaults to `us-east-1`. |
 | `.spec.storeProduct` | TAMS store product. Defaults to `s3`. |
 | `.spec.storeType` | TAMS store type. Defaults to `http_object_store`. |
@@ -59,8 +60,13 @@ spec:
 | `.spec.credentials.existingSecret` | Secret containing access and secret keys. |
 | `.spec.credentials.secretKeys.accessKey` | Secret key name for the access key. |
 | `.spec.credentials.secretKeys.secretKey` | Secret key name for the secret key. |
-| `.spec.hibernate.retention.mode` | Hibernate artifact retention mode: `Retain`, `DeleteAfterResume`, or `TTL`. Defaults to `Retain`. |
-| `.spec.hibernate.retention.ttlSecondsAfterResume` | Required when retention mode is `TTL`; seconds to wait after a successful resume before deleting the artifact prefix. |
+| `.spec.hibernate.retention.mode` | Hibernate artefact retention mode: `Retain`, `DeleteAfterResume`, or `TTL`. Defaults to `Retain`. |
+| `.spec.hibernate.retention.ttlSecondsAfterResume` | Required when retention mode is `TTL`; seconds to wait after a successful resume before deleting the artefact prefix. |
+
+Kubernetes preserves each tag value as JSON so both TAMS forms round-trip
+without conversion. If a value is neither a string nor an array containing
+only strings, the operator sets the `StorageBackend` to `Degraded` with reason
+`InvalidStorageBackendTags` and does not provision or register the backend.
 
 ## Immutable and Required Fields
 
@@ -97,14 +103,14 @@ the object store is consumed.
   Bucket lifecycle, CORS, IAM, replication, backups, and bucket deletion remain
   provider-owned.
 
-`usage: hibernate` is reserved for hibernation artifacts and resume
+`usage: hibernate` is reserved for hibernation artefacts and resume
 bootstraps. Hibernate destinations are checked for bucket and credential
 readiness, but they are not registered in the TAMS database and are not exposed
 to API or worker runtime credentials.
 
 For hibernate destinations, `.spec.hibernate.retention.mode` controls
-operator-managed cleanup of completed hibernation artifacts after resume.
-Cleanup deletes the artifact prefix with S3-compatible list/delete calls, which
+operator-managed cleanup of completed hibernation artefacts after resume.
+Cleanup deletes the artefact prefix with S3-compatible list/delete calls, which
 keeps the operator contract portable across supported S3-compatible backends.
 Use `Retain` when provider-native lifecycle, object lock, audit retention, or
 manual review should own deletion. Use `DeleteAfterResume` or `TTL` only when

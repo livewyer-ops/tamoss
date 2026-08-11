@@ -2,7 +2,7 @@
 
 TAMOSS currently serves `tamoss.livewyer.io/v1alpha1` for both `Tamoss` and
 `StorageBackend`. This API is still alpha: field names, enum values, defaults,
-and status details may change while the operator moves toward a public beta API.
+and status details may change while the operator moves towards a public beta API.
 
 This page defines the promotion plan. It does not introduce a new CRD version.
 

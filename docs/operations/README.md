@@ -7,7 +7,7 @@ diagnosis for operator-led TAMOSS deployments.
 - [Day 2 Operations](day-2.md) - status, scaling, pausing, drift, and logs.
 - [Backup and Restore](backup-restore.md) - data ownership and restore paths.
 - [Hibernate and Resume](hibernate-resume.md) - on-demand managed database
-  hibernation artifacts and recovery.
+  hibernation artefacts and recovery.
 - [Deletion Protection](deletion-protection.md) - finalizers and confirmation
   annotations.
 - [Secret Rotation](secret-rotation.md) - runtime secret classes and rotation.

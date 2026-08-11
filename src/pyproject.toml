@@ -86,7 +86,7 @@ select = [
 ]
 ignore = [
     "TRY003",  # Domain/API errors intentionally carry BBC-facing messages.
-    "TRY004",  # Validation functions normalize external payload errors to ValueError.
+    "TRY004",  # Validation functions normalise external payload errors to ValueError.
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -196,7 +196,7 @@ norecursedirs = [".git", ".venv", "venv", "build", "dist"]
 markers = [
     "tams_conformance: TAMS API, ADR, or AppNote conformance requirement",
     "tams_contract: Generated and runtime TAMS contract parity requirement",
-    "tams_semantics: Executable TAMS behavior and capability requirement",
+    "tams_semantics: Executable TAMS behaviour and capability requirement",
     "tamoss_extension: TAMOSS compatibility or operational extension outside core TAMS conformance",
     "tamoss_security: TAMOSS authentication, authorisation, or hardening policy",
     "e2e: Deployed TAMS-facing black-box checks",

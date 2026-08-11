@@ -1,7 +1,7 @@
 # Platform
 
 Runtime platform installation is orchestrated by `helmfile.yaml.gotmpl`.
-Environment compositions select platform behavior through their
+Environment compositions select platform behaviour through their
 `platform-values.yaml` file, merged on top of `values/defaults.yaml`.
 
 Helmfile installs each major platform dependency as a separate Helm release:

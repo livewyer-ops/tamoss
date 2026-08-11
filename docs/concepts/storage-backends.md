@@ -15,6 +15,9 @@ spec:
   backends:
     s3:
       providedBy: rustfs-operator
+      tags:
+        access: [programme, archive]
+        tier: hot
 ```
 
 The built-in profiles use [CNPG](https://cloudnative-pg.io/) and
@@ -46,6 +49,9 @@ spec:
   tamossRef:
     name: tamoss-kind
   provider: external-s3
+  tags:
+    access: [programme, archive]
+    tier: cold
   region: eu-west-2
   bucketName: archive
   endpoint:
@@ -59,6 +65,13 @@ spec:
       accessKey: accessKeyID
       secretKey: secretAccessKey
 ```
+
+Storage backend tags are freeform TAMS metadata whose values can be either a
+single string or an array of strings. Both forms are preserved when exposed
+read-only by `/service/storage-backends` and can be used by clients to filter
+backend listings, object download URLs, and storage allocation choices. Keep
+authorisation decisions in the API or storage provider; tags describe policy
+inputs and are not credentials.
 
 ## Runtime Credentials
 

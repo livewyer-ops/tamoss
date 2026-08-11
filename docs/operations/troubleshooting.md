@@ -204,7 +204,7 @@ first-start lifecycle phases so version and startup state are visible without
 opening the full resource dump first.
 
 Secret values, sensitive ConfigMaps such as `oauth2-credentials`, direct token
-fields, webhook API-key values, authorization header values, credential-bearing
+fields, webhook API-key values, `Authorization` header values, credential-bearing
 URLs, last-applied annotations, and known credential-bearing environment values
 are redacted. Generated Secret names from `status.resolved.*` remain visible so
 references can be diagnosed, but generated Secret bodies are not shared. The

@@ -460,7 +460,7 @@ requirements:
   - operator/internal/controller/storagebackend_controller_unit_test.go::TestStorageBackendInvalidTagsDegradeBeforeProvisioning
   - operator/internal/controller/suite_test.go::TestControllers
 - id: TAMOSS-OPERATOR-002
-  summary: Release compatibility metadata and serialized schema orchestration
+  summary: Release compatibility metadata and serialised schema orchestration
   normative: true
   disposition: implemented
   introducedIn: '8.2'

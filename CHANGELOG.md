@@ -25,7 +25,7 @@ This project follows semantic versioning for public releases.
 - Added a database hibernate/resume lifecycle: `TamossHibernate` exports the
   managed CNPG database to an external S3 hibernation `StorageBackend` with a
   checksummed manifest, and `spec.hibernation.resumeFrom` restores it into a target `Tamoss`
-  through CNPG recovery, with configurable artifact retention
+  through CNPG recovery, with configurable artefact retention
   (`Retain`, `DeleteAfterResume`, `TTL`).
 - Added the TAMOSS Kubernetes operator as the primary Kubernetes deployment
   path. Local Kubernetes install now creates Kind, applies the operator with

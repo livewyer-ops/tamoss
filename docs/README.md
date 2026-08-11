@@ -49,7 +49,7 @@ then stay on the matching install, configuration, usage, and operations path.
 - [Backup and Restore](operations/backup-restore.md) - data ownership and
   restore planning.
 - [Hibernate and Resume](operations/hibernate-resume.md) - on-demand managed
-  database hibernation artifacts and recovery.
+  database hibernation artefacts and recovery.
 - [Upgrades](operations/upgrades.md) - change sequencing and rollback.
 - [Deletion Protection](operations/deletion-protection.md) - required
   confirmation annotations and finalizers.

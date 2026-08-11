@@ -11,7 +11,7 @@ operator/test/chainsaw/<capability>/<scenario-kebab-case>/
 ```
 
 Shared fixtures live under `fixtures/` only when more than one scenario uses
-the same setup. Scenario behavior belongs in the scenario directory, not in a
+the same setup. Scenario behaviour belongs in the scenario directory, not in a
 shared dispatcher. Repeated readiness checks belong under `fixtures/assert/`
 before a scenario adds another local copy.
 
@@ -24,7 +24,7 @@ Use native Chainsaw operations for Kubernetes state:
   Deployment specs, Secret keys, finalizers, and Events.
 - `delete` removes Kubernetes resources when the delete is expected to
   succeed.
-- `patch` mutates Kubernetes resources when the mutation is the behavior under
+- `patch` mutates Kubernetes resources when the mutation is the behaviour under
   test.
 - `wait` handles direct readiness and deletion waits.
 - `error` is preferred when the Kubernetes API is expected to reject an apply
@@ -35,7 +35,7 @@ to use shell. Assert a partial `v1/Event` with the expected `reason` and
 `involvedObject` fields when the scenario only needs to prove that the Event
 exists.
 
-Scripts are reserved for behavior native Chainsaw cannot express cleanly:
+Scripts are reserved for behaviour native Chainsaw cannot express cleanly:
 `task` wrappers, API ingest, S3 read-back, database row checks, Authentik
 fixture probes, render-only Kustomize checks, recovery annotations, and
 before/after comparisons. Prefer native `patch` with `subresource: status` for
@@ -105,7 +105,7 @@ task operator:e2e:chainsaw:focus KUBECONFIG=/path/to/kubeconfig SELECTOR='test.t
 
 The suite uses one chainsaw namespace per case, prefixed
 `tamoss-chainsaw-`. Namespaces are deleted after successful tests. For failure
-triage, re-run with `CHAINSAW_SKIP_DELETE=true` or use the CI artifacts under
+triage, re-run with `CHAINSAW_SKIP_DELETE=true` or use the CI artefacts under
 `reports/chainsaw-logs/`.
 
 On CI failure, `.github/scripts/collect-chainsaw-diagnostics.sh` writes global
@@ -199,19 +199,19 @@ files without flattening scenario ownership into `<scenario>.yaml` files.
   distribution itself, including the base install and optional monitoring
   overlay shape.
 - `tamoss-instance-reconciliation/` covers single-instance CR rendering,
-  validation, immutable fields, resource ownership, and update behavior.
+  validation, immutable fields, resource ownership, and update behaviour.
 - `tamoss-operational-behaviour/` covers cross-cutting day-two contracts such
   as idempotency, multiple instances, recovery actions, drift, and events.
 - `storagebackend-reconciliation/` covers `StorageBackend` lifecycle,
   registration, delete protection, diagnostics, deletion cleanup, and API
-  storage selection behavior.
+  storage selection behaviour.
 - `cnpg-backend/`, `rustfs-operator-backend/`, and
-  `authentik-blueprints-identity/` cover provider-specific behavior that only
+  `authentik-blueprints-identity/` cover provider-specific behaviour that only
   makes sense for that provider.
 - `auth-runtime-modes/` covers identity mode rendering that is not specific to
   Authentik, including disabled auth and external OAuth/OIDC.
 - `database-schema-management/` covers schema migration state, gating, fixture
-  loading, and terminal failure behavior.
+  loading, and terminal failure behaviour.
 - `profile-rendering/` covers profile-rendered Kubernetes shape without
   duplicating full Kind bootstrapping.
 

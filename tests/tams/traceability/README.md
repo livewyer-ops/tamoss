@@ -1,7 +1,7 @@
 # TAMS traceability
 
 Requirement identity is capability-based and stable across TAMS releases. Release versions
-are provenance, not part of a requirement ID or an enduring behavior-test name.
+are provenance, not part of a requirement ID or an enduring behaviour-test name.
 
 - `requirements.yaml` is the current registry. It links each stable requirement to its
   implementation and test evidence, using exact Python and Go test nodes where those runners
@@ -14,5 +14,5 @@ are provenance, not part of a requirement ID or an enduring behavior-test name.
   against the vendored BBC TAMS revision. It also requires every conformance test module to
   belong to exactly one of the contract or semantic gates, preventing silent collection gaps.
 
-Versions remain appropriate in tests whose behavior is itself a version boundary, such as a
+Versions remain appropriate in tests whose behaviour is itself a version boundary, such as a
 database upgrade from one frozen schema to another or advertised release compatibility.
