@@ -1,0 +1,39 @@
+package v1alpha1
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+)
+
+// ValidateStorageBackendTags enforces the TAMS string-or-string-array tag
+// union after Kubernetes has preserved each value as arbitrary JSON.
+func ValidateStorageBackendTags(tags map[string]apiextensionsv1.JSON) error {
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		var value any
+		if err := json.Unmarshal(tags[key].Raw, &value); err != nil {
+			return fmt.Errorf("tag %q contains invalid JSON: %w", key, err)
+		}
+		switch typedValue := value.(type) {
+		case string:
+			continue
+		case []any:
+			for _, item := range typedValue {
+				if _, ok := item.(string); !ok {
+					return fmt.Errorf("tag %q must contain only strings", key)
+				}
+			}
+		default:
+			return fmt.Errorf("tag %q must be a string or an array of strings", key)
+		}
+	}
+	return nil
+}

@@ -9,12 +9,14 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
@@ -30,8 +32,9 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 			Backends: tamossv1alpha1.BackendsSpec{
 				S3: tamossv1alpha1.S3BackendSpec{
 					ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator,
-					Tags: map[string][]string{
-						"access": {"archive", "programme"},
+					Tags: map[string]apiextensionsv1.JSON{
+						"access": {Raw: []byte(`["archive","programme"]`)},
+						"tier":   {Raw: []byte(`"hot"`)},
 					},
 					RustFSOperator: &tamossv1alpha1.S3RustFSOperatorSpec{
 						PublicEndpoint: tamossv1alpha1.S3PublicEndpointSpec{URL: "https://s3.example.test"},
@@ -62,8 +65,11 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 	if storageBackend.Spec.Credentials.ExistingSecret != "example-s3-creds" {
 		t.Fatalf("expected generated RustFS credentials secret, got %q", storageBackend.Spec.Credentials.ExistingSecret)
 	}
-	if got := storageBackend.Spec.Tags["access"]; len(got) != 2 || got[0] != "archive" || got[1] != "programme" {
+	if got := string(storageBackend.Spec.Tags["access"].Raw); got != `["archive","programme"]` {
 		t.Fatalf("expected default backend tags to flow through, got %#v", storageBackend.Spec.Tags)
+	}
+	if got := string(storageBackend.Spec.Tags["tier"].Raw); got != `"hot"` {
+		t.Fatalf("expected scalar default backend tag to flow through, got %#v", storageBackend.Spec.Tags)
 	}
 }
 
@@ -137,7 +143,10 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 		BucketName:     "archive",
 		Endpoint:       tamossv1alpha1.S3EndpointSpec{Default: tamossv1alpha1.EndpointURLSpec{URL: "http://example-s3:9000"}},
 		DefaultStorage: false,
-		Tags:           map[string][]string{"access": {"archive", "programme"}},
+		Tags: map[string]apiextensionsv1.JSON{
+			"access": {Raw: []byte(`["archive","programme"]`)},
+			"tier":   {Raw: []byte(`"cold"`)},
+		},
 	}
 
 	job := storageBackendRegistrationJob(storageBackend, tamoss, spec, "desired")
@@ -155,7 +164,7 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 	if envValue(container.Env, "TAMOSS_STORAGE_BACKEND_ID") != spec.ID {
 		t.Fatalf("expected backend ID env, got %#v", container.Env)
 	}
-	if got := envValue(container.Env, "TAMOSS_STORAGE_BACKEND_TAGS"); got != `{"access":["archive","programme"]}` {
+	if got := envValue(container.Env, "TAMOSS_STORAGE_BACKEND_TAGS"); got != `{"access":["archive","programme"],"tier":"cold"}` {
 		t.Fatalf("expected deterministic backend tags env, got %q", got)
 	}
 	script := container.Command[2]
@@ -176,14 +185,70 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 func TestStorageBackendRegistrationHashIncludesTags(t *testing.T) {
 	spec := storageBackendSpecFixture()
 	withoutTags := storageBackendRegistrationHash(spec)
-	spec.Tags = map[string][]string{"access": {"programme"}}
+	spec.Tags = map[string]apiextensionsv1.JSON{"access": {Raw: []byte(`["programme"]`)}}
 	withTags := storageBackendRegistrationHash(spec)
 
 	if withoutTags == withTags {
 		t.Fatal("expected storage backend tags to change the registration hash")
 	}
-	if got := storageBackendTagsJSON(map[string][]string{"z": {"last"}, "a": {"first"}}); got != `{"a":["first"],"z":["last"]}` {
+	spec.Tags = map[string]apiextensionsv1.JSON{"access": {Raw: []byte(`"programme"`)}}
+	withScalarTag := storageBackendRegistrationHash(spec)
+	if withTags == withScalarTag {
+		t.Fatal("expected scalar and singleton-array tags to retain distinct hash semantics")
+	}
+	if got := storageBackendTagsJSON(map[string]apiextensionsv1.JSON{
+		"z": {Raw: []byte(`["last"]`)},
+		"a": {Raw: []byte(`"first"`)},
+	}); got != `{"a":"first","z":["last"]}` {
 		t.Fatalf("expected stable sorted tag JSON, got %q", got)
+	}
+	if got := storageBackendTagsJSON(map[string]apiextensionsv1.JSON{
+		"access": {Raw: []byte(`[ "archive", "programme" ]`)},
+	}); got != `{"access":["archive","programme"]}` {
+		t.Fatalf("expected canonical tag JSON independent of source whitespace, got %q", got)
+	}
+}
+
+func TestStorageBackendInvalidTagsDegradeBeforeProvisioning(t *testing.T) {
+	ctx := context.Background()
+	scheme := storageBackendTestScheme(t)
+	storageBackend := storageBackendFixture()
+	storageBackend.Finalizers = []string{storageBackendFinalizer}
+	storageBackend.Spec.Tags = map[string]apiextensionsv1.JSON{
+		"invalid": {Raw: []byte(`7`)},
+	}
+	recorder := record.NewFakeRecorder(10)
+	reconciler := StorageBackendReconciler{
+		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
+			WithScheme(scheme).
+			WithStatusSubresource(&tamossv1alpha1.StorageBackend{}).
+			WithObjects(storageBackend).
+			Build(),
+		Scheme:   scheme,
+		Recorder: recorder,
+	}
+
+	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: storageBackend.Name, Namespace: storageBackend.Namespace}})
+	if err != nil {
+		t.Fatalf("expected invalid tags to update status without a reconcile error: %v", err)
+	}
+	updated := &tamossv1alpha1.StorageBackend{}
+	if err := reconciler.Client.Get(ctx, client.ObjectKeyFromObject(storageBackend), updated); err != nil {
+		t.Fatalf("get updated StorageBackend: %v", err)
+	}
+	ready := findCondition(t, updated.Status.Conditions, operatorstatus.ConditionReady)
+	if ready.Status != metav1.ConditionFalse || ready.Reason != operatorstatus.ReasonInvalidStorageBackendTags {
+		t.Fatalf("expected invalid tags to degrade StorageBackend, got %#v", ready)
+	}
+	if updated.Status.Phase != operatorstatus.PhaseDegraded {
+		t.Fatalf("expected degraded phase, got %q", updated.Status.Phase)
+	}
+	if err := reconciler.Client.Get(ctx, types.NamespacedName{Name: storageBackendResourceName(storageBackend, "bucket-init"), Namespace: storageBackend.Namespace}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected invalid tags to block provisioning, got %v", err)
+	}
+	event := <-recorder.Events
+	if !strings.Contains(event, operatorstatus.ReasonInvalidStorageBackendTags) {
+		t.Fatalf("expected invalid tags warning event, got %q", event)
 	}
 }
 

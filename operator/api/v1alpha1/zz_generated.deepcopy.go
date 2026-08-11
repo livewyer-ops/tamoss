@@ -23,8 +23,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -136,7 +136,7 @@ func (in *AdvancedSpec) DeepCopyInto(out *AdvancedSpec) {
 	}
 	if in.ExtraResources != nil {
 		in, out := &in.ExtraResources, &out.ExtraResources
-		*out = make([]apiextensionsv1.JSON, len(*in))
+		*out = make([]v1.JSON, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -617,14 +617,14 @@ func (in *HTTPRouteHostSpec) DeepCopyInto(out *HTTPRouteHostSpec) {
 	}
 	if in.DefaultFilters != nil {
 		in, out := &in.DefaultFilters, &out.DefaultFilters
-		*out = make([]apiextensionsv1.JSON, len(*in))
+		*out = make([]v1.JSON, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.Filters != nil {
 		in, out := &in.Filters, &out.Filters
-		*out = make([]apiextensionsv1.JSON, len(*in))
+		*out = make([]v1.JSON, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -717,7 +717,7 @@ func (in *HTTPRouteRule) DeepCopyInto(out *HTTPRouteRule) {
 	}
 	if in.Filters != nil {
 		in, out := &in.Filters, &out.Filters
-		*out = make([]apiextensionsv1.JSON, len(*in))
+		*out = make([]v1.JSON, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -1233,18 +1233,9 @@ func (in *S3BackendSpec) DeepCopyInto(out *S3BackendSpec) {
 	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make(map[string][]string, len(*in))
+		*out = make(map[string]v1.JSON, len(*in))
 		for key, val := range *in {
-			var outVal []string
-			if val == nil {
-				(*out)[key] = nil
-			} else {
-				inVal := (*in)[key]
-				in, out := &inVal, &outVal
-				*out = make([]string, len(*in))
-				copy(*out, *in)
-			}
-			(*out)[key] = outVal
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 }
@@ -1663,18 +1654,9 @@ func (in *StorageBackendSpec) DeepCopyInto(out *StorageBackendSpec) {
 	out.TamossRef = in.TamossRef
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
-		*out = make(map[string][]string, len(*in))
+		*out = make(map[string]v1.JSON, len(*in))
 		for key, val := range *in {
-			var outVal []string
-			if val == nil {
-				(*out)[key] = nil
-			} else {
-				inVal := (*in)[key]
-				in, out := &inVal, &outVal
-				*out = make([]string, len(*in))
-				copy(*out, *in)
-			}
-			(*out)[key] = outVal
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 	out.Endpoint = in.Endpoint
@@ -1697,7 +1679,7 @@ func (in *StorageBackendStatus) DeepCopyInto(out *StorageBackendStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
+		*out = make([]metav1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -1919,7 +1901,7 @@ func (in *TamossOperationStatus) DeepCopyInto(out *TamossOperationStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
+		*out = make([]metav1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -2062,7 +2044,7 @@ func (in *TamossStatus) DeepCopyInto(out *TamossStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
+		*out = make([]metav1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

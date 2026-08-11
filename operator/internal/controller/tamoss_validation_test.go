@@ -2,9 +2,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -148,6 +150,43 @@ var _ = Describe("Tamoss API validation", func() {
 			err = k8sClient.Create(ctx, tamoss)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("accepts scalar and array storage backend tags without an artificial count limit", func() {
+			tags := map[string]apiextensionsv1.JSON{
+				"tier":   {Raw: []byte(`"hot"`)},
+				"access": {Raw: []byte(`["programme","archive"]`)},
+			}
+			for index := 0; index < 65; index++ {
+				tags[fmt.Sprintf("tag-%02d", index)] = apiextensionsv1.JSON{Raw: []byte(`"value"`)}
+			}
+
+			storageBackend := validStorageBackend("storage-tags-union")
+			storageBackend.Spec.Tags = tags
+			Expect(k8sClient.Create(ctx, storageBackend)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, storageBackend)
+			})
+
+			createdStorageBackend := &tamossv1alpha1.StorageBackend{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageBackend.Name, Namespace: storageBackend.Namespace}, createdStorageBackend)).To(Succeed())
+			Expect(string(createdStorageBackend.Spec.Tags["tier"].Raw)).To(Equal(`"hot"`))
+			Expect(string(createdStorageBackend.Spec.Tags["access"].Raw)).To(Equal(`["programme","archive"]`))
+
+			tamoss := minimalTamossUnstructured("default-storage-tags-union")
+			Expect(unstructured.SetNestedMap(tamoss.Object, map[string]interface{}{
+				"tier":   "hot",
+				"access": []interface{}{"programme", "archive"},
+			}, "spec", "backends", "s3", "tags")).To(Succeed())
+			Expect(k8sClient.Create(ctx, tamoss)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, tamoss)
+			})
+
+			createdTamoss := &tamossv1alpha1.Tamoss{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: tamoss.GetName(), Namespace: tamoss.GetNamespace()}, createdTamoss)).To(Succeed())
+			Expect(string(createdTamoss.Spec.Backends.S3.Tags["tier"].Raw)).To(Equal(`"hot"`))
+			Expect(string(createdTamoss.Spec.Backends.S3.Tags["access"].Raw)).To(Equal(`["programme","archive"]`))
 		})
 
 		It("rejects ambiguous provider blocks at the API boundary", func() {

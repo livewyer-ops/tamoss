@@ -1,6 +1,10 @@
 package v1alpha1
 
-import "testing"
+import (
+	"testing"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+)
 
 func TestStorageBackendDefaultsExternalS3RegistrationOnly(t *testing.T) {
 	spec := StorageBackendSpec{
@@ -43,5 +47,38 @@ func TestStorageBackendExternalS3DoesNotInferCloudEndpoint(t *testing.T) {
 	}
 	if spec.Endpoint.Public.URL != "" {
 		t.Fatalf("expected external-s3 public endpoint to remain explicit without default endpoint, got %q", spec.Endpoint.Public.URL)
+	}
+}
+
+func TestValidateStorageBackendTagsAcceptsTAMSValueUnion(t *testing.T) {
+	tags := map[string]apiextensionsv1.JSON{
+		"tier":   {Raw: []byte(`"hot"`)},
+		"access": {Raw: []byte(`["programme","archive"]`)},
+		"empty":  {Raw: []byte(`[]`)},
+	}
+
+	if err := ValidateStorageBackendTags(tags); err != nil {
+		t.Fatalf("expected scalar and array tag values to be valid: %v", err)
+	}
+}
+
+func TestValidateStorageBackendTagsRejectsValuesOutsideTAMSUnion(t *testing.T) {
+	tests := map[string]string{
+		"number":      `7`,
+		"boolean":     `true`,
+		"null":        `null`,
+		"object":      `{"nested":"value"}`,
+		"mixed-array": `["valid",7]`,
+	}
+
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			tags := map[string]apiextensionsv1.JSON{
+				"invalid": {Raw: []byte(raw)},
+			}
+			if err := ValidateStorageBackendTags(tags); err == nil {
+				t.Fatalf("expected %s tag value to be rejected", name)
+			}
+		})
 	}
 }

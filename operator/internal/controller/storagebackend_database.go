@@ -8,6 +8,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -253,9 +254,9 @@ func storageBackendRegistrationHash(spec tamossv1alpha1.StorageBackendSpec) stri
 	)
 }
 
-func storageBackendTagsJSON(tags map[string][]string) string {
+func storageBackendTagsJSON(tags map[string]apiextensionsv1.JSON) string {
 	if tags == nil {
-		tags = map[string][]string{}
+		tags = map[string]apiextensionsv1.JSON{}
 	}
 	encoded, err := json.Marshal(tags)
 	if err != nil {

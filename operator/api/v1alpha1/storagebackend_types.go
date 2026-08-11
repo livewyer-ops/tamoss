@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -77,8 +78,8 @@ type StorageBackendSpec struct {
 	StoreType string `json:"storeType,omitempty"`
 
 	// Tags are read-only TAMS metadata clients can use for storage selection.
-	//+kubebuilder:validation:MaxProperties=64
-	Tags map[string][]string `json:"tags,omitempty"`
+	// Each value is either a string or an array of strings, matching the TAMS API.
+	Tags map[string]apiextensionsv1.JSON `json:"tags,omitempty"`
 
 	//+kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName,omitempty"`

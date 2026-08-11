@@ -149,12 +149,10 @@ spec:
                 type: string
               tags:
                 additionalProperties:
-                  items:
-                    type: string
-                  type: array
-                description: Tags are read-only TAMS metadata clients can use for
-                  storage selection.
-                maxProperties: 64
+                  x-kubernetes-preserve-unknown-fields: true
+                description: |-
+                  Tags are read-only TAMS metadata clients can use for storage selection.
+                  Each value is either a string or an array of strings, matching the TAMS API.
                 type: object
               tamossRef:
                 description: TamossRef identifies the Tamoss instance that owns the

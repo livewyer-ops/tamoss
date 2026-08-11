@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 type BackendsSpec struct {
@@ -169,8 +170,8 @@ type S3BackendSpec struct {
 	Bundled        *S3BundledSpec        `json:"bundled,omitempty"`
 	RustFSOperator *S3RustFSOperatorSpec `json:"rustfsOperator,omitempty"`
 	// Tags are advertised on the operator-managed default TAMS storage backend.
-	//+kubebuilder:validation:MaxProperties=64
-	Tags map[string][]string `json:"tags,omitempty"`
+	// Each value is either a string or an array of strings, matching the TAMS API.
+	Tags map[string]apiextensionsv1.JSON `json:"tags,omitempty"`
 }
 
 type S3ExternalSpec struct {

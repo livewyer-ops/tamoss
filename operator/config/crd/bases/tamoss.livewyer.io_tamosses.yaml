@@ -5015,12 +5015,10 @@ spec:
                         type: object
                       tags:
                         additionalProperties:
-                          items:
-                            type: string
-                          type: array
-                        description: Tags are advertised on the operator-managed default
-                          TAMS storage backend.
-                        maxProperties: 64
+                          x-kubernetes-preserve-unknown-fields: true
+                        description: |-
+                          Tags are advertised on the operator-managed default TAMS storage backend.
+                          Each value is either a string or an array of strings, matching the TAMS API.
                         type: object
                     type: object
                     x-kubernetes-validations:
