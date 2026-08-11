@@ -85,6 +85,7 @@ class StorageUseCases:
                     batch_ids = [
                         str(uuid4()) for _ in range((limit or 1) - len(object_ids))
                     ]
+                    self.repository.lock_objects(batch_ids)
                     created = self.repository.create_objects(
                         self._allocated_object(
                             object_id=object_id,
@@ -98,6 +99,7 @@ class StorageUseCases:
                         object_id for object_id in batch_ids if object_id in created
                     )
             else:
+                self.repository.lock_objects(object_ids)
                 created = self.repository.create_objects(
                     self._allocated_object(
                         object_id=object_id,

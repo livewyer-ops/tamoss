@@ -92,6 +92,7 @@ def _process_object_copy(
 
     should_delete_copied_object = False
     with repository.unit_of_work():
+        repository.lock_objects([copy.object_id])
         media_object = repository.get_object(copy.object_id)
         if media_object is None or not media_object.referenced_by_flows:
             should_delete_copied_object = True

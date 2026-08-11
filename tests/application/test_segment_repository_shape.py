@@ -211,6 +211,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert all(result.error is None for result in results)
     assert repository.list_segments_overlapping_calls == 1
     assert repository.lock_flow_segments_calls == 1
+    assert repository.lock_objects_calls == 1
+    assert repository.locked_object_ids == [
+        {_object_id(index) for index in range(SEGMENT_COUNT)}
+    ]
     # One bounded lookup before the transaction (controlled-object upload
     # verification, keeping S3 round-trips outside the flow lock) and one
     # authoritative lookup inside it.
@@ -278,6 +282,8 @@ class CountingRepository:
         self.append_segment_calls = 0
         self.save_registered_segments_calls = 0
         self.lock_flow_segments_calls = 0
+        self.lock_objects_calls = 0
+        self.locked_object_ids: list[set[str]] = []
 
     @property
     def service_repository(self) -> CountingRepository:
@@ -319,6 +325,10 @@ class CountingRepository:
 
     def lock_flow_segments(self, flow_id: UUID) -> None:
         self.lock_flow_segments_calls += 1
+
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        self.lock_objects_calls += 1
+        self.locked_object_ids.append(set(object_ids))
 
     def default_storage_backend(self) -> StorageBackend:
         return self._storage_backend

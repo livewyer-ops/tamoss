@@ -153,9 +153,11 @@ class SegmentUseCases:
             parse_timerange(segment.timerange, field_name="timerange", finite=True)
             for segment in known_segments
         ]
-        media_objects_by_id = self.repository.get_objects(
+        requested_object_ids = {
             str(segment_post["object_id"]) for _, segment_post, _ in candidates
-        )
+        }
+        self.repository.lock_objects(requested_object_ids)
+        media_objects_by_id = self.repository.get_objects(requested_object_ids)
         updated_media_objects: dict[str, MediaObjectRecord] = {}
         accepted_segments: list[SegmentRecord] = []
 

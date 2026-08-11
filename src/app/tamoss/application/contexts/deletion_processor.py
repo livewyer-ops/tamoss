@@ -99,6 +99,7 @@ def delete_matching_segments(
     publish_event: bool = True,
     drain: bool = False,
 ) -> str:
+    repository.lock_flow_segments(delete_filter.flow_id)
     flow = repository.get_flow(delete_filter.flow_id)
     while True:
         deleted_segments = repository.delete_segment_batch(
@@ -319,6 +320,7 @@ def _refresh_deleted_object_references(
     delete_request_id: UUID | None,
 ) -> None:
     deleted_object_ids = {segment.object_id for segment in deleted_segments}
+    repository.lock_objects(deleted_object_ids)
     remaining_segments = repository.list_segments_for_objects(
         flow_id=flow_id,
         object_ids=deleted_object_ids,

@@ -57,13 +57,15 @@ class ObjectUseCases:
         if has_controlled:
             self._queue_controlled_object_copy(object_id, UUID(str(storage_id)))
             return
-        media_object = self.get_object(object_id)
-        self._register_uncontrolled_object_instance(
-            media_object,
-            url=str(url) if url is not None else None,
-            label=str(label) if label is not None else None,
-        )
-        self.repository.save_object(media_object)
+        with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
+            media_object = self.get_object(object_id)
+            self._register_uncontrolled_object_instance(
+                media_object,
+                url=str(url) if url is not None else None,
+                label=str(label) if label is not None else None,
+            )
+            self.repository.save_object(media_object)
 
     def delete_object_instance(
         self, *, object_id: str, storage_id: UUID | None, label: str | None
@@ -73,6 +75,7 @@ class ObjectUseCases:
         ):
             raise BadRequest("Bad request. Invalid query options.")
         with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
             media_object = self.repository.get_object(object_id)
             if media_object is None or not media_object.referenced_by_flows:
                 raise NotFound("The requested Media Object does not exist.")
@@ -144,6 +147,7 @@ class ObjectUseCases:
         self, object_id: str, destination_storage_id: UUID
     ) -> None:
         with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
             media_object = self.repository.get_object(object_id)
             if media_object is None or not media_object.referenced_by_flows:
                 raise NotFound("The requested Media Object does not exist.")
