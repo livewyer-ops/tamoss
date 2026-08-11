@@ -8,6 +8,7 @@ import psycopg
 import pytest
 from tamoss.adapters.postgres import PostgresRepository
 from tamoss.domain.exceptions import SegmentOverlapError
+from tamoss.domain.listings import DeleteRequestSortBy, FlowSortBy, SourceSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
@@ -15,6 +16,7 @@ from tamoss.domain.model import (
     ObjectCleanupRecord,
     ObjectCopyRecord,
     ObjectInstance,
+    ProfileRecord,
     SegmentRecord,
     SourceRecord,
     WebhookDeliveryRecord,
@@ -40,6 +42,113 @@ from tests.adapters.postgres.support import (
 )
 
 pytestmark = pytest.mark.needs_db
+
+
+def test_repository_round_trips_tams_8_2_profiles_flow_fields_and_init_links(
+    postgres_repo: PostgresRepository,
+) -> None:
+    profile_id = uuid4()
+    flow_id = uuid4()
+    init_id = "bbc/adapter/init.mp4"
+    media_id = "bbc/adapter/media.m4s"
+    profile = ProfileRecord(
+        id=profile_id,
+        label="HD profile",
+        flow_metadata={
+            "format": "urn:x-nmos:format:video",
+            "codec": "video/h264",
+            "container": "video/mp4",
+            "essence_parameters": {
+                "frame_width": 1920,
+                "frame_height": 1080,
+                "init_segments": True,
+            },
+        },
+        tags={"editorial_purpose": ["programme", "trailer"]},
+    )
+    assert postgres_repo.profile_repository.create_profile(profile) is True
+    assert postgres_repo.profile_repository.create_profile(profile) is False
+    profile_page = postgres_repo.profile_repository.list_profiles_page(
+        format="urn:x-nmos:format:video",
+        codec="video/h264",
+        label="HD profile",
+        page=None,
+        limit=10,
+    )
+    assert profile_page.items == [profile]
+
+    flow = FlowRecord(
+        id=flow_id,
+        source_id=uuid4(),
+        format="urn:x-nmos:format:video",
+        container="video/mp4",
+        profile_id=profile_id,
+        status="ingesting",
+        init_segments=True,
+        data={
+            "label": "Profiled flow",
+            "profile_id": str(profile_id),
+            "status": "ingesting",
+            **profile.flow_metadata,
+        },
+    )
+    init_object = MediaObjectRecord(
+        id=init_id,
+        object_kind="init",
+        content_type="video/mp4",
+        referenced_by_flows={flow_id},
+    )
+    media_object = MediaObjectRecord(
+        id=media_id,
+        object_kind="media",
+        content_type="video/iso.segment",
+        timerange="[0:0_10:0)",
+        init_object_id=init_id,
+        referenced_by_flows={flow_id},
+    )
+    segment = SegmentRecord(
+        flow_id=flow_id,
+        object_id=media_id,
+        init_object_id=init_id,
+        timerange="[0:0_10:0)",
+    )
+    postgres_repo.segment_repository.save_registered_segments(
+        flow=flow,
+        media_objects=[media_object, init_object],
+        segments=[segment],
+    )
+
+    flow_page = postgres_repo.flow_repository.list_flows_page(
+        source_id=None,
+        timerange_start=None,
+        timerange_end=None,
+        timerange_is_empty=False,
+        timerange_is_point=False,
+        format=None,
+        profile_id=profile_id,
+        status="ingesting",
+        init_segments=True,
+        collected_by_ids=None,
+        top_level_only=False,
+        sort_by=FlowSortBy.LABEL,
+        reverse_order=False,
+        codec=None,
+        label=None,
+        frame_width=None,
+        frame_height=None,
+        tag_values={},
+        tag_exists={},
+        page=None,
+        limit=10,
+    )
+    assert [item.id for item in flow_page.items] == [flow_id]
+    stored_objects = postgres_repo.object_repository.get_objects([media_id, init_id])
+    assert stored_objects[media_id].init_object_id == init_id
+    assert stored_objects[init_id].object_kind == "init"
+    assert postgres_repo.segment_repository.list_segments_for_objects(
+        flow_id=flow_id,
+        object_ids={init_id},
+    ) == [segment]
 
 
 def test_repository_preserves_and_reads_operator_registered_storage_backends(
@@ -405,6 +514,13 @@ def test_repository_lists_flows_page_with_sql_filters_and_relationships(
         timerange_is_empty=False,
         timerange_is_point=False,
         format="urn:x-nmos:format:video",
+        profile_id=None,
+        status=None,
+        init_segments=None,
+        collected_by_ids=None,
+        top_level_only=False,
+        sort_by=FlowSortBy.CREATED,
+        reverse_order=False,
         codec="video/h264",
         label="programme",
         frame_width=1920,
@@ -426,6 +542,13 @@ def test_repository_lists_flows_page_with_sql_filters_and_relationships(
         timerange_is_empty=True,
         timerange_is_point=False,
         format=None,
+        profile_id=None,
+        status=None,
+        init_segments=None,
+        collected_by_ids=None,
+        top_level_only=False,
+        sort_by=FlowSortBy.CREATED,
+        reverse_order=False,
         codec=None,
         label=None,
         frame_width=None,
@@ -518,6 +641,10 @@ def test_repository_pushes_source_webhook_and_object_flow_tag_filters(
     source_page = postgres_repo.source_repository.list_sources_page(
         label="programme",
         format="urn:x-nmos:format:video",
+        collected_by_ids=None,
+        top_level_only=False,
+        sort_by=SourceSortBy.CREATED,
+        reverse_order=False,
         tag_values={"role": {"studio"}},
         tag_exists={"missing": False},
         page=None,
@@ -528,6 +655,7 @@ def test_repository_pushes_source_webhook_and_object_flow_tag_filters(
     webhook_page = postgres_repo.webhook_repository.list_webhooks_page(
         tag_values={"env": {"blue"}},
         tag_exists={},
+        reverse_order=False,
         page=None,
         limit=10,
     )
@@ -737,19 +865,19 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
     use_cases.flows.set_flow_collection(
         flow_id=parent_flow_id,
         collection=[
-            {"id": str(child_flow_id), "role": "video"},
+            {"id": str(child_flow_id)},
             {"id": str(audio_flow_id), "role": "audio"},
         ],
         identity=identity,
     )
 
     assert use_cases.flows.get_flow_collection(parent_flow_id) == [
-        {"id": str(child_flow_id), "role": "video"},
+        {"id": str(child_flow_id)},
         {"id": str(audio_flow_id), "role": "audio"},
     ]
     relationships = use_cases.sources.source_relationships()
     assert relationships[parent_source_id].source_collection == [
-        {"id": str(child_source_id), "role": "video"},
+        {"id": str(child_source_id)},
         {"id": str(audio_source_id), "role": "audio"},
     ]
     assert relationships[child_source_id].collected_by == [parent_source_id]
@@ -758,7 +886,7 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
         [parent_source_id, child_source_id, audio_source_id]
     )
     assert scoped_relationships[parent_source_id].source_collection == [
-        {"id": str(child_source_id), "role": "video"},
+        {"id": str(child_source_id)},
         {"id": str(audio_source_id), "role": "audio"},
     ]
     assert use_cases.flows.get_flow(child_flow_id, include_collected_by=True).data[
@@ -852,6 +980,54 @@ def test_use_cases_process_segment_delete_request_with_postgres(
     assert cleanups[0].status == "done"
     assert cleanups[0].attempt_count == 1
     assert object_storage.deleted == [(backend.id, object_id)]
+
+
+def test_delete_request_created_sort_uses_persisted_resource_timestamp(
+    postgres_repo: PostgresRepository,
+    postgres_connection: psycopg.Connection,
+) -> None:
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    requests = [
+        DeletionRequestRecord(
+            id=UUID(f"00000000-0000-4000-8000-{index:012d}"),
+            flow_id=uuid4(),
+            timerange_to_delete="[0:0_10:0)",
+            delete_flow=False,
+            status="created",
+            created=base + timedelta(hours=offset),
+            updated=base + timedelta(hours=offset),
+        )
+        for index, offset in ((1, 1), (3, 3), (2, 2))
+    ]
+    for request in requests:
+        postgres_repo.deletion_repository.save_delete_request(request)
+
+    page = postgres_repo.deletion_repository.list_delete_requests_page(
+        sort_by=DeleteRequestSortBy.CREATED,
+        reverse_order=False,
+        retention_seconds=0,
+        page=None,
+        limit=10,
+    )
+    with postgres_connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, created_at, (record->>'created')::timestamptz
+            FROM tamoss_delete_requests
+            ORDER BY created_at DESC, id DESC
+            """
+        )
+        stored_timestamps = cur.fetchall()
+
+    assert [request.id for request in page.items] == [
+        requests[1].id,
+        requests[2].id,
+        requests[0].id,
+    ]
+    assert all(
+        created_at == record_created
+        for _, created_at, record_created in stored_timestamps
+    )
 
 
 def test_repository_rejects_open_or_empty_segment_timeranges(

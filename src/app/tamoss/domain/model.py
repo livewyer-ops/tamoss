@@ -112,6 +112,18 @@ class StorageBackend:
     public_endpoint_url: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
+    tags: dict[str, str | list[str]] = field(default_factory=dict)
+
+
+@dataclass
+class ProfileRecord:
+    id: UUID
+    flow_metadata: dict[str, Any]
+    label: str | None = None
+    description: str | None = None
+    created_by: str | None = None
+    created: datetime = field(default_factory=utc_now)
+    tags: dict[str, str | list[str]] = field(default_factory=dict)
 
 
 ObjectGetUrlBatchKey = tuple[UUID, str]
@@ -241,6 +253,9 @@ class FlowRecord:
     source_id: UUID | None
     format: str | None
     container: str | None
+    profile_id: UUID | None = None
+    status: str | None = None
+    init_segments: bool = False
     read_only: bool = False
     tags: dict[str, str | list[str]] = field(default_factory=dict)
     created: datetime = field(default_factory=utc_now)
@@ -261,12 +276,15 @@ class ObjectInstance:
 class MediaObjectRecord:
     id: str
     timerange: str | None = None
+    init_object_id: str | None = None
     first_referenced_by_flow: UUID | None = None
     allocated_by_flow: UUID | None = None
     referenced_by_flows: set[UUID] = field(default_factory=set)
     instances: list[ObjectInstance] = field(default_factory=list)
     key_frame_count: int | None = None
     bytes_written: int = 0
+    object_kind: str = "unassigned"
+    content_type: str | None = None
     created: datetime = field(default_factory=utc_now)
 
 
@@ -275,6 +293,7 @@ class SegmentRecord:
     flow_id: UUID
     object_id: str
     timerange: str
+    init_object_id: str | None = None
     ts_offset: str | None = None
     last_duration: str | None = None
     object_timerange: str | None = None

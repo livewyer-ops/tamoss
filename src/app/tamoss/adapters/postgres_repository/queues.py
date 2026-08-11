@@ -24,8 +24,10 @@ from tamoss.adapters.postgres_repository.mappers import (
 )
 from tamoss.adapters.postgres_repository.query_filters import (
     _append_tag_filter_clauses,
+    _listing_order_sql,
     _where_sql,
 )
+from tamoss.domain.listings import DeleteRequestSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     ObjectCleanupRecord,
@@ -59,6 +61,7 @@ class PostgresQueueMixin:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
@@ -76,6 +79,7 @@ class PostgresQueueMixin:
             existence_filters=tag_exists,
         )
         where_sql = _where_sql(clauses)
+        direction = sql.SQL("DESC") if reverse_order else sql.SQL("ASC")
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -83,11 +87,11 @@ class PostgresQueueMixin:
                     SELECT webhook.record
                     FROM tamoss_webhooks AS webhook
                     {}
-                    ORDER BY webhook.id
+                    ORDER BY webhook.record->'data'->>'url' {}, webhook.id {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, direction, direction),
                 params,
             )
             rows = cur.fetchall()
@@ -255,6 +259,63 @@ class PostgresQueueMixin:
             )
             return [_delete_request_from_row(row) for row in cur.fetchall()]
 
+    def list_delete_requests_page(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy,
+        reverse_order: bool,
+        retention_seconds: int,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[DeletionRequestRecord]:
+        window = resolve_page_window(page=page, limit=limit)
+        created_sql = sql.SQL("request.created_at")
+        expiry_sql = (
+            sql.SQL("CASE WHEN request.status = 'done' THEN request.updated END")
+            if retention_seconds > 0
+            else sql.SQL("NULL::timestamptz")
+        )
+        sort_expression = {
+            DeleteRequestSortBy.CREATED: created_sql,
+            DeleteRequestSortBy.EXPIRY: expiry_sql,
+        }[sort_by]
+        order_sql = _listing_order_sql(
+            sort_expression,
+            sql.SQL("request.id"),
+            descending=sort_by.descending(reverse_order=reverse_order),
+            missing_first=reverse_order,
+        )
+        params = {
+            "offset": window.offset,
+            "limit": window.limit + 1,
+            "retention_seconds": retention_seconds,
+        }
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    """
+                    SELECT
+                        request.record,
+                        request.status,
+                        request.updated,
+                        request.claimed_at,
+                        request.claimed_by,
+                        request.claim_expires_at
+                    FROM tamoss_delete_requests AS request
+                    ORDER BY {}
+                    OFFSET %(offset)s
+                    LIMIT %(limit)s
+                    """
+                ).format(order_sql),
+                params,
+            )
+            rows = cur.fetchall()
+        items = [_delete_request_from_row(row) for row in rows[: window.limit]]
+        next_page = (
+            str(window.offset + window.limit) if len(rows) > window.limit else None
+        )
+        return Page(items=items, limit=window.limit, next_page=next_page)
+
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -287,7 +348,8 @@ class PostgresQueueMixin:
                     claimed_by,
                     claim_expires_at,
                     record,
-                    updated
+                    updated,
+                    created_at
                 )
                 VALUES (
                     %(id)s,
@@ -297,7 +359,8 @@ class PostgresQueueMixin:
                     %(claimed_by)s,
                     %(claim_expires_at)s,
                     %(record)s,
-                    %(updated)s
+                    %(updated)s,
+                    %(created_at)s
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     flow_id = EXCLUDED.flow_id,
@@ -307,6 +370,7 @@ class PostgresQueueMixin:
                     claim_expires_at = EXCLUDED.claim_expires_at,
                     record = EXCLUDED.record,
                     updated = EXCLUDED.updated,
+                    created_at = EXCLUDED.created_at,
                     updated_at = NOW()
                 """,
                 {
@@ -318,6 +382,7 @@ class PostgresQueueMixin:
                     "claim_expires_at": request.claim_expires_at,
                     "record": Jsonb(record),
                     "updated": request.updated,
+                    "created_at": request.created,
                 },
             )
 

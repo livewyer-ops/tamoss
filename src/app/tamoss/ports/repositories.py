@@ -6,12 +6,14 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from tamoss.domain.listings import DeleteRequestSortBy, FlowSortBy, SourceSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     FlowRecord,
     MediaObjectRecord,
     ObjectCleanupRecord,
     ObjectCopyRecord,
+    ProfileRecord,
     SegmentRecord,
     ServiceMetadata,
     SourceRecord,
@@ -31,6 +33,16 @@ class TransactionalRepository(Protocol):
 class StorageBackendRepository(Protocol):
     def list_storage_backends(self) -> list[StorageBackend]: ...
 
+    def list_storage_backends_page(
+        self,
+        *,
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[StorageBackend]: ...
+
     def default_storage_backend(self) -> StorageBackend | None: ...
 
     def get_storage_backend(self, storage_id: UUID) -> StorageBackend | None: ...
@@ -40,6 +52,22 @@ class ServiceRepository(StorageBackendRepository, Protocol):
     def get_service_metadata(self) -> ServiceMetadata | None: ...
 
     def save_service_metadata(self, metadata: ServiceMetadata) -> None: ...
+
+
+class ProfileRepository(Protocol):
+    def list_profiles_page(
+        self,
+        *,
+        format: str | None,
+        codec: str | None,
+        label: str | None,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[ProfileRecord]: ...
+
+    def get_profile(self, profile_id: UUID) -> ProfileRecord | None: ...
+
+    def create_profile(self, profile: ProfileRecord) -> bool: ...
 
 
 class FlowLookupRepository(Protocol):
@@ -56,7 +84,7 @@ class FlowCollectionRepository(FlowLookupRepository, Protocol):
     def save_flow(self, flow: FlowRecord) -> None: ...
 
 
-class FlowRepository(FlowCollectionRepository, Protocol):
+class FlowRepository(TransactionalRepository, FlowCollectionRepository, Protocol):
     def list_flows_page(
         self,
         *,
@@ -66,6 +94,13 @@ class FlowRepository(FlowCollectionRepository, Protocol):
         timerange_is_empty: bool,
         timerange_is_point: bool,
         format: str | None,
+        profile_id: UUID | None,
+        status: str | None,
+        init_segments: bool | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: FlowSortBy,
+        reverse_order: bool,
         codec: str | None,
         label: str | None,
         frame_width: int | None,
@@ -77,6 +112,10 @@ class FlowRepository(FlowCollectionRepository, Protocol):
     ) -> Page[FlowRecord]: ...
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]: ...
+
+    def has_segments(self, flow_id: UUID) -> bool: ...
+
+    def lock_flow_segments(self, flow_id: UUID) -> None: ...
 
     def list_segments(self, flow_id: UUID) -> list[SegmentRecord]: ...
 
@@ -92,6 +131,11 @@ class FlowRepository(FlowCollectionRepository, Protocol):
 
     def get_source(self, source_id: UUID) -> SourceRecord | None: ...
 
+    def source_relationships_for(
+        self,
+        source_ids: Iterable[UUID],
+    ) -> dict[UUID, SourceRelationships]: ...
+
     def save_source(self, source: SourceRecord) -> None: ...
 
     def save_flow(self, flow: FlowRecord) -> None: ...
@@ -103,6 +147,10 @@ class SourceRepository(Protocol):
         *,
         label: str | None,
         format: str | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: SourceSortBy,
+        reverse_order: bool,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
         page: str | None,
@@ -148,6 +196,7 @@ class WebhookRepository(WebhookEventRepository, Protocol):
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]: ...
@@ -172,6 +221,8 @@ class WebhookRepository(WebhookEventRepository, Protocol):
 
 class SegmentRepository(TransactionalRepository, StorageBackendRepository, Protocol):
     def lock_flow_segments(self, flow_id: UUID) -> None: ...
+
+    def lock_objects(self, object_ids: Iterable[str]) -> None: ...
 
     def get_flow(self, flow_id: UUID) -> FlowRecord | None: ...
 
@@ -214,6 +265,8 @@ class ObjectRepository(
     StorageBackendRepository,
     Protocol,
 ):
+    def lock_objects(self, object_ids: Iterable[str]) -> None: ...
+
     def get_object(self, object_id: str) -> MediaObjectRecord | None: ...
 
     def save_object(self, media_object: MediaObjectRecord) -> None: ...
@@ -238,6 +291,8 @@ class StorageRepository(
     StorageBackendRepository,
     Protocol,
 ):
+    def lock_objects(self, object_ids: Iterable[str]) -> None: ...
+
     def create_object(self, media_object: MediaObjectRecord) -> bool: ...
 
     def create_objects(
@@ -252,6 +307,10 @@ class DeletionRepository(
     ObjectCleanupRepository,
     Protocol,
 ):
+    def lock_flow_segments(self, flow_id: UUID) -> None: ...
+
+    def lock_objects(self, object_ids: Iterable[str]) -> None: ...
+
     def delete_flow(self, flow_id: UUID) -> None: ...
 
     def get_source(self, source_id: UUID) -> SourceRecord | None: ...
@@ -259,6 +318,16 @@ class DeletionRepository(
     def delete_source(self, source_id: UUID) -> None: ...
 
     def list_delete_requests(self) -> list[DeletionRequestRecord]: ...
+
+    def list_delete_requests_page(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy,
+        reverse_order: bool,
+        retention_seconds: int,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[DeletionRequestRecord]: ...
 
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None: ...
 
