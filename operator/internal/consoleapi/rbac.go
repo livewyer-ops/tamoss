@@ -17,13 +17,25 @@ func ReadOnlyPolicyRules(instance string) []rbacv1.PolicyRule {
 			Verbs:         []string{"get", "list", "watch"},
 		},
 		{
+			APIGroups: []string{"tamoss.livewyer.io"},
+			Resources: []string{"storagebackends"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{
+			// IngestRun roots are live-read only when referenced by a discovered
+			// Job. They are deliberately not cached or listed as durable history.
+			APIGroups: []string{"tamoss.livewyer.io"},
+			Resources: []string{"ingestruns"},
+			Verbs:     []string{"get"},
+		},
+		{
 			APIGroups: []string{""},
 			Resources: []string{"events", "pods", "services"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments"},
+			Resources: []string{"deployments", "replicasets"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
 		{

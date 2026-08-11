@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 	defaultEdgeS3TLSSecretName         = "tamoss-edge-s3-tls"
 	defaultPublicTLSSecretName         = "tamoss-public-tls"
 	defaultPublicS3TLSSecretName       = "tamoss-s3-public-tls"
+	defaultAuthentikAdminGroupName     = "authentik Admins"
 )
 
 // Apply fills omitted Tamoss fields with operator-owned defaults.
@@ -44,6 +46,7 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 	case tamossv1alpha1.TamossProfileEdge:
 		applyEdge(tamoss)
 	}
+	defaultAuthentikGroupBindings(tamoss)
 	applyPublicEndpointDefaults(tamoss)
 	applyBaseComponentDefaults(tamoss)
 }
@@ -92,6 +95,7 @@ func applyBaseComponentDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	setReplicas(&tamoss.Spec.Console.WorkloadCommonSpec, 1)
 	defaultAPIProbes(&tamoss.Spec.API.WorkloadCommonSpec)
 	defaultWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultUIProbes(&tamoss.Spec.UI.WorkloadCommonSpec)
 	defaultConsoleProbes(&tamoss.Spec.Console.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.Console.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
 	defaultConsoleSecurity(&tamoss.Spec.Console.WorkloadCommonSpec)
@@ -287,6 +291,23 @@ func defaultAuthentikBlueprints(tamoss *tamossv1alpha1.Tamoss) {
 	}
 }
 
+func defaultAuthentikGroupBindings(tamoss *tamossv1alpha1.Tamoss) {
+	if tamoss.Spec.Auth.Provider() != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		return
+	}
+	if tamoss.Spec.Auth.AuthentikBlueprints == nil {
+		tamoss.Spec.Auth.AuthentikBlueprints = &tamossv1alpha1.AuthentikBlueprintsSpec{}
+	}
+	if len(tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings) == 0 {
+		// Preserve a usable, fail-closed upgrade path for the built-in Authentik
+		// administrator. Production installs should declare narrower groups.
+		tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings = []tamossv1alpha1.AuthentikGroupBindingSpec{{
+			GroupName:   defaultAuthentikAdminGroupName,
+			Permissions: []string{"admin"},
+		}}
+	}
+}
+
 func externalAuthConfigured(external *tamossv1alpha1.AuthExternalSpec) bool {
 	if external == nil {
 		return false
@@ -307,8 +328,12 @@ func applyPublicEndpointDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	endpoints := publicEndpoints{
 		APIHost:      "api." + baseDomain,
 		UIHost:       "app." + baseDomain,
+		UIURL:        "https://app." + baseDomain,
 		S3URL:        "https://s3." + baseDomain,
 		AuthentikURL: "https://auth." + baseDomain,
+	}
+	if tamoss.Spec.PublicEndpoint.UIURL == "" {
+		tamoss.Spec.PublicEndpoint.UIURL = endpoints.UIURL
 	}
 	defaultIngressEndpoints(tamoss, endpoints)
 	defaultHTTPRouteEndpoints(tamoss, endpoints)
@@ -319,6 +344,7 @@ func applyPublicEndpointDefaults(tamoss *tamossv1alpha1.Tamoss) {
 type publicEndpoints struct {
 	APIHost      string
 	UIHost       string
+	UIURL        string
 	S3URL        string
 	AuthentikURL string
 }
@@ -510,6 +536,18 @@ func defaultAPIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
+func defaultUIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	if spec.ReadinessProbe == nil {
+		spec.ReadinessProbe = httpProbe("/readyz", 10, 5, 3)
+	}
+	if spec.LivenessProbe == nil {
+		spec.LivenessProbe = httpProbe("/healthz", 30, 5, 3)
+	}
+	if spec.StartupProbe == nil {
+		spec.StartupProbe = httpProbe("/healthz", 10, 5, 12)
+	}
+}
+
 func defaultConsoleProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	if spec.ReadinessProbe == nil {
 		spec.ReadinessProbe = httpProbe("/ui-api/v1/readyz", 10, 5, 3)
@@ -591,11 +629,20 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		tamoss.Spec.NetworkPolicy.UI.Ingress = serviceIngressRules(firstContainerPort(tamoss.Spec.UI.Ports, 8080))
 	}
 	if len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 {
+		forwardAuthPorts := []int32{}
+		if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints && tamoss.Spec.Auth.RequiredForRuntime() {
+			_, servicePort := authentik.OutpostExternalService(tamoss)
+			if servicePort == 0 {
+				servicePort = 80
+			}
+			forwardAuthPorts = append(forwardAuthPorts, servicePort, 9000)
+		}
 		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(
 			firstServicePort(tamoss.Spec.Service.API.Ports, 8000),
 			firstServicePort(tamoss.Spec.Service.Console.Ports, 8080),
 			8080,
 			tamoss.Spec.ConsoleEnabled(),
+			forwardAuthPorts...,
 		)
 	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 {
@@ -639,11 +686,12 @@ func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	}
 }
 
-func uiEgressRules(apiPort, consoleServicePort, consoleTargetPort int32, consoleEnabled bool) []networkingv1.NetworkPolicyEgressRule {
+func uiEgressRules(apiPort, consoleServicePort, consoleTargetPort int32, consoleEnabled bool, forwardAuthPorts ...int32) []networkingv1.NetworkPolicyEgressRule {
 	portNumbers := []int32{apiPort}
 	if consoleEnabled {
 		portNumbers = append(portNumbers, consoleServicePort, consoleTargetPort)
 	}
+	portNumbers = append(portNumbers, forwardAuthPorts...)
 	ports := make([]networkingv1.NetworkPolicyPort, 0, len(portNumbers))
 	seen := make(map[int32]struct{}, len(portNumbers))
 	for _, port := range portNumbers {

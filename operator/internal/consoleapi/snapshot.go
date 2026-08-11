@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -21,35 +22,51 @@ import (
 )
 
 const (
-	instanceLabel          = "app.kubernetes.io/instance"
-	componentLabel         = "app.kubernetes.io/component"
-	apiComponent           = "api"
-	maxWorkloads           = 32
-	maxServices            = 64
-	maxServicePorts        = 16
-	maxEndpointSlices      = 128
-	maxEndpointSlicePorts  = 16
-	maxPods                = 200
-	maxJobs                = 100
-	maxEvents              = 50
-	maxConditions          = 32
-	maxKubernetesTextRunes = 1024
+	instanceLabel               = "app.kubernetes.io/instance"
+	componentLabel              = "app.kubernetes.io/component"
+	apiComponent                = "api"
+	maxWorkloads                = 32
+	maxServices                 = 64
+	maxServicePorts             = 16
+	maxEndpointSlices           = 128
+	maxEndpointSlicePorts       = 16
+	maxPods                     = 200
+	maxJobs                     = 100
+	maxEvents                   = 50
+	maxConditions               = 32
+	maxKubernetesTextRunes      = 1024
+	maxIngestRunRootReads       = 16
+	defaultIngestRunReadTimeout = 4 * time.Second
+	ingestRunValidationTTL      = 30 * time.Second
 )
 
 type SnapshotSource interface {
 	Snapshot(context.Context) (RuntimeSnapshot, error)
 }
 
-type Snapshotter struct {
-	reader    client.Reader
-	namespace string
-	instance  string
-	now       func() time.Time
+// ResourceGetter is the narrow capability used for live reads that must not
+// create or depend on a controller-runtime informer.
+type ResourceGetter interface {
+	Get(context.Context, client.ObjectKey, client.Object, ...client.GetOption) error
 }
 
-func NewSnapshotter(reader client.Reader, namespace, instance string) (*Snapshotter, error) {
+type Snapshotter struct {
+	reader               client.Reader
+	ingestRunGetter      ResourceGetter
+	ingestRunReadTimeout time.Duration
+	ingestRunCacheMu     sync.Mutex
+	ingestRunCache       map[resourceIdentity]cachedIngestRun
+	namespace            string
+	instance             string
+	now                  func() time.Time
+}
+
+func NewSnapshotter(reader client.Reader, ingestRunGetter ResourceGetter, namespace, instance string) (*Snapshotter, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("kubernetes reader is required")
+	}
+	if ingestRunGetter == nil {
+		return nil, fmt.Errorf("live IngestRun getter is required")
 	}
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
@@ -60,10 +77,13 @@ func NewSnapshotter(reader client.Reader, namespace, instance string) (*Snapshot
 		return nil, fmt.Errorf("instance is required")
 	}
 	return &Snapshotter{
-		reader:    reader,
-		namespace: namespace,
-		instance:  instance,
-		now:       time.Now,
+		reader:               reader,
+		ingestRunGetter:      ingestRunGetter,
+		ingestRunReadTimeout: defaultIngestRunReadTimeout,
+		ingestRunCache:       make(map[resourceIdentity]cachedIngestRun),
+		namespace:            namespace,
+		instance:             instance,
+		now:                  time.Now,
 	}, nil
 }
 
@@ -76,14 +96,20 @@ func (s *Snapshotter) Snapshot(ctx context.Context) (RuntimeSnapshot, error) {
 		}
 		return RuntimeSnapshot{}, fmt.Errorf("read Tamoss %s/%s: %w", s.namespace, s.instance, err)
 	}
+	if tamoss.UID == "" {
+		return RuntimeSnapshot{}, fmt.Errorf("tamoss %s/%s has no UID", s.namespace, s.instance)
+	}
 
-	// The instance label is a discovery boundary, not ownership proof. Console
-	// remains opt-in while ReplicaSet/IngestRun owner-chain validation is an
-	// explicit release gate for exposing this API beyond development installs.
+	// The instance label bounds discovery. Exact controller references establish
+	// ownership before any discovered object is projected.
 	selector := client.MatchingLabels{instanceLabel: s.instance}
 	deployments := &appsv1.DeploymentList{}
 	if err := s.reader.List(ctx, deployments, client.InNamespace(s.namespace), selector); err != nil {
 		return RuntimeSnapshot{}, fmt.Errorf("list Deployments: %w", err)
+	}
+	replicaSets := &appsv1.ReplicaSetList{}
+	if err := s.reader.List(ctx, replicaSets, client.InNamespace(s.namespace), selector); err != nil {
+		return RuntimeSnapshot{}, fmt.Errorf("list ReplicaSets: %w", err)
 	}
 	services := &corev1.ServiceList{}
 	if err := s.reader.List(ctx, services, client.InNamespace(s.namespace), selector); err != nil {
@@ -92,6 +118,10 @@ func (s *Snapshotter) Snapshot(ctx context.Context) (RuntimeSnapshot, error) {
 	endpointSlices := &discoveryv1.EndpointSliceList{}
 	if err := s.reader.List(ctx, endpointSlices, client.InNamespace(s.namespace), selector); err != nil {
 		return RuntimeSnapshot{}, fmt.Errorf("list EndpointSlices: %w", err)
+	}
+	storageBackends := &tamossv1alpha1.StorageBackendList{}
+	if err := s.reader.List(ctx, storageBackends, client.InNamespace(s.namespace)); err != nil {
+		return RuntimeSnapshot{}, fmt.Errorf("list StorageBackends: %w", err)
 	}
 	pods := &corev1.PodList{}
 	if err := s.reader.List(ctx, pods, client.InNamespace(s.namespace), selector); err != nil {
@@ -106,26 +136,337 @@ func (s *Snapshotter) Snapshot(ctx context.Context) (RuntimeSnapshot, error) {
 		return RuntimeSnapshot{}, fmt.Errorf("list Events: %w", err)
 	}
 
-	snapshot := RuntimeSnapshot{
-		SchemaVersion:  RuntimeSchemaVersion,
-		ObservedAt:     s.now().UTC().Format(time.RFC3339Nano),
-		Instance:       instanceFromTamoss(tamoss),
-		Workloads:      workloadsFromDeployments(deployments.Items),
-		Services:       servicesFromKubernetes(services.Items),
-		EndpointSlices: endpointSlicesFromKubernetes(endpointSlices.Items),
-		Pods:           podsFromKubernetes(pods.Items),
-		Jobs:           jobsFromKubernetes(jobs.Items),
+	tamossOwners := make(resourceIdentitySet)
+	addResourceIdentity(tamossOwners, tamossv1alpha1.GroupVersion.String(), "Tamoss", tamoss)
+	deployments.Items = retainControllerOwned(deployments.Items, s.instance, tamossOwners, func(item *appsv1.Deployment) metav1.Object { return item })
+	services.Items = retainControllerOwned(services.Items, s.instance, tamossOwners, func(item *corev1.Service) metav1.Object { return item })
+	storageBackends.Items = retainStorageBackends(storageBackends.Items, s.instance)
+
+	deploymentOwners := make(resourceIdentitySet)
+	addResourceIdentities(deploymentOwners, appsv1.SchemeGroupVersion.String(), "Deployment", deployments.Items, func(item *appsv1.Deployment) metav1.Object { return item })
+	replicaSets.Items = retainControllerOwned(replicaSets.Items, s.instance, deploymentOwners, func(item *appsv1.ReplicaSet) metav1.Object { return item })
+
+	serviceOwners := make(resourceIdentitySet)
+	addResourceIdentities(serviceOwners, corev1.SchemeGroupVersion.String(), "Service", services.Items, func(item *corev1.Service) metav1.Object { return item })
+	endpointSlices.Items = retainEndpointSlices(endpointSlices.Items, s.instance, serviceOwners)
+
+	ingestRunRoots, err := s.resolveReferencedIngestRuns(ctx, jobs.Items)
+	if err != nil {
+		return RuntimeSnapshot{}, err
 	}
-	snapshot.Events = relevantEvents(
-		events.Items,
-		tamoss,
-		deployments.Items,
-		services.Items,
-		endpointSlices.Items,
-		pods.Items,
-		jobs.Items,
-	)
+	ingestRuns := ingestRunRoots.items
+	jobOwners := make(resourceIdentitySet)
+	addResourceIdentity(jobOwners, tamossv1alpha1.GroupVersion.String(), "Tamoss", tamoss)
+	addResourceIdentities(jobOwners, tamossv1alpha1.GroupVersion.String(), "StorageBackend", storageBackends.Items, func(item *tamossv1alpha1.StorageBackend) metav1.Object { return item })
+	addResourceIdentities(jobOwners, tamossv1alpha1.GroupVersion.String(), "IngestRun", ingestRuns, func(item *tamossv1alpha1.IngestRun) metav1.Object { return item })
+	jobs.Items = retainControllerOwned(jobs.Items, s.instance, jobOwners, func(item *batchv1.Job) metav1.Object { return item })
+
+	podOwners := make(resourceIdentitySet)
+	addResourceIdentity(podOwners, tamossv1alpha1.GroupVersion.String(), "Tamoss", tamoss)
+	addResourceIdentities(podOwners, appsv1.SchemeGroupVersion.String(), "ReplicaSet", replicaSets.Items, func(item *appsv1.ReplicaSet) metav1.Object { return item })
+	addResourceIdentities(podOwners, batchv1.SchemeGroupVersion.String(), "Job", jobs.Items, func(item *batchv1.Job) metav1.Object { return item })
+	pods.Items = retainControllerOwned(pods.Items, s.instance, podOwners, func(item *corev1.Pod) metav1.Object { return item })
+
+	eventObjects := make(resourceIdentitySet)
+	addResourceIdentity(eventObjects, tamossv1alpha1.GroupVersion.String(), "Tamoss", tamoss)
+	addResourceIdentities(eventObjects, appsv1.SchemeGroupVersion.String(), "Deployment", deployments.Items, func(item *appsv1.Deployment) metav1.Object { return item })
+	addResourceIdentities(eventObjects, appsv1.SchemeGroupVersion.String(), "ReplicaSet", replicaSets.Items, func(item *appsv1.ReplicaSet) metav1.Object { return item })
+	addResourceIdentities(eventObjects, corev1.SchemeGroupVersion.String(), "Service", services.Items, func(item *corev1.Service) metav1.Object { return item })
+	addResourceIdentities(eventObjects, discoveryv1.SchemeGroupVersion.String(), "EndpointSlice", endpointSlices.Items, func(item *discoveryv1.EndpointSlice) metav1.Object { return item })
+	addResourceIdentities(eventObjects, tamossv1alpha1.GroupVersion.String(), "StorageBackend", storageBackends.Items, func(item *tamossv1alpha1.StorageBackend) metav1.Object { return item })
+	addResourceIdentities(eventObjects, tamossv1alpha1.GroupVersion.String(), "IngestRun", ingestRuns, func(item *tamossv1alpha1.IngestRun) metav1.Object { return item })
+	addResourceIdentities(eventObjects, corev1.SchemeGroupVersion.String(), "Pod", pods.Items, func(item *corev1.Pod) metav1.Object { return item })
+	addResourceIdentities(eventObjects, batchv1.SchemeGroupVersion.String(), "Job", jobs.Items, func(item *batchv1.Job) metav1.Object { return item })
+
+	snapshot := RuntimeSnapshot{
+		SchemaVersion:          RuntimeSchemaVersion,
+		ObservedAt:             s.now().UTC().Format(time.RFC3339Nano),
+		IngestRuntimeTruncated: ingestRunRoots.truncated,
+		Instance:               instanceFromTamoss(tamoss),
+		Workloads:              workloadsFromDeployments(deployments.Items),
+		Services:               servicesFromKubernetes(services.Items),
+		EndpointSlices:         endpointSlicesFromKubernetes(endpointSlices.Items),
+		Pods:                   podsFromKubernetes(pods.Items),
+		Jobs:                   jobsFromKubernetes(jobs.Items),
+	}
+	snapshot.Events = relevantEvents(events.Items, eventObjects)
 	return snapshot, nil
+}
+
+type resourceIdentity struct {
+	APIVersion string
+	Kind       string
+	Namespace  string
+	Name       string
+	UID        types.UID
+}
+
+type resourceIdentitySet map[resourceIdentity]struct{}
+
+type cachedIngestRun struct {
+	run         tamossv1alpha1.IngestRun
+	validatedAt time.Time
+}
+
+type ingestRunRootResolution struct {
+	items     []tamossv1alpha1.IngestRun
+	truncated bool
+}
+
+func retainControllerOwned[T any](items []T, instance string, owners resourceIdentitySet, object func(*T) metav1.Object) []T {
+	retained := make([]T, 0, len(items))
+	for i := range items {
+		candidate := object(&items[i])
+		if candidate.GetUID() == "" || candidate.GetLabels()[instanceLabel] != instance || !hasExactControllerOwner(candidate, owners) {
+			continue
+		}
+		retained = append(retained, items[i])
+	}
+	return retained
+}
+
+func retainStorageBackends(items []tamossv1alpha1.StorageBackend, instance string) []tamossv1alpha1.StorageBackend {
+	// Additional StorageBackends are user-created logical roots and are not
+	// adopted by Tamoss. Their immutable typed reference establishes scope.
+	retained := make([]tamossv1alpha1.StorageBackend, 0, len(items))
+	for i := range items {
+		if items[i].UID != "" && items[i].Spec.TamossRef.Name == instance {
+			retained = append(retained, items[i])
+		}
+	}
+	return retained
+}
+
+func retainEndpointSlices(items []discoveryv1.EndpointSlice, instance string, owners resourceIdentitySet) []discoveryv1.EndpointSlice {
+	retained := make([]discoveryv1.EndpointSlice, 0, len(items))
+	for i := range items {
+		candidate := &items[i]
+		owner, owned := exactControllerOwner(candidate, owners)
+		if candidate.UID == "" || candidate.Labels[instanceLabel] != instance || !owned ||
+			candidate.Labels[discoveryv1.LabelServiceName] != owner.Name {
+			continue
+		}
+		retained = append(retained, items[i])
+	}
+	return retained
+}
+
+func (s *Snapshotter) resolveReferencedIngestRuns(ctx context.Context, jobs []batchv1.Job) (ingestRunRootResolution, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.ingestRunReadTimeout)
+	defer cancel()
+
+	type candidate struct {
+		job   *batchv1.Job
+		owner resourceIdentity
+	}
+	candidates := make([]candidate, 0, len(jobs))
+	for i := range jobs {
+		job := &jobs[i]
+		if job.UID == "" || job.Labels[instanceLabel] != s.instance {
+			continue
+		}
+		owner, found := controllerOwnerIdentity(job)
+		if !found || owner.APIVersion != tamossv1alpha1.GroupVersion.String() || owner.Kind != "IngestRun" ||
+			owner.Namespace != s.namespace || owner.Name == "" {
+			continue
+		}
+		candidates = append(candidates, candidate{job: job, owner: owner})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		left, right := candidates[i].job, candidates[j].job
+		leftPriority, rightPriority := ingestJobOperationalPriority(left), ingestJobOperationalPriority(right)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		leftObserved, rightObserved := jobLastObserved(left), jobLastObserved(right)
+		if !leftObserved.Equal(rightObserved) {
+			return leftObserved.After(rightObserved)
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		if candidates[i].owner.Name != candidates[j].owner.Name {
+			return candidates[i].owner.Name < candidates[j].owner.Name
+		}
+		return candidates[i].owner.UID < candidates[j].owner.UID
+	})
+
+	seenReferences := make(resourceIdentitySet)
+	selectedReferences := make(resourceIdentitySet)
+	referencedUIDs := make(map[string]map[types.UID]struct{})
+	names := make([]string, 0, min(len(candidates), maxIngestRunRootReads))
+	truncated := false
+	for _, candidate := range candidates {
+		if _, seen := seenReferences[candidate.owner]; seen {
+			continue
+		}
+		seenReferences[candidate.owner] = struct{}{}
+		if uids := referencedUIDs[candidate.owner.Name]; uids != nil {
+			uids[candidate.owner.UID] = struct{}{}
+			selectedReferences[candidate.owner] = struct{}{}
+			continue
+		}
+		if len(names) == maxIngestRunRootReads {
+			truncated = true
+			continue
+		}
+		referencedUIDs[candidate.owner.Name] = map[types.UID]struct{}{candidate.owner.UID: {}}
+		selectedReferences[candidate.owner] = struct{}{}
+		names = append(names, candidate.owner.Name)
+	}
+
+	now := s.now()
+	cached := s.loadCachedIngestRuns(selectedReferences, referencedUIDs, now)
+	retained := make([]tamossv1alpha1.IngestRun, 0, len(names))
+	for _, name := range names {
+		if run, found := cached[name]; found {
+			retained = append(retained, run)
+			continue
+		}
+		run := &tamossv1alpha1.IngestRun{}
+		key := client.ObjectKey{Namespace: s.namespace, Name: name}
+		if err := s.ingestRunGetter.Get(ctx, key, run); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return ingestRunRootResolution{}, fmt.Errorf("read referenced IngestRun %s/%s: %w", s.namespace, name, err)
+		}
+		_, uidMatches := referencedUIDs[name][run.UID]
+		if run.Namespace != s.namespace || run.Name != name || run.UID == "" || !uidMatches || run.Spec.TamossRef.Name != s.instance {
+			continue
+		}
+		validated := *run.DeepCopy()
+		s.storeCachedIngestRun(validated, now)
+		retained = append(retained, validated)
+	}
+	return ingestRunRootResolution{items: retained, truncated: truncated}, nil
+}
+
+func (s *Snapshotter) loadCachedIngestRuns(
+	selected resourceIdentitySet,
+	referencedUIDs map[string]map[types.UID]struct{},
+	now time.Time,
+) map[string]tamossv1alpha1.IngestRun {
+	s.ingestRunCacheMu.Lock()
+	defer s.ingestRunCacheMu.Unlock()
+
+	result := make(map[string]tamossv1alpha1.IngestRun)
+	for identity, cached := range s.ingestRunCache {
+		_, referenced := selected[identity]
+		if !referenced || len(referencedUIDs[identity.Name]) != 1 ||
+			!now.Before(cached.validatedAt.Add(ingestRunValidationTTL)) {
+			delete(s.ingestRunCache, identity)
+			continue
+		}
+		result[identity.Name] = *cached.run.DeepCopy()
+	}
+	return result
+}
+
+func (s *Snapshotter) storeCachedIngestRun(run tamossv1alpha1.IngestRun, now time.Time) {
+	identity := resourceIdentity{
+		APIVersion: tamossv1alpha1.GroupVersion.String(),
+		Kind:       "IngestRun",
+		Namespace:  run.Namespace,
+		Name:       run.Name,
+		UID:        run.UID,
+	}
+
+	s.ingestRunCacheMu.Lock()
+	defer s.ingestRunCacheMu.Unlock()
+	if s.ingestRunCache == nil {
+		s.ingestRunCache = make(map[resourceIdentity]cachedIngestRun)
+	}
+	delete(s.ingestRunCache, identity)
+	for existing := range s.ingestRunCache {
+		if existing.Namespace == identity.Namespace && existing.Name == identity.Name {
+			delete(s.ingestRunCache, existing)
+		}
+	}
+	if len(s.ingestRunCache) >= maxIngestRunRootReads {
+		var oldest resourceIdentity
+		var oldestTime time.Time
+		for existing, cached := range s.ingestRunCache {
+			if oldestTime.IsZero() || cached.validatedAt.Before(oldestTime) ||
+				(cached.validatedAt.Equal(oldestTime) && resourceIdentityLess(existing, oldest)) {
+				oldest = existing
+				oldestTime = cached.validatedAt
+			}
+		}
+		delete(s.ingestRunCache, oldest)
+	}
+	s.ingestRunCache[identity] = cachedIngestRun{run: *run.DeepCopy(), validatedAt: now}
+}
+
+func resourceIdentityLess(left, right resourceIdentity) bool {
+	leftKey := left.APIVersion + "\x00" + left.Kind + "\x00" + left.Namespace + "\x00" + left.Name + "\x00" + string(left.UID)
+	rightKey := right.APIVersion + "\x00" + right.Kind + "\x00" + right.Namespace + "\x00" + right.Name + "\x00" + string(right.UID)
+	return leftKey < rightKey
+}
+
+func ingestJobOperationalPriority(job *batchv1.Job) int {
+	if job.Status.Active > 0 {
+		return 0
+	}
+	for _, condition := range job.Status.Conditions {
+		if condition.Status == corev1.ConditionTrue && (condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed) {
+			return 2
+		}
+	}
+	return 1
+}
+
+func hasExactControllerOwner(object metav1.Object, owners resourceIdentitySet) bool {
+	_, found := exactControllerOwner(object, owners)
+	return found
+}
+
+func exactControllerOwner(object metav1.Object, owners resourceIdentitySet) (resourceIdentity, bool) {
+	identity, found := controllerOwnerIdentity(object)
+	if !found {
+		return resourceIdentity{}, false
+	}
+	_, found = owners[identity]
+	return identity, found
+}
+
+func controllerOwnerIdentity(object metav1.Object) (resourceIdentity, bool) {
+	var controller *metav1.OwnerReference
+	references := object.GetOwnerReferences()
+	for i := range references {
+		owner := &references[i]
+		if owner.Controller == nil || !*owner.Controller {
+			continue
+		}
+		if controller != nil {
+			return resourceIdentity{}, false
+		}
+		controller = owner
+	}
+	if controller == nil || controller.UID == "" {
+		return resourceIdentity{}, false
+	}
+	identity := resourceIdentity{
+		APIVersion: controller.APIVersion,
+		Kind:       controller.Kind,
+		Namespace:  object.GetNamespace(),
+		Name:       controller.Name,
+		UID:        controller.UID,
+	}
+	return identity, true
+}
+
+func addResourceIdentity(targets resourceIdentitySet, apiVersion, kind string, object metav1.Object) {
+	if object.GetUID() == "" {
+		return
+	}
+	targets[resourceIdentity{APIVersion: apiVersion, Kind: kind, Namespace: object.GetNamespace(), Name: object.GetName(), UID: object.GetUID()}] = struct{}{}
+}
+
+func addResourceIdentities[T any](targets resourceIdentitySet, apiVersion, kind string, items []T, object func(*T) metav1.Object) {
+	for i := range items {
+		addResourceIdentity(targets, apiVersion, kind, object(&items[i]))
+	}
 }
 
 func instanceFromTamoss(tamoss *tamossv1alpha1.Tamoss) Instance {
@@ -475,44 +816,21 @@ func jobStatus(job *batchv1.Job) string {
 
 func relevantEvents(
 	events []corev1.Event,
-	tamoss *tamossv1alpha1.Tamoss,
-	deployments []appsv1.Deployment,
-	services []corev1.Service,
-	endpointSlices []discoveryv1.EndpointSlice,
-	pods []corev1.Pod,
-	jobs []batchv1.Job,
+	objects resourceIdentitySet,
 ) []KubernetesEvent {
-	objects := map[types.UID]struct{}{}
-	names := map[string]struct{}{eventObjectKey("Tamoss", tamoss.Name): {}}
-	if tamoss.UID != "" {
-		objects[tamoss.UID] = struct{}{}
-	}
-	for i := range deployments {
-		addEventObject(objects, names, "Deployment", &deployments[i].ObjectMeta)
-	}
-	for i := range services {
-		addEventObject(objects, names, "Service", &services[i].ObjectMeta)
-	}
-	for i := range endpointSlices {
-		addEventObject(objects, names, "EndpointSlice", &endpointSlices[i].ObjectMeta)
-	}
-	for i := range pods {
-		addEventObject(objects, names, "Pod", &pods[i].ObjectMeta)
-	}
-	for i := range jobs {
-		addEventObject(objects, names, "Job", &jobs[i].ObjectMeta)
-	}
-
 	filtered := make([]corev1.Event, 0, len(events))
 	for i := range events {
 		event := &events[i]
-		_, uidMatch := objects[event.InvolvedObject.UID]
-		_, nameMatch := names[eventObjectKey(event.InvolvedObject.Kind, event.InvolvedObject.Name)]
-		relevant := nameMatch
-		if event.InvolvedObject.UID != "" {
-			relevant = uidMatch
-		}
-		if relevant {
+		_, relevant := objects[resourceIdentity{
+			APIVersion: event.InvolvedObject.APIVersion,
+			Kind:       event.InvolvedObject.Kind,
+			Namespace:  event.InvolvedObject.Namespace,
+			Name:       event.InvolvedObject.Name,
+			UID:        event.InvolvedObject.UID,
+		}]
+		// Kubernetes names are reusable, so an Event without an involved-object
+		// UID is never attributed to the current incarnation by name alone.
+		if relevant && event.InvolvedObject.UID != "" {
 			filtered = append(filtered, *event)
 		}
 	}
@@ -551,17 +869,6 @@ func relevantEvents(
 		})
 	}
 	return result
-}
-
-func addEventObject(uids map[types.UID]struct{}, names map[string]struct{}, kind string, metadata *metav1.ObjectMeta) {
-	if metadata.UID != "" {
-		uids[metadata.UID] = struct{}{}
-	}
-	names[eventObjectKey(kind, metadata.Name)] = struct{}{}
-}
-
-func eventObjectKey(kind, name string) string {
-	return strings.ToLower(kind) + "/" + name
 }
 
 func eventFirstObserved(event *corev1.Event) time.Time {

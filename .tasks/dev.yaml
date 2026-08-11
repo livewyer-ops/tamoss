@@ -63,7 +63,7 @@ tasks:
     dir: src/app/frontend
     env:
       VITE_API_TARGET: '{{default (default "http://localhost:8000" (env "TAMOSS_API_URL")) (env "VITE_API_TARGET")}}'
-      VITE_API_TOKEN: '{{default "dev_token" (env "VITE_API_TOKEN")}}'
+      TAMOSS_DEV_API_TOKEN: '{{default (default "dev_token" (env "TAMOSS_API_TOKEN")) (env "TAMOSS_DEV_API_TOKEN")}}'
     preconditions:
       - sh: command -v npm
         msg: "npm not found"

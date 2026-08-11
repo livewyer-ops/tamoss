@@ -30,5 +30,8 @@ spec:
                 value: ($namespace)
             content: |
               set -eu
-              # chainsaw-script: absence checks are clearer as direct Kubernetes lookups.
+              ui_env_from="$(kubectl -n "$NAMESPACE" get deployment auth-none-ui -o jsonpath='{.spec.template.spec.containers[?(@.name=="ui")].envFrom}')"
+              test -z "$ui_env_from"
+
+              # chainsaw-script: generated Secret absence is clearer as a direct Kubernetes lookup.
               ! kubectl -n "$NAMESPACE" get secret auth-none-oauth2-creds

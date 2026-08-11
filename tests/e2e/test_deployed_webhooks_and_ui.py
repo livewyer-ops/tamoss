@@ -121,6 +121,14 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
         runtime_config = page.evaluate("() => window.__TAMOSS_CONFIG__")
         assert runtime_config == {"controlApiUrl": "/ui-api/v1"}
 
+        deletion_status = page.evaluate(
+            """async () => {
+                const response = await fetch('/api/flow-delete-requests', {
+                    headers: {Accept: 'application/json'},
+                });
+                return {status: response.status, body: await response.json()};
+            }"""
+        )
         proxied = page.evaluate(
             """async () => {
                 const response = await fetch('/api/service', {
@@ -137,6 +145,8 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
         context.close()
 
     assert proxied["status"] == 200
+    assert deletion_status["status"] == 200
+    assert isinstance(deletion_status["body"], list)
     assert "application/json" in proxied["contentType"]
     proxied_service = json.loads(proxied["body"])
     assert proxied_service["api_version"] == "8.2"

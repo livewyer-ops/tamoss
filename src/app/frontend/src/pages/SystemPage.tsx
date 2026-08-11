@@ -145,6 +145,12 @@ export default function SystemPage() {
               Runtime data is stale. The last refresh failed.
             </div>
           ) : null}
+          {snapshot.ingestRuntimeTruncated ? (
+            <div className={surfaceStyles.callout} role="status">
+              Runtime view is partial. Some ingest Jobs, Pods, and Events are
+              not shown.
+            </div>
+          ) : null}
           <Panel
             title={`${snapshot.instance.namespace}/${snapshot.instance.name}`}
             actions={
@@ -390,7 +396,14 @@ export default function SystemPage() {
           </Panel>
 
           <div className={surfaceStyles.grid2}>
-            <Panel title="Jobs">
+            <Panel
+              title="Jobs"
+              actions={
+                snapshot.ingestRuntimeTruncated ? (
+                  <StatusBadge tone="warning">Partial</StatusBadge>
+                ) : undefined
+              }
+            >
               {snapshot.jobs.length === 0 ? (
                 <QueryMessage empty={{ title: "No jobs observed" }} />
               ) : (

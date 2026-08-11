@@ -32,9 +32,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 RUN mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.template \
   && chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx /run
 
-# Runtime environment variables consumed by the entrypoint.
-ENV TAMOSS_API_URL=/api
-
 USER 101:101
 
 EXPOSE 8080

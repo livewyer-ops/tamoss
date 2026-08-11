@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -83,6 +84,29 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	}
 	if tamoss.Status.Resolved.GeneratedSecrets.StorageBackendCredentials != "example-storage-backend-credentials" {
 		t.Fatalf("expected storage backend credentials Secret name, got %q", tamoss.Status.Resolved.GeneratedSecrets.StorageBackendCredentials)
+	}
+}
+
+func TestEndpointStatusUsesExplicitPublicUIURL(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+				UIURL: "https://app.example.com:30443/",
+			},
+			Ingress: tamossv1alpha1.IngressSpec{
+				Enabled: ptr.To(true),
+				API:     tamossv1alpha1.IngressHostSpec{Host: "api.example.com"},
+				UI: tamossv1alpha1.UIIngressSpec{Web: tamossv1alpha1.IngressHostSpec{
+					Host: "app.example.com",
+				}},
+				TLS: []networkingv1.IngressTLS{{}},
+			},
+		},
+	}
+
+	status := endpointStatus(tamoss)
+	if status.UI != "https://app.example.com:30443" {
+		t.Fatalf("expected explicit public UI URL in status, got %q", status.UI)
 	}
 }
 

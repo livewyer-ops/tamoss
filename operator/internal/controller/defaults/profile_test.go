@@ -48,6 +48,7 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		t.Fatalf("expected multi-server NetworkPolicy default enabled")
 	}
 	assertAPIHTTPProbes(t, tamoss.Spec.API.WorkloadCommonSpec)
+	assertUIHTTPProbes(t, tamoss.Spec.UI.WorkloadCommonSpec)
 	assertConsoleHTTPProbes(t, tamoss.Spec.Console.WorkloadCommonSpec)
 	if len(tamoss.Spec.NetworkPolicy.API.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.API.Egress) == 0 ||
 		len(tamoss.Spec.NetworkPolicy.UI.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 ||
@@ -64,6 +65,8 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[2], 8053, corev1.ProtocolTCP)
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[3], 8053, corev1.ProtocolUDP)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[0], 8000)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[1], 80)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[2], 9000)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Ingress[0].Ports[0], 8080)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[0], 443)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[1], 6443)
@@ -131,10 +134,12 @@ func TestApplyMultiServerAllowsUIToReachOptInConsole(t *testing.T) {
 	Apply(tamoss)
 
 	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
-	if len(ports) != 2 {
+	if len(ports) != 4 {
 		t.Fatalf("expected UI egress to API and Console, got %#v", ports)
 	}
 	assertNetworkPolicyPort(t, ports[1], 8080)
+	assertNetworkPolicyPort(t, ports[2], 80)
+	assertNetworkPolicyPort(t, ports[3], 9000)
 }
 
 func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
@@ -155,12 +160,14 @@ func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
 	Apply(tamoss)
 
 	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
-	if len(ports) != 3 {
+	if len(ports) != 5 {
 		t.Fatalf("expected UI egress to API plus Console service and target ports, got %#v", ports)
 	}
 	assertNetworkPolicyPort(t, ports[0], 8000)
 	assertNetworkPolicyPort(t, ports[1], 8181)
 	assertNetworkPolicyPort(t, ports[2], 8080)
+	assertNetworkPolicyPort(t, ports[3], 80)
+	assertNetworkPolicyPort(t, ports[4], 9000)
 }
 
 func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
@@ -175,6 +182,9 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 
 	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.localtest.me" {
 		t.Fatalf("expected local base domain, got %q", got)
+	}
+	if got := tamoss.Spec.PublicEndpoint.UIURL; got != "https://app.tamoss.localtest.me" {
+		t.Fatalf("expected derived public UI URL, got %q", got)
 	}
 	if !tamoss.Spec.Ingress.IsEnabled() {
 		t.Fatalf("expected local ingress enabled")
@@ -210,6 +220,7 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 		authentik.APITokenSecretRef.Key != "AUTHENTIK_BOOTSTRAP_TOKEN" {
 		t.Fatalf("unexpected Authentik defaults: %#v", authentik)
 	}
+	assertDefaultAuthentikAdminBinding(t, authentik)
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected local CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
 	}
@@ -468,8 +479,59 @@ func TestAuthentikProfilesDefaultToManagedAuthentik(t *testing.T) {
 				authentik.APITokenSecretRef.Key != "AUTHENTIK_BOOTSTRAP_TOKEN" {
 				t.Fatalf("unexpected Authentik defaults for %s: %#v", profile, authentik)
 			}
+			assertDefaultAuthentikAdminBinding(t, authentik)
 		})
 	}
+}
+
+func assertDefaultAuthentikAdminBinding(t *testing.T, authentik *tamossv1alpha1.AuthentikBlueprintsSpec) {
+	t.Helper()
+	if len(authentik.GroupBindings) != 1 ||
+		authentik.GroupBindings[0].GroupName != defaultAuthentikAdminGroupName ||
+		len(authentik.GroupBindings[0].Permissions) != 1 ||
+		authentik.GroupBindings[0].Permissions[0] != "admin" {
+		t.Fatalf("expected default Authentik administrator binding, got %#v", authentik.GroupBindings)
+	}
+}
+
+func TestAuthentikDefaultsPreserveExplicitGroupBindings(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Auth: tamossv1alpha1.AuthSpec{
+				ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+				AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{
+					GroupBindings: []tamossv1alpha1.AuthentikGroupBindingSpec{{
+						GroupName:   "tamoss-viewers",
+						Permissions: []string{"viewer"},
+					}},
+				},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	bindings := tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings
+	if len(bindings) != 1 || bindings[0].GroupName != "tamoss-viewers" || len(bindings[0].Permissions) != 1 || bindings[0].Permissions[0] != "viewer" {
+		t.Fatalf("explicit Authentik group binding was replaced: %#v", bindings)
+	}
+}
+
+func TestCustomManagedAuthentikDefaultsAdministratorBinding(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			Auth: tamossv1alpha1.AuthSpec{
+				ProvidedBy:          tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+				AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	assertDefaultAuthentikAdminBinding(t, tamoss.Spec.Auth.AuthentikBlueprints)
 }
 
 func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
@@ -609,6 +671,7 @@ func TestApplyPublicEndpointDefaultsPreserveOverrides(t *testing.T) {
 			Profile: tamossv1alpha1.TamossProfileSingleServer,
 			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
 				BaseDomain:      "tamoss.example.com",
+				UIURL:           "https://app.tamoss.example.com:30443",
 				TLSSecretName:   "shared-tls",
 				S3TLSSecretName: "s3-default-tls",
 			},
@@ -652,6 +715,9 @@ func TestApplyPublicEndpointDefaultsPreserveOverrides(t *testing.T) {
 	}
 	if got := tamoss.Spec.Ingress.UI.Web.Host; got != "app.tamoss.example.com" {
 		t.Fatalf("expected missing UI ingress host derived, got %q", got)
+	}
+	if got := tamoss.Spec.PublicEndpoint.UIURL; got != "https://app.tamoss.example.com:30443" {
+		t.Fatalf("expected explicit public UI URL preserved, got %q", got)
 	}
 	if got := tamoss.Spec.Ingress.TLS[0].SecretName; got != "explicit-tls" {
 		t.Fatalf("expected explicit TLS secret preserved, got %q", got)
@@ -972,6 +1038,24 @@ func assertConsoleHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpe
 	for _, check := range checks {
 		if check.got == nil || check.got.HTTPGet == nil || check.got.HTTPGet.Path != check.path || check.got.HTTPGet.Port.StrVal != "http" {
 			t.Fatalf("unexpected Console %s probe: %#v", check.name, check.got)
+		}
+	}
+}
+
+func assertUIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
+	t.Helper()
+	checks := []struct {
+		name string
+		got  *corev1.Probe
+		path string
+	}{
+		{name: "readiness", got: spec.ReadinessProbe, path: "/readyz"},
+		{name: "liveness", got: spec.LivenessProbe, path: "/healthz"},
+		{name: "startup", got: spec.StartupProbe, path: "/healthz"},
+	}
+	for _, check := range checks {
+		if check.got == nil || check.got.HTTPGet == nil || check.got.HTTPGet.Path != check.path || check.got.HTTPGet.Port.StrVal != "http" {
+			t.Fatalf("unexpected UI %s probe: %#v", check.name, check.got)
 		}
 	}
 }

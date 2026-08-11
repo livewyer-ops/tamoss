@@ -171,9 +171,11 @@ func TestGeneratedAPITokenRotationReplacesTokenAndAnnotatesRollout(t *testing.T)
 	if secret.Annotations[annotationAPITokenDone] != "rotate-1" {
 		t.Fatalf("expected rotation consumed annotation, got %#v", secret.Annotations)
 	}
-	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" ||
-		uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
-		t.Fatalf("expected checksum annotations on API and UI deployments")
+	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
+		t.Fatal("expected API checksum annotation")
+	}
+	if uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] != "" {
+		t.Fatal("UI must not roll when the server-side API token rotates")
 	}
 	assertEventContains(t, drainRecorder(recorder), operatorstatus.ReasonAPITokenRotationAccepted)
 }

@@ -61,11 +61,9 @@ export class ApiError extends Error {
 
 export class ApiTransport {
   private baseUrl: string;
-  private token: string;
 
-  constructor(baseUrl: string, token = "") {
+  constructor(baseUrl: string) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-    this.token = token;
   }
 
   private buildUrl(path: string, params?: QueryParams): string {
@@ -90,13 +88,6 @@ export class ApiTransport {
         url.searchParams.set(key, encodedValue);
       }
     }
-  }
-
-  private authHeaders(): Record<string, string> {
-    if (this.token) {
-      return { Authorization: `Bearer ${this.token}` };
-    }
-    return {};
   }
 
   protected async request<T>(
@@ -151,7 +142,6 @@ export class ApiTransport {
     const jsonContent = config.jsonContent ?? true;
     const headers: RequestHeaders = {
       ...(jsonContent ? { "Content-Type": "application/json" } : {}),
-      ...this.authHeaders(),
       ...(options.headers as RequestHeaders),
     };
 

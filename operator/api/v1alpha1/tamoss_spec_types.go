@@ -76,6 +76,10 @@ type PublicEndpointSpec struct {
 	// BaseDomain is used to derive api.<baseDomain>, app.<baseDomain>, s3.<baseDomain>, and auth.<baseDomain>.
 	//+kubebuilder:validation:MinLength=1
 	BaseDomain string `json:"baseDomain,omitempty"`
+	// UIURL is the exact public UI origin, including a non-standard external port when required.
+	//+kubebuilder:validation:MinLength=1
+	//+kubebuilder:validation:Pattern=`^https?://[^/?#]+/?$`
+	UIURL string `json:"uiURL,omitempty"`
 	// TLSSecretName is the default TLS Secret for API and UI public routes.
 	TLSSecretName string `json:"tlsSecretName,omitempty"`
 	// S3TLSSecretName is the default TLS Secret for managed S3 public routes.

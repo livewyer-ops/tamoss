@@ -4,6 +4,7 @@ import base64
 
 import pytest
 import tamoss.auth as auth_module
+from fastapi import Request
 from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from tamoss.app import create_app
@@ -19,6 +20,10 @@ pytestmark = pytest.mark.tamoss_security
 API_TOKEN = "bbc-token"
 BASIC_USERNAME = "bbc-user"
 BASIC_PASSWORD = "bbc-password"
+FORWARD_AUTH_PROOF = "0123456789abcdef0123456789abcdef"
+FORWARD_AUTH_SUBJECT = "authentik-user-id"
+FORWARD_AUTH_GROUP = "tamoss-viewers"
+FORWARD_AUTH_BINDINGS = [{"groupName": FORWARD_AUTH_GROUP, "permissions": ["viewer"]}]
 
 
 def test_authentication_required_rejects_anonymous_requests() -> None:
@@ -119,43 +124,343 @@ def test_forward_auth_requires_shared_proof_setting() -> None:
 def test_forward_auth_rejects_identity_headers_without_matching_proof() -> None:
     settings = _auth_settings(
         trust_forward_auth_headers=True,
-        forward_auth_shared_secret="proxy-proof",
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
     )
 
     with _auth_client(settings) as client:
         missing_response = client.get(
             "/service",
-            headers={"Remote-User": "alice"},
+            headers=_forward_auth_headers(proof=""),
         )
         wrong_response = client.get(
             "/service",
-            headers={
-                "Remote-User": "alice",
-                "X-TAMOSS-Forward-Auth-Secret": "wrong-proof",
-            },
+            headers=_forward_auth_headers(proof="wrong-proof"),
         )
 
     assert missing_response.status_code == 401
     assert wrong_response.status_code == 401
 
 
-def test_forward_auth_accepts_identity_headers_with_matching_proof() -> None:
+def test_forward_auth_proof_uses_constant_time_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compared: list[tuple[bytes, bytes]] = []
+
+    def compare_digest(candidate: bytes, expected: bytes) -> bool:
+        compared.append((candidate, expected))
+        return False
+
+    monkeypatch.setattr(auth_module.secrets, "compare_digest", compare_digest)
+
+    assert auth_module._constant_time_equal("supplied", "expected") is False
+    assert compared == [(b"supplied", b"expected")]
+
+
+def test_forward_auth_rejects_short_proof_after_secret_file_rotation(tmp_path) -> None:
+    proof_file = tmp_path / "forward-auth-proof"
+    proof_file.write_text(FORWARD_AUTH_PROOF, encoding="utf-8")
     settings = _auth_settings(
         trust_forward_auth_headers=True,
-        forward_auth_shared_secret="proxy-proof",
+        forward_auth_shared_secret_file=str(proof_file),
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    proof_file.write_text("too-short", encoding="utf-8")
+
+    with _auth_client(settings) as client:
+        response = client.get(
+            "/service",
+            headers=_forward_auth_headers(proof="too-short"),
+        )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "permission",
+    ["viewer", "operator", "ingest-runner", "admin"],
+)
+def test_forward_auth_maps_group_permissions_to_read_access(permission: str) -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=[
+            {"groupName": FORWARD_AUTH_GROUP, "permissions": [permission]}
+        ],
+    )
+
+    with _auth_client(settings) as client:
+        response = client.get(
+            "/service",
+            headers=_forward_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["api_version"] == "8.2"
+
+
+def test_forward_auth_allows_head_for_explicit_read_route() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    with _auth_client(settings) as client:
+        response = client.head(
+            "/service",
+            headers=_forward_auth_headers(),
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {
+            "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+            "X-TAMOSS-Forward-Auth-Groups": FORWARD_AUTH_GROUP,
+        },
+        {
+            "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+            "X-TAMOSS-Forward-Auth-Subject": "x" * 513,
+            "X-TAMOSS-Forward-Auth-Groups": FORWARD_AUTH_GROUP,
+        },
+        {
+            "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+            "X-TAMOSS-Forward-Auth-Subject": FORWARD_AUTH_SUBJECT,
+            "X-TAMOSS-Forward-Auth-Username": "x" * 513,
+            "X-TAMOSS-Forward-Auth-Groups": FORWARD_AUTH_GROUP,
+        },
+    ],
+)
+def test_forward_auth_rejects_missing_or_malformed_identity_as_unauthenticated(
+    headers: dict[str, str],
+) -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    with _auth_client(settings) as client:
+        response = client.get("/service", headers=headers)
+
+    assert response.status_code == 401
+    assert response.json()["type"] == "unauthorized"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {
+            "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+            "X-TAMOSS-Forward-Auth-Subject": FORWARD_AUTH_SUBJECT,
+            "X-TAMOSS-Forward-Auth-Username": "alice",
+        },
+        {
+            "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+            "X-TAMOSS-Forward-Auth-Subject": FORWARD_AUTH_SUBJECT,
+            "X-TAMOSS-Forward-Auth-Username": "alice",
+            "X-TAMOSS-Forward-Auth-Groups": (f"{FORWARD_AUTH_GROUP}||another-group"),
+        },
+    ],
+)
+def test_forward_auth_rejects_missing_or_malformed_groups_as_forbidden(
+    headers: dict[str, str],
+) -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    with _auth_client(settings) as client:
+        response = client.get("/service", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_forward_auth_uses_stable_subject_and_allows_missing_username() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+    headers = _forward_auth_headers(username=None)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/service",
+            "query_string": b"",
+            "headers": [
+                (name.lower().encode("ascii"), value.encode("ascii"))
+                for name, value in headers.items()
+            ],
+        }
+    )
+
+    identity = auth_module.authenticate_request(request, settings)
+
+    assert identity.subject == FORWARD_AUTH_SUBJECT
+    assert identity.method == "forward-auth"
+
+    with _auth_client(settings) as client:
+        response = client.get("/service", headers=headers)
+
+    assert response.status_code == 200
+
+
+def test_forward_auth_does_not_trust_raw_proxy_identity_headers() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
     )
 
     with _auth_client(settings) as client:
         response = client.get(
             "/service",
             headers={
+                "X-TAMOSS-Forward-Auth-Secret": FORWARD_AUTH_PROOF,
+                "X-Authentik-Username": "alice",
+                "X-Authentik-Groups": FORWARD_AUTH_GROUP,
                 "Remote-User": "alice",
-                "X-TAMOSS-Forward-Auth-Secret": "proxy-proof",
             },
         )
 
+    assert response.status_code == 401
+    assert response.json()["type"] == "unauthorized"
+
+
+def test_forward_auth_requires_an_exact_bound_group() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    with _auth_client(settings) as client:
+        response = client.get(
+            "/service",
+            headers=_forward_auth_headers(groups=f"prefix-{FORWARD_AUTH_GROUP}"),
+        )
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_forward_auth_is_read_only_even_for_admin_group() -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=[
+            {"groupName": FORWARD_AUTH_GROUP, "permissions": ["admin"]}
+        ],
+    )
+
+    with _auth_client(settings) as client:
+        response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=_forward_auth_headers(),
+        )
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_forward_auth_allows_explicit_deletion_status_reads() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+
+    with _auth_client(settings) as client:
+        response = client.get(
+            "/flow-delete-requests",
+            headers=_forward_auth_headers(),
+        )
+
     assert response.status_code == 200
-    assert response.json()["api_version"] == "8.2"
+    assert response.json() == []
+
+
+def test_forward_auth_default_denies_unmapped_api_routes() -> None:
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+    client = _auth_client(settings)
+
+    @client.app.get("/forward-auth-unmapped-test-route")
+    def unmapped_test_route() -> dict[str, bool]:
+        return {"ok": True}
+
+    with client:
+        response = client.get(
+            "/forward-auth-unmapped-test-route",
+            headers=_forward_auth_headers(),
+        )
+
+    assert response.status_code == 403
+    assert response.json()["type"] == "forbidden"
+
+
+def test_direct_token_keeps_full_access_when_forward_headers_are_present() -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+    settings = _auth_settings(
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+    headers = _forward_auth_headers()
+    headers.update(_bearer(API_TOKEN))
+
+    with _auth_client(settings) as client:
+        response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=headers,
+        )
+
+    assert response.status_code != 403
+
+
+def test_oauth_token_keeps_its_scope_when_forward_headers_are_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow_id = "00000000-0000-4000-8000-000000000001"
+    settings = _auth_settings(
+        api_token=None,
+        basic_auth_password=None,
+        oauth2_enabled=True,
+        trust_forward_auth_headers=True,
+        forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        forward_auth_group_bindings=FORWARD_AUTH_BINDINGS,
+    )
+    headers = _forward_auth_headers()
+    headers.update(_bearer("write-token"))
+
+    with _oauth_client(
+        monkeypatch,
+        {"write-token": {"tams-api/write"}},
+        settings,
+    ) as client:
+        response = client.put(
+            f"/flows/{flow_id}/label",
+            json="new label",
+            headers=headers,
+        )
+
+    assert response.status_code != 403
 
 
 def test_bbc_authentication_rejects_invalid_credentials() -> None:
@@ -232,6 +537,14 @@ def test_oauth2_route_scopes_are_enforced_independently_of_provider(
             f"/flows/{flow_id}",
             headers=_bearer("delete-token"),
         )
+        read_deletion_status = client.get(
+            "/flow-delete-requests",
+            headers=_bearer("read-token"),
+        )
+        delete_deletion_status = client.get(
+            "/flow-delete-requests",
+            headers=_bearer("delete-token"),
+        )
         admin_service = client.get("/service", headers=_bearer("admin-token"))
 
     assert read_service.status_code == 200
@@ -240,6 +553,8 @@ def test_oauth2_route_scopes_are_enforced_independently_of_provider(
     assert write_response.status_code != 403
     assert write_delete_response.status_code == 403
     assert delete_response.status_code != 403
+    assert read_deletion_status.status_code == 403
+    assert delete_deletion_status.status_code == 200
     assert admin_service.status_code == 200
 
 
@@ -436,6 +751,24 @@ def _oauth_client(
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _forward_auth_headers(
+    *,
+    proof: str = FORWARD_AUTH_PROOF,
+    subject: str | None = FORWARD_AUTH_SUBJECT,
+    username: str | None = "alice",
+    groups: str = FORWARD_AUTH_GROUP,
+) -> dict[str, str]:
+    headers = {
+        "X-TAMOSS-Forward-Auth-Secret": proof,
+        "X-TAMOSS-Forward-Auth-Groups": groups,
+    }
+    if subject is not None:
+        headers["X-TAMOSS-Forward-Auth-Subject"] = subject
+    if username is not None:
+        headers["X-TAMOSS-Forward-Auth-Username"] = username
+    return headers
 
 
 def _auth_settings(**overrides: object) -> Settings:

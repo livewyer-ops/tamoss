@@ -78,8 +78,7 @@ vi.mock("@/contexts/ApiContext", () => ({
 
 vi.mock("@/config", () => ({
   config: {
-    apiToken: "",
-    apiUrl: "https://api.example.test/",
+    apiUrl: "/api",
     controlApiUrl: "/ui-api/v1",
   },
 }));
@@ -704,6 +703,26 @@ describe("operational routes", () => {
     ).toBeVisible();
     expect(screen.getByText("0/1 ready")).toBeVisible();
     expect(screen.getByRole("cell", { name: "1 not ready" })).toBeVisible();
+  });
+
+  it("makes bounded ingest job projection visible", async () => {
+    const snapshot = diagnosticRuntimeSnapshot();
+    snapshot.ingestRuntimeTruncated = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(snapshot),
+      }),
+    );
+
+    renderRoute("/system");
+    expect(await screen.findByText("Partial")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Runtime view is partial. Some ingest Jobs, Pods, and Events are not shown.",
+      ),
+    ).toBeVisible();
   });
 
   it("includes unhealthy selector-backed routing but ignores ExternalName services", async () => {

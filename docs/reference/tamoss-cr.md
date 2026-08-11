@@ -35,6 +35,16 @@ spec:
     baseDomain: tamoss.example.com
 ```
 
+Set `publicEndpoint.uiURL` when the public UI uses a non-standard external
+port. It is an exact origin, not a path:
+
+```yaml
+spec:
+  publicEndpoint:
+    baseDomain: tamoss.example.com
+    uiURL: https://app.tamoss.example.com:30443
+```
+
 ## Common Spec Areas
 
 | Field | Purpose |

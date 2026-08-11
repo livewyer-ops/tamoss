@@ -13,6 +13,7 @@ processing.
 | Default S3 credentials | `TAMOSS_S3_ACCESS_KEY`, `TAMOSS_S3_SECRET_KEY` | Startup-only; rotate through the operator and roll pods. |
 | Additional StorageBackend credentials | `TAMOSS_STORAGE_BACKEND_CREDENTIALS_FILE` | Reloaded when the credential file changes. |
 | OAuth bearer validation keys | JWKS URL | Provider-owned; TAMOSS uses JWKS caching settings. |
+| Forward-auth proofs | `<instance>-forward-auth` Secret keys `api-proof` and `console-proof` | Operator-owned. UI receives both issuer proofs; API and Console receive only their own verifier proof. |
 | TLS certificates | [cert-manager](https://cert-manager.io/) or external TLS provider | Provider-owned. |
 
 For Kubernetes installs, rotate referenced Secrets through the `Tamoss`
@@ -48,7 +49,7 @@ applies to `TAMOSS_API_TOKEN_FILE`, `TAMOSS_BASIC_AUTH_PASSWORD_FILE`, and
 | S3 default backend credentials | Static env from the referenced Secret | Startup-only | Update the referenced Secret and roll API and worker pods through the operator. |
 | Additional StorageBackend credentials | Mounted storage-backend credentials JSON | Reloaded when the file mtime changes; the last good parse is kept during partial updates. | Update the projected Secret file. |
 | OAuth2 verifier config | OAuth2 issuer, JWKS URI, algorithms, audience, and scope env | Startup-only | Update the `Tamoss` CR or referenced Secret and roll API/worker pods through the operator. |
-| Forward-auth proof secret | `TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE` or static env | Hot-reloaded when file-backed; static env values are startup-only | Update the projected Secret file for file-backed values. Restart or roll the pod for static env values. |
+| Forward-auth proof secret | Operator-generated `<instance>-forward-auth` Secret mounted as files | API reads `api-proof` per request; UI loads both proofs and Console loads `console-proof` at startup. Separate checksums roll only each proof's issuer and verifier. | Replace one key to contain that trust domain, or delete the Secret to replace both. Projection and rollout are fail-closed but not atomic, so a brief `401` or `503` is possible while the issuer and verifier converge. |
 | Webhook endpoint credentials | Stored webhook registration data | Hot-resolved from the current webhook record before delivery | Update the webhook registration. Pending deliveries use the current live credential value. |
 | TLS material | Ingress, Gateway, cert-manager, or provider-managed Secrets | Provider-owned and outside the Python runtime | Rotate through the ingress/provider controller. TAMOSS runtime pods do not read TLS key material directly. |
 

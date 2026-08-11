@@ -46,6 +46,9 @@ spec:
 The operator derives API, UI, and S3 endpoints from the base domain.
 [Authentik](https://goauthentik.io/)
 endpoints are derived only for Authentik-backed profiles.
+When the UI is exposed on a non-standard public port, set the exact origin in
+`spec.publicEndpoint.uiURL`; the managed Authentik proxy provider uses this
+value for its external host.
 
 ## Browser Origin Checklist
 

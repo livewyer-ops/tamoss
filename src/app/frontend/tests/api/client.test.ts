@@ -349,54 +349,18 @@ describe("TamossApiClient", () => {
     });
   });
 
-  describe("authorization", () => {
-    it("sends Bearer token in Authorization header when token is set", async () => {
+  describe("authorization boundary", () => {
+    it("leaves authentication to the same-origin reverse proxy", async () => {
       const serviceData = { name: "Test TAMS", api_version: "8.2" };
       mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
 
-      const client = new TamossApiClient("https://api.example.com", "my-token");
+      const client = new TamossApiClient("/api");
       await client.getService();
 
       const calledUrl = mockFetch.mock.calls[0][0];
       const calledOptions = mockFetch.mock.calls[0][1];
       expect(calledUrl).not.toContain("access_token");
-      expect(calledOptions.headers).toHaveProperty(
-        "Authorization",
-        "Bearer my-token",
-      );
-    });
-
-    it("does not send Authorization header when token is empty", async () => {
-      const serviceData = { name: "Test TAMS", api_version: "8.1" };
-      mockFetch.mockResolvedValueOnce(mockResponse(serviceData));
-
-      const client = new TamossApiClient("https://api.example.com", "");
-      await client.getService();
-
-      const calledOptions = mockFetch.mock.calls[0][1];
       expect(calledOptions.headers).not.toHaveProperty("Authorization");
-    });
-
-    it("sends Bearer token alongside pagination params", async () => {
-      const sources = [{ id: "source-1" }];
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(sources),
-        headers: new Headers({}),
-      });
-
-      const client = new TamossApiClient("https://api.example.com", "my-token");
-      await client.getSources({ limit: "10" });
-
-      const calledUrl = mockFetch.mock.calls[0][0];
-      const calledOptions = mockFetch.mock.calls[0][1];
-      expect(calledUrl).toContain("limit=10");
-      expect(calledUrl).not.toContain("access_token");
-      expect(calledOptions.headers).toHaveProperty(
-        "Authorization",
-        "Bearer my-token",
-      );
     });
   });
 

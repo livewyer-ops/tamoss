@@ -56,6 +56,7 @@ export interface RuntimeSnapshot {
   schemaVersion: "1.0";
   observedAt: string;
   stale: boolean;
+  ingestRuntimeTruncated?: boolean;
   instance: {
     name: string;
     namespace: string;

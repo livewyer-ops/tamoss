@@ -6,16 +6,17 @@ const RuntimeSchemaVersion = "1.0"
 // state. It avoids exposing workload specs, environment variables, Secret
 // references, pod IPs, or arbitrary Kubernetes objects to the browser.
 type RuntimeSnapshot struct {
-	SchemaVersion  string            `json:"schemaVersion"`
-	ObservedAt     string            `json:"observedAt"`
-	Stale          bool              `json:"stale"`
-	Instance       Instance          `json:"instance"`
-	Workloads      []Workload        `json:"workloads"`
-	Services       []Service         `json:"services"`
-	EndpointSlices []EndpointSlice   `json:"endpointSlices"`
-	Pods           []Pod             `json:"pods"`
-	Jobs           []Job             `json:"jobs"`
-	Events         []KubernetesEvent `json:"events"`
+	SchemaVersion          string            `json:"schemaVersion"`
+	ObservedAt             string            `json:"observedAt"`
+	Stale                  bool              `json:"stale"`
+	IngestRuntimeTruncated bool              `json:"ingestRuntimeTruncated,omitempty"`
+	Instance               Instance          `json:"instance"`
+	Workloads              []Workload        `json:"workloads"`
+	Services               []Service         `json:"services"`
+	EndpointSlices         []EndpointSlice   `json:"endpointSlices"`
+	Pods                   []Pod             `json:"pods"`
+	Jobs                   []Job             `json:"jobs"`
+	Events                 []KubernetesEvent `json:"events"`
 }
 
 type Service struct {

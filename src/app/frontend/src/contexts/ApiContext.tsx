@@ -5,10 +5,7 @@ import { config } from "@/config";
 const ApiContext = createContext<TamossApiClient | null>(null);
 
 export function ApiProvider({ children }: { children: ReactNode }) {
-  const client = useMemo(
-    () => new TamossApiClient(config.apiUrl, config.apiToken),
-    [],
-  );
+  const client = useMemo(() => new TamossApiClient(config.apiUrl), []);
 
   return <ApiContext.Provider value={client}>{children}</ApiContext.Provider>;
 }

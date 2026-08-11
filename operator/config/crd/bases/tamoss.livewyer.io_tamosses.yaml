@@ -11114,6 +11114,12 @@ spec:
                     description: TLSSecretName is the default TLS Secret for API and
                       UI public routes.
                     type: string
+                  uiURL:
+                    description: UIURL is the exact public UI origin, including a
+                      non-standard external port when required.
+                    minLength: 1
+                    pattern: ^https?://[^/?#]+/?$
+                    type: string
                 type: object
               secrets:
                 default:

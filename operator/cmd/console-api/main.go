@@ -5,10 +5,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -38,6 +40,14 @@ const (
 	defaultBindAddress  = ":8080"
 	defaultRefresh      = 5 * time.Second
 	shutdownGracePeriod = 10 * time.Second
+
+	consoleAuthModeEnv              = "TAMOSS_CONSOLE_AUTH_MODE"
+	consoleForwardAuthSecretFileEnv = "TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE"
+	consoleGroupRoleBindingsEnv     = "TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS"
+	consoleAuthModeForwardAuth      = "forward-auth"
+	consoleAuthModeDevelopment      = "development-anonymous"
+	consoleAuthModeUnavailable      = "unavailable"
+	maxForwardAuthSecretFileSize    = 4096
 )
 
 type options struct {
@@ -45,6 +55,7 @@ type options struct {
 	namespace       string
 	instance        string
 	refreshInterval time.Duration
+	authenticator   consoleapi.Authenticator
 }
 
 func main() {
@@ -75,20 +86,24 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create Kubernetes cache: %w", err)
 	}
+	ingestRunReader, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("create live IngestRun reader: %w", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := registerInformers(ctx, runtimeCache); err != nil {
 		return err
 	}
-	snapshotter, err := consoleapi.NewSnapshotter(runtimeCache, opts.namespace, opts.instance)
+	snapshotter, err := consoleapi.NewSnapshotter(runtimeCache, ingestRunReader, opts.namespace, opts.instance)
 	if err != nil {
 		return err
 	}
 	monitor := consoleapi.NewMonitor(snapshotter)
 	httpServer := &http.Server{
 		Addr:              opts.bindAddress,
-		Handler:           consoleapi.NewServer(monitor).Handler(),
+		Handler:           consoleapi.NewServer(monitor, opts.authenticator).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    64 << 10,
@@ -162,7 +177,62 @@ func parseOptions() (options, error) {
 	if opts.refreshInterval < time.Second || opts.refreshInterval > 5*time.Minute {
 		return options{}, fmt.Errorf("refresh interval must be between 1s and 5m")
 	}
+	authenticator, err := consoleAuthenticatorFromEnvironment()
+	if err != nil {
+		return options{}, err
+	}
+	opts.authenticator = authenticator
 	return opts, nil
+}
+
+func consoleAuthenticatorFromEnvironment() (consoleapi.Authenticator, error) {
+	mode := strings.TrimSpace(os.Getenv(consoleAuthModeEnv))
+	switch mode {
+	case consoleAuthModeDevelopment:
+		return consoleapi.NewDevelopmentAnonymousAuthenticator(), nil
+	case consoleAuthModeUnavailable:
+		return consoleapi.NewUnavailableAuthenticator(), nil
+	case consoleAuthModeForwardAuth:
+		secretFile := strings.TrimSpace(os.Getenv(consoleForwardAuthSecretFileEnv))
+		if secretFile == "" {
+			return nil, fmt.Errorf("%s is required when %s=%s", consoleForwardAuthSecretFileEnv, consoleAuthModeEnv, consoleAuthModeForwardAuth)
+		}
+		if !filepath.IsAbs(secretFile) {
+			return nil, fmt.Errorf("%s must be an absolute path", consoleForwardAuthSecretFileEnv)
+		}
+		secret, err := readForwardAuthSecretFile(secretFile)
+		if err != nil {
+			return nil, err
+		}
+		bindings, err := consoleapi.ParseGroupRoleBindingsJSON([]byte(os.Getenv(consoleGroupRoleBindingsEnv)))
+		if err != nil {
+			return nil, err
+		}
+		return consoleapi.NewForwardAuthAuthenticator(consoleapi.ForwardAuthConfig{
+			SharedSecret:      secret,
+			GroupRoleBindings: bindings,
+		})
+	case "":
+		return nil, fmt.Errorf("%s is required; use %q, %q, or the explicit development-only %q mode", consoleAuthModeEnv, consoleAuthModeForwardAuth, consoleAuthModeUnavailable, consoleAuthModeDevelopment)
+	default:
+		return nil, fmt.Errorf("unsupported %s value %q", consoleAuthModeEnv, mode)
+	}
+}
+
+func readForwardAuthSecretFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open Console forward-auth shared secret file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	secret, err := io.ReadAll(io.LimitReader(file, maxForwardAuthSecretFileSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("read Console forward-auth shared secret file: %w", err)
+	}
+	if len(secret) > maxForwardAuthSecretFileSize {
+		return nil, fmt.Errorf("Console forward-auth shared secret file exceeds %d bytes", maxForwardAuthSecretFileSize)
+	}
+	return secret, nil
 }
 
 func envOrDefault(name, fallback string) string {
@@ -173,41 +243,55 @@ func envOrDefault(name, fallback string) string {
 }
 
 func newRuntimeCache(config *rest.Config, scheme *runtime.Scheme, namespace, instance string) (cache.Cache, error) {
-	instanceSelector := labels.SelectorFromSet(labels.Set{instanceLabel: instance})
 	namespaces := map[string]cache.Config{namespace: {}}
+	byObject := runtimeCacheByObject(namespaces, instance)
 	return cache.New(config, cache.Options{
-		Scheme:            scheme,
-		DefaultNamespaces: namespaces,
-		ByObject: map[client.Object]cache.ByObject{
-			&tamossv1alpha1.Tamoss{}: {
-				Namespaces: namespaces,
-				Field:      fields.OneTermEqualSelector("metadata.name", instance),
-			},
-			&appsv1.Deployment{}:         {Namespaces: namespaces, Label: instanceSelector},
-			&corev1.Service{}:            {Namespaces: namespaces, Label: instanceSelector},
-			&discoveryv1.EndpointSlice{}: {Namespaces: namespaces, Label: instanceSelector},
-			&corev1.Pod{}:                {Namespaces: namespaces, Label: instanceSelector},
-			&batchv1.Job{}:               {Namespaces: namespaces, Label: instanceSelector},
-			&corev1.Event{}:              {Namespaces: namespaces},
-		},
+		Scheme:                      scheme,
+		DefaultNamespaces:           namespaces,
+		ByObject:                    byObject,
 		ReaderFailOnMissingInformer: true,
 	})
 }
 
-func registerInformers(ctx context.Context, runtimeCache cache.Cache) error {
-	objects := []client.Object{
-		&tamossv1alpha1.Tamoss{},
-		&appsv1.Deployment{},
-		&corev1.Service{},
-		&discoveryv1.EndpointSlice{},
-		&corev1.Pod{},
-		&batchv1.Job{},
-		&corev1.Event{},
+func runtimeCacheByObject(namespaces map[string]cache.Config, instance string) map[client.Object]cache.ByObject {
+	instanceSelector := labels.SelectorFromSet(labels.Set{instanceLabel: instance})
+	byObject := make(map[client.Object]cache.ByObject)
+	for _, object := range runtimeInformerObjects() {
+		scope := cache.ByObject{Namespaces: namespaces}
+		switch object.(type) {
+		case *tamossv1alpha1.Tamoss:
+			scope.Field = fields.OneTermEqualSelector("metadata.name", instance)
+		case *tamossv1alpha1.StorageBackend, *corev1.Event:
+			// StorageBackend roots are established from their spec reference;
+			// Events are filtered against retained UID-bound objects. IngestRun
+			// roots use bounded live GETs and deliberately have no informer.
+		default:
+			scope.Label = instanceSelector
+		}
+		byObject[object] = scope
 	}
-	for _, object := range objects {
+	return byObject
+}
+
+func registerInformers(ctx context.Context, runtimeCache cache.Cache) error {
+	for _, object := range runtimeInformerObjects() {
 		if _, err := runtimeCache.GetInformer(ctx, object); err != nil {
 			return fmt.Errorf("register informer for %T: %w", object, err)
 		}
 	}
 	return nil
+}
+
+func runtimeInformerObjects() []client.Object {
+	return []client.Object{
+		&tamossv1alpha1.Tamoss{},
+		&appsv1.Deployment{},
+		&appsv1.ReplicaSet{},
+		&corev1.Service{},
+		&discoveryv1.EndpointSlice{},
+		&tamossv1alpha1.StorageBackend{},
+		&corev1.Pod{},
+		&batchv1.Job{},
+		&corev1.Event{},
+	}
 }

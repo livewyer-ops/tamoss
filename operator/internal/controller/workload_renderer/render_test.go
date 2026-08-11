@@ -1,6 +1,7 @@
 package workload_renderer
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -549,6 +550,30 @@ func TestRenderConsoleUsesIsolatedReadOnlyIdentity(t *testing.T) {
 		len(binding.Subjects) != 1 || binding.Subjects[0].Name != "example-console" {
 		t.Fatalf("unexpected Console RoleBinding: role=%#v binding=%#v", role, binding)
 	}
+	for _, expected := range []struct {
+		group    string
+		resource string
+		verbs    []string
+	}{
+		{group: "tamoss.livewyer.io", resource: "tamosses", verbs: []string{"get", "list", "watch"}},
+		{group: "tamoss.livewyer.io", resource: "storagebackends", verbs: []string{"get", "list", "watch"}},
+		{group: "tamoss.livewyer.io", resource: "ingestruns", verbs: []string{"get"}},
+		{group: "apps", resource: "deployments", verbs: []string{"get", "list", "watch"}},
+		{group: "apps", resource: "replicasets", verbs: []string{"get", "list", "watch"}},
+	} {
+		found := false
+		for _, rule := range role.Rules {
+			if slices.Contains(rule.APIGroups, expected.group) &&
+				slices.Contains(rule.Resources, expected.resource) &&
+				slices.Equal(rule.Verbs, expected.verbs) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("Console Role is missing read access to %s/%s: %#v", expected.group, expected.resource, role.Rules)
+		}
+	}
 	for _, rule := range role.Rules {
 		for _, resource := range rule.Resources {
 			if resource == "secrets" || resource == "pods/log" || resource == "pods/exec" || resource == "services/proxy" {
@@ -685,26 +710,26 @@ func TestRenderAuthentikOAuthCredentialSecret(t *testing.T) {
 			RedirectURIs:      []string{"https://app.example.com/auth/callback"},
 		},
 	}
-
 	objects := Render(tamoss)
-	for _, name := range []string{"example-api", "example-ui"} {
-		deployment := deploymentByName(t, objects, name)
-		container := deployment.Spec.Template.Spec.Containers[0]
-		if !hasEnvFromSecret(container.EnvFrom, "example-oauth2-creds") {
-			t.Fatalf("%s should read Authentik OAuth2 credentials via envFrom, got %#v", name, container.EnvFrom)
-		}
-		if envValue(container.Env, "TAMOSS_OAUTH2_ENABLED") != "true" {
-			t.Fatalf("%s should enable OAuth2, got %#v", name, container.Env)
-		}
-		if envValue(container.Env, "TAMOSS_OAUTH2_ISSUER") != "https://auth.example.com/application/o/tamoss-tams-example/" {
-			t.Fatalf("%s should use public issuer, got %#v", name, container.Env)
-		}
-		if envValue(container.Env, "TAMOSS_OAUTH2_JWKS_URI") != "http://authentik.auth.svc:9000/application/o/tamoss-tams-example/jwks/" {
-			t.Fatalf("%s should use internal JWKS URI, got %#v", name, container.Env)
-		}
-		if hasEnv(container.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") {
-			t.Fatalf("%s should rely on the API default for OAuth2 unscoped access, got %#v", name, container.Env)
-		}
+	api := deploymentByName(t, objects, "example-api").Spec.Template.Spec.Containers[0]
+	if !hasEnvFromSecret(api.EnvFrom, "example-oauth2-creds") {
+		t.Fatalf("API should read Authentik OAuth2 credentials via envFrom, got %#v", api.EnvFrom)
+	}
+	if envValue(api.Env, "TAMOSS_OAUTH2_ENABLED") != "true" {
+		t.Fatalf("API should enable OAuth2, got %#v", api.Env)
+	}
+	if envValue(api.Env, "TAMOSS_OAUTH2_ISSUER") != "https://auth.example.com/application/o/tamoss-tams-example/" {
+		t.Fatalf("API should use public issuer, got %#v", api.Env)
+	}
+	if envValue(api.Env, "TAMOSS_OAUTH2_JWKS_URI") != "http://authentik.auth.svc:9000/application/o/tamoss-tams-example/jwks/" {
+		t.Fatalf("API should use internal JWKS URI, got %#v", api.Env)
+	}
+	if hasEnv(api.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") {
+		t.Fatalf("API should rely on the OAuth2 default for unscoped access, got %#v", api.Env)
+	}
+	ui := deploymentByName(t, objects, "example-ui").Spec.Template.Spec.Containers[0]
+	if hasEnvFromSecret(ui.EnvFrom, "example-oauth2-creds") || hasEnv(ui.Env, "TAMOSS_OAUTH2_CLIENT_SECRET") {
+		t.Fatalf("UI must not receive Authentik OAuth2 credentials, got env=%#v envFrom=%#v", ui.Env, ui.EnvFrom)
 	}
 
 	worker := deploymentByName(t, objects, "example-worker")
@@ -752,23 +777,23 @@ func TestRenderExternalOAuthCredentialSecret(t *testing.T) {
 			},
 		},
 	}
-
 	objects := Render(tamoss)
-	for _, name := range []string{"example-api", "example-ui"} {
-		deployment := deploymentByName(t, objects, name)
-		container := deployment.Spec.Template.Spec.Containers[0]
-		if !hasEnvFromSecret(container.EnvFrom, "external-oauth-creds") {
-			t.Fatalf("%s should read external OAuth2 credentials via envFrom, got %#v", name, container.EnvFrom)
-		}
-		if hasEnvFromSecret(container.EnvFrom, "example-oauth2-creds") {
-			t.Fatalf("%s should not read generated Authentik OAuth2 credentials", name)
-		}
-		if envValue(container.Env, "TAMOSS_OAUTH2_ENABLED") != "true" {
-			t.Fatalf("%s should enable OAuth2, got %#v", name, container.Env)
-		}
-		if envValue(container.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") != "false" {
-			t.Fatalf("%s should render strict OAuth2 unscoped access, got %#v", name, container.Env)
-		}
+	api := deploymentByName(t, objects, "example-api").Spec.Template.Spec.Containers[0]
+	if !hasEnvFromSecret(api.EnvFrom, "external-oauth-creds") {
+		t.Fatalf("API should read external OAuth2 credentials via envFrom, got %#v", api.EnvFrom)
+	}
+	if hasEnvFromSecret(api.EnvFrom, "example-oauth2-creds") {
+		t.Fatal("API should not read generated Authentik OAuth2 credentials")
+	}
+	if envValue(api.Env, "TAMOSS_OAUTH2_ENABLED") != "true" {
+		t.Fatalf("API should enable OAuth2, got %#v", api.Env)
+	}
+	if envValue(api.Env, "TAMOSS_OAUTH2_ALLOW_UNSCOPED_FULL_ACCESS") != "false" {
+		t.Fatalf("API should render strict OAuth2 unscoped access, got %#v", api.Env)
+	}
+	ui := deploymentByName(t, objects, "example-ui").Spec.Template.Spec.Containers[0]
+	if hasEnvFromSecret(ui.EnvFrom, "external-oauth-creds") || hasEnv(ui.Env, "TAMOSS_OAUTH2_CLIENT_SECRET") {
+		t.Fatalf("UI must not receive external OAuth2 credentials, got env=%#v envFrom=%#v", ui.Env, ui.EnvFrom)
 	}
 
 	worker := deploymentByName(t, objects, "example-worker")
@@ -832,6 +857,186 @@ func TestRenderAuthentikTraefikForwardAuth(t *testing.T) {
 	if outpostService.Spec.Type != corev1.ServiceTypeExternalName ||
 		outpostService.Spec.ExternalName != "authentik-server.auth.svc.cluster.local" {
 		t.Fatalf("unexpected Authentik outpost Service: %#v", outpostService.Spec)
+	}
+}
+
+func TestRenderTrustedForwardAuthBoundary(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Ingress.Enabled = ptr.To(true)
+	tamoss.Spec.Ingress.ClassName = "traefik"
+	tamoss.Spec.Ingress.UI.Web.Host = "app.example.com"
+	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{
+		ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+		Required:   true,
+		AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{
+			InternalURL: "http://authentik-server.auth.svc.cluster.local",
+			GroupBindings: []tamossv1alpha1.AuthentikGroupBindingSpec{
+				{GroupName: "tamoss-viewers", Permissions: []string{"viewer"}},
+				{GroupName: "authentik Admins", Permissions: []string{"operator", "admin", "operator"}},
+			},
+		},
+	}
+	tamoss.Spec.API.Env = map[string]string{
+		"TAMOSS_AUTH_REQUIRED":                   "false",
+		"TAMOSS_TRUST_FORWARD_AUTH_HEADERS":      "false",
+		"TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE": "/tmp/untrusted",
+		"TAMOSS_FORWARD_AUTH_GROUP_BINDINGS":     "[]",
+	}
+	tamoss.Spec.UI.Env = map[string]string{
+		"TAMOSS_UI_AUTH_MODE":                            "none",
+		"TAMOSS_API_FORWARD_AUTH_SHARED_SECRET_FILE":     "/tmp/untrusted-api",
+		"TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE": "/tmp/untrusted-console",
+		"TAMOSS_API_TOKEN":                               "browser-token",
+		"TAMOSS_OAUTH2_CLIENT_SECRET":                    "browser-oauth-secret",
+	}
+	tamoss.Spec.Console.Env = map[string]string{
+		"TAMOSS_CONSOLE_AUTH_MODE":                "development-anonymous",
+		"TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE": "/tmp/untrusted",
+		"TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS":      "[]",
+	}
+
+	objects := Render(tamoss)
+	if !hasObject(objects, "Secret/example-forward-auth") {
+		t.Fatalf("expected generated forward-auth Secret in %v", renderedIDs(objects))
+	}
+	wantBindings := `[{"groupName":"authentik Admins","permissions":["admin","operator"]},{"groupName":"tamoss-viewers","permissions":["viewer"]}]`
+	wantProofKeys := map[string][]string{
+		"api":     {ForwardAuthAPIProofSecretKey},
+		"ui":      {ForwardAuthAPIProofSecretKey, ForwardAuthConsoleProofSecretKey},
+		"console": {ForwardAuthConsoleProofSecretKey},
+	}
+	for _, component := range []string{"api", "ui", "console"} {
+		deployment := deploymentByName(t, objects, "example-"+component)
+		container := deployment.Spec.Template.Spec.Containers[0]
+		if !hasVolumeMount(container.VolumeMounts, "forward-auth-proof", "/run/tamoss/forward-auth") {
+			t.Fatalf("%s should mount only the forward-auth proof directory, got %#v", component, container.VolumeMounts)
+		}
+		if !hasSecretVolumeItems(deployment.Spec.Template.Spec.Volumes, "forward-auth-proof", "example-forward-auth", 0o444, wantProofKeys[component]) {
+			t.Fatalf("%s should mount only its required proof keys, got %#v", component, deployment.Spec.Template.Spec.Volumes)
+		}
+	}
+
+	api := deploymentByName(t, objects, "example-api").Spec.Template.Spec.Containers[0]
+	if envValue(api.Env, "TAMOSS_TRUST_FORWARD_AUTH_HEADERS") != "true" ||
+		envValue(api.Env, "TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE") != "/run/tamoss/forward-auth/api-proof" ||
+		envValue(api.Env, "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS") != wantBindings {
+		t.Fatalf("API forward-auth contract is incomplete: %#v", api.Env)
+	}
+	for _, name := range []string{"TAMOSS_AUTH_REQUIRED", "TAMOSS_TRUST_FORWARD_AUTH_HEADERS", "TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE", "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS"} {
+		if envCount(api.Env, name) != 1 {
+			t.Fatalf("API boundary env %s must be operator-owned exactly once: %#v", name, api.Env)
+		}
+	}
+
+	ui := deploymentByName(t, objects, "example-ui").Spec.Template.Spec.Containers[0]
+	if envValue(ui.Env, "TAMOSS_UI_AUTH_MODE") != "authentik" ||
+		envValue(ui.Env, "TAMOSS_AUTHENTIK_AUTH_REQUEST_URL") != "http://authentik-server.auth.svc.cluster.local/outpost.goauthentik.io/auth/nginx" ||
+		envValue(ui.Env, "TAMOSS_API_FORWARD_AUTH_SHARED_SECRET_FILE") != "/run/tamoss/forward-auth/api-proof" ||
+		envValue(ui.Env, "TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE") != "/run/tamoss/forward-auth/console-proof" {
+		t.Fatalf("UI forward-auth contract is incomplete: %#v", ui.Env)
+	}
+	if hasEnvFromSecret(ui.EnvFrom, "example-api-token") || hasEnvFromSecret(ui.EnvFrom, "example-oauth2-creds") || hasEnv(ui.Env, "TAMOSS_API_TOKEN") {
+		t.Fatalf("UI must not receive shared API or OAuth credentials: env=%#v envFrom=%#v", ui.Env, ui.EnvFrom)
+	}
+	for _, name := range []string{"TAMOSS_UI_AUTH_MODE", "TAMOSS_API_FORWARD_AUTH_SHARED_SECRET_FILE", "TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE"} {
+		if envCount(ui.Env, name) != 1 {
+			t.Fatalf("UI boundary env %s must be operator-owned exactly once: %#v", name, ui.Env)
+		}
+	}
+
+	console := deploymentByName(t, objects, "example-console").Spec.Template.Spec.Containers[0]
+	if envValue(console.Env, "TAMOSS_CONSOLE_AUTH_MODE") != "forward-auth" ||
+		envValue(console.Env, "TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE") != "/run/tamoss/forward-auth/console-proof" ||
+		envValue(console.Env, "TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS") != wantBindings {
+		t.Fatalf("Console forward-auth contract is incomplete: %#v", console.Env)
+	}
+	for _, name := range []string{"TAMOSS_CONSOLE_AUTH_MODE", "TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE", "TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS"} {
+		if envCount(console.Env, name) != 1 {
+			t.Fatalf("Console boundary env %s must be operator-owned exactly once: %#v", name, console.Env)
+		}
+	}
+
+	withoutConsole := tamoss.DeepCopy()
+	withoutConsole.Spec.Console.Enabled = ptr.To(false)
+	withoutConsoleObjects := Render(withoutConsole)
+	uiWithoutConsole := deploymentByName(t, withoutConsoleObjects, "example-ui").Spec.Template.Spec.Containers[0]
+	uiWithoutConsoleDeployment := deploymentByName(t, withoutConsoleObjects, "example-ui")
+	if hasEnv(uiWithoutConsole.Env, "TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE") ||
+		!hasSecretVolumeItems(uiWithoutConsoleDeployment.Spec.Template.Spec.Volumes, "forward-auth-proof", "example-forward-auth", 0o444, []string{ForwardAuthAPIProofSecretKey}) {
+		t.Fatalf("UI must not receive the unused Console proof when Console is disabled: env=%#v volumes=%#v", uiWithoutConsole.Env, uiWithoutConsoleDeployment.Spec.Template.Spec.Volumes)
+	}
+}
+
+func TestRenderInvalidForwardAuthBindingsFailBrowserAccessClosed(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Ingress.Enabled = ptr.To(true)
+	tamoss.Spec.Ingress.ClassName = "traefik"
+	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{
+		ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+		Required:   true,
+		AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{
+			InternalURL: "http://authentik-server.auth.svc.cluster.local",
+			GroupBindings: []tamossv1alpha1.AuthentikGroupBindingSpec{
+				{GroupName: "tamoss|viewers", Permissions: []string{"viewer"}},
+			},
+		},
+	}
+
+	objects := Render(tamoss)
+	if hasObject(objects, "Secret/example-forward-auth") {
+		t.Fatalf("invalid bindings must not create a trust proof: %v", renderedIDs(objects))
+	}
+	api := deploymentByName(t, objects, "example-api").Spec.Template.Spec.Containers[0]
+	if envValue(api.Env, "TAMOSS_TRUST_FORWARD_AUTH_HEADERS") != "false" ||
+		hasEnv(api.Env, "TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE") ||
+		hasEnv(api.Env, "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS") ||
+		hasVolumeMount(api.VolumeMounts, "forward-auth-proof", "/run/tamoss/forward-auth") {
+		t.Fatalf("API must preserve direct authentication without trusting invalid forwarded identity: %#v", api)
+	}
+	ui := deploymentByName(t, objects, "example-ui").Spec.Template.Spec.Containers[0]
+	if got := envValue(ui.Env, "TAMOSS_UI_AUTH_MODE"); got != "unavailable" {
+		t.Fatalf("invalid bindings should fail browser API access closed, got mode %q", got)
+	}
+	console := deploymentByName(t, objects, "example-console").Spec.Template.Spec.Containers[0]
+	if got := envValue(console.Env, "TAMOSS_CONSOLE_AUTH_MODE"); got != "unavailable" {
+		t.Fatalf("invalid bindings should fail Console access closed, got mode %q", got)
+	}
+}
+
+func TestForwardAuthBindingLimitMatchesRuntime(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Auth.ProvidedBy = tamossv1alpha1.AuthProvidedByAuthentikBlueprints
+	tamoss.Spec.Auth.AuthentikBlueprints = &tamossv1alpha1.AuthentikBlueprintsSpec{}
+	for index := 0; index < maxForwardAuthGroupBindings+1; index++ {
+		tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings = append(
+			tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings,
+			tamossv1alpha1.AuthentikGroupBindingSpec{
+				GroupName:   fmt.Sprintf("tamoss-viewers-%03d", index),
+				Permissions: []string{"viewer"},
+			},
+		)
+	}
+
+	if _, valid := normalizedForwardAuthGroupBindings(tamoss); valid {
+		t.Fatalf("more than %d forward-auth groups must fail rendering closed", maxForwardAuthGroupBindings)
+	}
+}
+
+func TestRenderAnonymousModeDoesNotCreateForwardAuthProof(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByNone}
+
+	objects := Render(tamoss)
+	if hasObject(objects, "Secret/example-forward-auth") {
+		t.Fatalf("anonymous mode must not render a forward-auth Secret: %v", renderedIDs(objects))
+	}
+	ui := deploymentByName(t, objects, "example-ui").Spec.Template.Spec.Containers[0]
+	if envValue(ui.Env, "TAMOSS_UI_AUTH_MODE") != "none" {
+		t.Fatalf("expected explicit anonymous UI mode, got %#v", ui.Env)
+	}
+	console := deploymentByName(t, objects, "example-console").Spec.Template.Spec.Containers[0]
+	if envValue(console.Env, "TAMOSS_CONSOLE_AUTH_MODE") != "development-anonymous" {
+		t.Fatalf("expected explicit anonymous Console mode, got %#v", console.Env)
 	}
 }
 
@@ -1268,6 +1473,25 @@ func hasSecretVolume(volumes []corev1.Volume, name, secretName string, mode int3
 			}
 			return true
 		}
+	}
+	return false
+}
+
+func hasSecretVolumeItems(volumes []corev1.Volume, name, secretName string, mode int32, keys []string) bool {
+	for _, item := range volumes {
+		if item.Name != name || item.Secret == nil || item.Secret.SecretName != secretName {
+			continue
+		}
+		if item.Secret.DefaultMode == nil || *item.Secret.DefaultMode != mode || len(item.Secret.Items) != len(keys) {
+			return false
+		}
+		for index, key := range keys {
+			projected := item.Secret.Items[index]
+			if projected.Key != key || projected.Path != key || projected.Mode == nil || *projected.Mode != mode {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }

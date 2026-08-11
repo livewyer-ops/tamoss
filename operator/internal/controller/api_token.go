@@ -141,7 +141,7 @@ func annotateAPITokenChecksum(objects []client.Object, token []byte) {
 			continue
 		}
 		component := deployment.Labels["app.kubernetes.io/component"]
-		if component != "api" && component != "ui" {
+		if component != "api" {
 			continue
 		}
 		if deployment.Spec.Template.Annotations == nil {

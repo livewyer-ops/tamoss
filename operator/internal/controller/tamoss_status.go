@@ -8,6 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
@@ -67,6 +68,12 @@ type tamossStatusObservation struct {
 	Routing           *routingStatusResult
 	Replicas          *tamossv1alpha1.ReplicaStatus
 
+	// BrowserAuth reports whether enabled browser surfaces have a supported
+	// authentication path. It is reported on its own condition rather than
+	// folded into Ready or Degraded: the API and worker data plane are
+	// unaffected, and the browser surfaces already fail closed without it.
+	BrowserAuth *statusConditionValue
+
 	Ready       statusConditionValue
 	Progressing statusConditionValue
 	Degraded    statusConditionValue
@@ -84,16 +91,19 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 		return err
 	}
 
-	ready := !schemaResult.Degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
+	browserAuthConfigured := workload_renderer.BrowserAuthConfigured(tamoss)
+	degraded := schemaResult.Degraded
+	ready := !degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
 		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker) && replicasReady(replicas.Console)
 	phase := operatorstatus.PhaseProgressing
 	if ready {
 		phase = operatorstatus.PhaseReady
 	}
-	if schemaResult.Degraded {
+	if degraded {
 		phase = operatorstatus.PhaseDegraded
 	}
 
+	browserAuth := browserAuthCondition(tamoss, browserAuthConfigured)
 	identityBlueprint := boolCondition(identityResult.BlueprintSubmitted, identityBlueprintReason(identityResult), identityBlueprintMessage(identityResult))
 	identity := boolCondition(identityResult.Ready, identityResult.Reason, identityResult.Message)
 	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
@@ -105,9 +115,10 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 		Identity:            &identity,
 		Routing:             &routingResult,
 		Replicas:            &replicas,
+		BrowserAuth:         &browserAuth,
 		Ready:               boolCondition(ready, readyReason(ready, schemaResult, identityResult, routingResult), readyMessage(ready, schemaResult, identityResult, routingResult)),
-		Progressing:         boolCondition(!ready && !schemaResult.Degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available"),
-		Degraded:            boolCondition(schemaResult.Degraded, degradedReason(schemaResult), degradedMessage(schemaResult)),
+		Progressing:         boolCondition(!ready && !degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available"),
+		Degraded:            boolCondition(degraded, degradedReason(schemaResult), degradedMessage(schemaResult)),
 	})
 }
 
@@ -231,6 +242,9 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 	}
 	if observation.Identity != nil {
 		setStatusCondition(conditions, generation, operatorstatus.ConditionIdentityReady, *observation.Identity)
+	}
+	if observation.BrowserAuth != nil {
+		setStatusCondition(conditions, generation, operatorstatus.ConditionBrowserAuthReady, *observation.BrowserAuth)
 	}
 	if observation.Routing != nil {
 		setRoutingConditions(conditions, generation, *observation.Routing)

@@ -94,3 +94,30 @@ func TestMonitorSlowSubscriberReceivesLatestState(t *testing.T) {
 		t.Fatalf("slow subscriber got %#v, want latest state", update)
 	}
 }
+
+func TestMonitorPublishesIngestRuntimeTruncationChange(t *testing.T) {
+	t.Parallel()
+	source := &queuedSource{results: []sourceResult{
+		{snapshot: RuntimeSnapshot{SchemaVersion: RuntimeSchemaVersion, Instance: Instance{Phase: "Ready"}}},
+		{snapshot: RuntimeSnapshot{
+			SchemaVersion:          RuntimeSchemaVersion,
+			IngestRuntimeTruncated: true,
+			Instance:               Instance{Phase: "Ready"},
+		}},
+	}}
+	monitor := NewMonitor(source)
+	updates, cancel := monitor.Subscribe()
+	defer cancel()
+
+	if err := monitor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-updates
+	if err := monitor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	update := <-updates
+	if update.ID != 2 || !update.Snapshot.IngestRuntimeTruncated {
+		t.Fatalf("unexpected truncation update: %#v", update)
+	}
+}

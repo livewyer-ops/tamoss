@@ -5,9 +5,11 @@
 - Accepted for the TAMOSS 8.2 UI.
 - The blank-slate shell, bounded TAMS catalog pages, CSS Modules, Biome, lazy
   routes, and build-budget check are implemented on the 8.2 development branch.
-- The current production build is 86.43 KiB initial JavaScript gzip with five
-  direct runtime packages, ten installed production packages in total, and no
-  production audit findings. Lockfile package entries fell from 338 to 209.
+- The current production build is 86.80 KiB initial JavaScript gzip with six
+  direct runtime packages excluding Omakase, and 311 lockfile package entries,
+  down from 338. `npm audit --omit=dev` reports three moderate advisories, all
+  reaching production only through the lazy Omakase preview chunk; see
+  [0004](0004-omakase-preview.md).
 - The measurable checks under [8.2 Release Gates](#82-release-gates) remain
   open.
 

@@ -15,7 +15,7 @@ from jwt import InvalidTokenError, PyJWKClientError
 from starlette.routing import Match
 
 from tamoss.errors import Forbidden, Unauthorized
-from tamoss.settings import Settings, get_settings
+from tamoss.settings import MIN_FORWARD_AUTH_SECRET_LENGTH, Settings, get_settings
 
 logger = logging.getLogger(__name__)
 _JWKS_CLIENTS: dict[str, jwt.PyJWKClient] = {}
@@ -30,6 +30,21 @@ _READ_API_SCOPE = frozenset({_ADMIN_SCOPE, _READ_SCOPE})
 _WRITE_API_SCOPE = frozenset({_ADMIN_SCOPE, _WRITE_SCOPE})
 _DELETE_API_SCOPE = frozenset({_ADMIN_SCOPE, _DELETE_SCOPE})
 _ADMIN_API_SCOPE = frozenset({_ADMIN_SCOPE})
+_FORWARD_AUTH_READ_PERMISSIONS = frozenset(
+    {"admin", "viewer", "operator", "ingest-runner"}
+)
+_FORWARD_AUTH_READ_METHODS = frozenset({"GET", "HEAD"})
+_FORWARD_AUTH_OPERATIONAL_READ_ROUTES = frozenset(
+    {
+        ("GET", "/flow-delete-requests"),
+        ("HEAD", "/flow-delete-requests"),
+        ("GET", "/flow-delete-requests/{request_id}"),
+        ("HEAD", "/flow-delete-requests/{request_id}"),
+    }
+)
+_MAX_FORWARD_AUTH_IDENTITY_LENGTH = 512
+_MAX_FORWARD_AUTH_GROUPS_LENGTH = 4096
+_MAX_FORWARD_AUTH_GROUPS = 256
 
 OAUTH2_ROUTE_SCOPE_GROUPS: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/"): _ANY_API_SCOPE,
@@ -160,6 +175,16 @@ def identify_request(request: Request) -> Identity:
 
 
 def authorize_request(request: Request, identity: Identity, settings: Settings) -> None:
+    if identity.method == "forward-auth":
+        if settings.oauth2_read_scope not in identity.scopes:
+            raise Forbidden(
+                "Forbidden. Forward-auth groups do not grant TAMOSS read access."
+            )
+        if request.method.upper() not in _FORWARD_AUTH_READ_METHODS:
+            raise Forbidden("Forbidden. Forward-auth access is read-only.")
+        _authorize_forward_auth_route(request, settings)
+        return
+
     if identity.method != "bearer-oauth2":
         return
     if not identity.scopes:
@@ -197,11 +222,6 @@ def unauthorized_headers(settings: Settings) -> dict[str, str]:
 def _authenticate_with_configured_methods(
     request: Request, settings: Settings
 ) -> Identity | None:
-    if settings.trust_forward_auth_headers:
-        identity = _forward_auth_identity(request, settings)
-        if identity is not None:
-            return identity
-
     authorization = request.headers.get("authorization", "")
     scheme, _, credentials = authorization.partition(" ")
     if scheme.lower() == "bearer" and credentials:
@@ -217,20 +237,108 @@ def _authenticate_with_configured_methods(
     if access_token and _configured_token_matches(access_token, settings):
         return Identity(subject="token-user", method="url-token")
 
+    if settings.trust_forward_auth_headers:
+        identity = _forward_auth_identity(request, settings)
+        if identity is not None:
+            return identity
+
     return None
 
 
 def _forward_auth_identity(request: Request, settings: Settings) -> Identity | None:
     expected_proof = settings.forward_auth_shared_secret_value()
     supplied_proof = request.headers.get("x-tamoss-forward-auth-secret", "")
-    if not expected_proof or not _constant_time_equal(supplied_proof, expected_proof):
+    if (
+        not expected_proof
+        or len(expected_proof.strip()) < MIN_FORWARD_AUTH_SECRET_LENGTH
+        or not _constant_time_equal(supplied_proof, expected_proof)
+    ):
         return None
 
-    for header_name in ("remote-user", "x-authentik-username"):
-        subject = request.headers.get(header_name)
-        if subject:
-            return Identity(subject=subject, method="forward-auth")
-    return None
+    subject = _forward_auth_identity_value(
+        request.headers.get("x-tamoss-forward-auth-subject", "")
+    )
+    username_value = request.headers.get("x-tamoss-forward-auth-username", "")
+    username = (
+        _forward_auth_identity_value(username_value) if username_value.strip() else None
+    )
+    if subject is None or (username_value.strip() and username is None):
+        return None
+
+    groups = _forward_auth_groups(
+        request.headers.get("x-tamoss-forward-auth-groups", "")
+    )
+    if groups is None:
+        raise Forbidden("Forbidden. Forward-auth groups are invalid.")
+
+    permissions = frozenset(
+        permission
+        for binding in settings.forward_auth_group_bindings
+        if binding.group_name in groups
+        for permission in binding.permissions
+    )
+    scopes = (
+        frozenset({settings.oauth2_read_scope})
+        if not permissions.isdisjoint(_FORWARD_AUTH_READ_PERMISSIONS)
+        else frozenset()
+    )
+    return Identity(subject=subject, method="forward-auth", scopes=scopes)
+
+
+def _authorize_forward_auth_route(request: Request, settings: Settings) -> None:
+    route_path = _matched_api_route_path(request)
+    if route_path is None:
+        raise Forbidden(
+            "Forbidden. Forward-auth route scope is not configured for this API route."
+        )
+
+    route_key = (request.method.upper(), route_path)
+    scope_groups = OAUTH2_ROUTE_SCOPE_GROUPS.get(route_key)
+    if scope_groups is None:
+        raise Forbidden(
+            "Forbidden. Forward-auth route scope is not configured for this API route."
+        )
+
+    # Deletion request resources report background operation status. TAMS
+    # assigns their GET/HEAD routes to the OAuth delete scope, but the browser
+    # needs explicit read-only access to render operational state.
+    if route_key in _FORWARD_AUTH_OPERATIONAL_READ_ROUTES:
+        return
+
+    required_scopes = _oauth2_scope_names(settings, scope_groups)
+    if settings.oauth2_read_scope not in required_scopes:
+        raise Forbidden("Forbidden. Forward-auth access is limited to read routes.")
+
+
+def _forward_auth_identity_value(value: str) -> str | None:
+    candidate = value.strip()
+    if (
+        not candidate
+        or len(candidate) > _MAX_FORWARD_AUTH_IDENTITY_LENGTH
+        or not candidate.isprintable()
+    ):
+        return None
+    return candidate
+
+
+def _forward_auth_groups(value: str) -> frozenset[str] | None:
+    if len(value) > _MAX_FORWARD_AUTH_GROUPS_LENGTH or not value.strip():
+        return None
+    parts = value.split("|")
+    if len(parts) > _MAX_FORWARD_AUTH_GROUPS:
+        return None
+
+    groups: set[str] = set()
+    for value_part in parts:
+        group = value_part.strip()
+        if (
+            not group
+            or len(group) > _MAX_FORWARD_AUTH_IDENTITY_LENGTH
+            or not group.isprintable()
+        ):
+            return None
+        groups.add(group)
+    return frozenset(groups)
 
 
 def _bearer_identity(token: str, settings: Settings) -> Identity | None:

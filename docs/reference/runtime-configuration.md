@@ -120,7 +120,19 @@ operator owns database credentials.
 Forward-auth identity headers are only trusted when
 `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=true` and the proxy sends
 `X-TAMOSS-Forward-Auth-Secret` matching `TAMOSS_FORWARD_AUTH_SHARED_SECRET` or
-`TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE`. Basic auth is only enabled when
+`TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE`; the proof must contain at least 32
+characters. The operator-sanitized stable
+`X-TAMOSS-Forward-Auth-Subject` and pipe-separated
+`X-TAMOSS-Forward-Auth-Groups` headers must both be nonempty, while
+`X-TAMOSS-Forward-Auth-Username` is optional display metadata. A missing or
+invalid subject is unauthenticated; once a valid subject is established,
+missing, malformed, or unmapped groups are forbidden. Configure exact group
+membership with `TAMOSS_FORWARD_AUTH_GROUP_BINDINGS`, a JSON array in the same
+shape as `.spec.auth.authentikBlueprints.groupBindings`; `viewer`,
+`operator`, `ingest-runner`, and legacy `admin` grant read-only `GET`/`HEAD`
+access only to explicitly mapped routes that admit the configured read scope.
+Raw Authentik identity headers are not trusted by the API, and forward-auth
+never authorizes TAMS mutations. Basic auth is only enabled when
 `TAMOSS_BASIC_AUTH_PASSWORD` or `TAMOSS_BASIC_AUTH_PASSWORD_FILE` is configured;
 `TAMOSS_API_TOKEN` is used for Bearer token authentication only.
 

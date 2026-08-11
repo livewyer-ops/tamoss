@@ -18,7 +18,7 @@ func renderConsoleDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if !tamoss.Spec.ConsoleEnabled() {
 		return nil
 	}
-	env := make([]corev1.EnvVar, 0, 3+len(tamoss.Spec.Console.Env))
+	env := make([]corev1.EnvVar, 0, 6+len(tamoss.Spec.Console.Env))
 	env = append(env,
 		corev1.EnvVar{
 			Name: consoleNamespaceEnv,
@@ -30,16 +30,31 @@ func renderConsoleDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		corev1.EnvVar{Name: consoleInstanceEnv, Value: tamoss.Name},
 		corev1.EnvVar{Name: consoleBindEnv, Value: ":8080"},
 	)
+	if forwardAuthEnabled(tamoss) {
+		env = append(env,
+			corev1.EnvVar{Name: "TAMOSS_CONSOLE_AUTH_MODE", Value: "forward-auth"},
+			corev1.EnvVar{Name: "TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE", Value: ForwardAuthProofFilePath(ForwardAuthConsoleProofSecretKey)},
+			corev1.EnvVar{Name: "TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS", Value: forwardAuthGroupBindingsJSON(tamoss)},
+		)
+	} else if !tamoss.Spec.Auth.RequiredForRuntime() {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_CONSOLE_AUTH_MODE", Value: "development-anonymous"})
+	} else {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_CONSOLE_AUTH_MODE", Value: "unavailable"})
+	}
 	env = append(env, literalEnv(
 		tamoss.Spec.Console.Env,
 		consoleNamespaceEnv,
 		consoleInstanceEnv,
 		consoleBindEnv,
+		"TAMOSS_CONSOLE_AUTH_MODE",
+		"TAMOSS_CONSOLE_FORWARD_AUTH_SECRET_FILE",
+		"TAMOSS_CONSOLE_GROUP_ROLE_BINDINGS",
 	)...)
+	spec := withForwardAuthProofVolume(tamoss.Spec.Console.WorkloadCommonSpec, tamoss, ForwardAuthConsoleProofSecretKey)
 	deployment := deploymentFor(
 		tamoss,
 		"console",
-		tamoss.Spec.Console.WorkloadCommonSpec,
+		spec,
 		consoleImage(tamoss.Spec.Console.Image.Repository, tamoss.Spec.Console.Image.Tag),
 		tamoss.Spec.Console.Image.PullPolicy,
 		nil,

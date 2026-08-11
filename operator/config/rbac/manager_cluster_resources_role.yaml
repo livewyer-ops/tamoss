@@ -33,6 +33,14 @@ rules:
       - update
       - watch
   - apiGroups:
+      - apps
+    resources:
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - autoscaling
     resources:
       - horizontalpodautoscalers
