@@ -5,11 +5,12 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Protocol
 from urllib.parse import ParseResult, urljoin, urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import requests
 from requests import Response
@@ -25,7 +26,6 @@ from tamoss.contract.payloads import (
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_child_id,
-    collection_role,
     flow_collection,
     flow_with_collected_by,
 )
@@ -130,6 +130,21 @@ WebhookEventFactory = Callable[[WebhookRecord], JsonPayload]
 FlowWebhookEventFactory = Callable[[WebhookRecord, list[str]], JsonPayload]
 
 
+class FlowEventResourceRepository(Protocol):
+    def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]: ...
+
+    def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]: ...
+
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
+
+
+@dataclass(frozen=True)
+class FlowEventContext:
+    source: SourceRecord | None
+    flow_collected_by_ids: list[str]
+    source_collected_by_ids: list[str]
+
+
 def validate_webhook_configuration(
     data: WebhookData,
     *,
@@ -213,9 +228,9 @@ def webhook_matches(
             flow_ids,
             _list_of_strings(webhook_data.get("flow_ids")),
         )
-        flow_collected_filter_matches = _selector_matches(
+        flow_collected_filter_matches = _collection_selector_matches(
             flow_collected_by_ids,
-            _list_of_strings(webhook_data.get("flow_collected_by_ids")),
+            _optional_list_of_strings(webhook_data.get("flow_collected_by_ids")),
         )
     return (
         flow_filter_matches
@@ -223,9 +238,9 @@ def webhook_matches(
             source_ids, _list_of_strings(webhook_data.get("source_ids"))
         )
         and flow_collected_filter_matches
-        and _selector_matches(
+        and _collection_selector_matches(
             source_collected_by_ids,
-            _list_of_strings(webhook_data.get("source_collected_by_ids")),
+            _optional_list_of_strings(webhook_data.get("source_collected_by_ids")),
         )
     )
 
@@ -308,25 +323,26 @@ def publish_webhook_event(
 def _publish_flow_webhook_event(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     event_type: str,
     flow: FlowRecord,
     event_factory: FlowWebhookEventFactory,
+    event_context: FlowEventContext | None = None,
 ) -> list[WebhookDeliveryRecord]:
     webhooks = active_webhooks_for_event(repository, event_type)
     if not webhooks:
         return []
-    source, collected_by_ids, source_collected_ids = flow_event_context(
-        resource_repository, flow
-    )
+    context = event_context or flow_event_context(resource_repository, flow)
     return publish_webhook_event(
         repository=repository,
         event_type=event_type,
-        event_factory=lambda webhook: event_factory(webhook, collected_by_ids),
+        event_factory=lambda webhook: event_factory(
+            webhook, context.flow_collected_by_ids
+        ),
         flow=flow,
-        source=source,
-        flow_collected_by_ids=collected_by_ids,
-        source_collected_by_ids=source_collected_ids,
+        source=context.source,
+        flow_collected_by_ids=context.flow_collected_by_ids,
+        source_collected_by_ids=context.source_collected_by_ids,
         webhooks=webhooks,
     )
 
@@ -334,7 +350,7 @@ def _publish_flow_webhook_event(
 def publish_flow_event(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     event_type: str,
     flow: FlowRecord,
 ) -> list[WebhookDeliveryRecord]:
@@ -352,8 +368,9 @@ def publish_flow_event(
 def publish_flow_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     flow: FlowRecord,
+    event_context: FlowEventContext,
 ) -> list[WebhookDeliveryRecord]:
     return _publish_flow_webhook_event(
         repository=repository,
@@ -361,13 +378,14 @@ def publish_flow_deleted(
         event_type="flows/deleted",
         flow=flow,
         event_factory=lambda _webhook, _collected_by_ids: {"flow_id": str(flow.id)},
+        event_context=event_context,
     )
 
 
 def publish_segments_added(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     object_storage: ObjectStorage,
     flow: FlowRecord,
     segments: list[SegmentRecord],
@@ -391,7 +409,7 @@ def publish_segments_added(
 def publish_segments_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     flow: FlowRecord,
     segments: list[SegmentRecord],
 ) -> list[WebhookDeliveryRecord]:
@@ -443,8 +461,8 @@ def publish_source_event(
 def publish_source_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
     source: SourceRecord,
+    source_collected_by_ids: list[str],
 ) -> list[WebhookDeliveryRecord]:
     webhooks = active_webhooks_for_event(repository, "sources/deleted")
     if not webhooks:
@@ -456,7 +474,7 @@ def publish_source_deleted(
         flow=None,
         source=source,
         flow_collected_by_ids=[],
-        source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        source_collected_by_ids=source_collected_by_ids,
         webhooks=webhooks,
     )
 
@@ -515,23 +533,23 @@ def segments_added_event(
 
 
 def flow_event_context(
-    repository: WebhookResourceRepository,
+    repository: FlowEventResourceRepository,
     flow: FlowRecord,
-) -> tuple[SourceRecord | None, list[str], list[str]]:
+) -> FlowEventContext:
     source = (
         repository.get_source(flow.source_id) if flow.source_id is not None else None
     )
     parents = repository.list_flows_collecting([flow.id])
     collected_by_ids = collected_by_by_flow_id(parents).get(flow.id, [])
-    return (
-        source,
-        collected_by_ids,
-        source_collected_by_ids(repository, source),
+    return FlowEventContext(
+        source=source,
+        flow_collected_by_ids=collected_by_ids,
+        source_collected_by_ids=source_collected_by_ids(repository, source),
     )
 
 
 def source_collected_by_ids(
-    repository: WebhookResourceRepository,
+    repository: FlowEventResourceRepository,
     source: SourceRecord | None,
 ) -> list[str]:
     if source is None:
@@ -545,7 +563,7 @@ def source_collected_by_ids(
             continue
         for item in flow_collection(parent_flow):
             child_flow_id = collection_child_id(item)
-            if child_flow_id is None or collection_role(item) is None:
+            if child_flow_id is None:
                 continue
             if child_flow_id not in child_ids:
                 continue
@@ -682,9 +700,30 @@ def _list_of_strings(value: object) -> list[str]:
     return []
 
 
+def _optional_list_of_strings(value: object) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return None
+
+
 def _selector_matches(candidates: list[str], required: list[str]) -> bool:
     if not required:
         return True
+    if not candidates:
+        return False
+    candidate_set = set(candidates)
+    return any(item in candidate_set for item in required)
+
+
+def _collection_selector_matches(
+    candidates: list[str], required: list[str] | None
+) -> bool:
+    if required is None:
+        return True
+    if not required:
+        return not candidates
     if not candidates:
         return False
     candidate_set = set(candidates)

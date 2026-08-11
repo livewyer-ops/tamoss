@@ -23,7 +23,7 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
-from tamoss.domain.listings import FlowSortBy
+from tamoss.domain.listings import FlowSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -58,6 +58,7 @@ def list_flows(
     status: contract_models.FlowStatus | None = None,
     frame_width: int | None = None,
     frame_height: int | None = None,
+    collected_by_ids: str | None = None,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     flows: FlowUseCases = Depends(get_flow_use_cases),
@@ -77,6 +78,7 @@ def list_flows(
             "status",
             "frame_width",
             "frame_height",
+            "collected_by_ids",
             "page",
             "limit",
         },
@@ -86,12 +88,15 @@ def list_flows(
         tag_values, tag_exists = parse_tag_filters(request.query_params)
     except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
+    collected_ids, top_level_only = parse_collected_by_ids(collected_by_ids)
     flow_page = flows.list_flows(
         source_id=source_id,
         timerange=timerange,
         format=format,
         profile_id=profile_id,
         status=status,
+        collected_by_ids=collected_ids,
+        top_level_only=top_level_only,
         codec=codec,
         sort_by=sort_by,
         reverse_order=reverse_order,

@@ -39,6 +39,8 @@ class SourceUseCases:
         *,
         label: str | None,
         format: str | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
         sort_by: SourceSortBy,
         reverse_order: bool,
         tag_values: dict[str, set[str]],
@@ -53,8 +55,8 @@ class SourceUseCases:
         return self.repository.list_sources_page(
             label=label,
             format=format,
-            collected_by_ids=None,
-            top_level_only=False,
+            collected_by_ids=collected_by_ids,
+            top_level_only=top_level_only,
             sort_by=sort_by,
             reverse_order=reverse_order,
             tag_values=tag_values,
@@ -97,10 +99,9 @@ class SourceUseCases:
                 if child_flow is None or child_flow.source_id is None:
                     continue
                 role = collection_role(item)
-                if role is None:
-                    continue
-
-                source_item = {"id": str(child_flow.source_id), "role": role}
+                source_item = {"id": str(child_flow.source_id)}
+                if role is not None:
+                    source_item["role"] = role
                 if source_item not in parent_relationship.source_collection:
                     parent_relationship.source_collection.append(source_item)
 

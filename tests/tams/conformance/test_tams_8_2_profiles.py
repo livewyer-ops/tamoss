@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.tams.support import video_flow_payload
+from tests.tams.support import multi_flow_payload, video_flow_payload
 
 pytestmark = pytest.mark.tams_conformance
 
@@ -445,6 +445,52 @@ def test_all_flow_status_values_are_filterable_through_get_and_head(
         assert listed.status_code == 200
         assert [item["id"] for item in listed.json()] == [str(flow_ids[flow_status])]
         assert headed.status_code == 200
+
+
+def test_nonempty_flow_and_source_collected_by_filters_match_parent_ids(
+    client: TestClient,
+) -> None:
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+    child_flow_id = uuid4()
+    child_source_id = uuid4()
+    assert (
+        client.put(
+            f"/flows/{parent_flow_id}",
+            json=multi_flow_payload(parent_flow_id, parent_source_id),
+        ).status_code
+        == 201
+    )
+    assert (
+        client.put(
+            f"/flows/{child_flow_id}",
+            json=video_flow_payload(child_flow_id, child_source_id),
+        ).status_code
+        == 201
+    )
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[{"id": str(child_flow_id), "role": "video"}],
+    )
+    assert collection.status_code == 204
+
+    flows = client.get(
+        "/flows",
+        params={"collected_by_ids": str(parent_flow_id)},
+    )
+    sources = client.get(
+        "/sources",
+        params={"collected_by_ids": str(parent_source_id)},
+    )
+    assert flows.status_code == 200
+    assert [item["id"] for item in flows.json()] == [str(child_flow_id)]
+    assert sources.status_code == 200
+    assert [item["id"] for item in sources.json()] == [str(child_source_id)]
+
+    top_flows = client.get("/flows?collected_by_ids=")
+    top_sources = client.get("/sources?collected_by_ids=")
+    assert [item["id"] for item in top_flows.json()] == [str(parent_flow_id)]
+    assert [item["id"] for item in top_sources.json()] == [str(parent_source_id)]
 
 
 def test_flow_and_source_created_and_updated_sorting_defaults_and_reversal(

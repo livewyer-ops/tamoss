@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+from uuid import UUID, uuid4
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.tams.support import create_video_flow, register_segment
+from tests.tams.support import (
+    create_video_flow,
+    flow_collection_item,
+    multi_flow_payload,
+    register_segment,
+    video_flow_payload,
+    webhook_payload,
+)
 
 pytestmark = pytest.mark.tams_conformance
 
@@ -41,3 +51,257 @@ def test_segments_sort_exclusive_range_before_adjacent_point_and_reverse(
     ]
     assert forward.headers["x-paging-reverse-order"] == "false"
     assert reverse.headers["x-paging-reverse-order"] == "true"
+
+
+def test_flow_collection_webhook_selector_distinguishes_omitted_empty_and_parent(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    child_flow_id, _, _ = create_video_flow(client)
+    top_level_flow_id, _, _ = create_video_flow(client)
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+    parent = client.put(
+        f"/flows/{parent_flow_id}",
+        json=multi_flow_payload(parent_flow_id, parent_source_id),
+    )
+    assert parent.status_code == 201
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[flow_collection_item(child_flow_id)],
+    )
+    assert collection.status_code == 204
+
+    webhook_ids = _register_collection_selector_webhooks(
+        client,
+        events=["flows/updated"],
+        selector_name="flow_collected_by_ids",
+        parent_id=parent_flow_id,
+    )
+
+    child_update = client.put(f"/flows/{child_flow_id}/label", json="child")
+    top_level_update = client.put(f"/flows/{top_level_flow_id}/label", json="top-level")
+    assert child_update.status_code == 204
+    assert top_level_update.status_code == 204
+
+    event_ids = _event_resource_ids_by_webhook(
+        tamoss_app,
+        resource_name="flow",
+    )
+    assert event_ids[webhook_ids["omitted"]] == {
+        str(child_flow_id),
+        str(top_level_flow_id),
+    }
+    assert event_ids[webhook_ids["empty"]] == {str(top_level_flow_id)}
+    assert event_ids[webhook_ids["parent"]] == {str(child_flow_id)}
+
+
+def test_source_collection_webhook_selector_distinguishes_omitted_empty_and_parent(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    child_flow_id = uuid4()
+    child_source_id = uuid4()
+    top_level_flow_id = uuid4()
+    top_level_source_id = uuid4()
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+    for flow_id, source_id, payload_factory in (
+        (child_flow_id, child_source_id, video_flow_payload),
+        (top_level_flow_id, top_level_source_id, video_flow_payload),
+        (parent_flow_id, parent_source_id, multi_flow_payload),
+    ):
+        created = client.put(
+            f"/flows/{flow_id}",
+            json=payload_factory(flow_id, source_id),
+        )
+        assert created.status_code == 201
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[flow_collection_item(child_flow_id)],
+    )
+    assert collection.status_code == 204
+
+    webhook_ids = _register_collection_selector_webhooks(
+        client,
+        events=["sources/updated"],
+        selector_name="source_collected_by_ids",
+        parent_id=parent_source_id,
+    )
+
+    child_update = client.put(f"/sources/{child_source_id}/label", json="child")
+    top_level_update = client.put(
+        f"/sources/{top_level_source_id}/label", json="top-level"
+    )
+    assert child_update.status_code == 204
+    assert top_level_update.status_code == 204
+
+    event_ids = _event_resource_ids_by_webhook(
+        tamoss_app,
+        resource_name="source",
+    )
+    assert event_ids[webhook_ids["omitted"]] == {
+        str(child_source_id),
+        str(top_level_source_id),
+    }
+    assert event_ids[webhook_ids["empty"]] == {str(top_level_source_id)}
+    assert event_ids[webhook_ids["parent"]] == {str(child_source_id)}
+
+
+def test_flow_deletion_uses_pre_delete_collection_selector_context(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    child_flow_id, _, _ = create_video_flow(client)
+    top_level_flow_id, _, _ = create_video_flow(client)
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+    parent = client.put(
+        f"/flows/{parent_flow_id}",
+        json=multi_flow_payload(parent_flow_id, parent_source_id),
+    )
+    assert parent.status_code == 201
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[flow_collection_item(child_flow_id)],
+    )
+    assert collection.status_code == 204
+    register_segment(client, child_flow_id)
+
+    webhook_ids = _register_collection_selector_webhooks(
+        client,
+        events=["flows/deleted"],
+        selector_name="flow_collected_by_ids",
+        parent_id=parent_flow_id,
+    )
+
+    assert client.delete(f"/flows/{child_flow_id}").status_code == 202
+    assert (
+        tamoss_app.state.tamoss_use_cases.deletion.process_pending_delete_requests()
+        == 1
+    )
+    assert client.delete(f"/flows/{top_level_flow_id}").status_code == 204
+
+    event_ids = _deleted_event_resource_ids_by_webhook(
+        tamoss_app,
+        id_name="flow_id",
+    )
+    assert event_ids[webhook_ids["omitted"]] == {
+        str(child_flow_id),
+        str(top_level_flow_id),
+    }
+    assert event_ids[webhook_ids["empty"]] == {str(top_level_flow_id)}
+    assert event_ids[webhook_ids["parent"]] == {str(child_flow_id)}
+
+
+def test_source_deletion_uses_context_from_its_deleted_flow(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    child_flow_id, child_source_id, _ = create_video_flow(client)
+    top_level_flow_id, top_level_source_id, _ = create_video_flow(client)
+    parent_flow_id = uuid4()
+    parent_source_id = uuid4()
+    parent = client.put(
+        f"/flows/{parent_flow_id}",
+        json=multi_flow_payload(parent_flow_id, parent_source_id),
+    )
+    assert parent.status_code == 201
+    collection = client.put(
+        f"/flows/{parent_flow_id}/flow_collection",
+        json=[flow_collection_item(child_flow_id)],
+    )
+    assert collection.status_code == 204
+
+    webhook_ids = _register_collection_selector_webhooks(
+        client,
+        events=["sources/deleted"],
+        selector_name="source_collected_by_ids",
+        parent_id=parent_source_id,
+    )
+
+    assert client.delete(f"/flows/{child_flow_id}").status_code == 204
+    assert client.delete(f"/flows/{top_level_flow_id}").status_code == 204
+    assert client.get(f"/sources/{child_source_id}").status_code == 404
+    assert client.get(f"/sources/{top_level_source_id}").status_code == 404
+
+    event_ids = _deleted_event_resource_ids_by_webhook(
+        tamoss_app,
+        id_name="source_id",
+    )
+    assert event_ids[webhook_ids["omitted"]] == {
+        str(child_source_id),
+        str(top_level_source_id),
+    }
+    assert event_ids[webhook_ids["empty"]] == {str(top_level_source_id)}
+    assert event_ids[webhook_ids["parent"]] == {str(child_source_id)}
+
+
+def _register_collection_selector_webhooks(
+    client: TestClient,
+    *,
+    events: list[str],
+    selector_name: str,
+    parent_id: UUID,
+) -> dict[str, UUID]:
+    selectors: tuple[tuple[str, list[str] | None], ...] = (
+        ("omitted", None),
+        ("empty", []),
+        ("parent", [str(parent_id)]),
+    )
+    webhook_ids: dict[str, UUID] = {}
+    for mode, selector in selectors:
+        body = webhook_payload(
+            url=f"https://{mode}.example.test/webhook",
+            events=events,
+        )
+        if selector is not None:
+            body[selector_name] = selector
+        created = client.post("/service/webhooks", json=body)
+        assert created.status_code == 201
+        payload = created.json()
+        if selector is None:
+            assert selector_name not in payload
+        else:
+            assert payload[selector_name] == selector
+        webhook_id = UUID(payload["id"])
+        stored = client.get(f"/service/webhooks/{webhook_id}")
+        assert stored.status_code == 200
+        if selector is None:
+            assert selector_name not in stored.json()
+        else:
+            assert stored.json()[selector_name] == selector
+        webhook_ids[mode] = webhook_id
+    return webhook_ids
+
+
+def _event_resource_ids_by_webhook(
+    tamoss_app: FastAPI,
+    *,
+    resource_name: str,
+) -> dict[UUID, set[str]]:
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    return {
+        webhook_id: {
+            delivery.payload["event"][resource_name]["id"]
+            for delivery in deliveries
+            if delivery.webhook_id == webhook_id
+        }
+        for webhook_id in {delivery.webhook_id for delivery in deliveries}
+    }
+
+
+def _deleted_event_resource_ids_by_webhook(
+    tamoss_app: FastAPI,
+    *,
+    id_name: str,
+) -> dict[UUID, set[str]]:
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    return {
+        webhook_id: {
+            delivery.payload["event"][id_name]
+            for delivery in deliveries
+            if delivery.webhook_id == webhook_id
+        }
+        for webhook_id in {delivery.webhook_id for delivery in deliveries}
+    }

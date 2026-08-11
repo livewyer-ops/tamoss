@@ -130,6 +130,7 @@ def delete_orphan_source(
     repository: DeletionRepository,
     webhook_repository: WebhookEventRepository,
     source_id: UUID | None,
+    source_collected_by_ids: list[str],
 ) -> None:
     if source_id is None:
         return
@@ -140,8 +141,8 @@ def delete_orphan_source(
     if source is not None:
         webhooking.publish_source_deleted(
             repository=webhook_repository,
-            resource_repository=repository,
             source=source,
+            source_collected_by_ids=source_collected_by_ids,
         )
 
 
@@ -263,17 +264,20 @@ def _process_flow_delete_request(
     flow = repository.get_flow(request.flow_id)
     if flow is None:
         return None
+    event_context = webhooking.flow_event_context(repository, flow)
     unlink_flow_collection_references(repository, flow)
     repository.delete_flow(request.flow_id)
     webhooking.publish_flow_deleted(
         repository=webhook_repository,
         resource_repository=repository,
         flow=flow,
+        event_context=event_context,
     )
     delete_orphan_source(
         repository=repository,
         webhook_repository=webhook_repository,
         source_id=flow.source_id,
+        source_collected_by_ids=event_context.source_collected_by_ids,
     )
     return None
 

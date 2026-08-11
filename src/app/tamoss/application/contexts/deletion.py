@@ -89,17 +89,20 @@ class DeletionUseCases:
         timerange_to_delete = self.repository.segment_delete_timerange(delete_filter)
         if timerange_to_delete == "()":
             with self.repository.unit_of_work():
+                event_context = webhooking.flow_event_context(self.repository, flow)
                 unlink_flow_collection_references(self.repository, flow)
                 self.repository.delete_flow(flow_id)
                 webhooking.publish_flow_deleted(
                     repository=self.webhook_repository,
                     resource_repository=self.repository,
                     flow=flow,
+                    event_context=event_context,
                 )
                 deletion_processor.delete_orphan_source(
                     repository=self.repository,
                     webhook_repository=self.webhook_repository,
                     source_id=flow.source_id,
+                    source_collected_by_ids=event_context.source_collected_by_ids,
                 )
             return None
 
