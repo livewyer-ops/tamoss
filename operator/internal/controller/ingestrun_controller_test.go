@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -67,6 +68,9 @@ func TestDesiredIngestJobUsesFixedSecureTemplate(t *testing.T) {
 	if !slices.Contains(container.Args, "none") || slices.Contains(container.Args, "never") {
 		t.Fatalf("args do not use Tamsin's supported non-interactive progress mode: %#v", container.Args)
 	}
+	if slices.Contains(container.Args, "--insecure-skip-verify") {
+		t.Fatalf("non-local profile disables TLS verification: %#v", container.Args)
+	}
 	for _, forbidden := range []string{"--image", "--command", "--env", "--service-account"} {
 		if slices.Contains(container.Args, forbidden) {
 			t.Fatalf("unsafe user-controlled flag %q reached the Job", forbidden)
@@ -83,6 +87,25 @@ func TestDesiredIngestJobUsesFixedSecureTemplate(t *testing.T) {
 	}
 	if got := tokenEnv.ValueFrom.SecretKeyRef.Name; got != "example-api-token" {
 		t.Fatalf("token Secret = %q, want example-api-token", got)
+	}
+}
+
+func TestDesiredIngestJobAcceptsLocalKindSelfSignedTLS(t *testing.T) {
+	run := testIngestRun()
+	tamoss := testIngestTamoss()
+	tamoss.Spec.Profile = tamossv1alpha1.TamossProfileLocalKind
+	job := desiredIngestJob(
+		run,
+		defaultIngestRunSpec(run.Spec),
+		tamoss,
+		testIngestEndpoint,
+		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64),
+		"",
+		[]string{"s3://staging/run/input.mp4"},
+	)
+
+	if !slices.Contains(job.Spec.Template.Spec.Containers[0].Args, "--insecure-skip-verify") {
+		t.Fatalf("local-kind args do not accept the disposable self-signed endpoint: %#v", job.Spec.Template.Spec.Containers[0].Args)
 	}
 }
 
@@ -525,7 +548,7 @@ func TestIngestRunResolvesApprovedStorageBackendDestination(t *testing.T) {
 	scheme := ingestRunTestScheme(t)
 	run := testIngestRun()
 	storageBackend := testIngestStorageBackend()
-	run.Spec.Options.StorageBackendRef.Name = storageBackend.Name
+	run.Spec.Options.StorageBackendRef = &tamossv1alpha1.IngestStorageBackendReference{Name: storageBackend.Name}
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}, &tamossv1alpha1.StorageBackend{}, &batchv1.Job{}).
@@ -562,7 +585,7 @@ func TestIngestRunRejectsStorageBackendFromAnotherTamoss(t *testing.T) {
 	run := testIngestRun()
 	storageBackend := testIngestStorageBackend()
 	storageBackend.Spec.TamossRef.Name = "other-instance"
-	run.Spec.Options.StorageBackendRef.Name = storageBackend.Name
+	run.Spec.Options.StorageBackendRef = &tamossv1alpha1.IngestStorageBackendReference{Name: storageBackend.Name}
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}, &tamossv1alpha1.StorageBackend{}).
@@ -620,7 +643,7 @@ func TestIngestPhaseRecognisesPartialBatchExit(t *testing.T) {
 	}
 	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, pod).Build()
 
-	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult())
+	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
 	if err != nil {
 		t.Fatalf("resolve Job phase: %v", err)
 	}
@@ -640,7 +663,7 @@ func TestIngestPhaseWaitsForOwnedTerminalPod(t *testing.T) {
 	}
 	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 
-	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult())
+	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
 	if err != nil {
 		t.Fatalf("resolve phase before Pod observation: %v", err)
 	}
@@ -664,7 +687,7 @@ func TestIngestPhaseWaitsForOwnedTerminalPod(t *testing.T) {
 	if err := reader.Create(ctx, pod); err != nil {
 		t.Fatalf("create terminal Pod: %v", err)
 	}
-	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult())
+	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
 	if err != nil {
 		t.Fatalf("resolve phase after Pod observation: %v", err)
 	}
@@ -682,7 +705,7 @@ func TestIngestPhasePropagatesTerminalPodListErrors(t *testing.T) {
 	}
 	reader := failingPodListReader{Reader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()}
 
-	_, _, _, _, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult())
+	_, _, _, _, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
 	if err == nil || !strings.Contains(err.Error(), "list terminal Pods") {
 		t.Fatalf("expected Pod list error, got %v", err)
 	}
@@ -699,15 +722,31 @@ func TestIngestPhaseWaitsForDigestVerifiedResult(t *testing.T) {
 	}
 	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 
-	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{})
+	// A recorded result must still carry a valid digest before the run is
+	// believed, so a collector cannot publish a half-written artifact and have
+	// the run claim success on it.
+	unverified := verifiedIngestResult()
+	unverified.Verified = false
+	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, unverified, time.Now(), nil)
 	if err != nil {
-		t.Fatalf("resolve Job phase without result: %v", err)
+		t.Fatalf("resolve Job phase with an unverified result: %v", err)
 	}
 	if phase != tamossv1alpha1.IngestRunPhaseRunning || reason != "ResultVerificationPending" || progressing {
-		t.Fatalf("without result got phase=%q reason=%q progressing=%t", phase, reason, progressing)
+		t.Fatalf("with an unverified result got phase=%q reason=%q progressing=%t", phase, reason, progressing)
 	}
 
-	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult())
+	// Tamsin 0.1.0-rc.2 publishes no digest for its journal, so a run that
+	// records no durable result succeeds on the Job's own terminal state
+	// rather than waiting for evidence that never arrives.
+	phase, reason, _, _, err = ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{}, time.Now(), nil)
+	if err != nil {
+		t.Fatalf("resolve Job phase without a recorded result: %v", err)
+	}
+	if phase != tamossv1alpha1.IngestRunPhaseSucceeded || reason != "IngestSucceeded" {
+		t.Fatalf("without a recorded result got phase=%q reason=%q, want Succeeded", phase, reason)
+	}
+
+	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
 	if err != nil {
 		t.Fatalf("resolve Job phase with result: %v", err)
 	}

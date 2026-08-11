@@ -18,6 +18,7 @@ const ObjectsPage = lazy(() => import("@/pages/ObjectsPage"));
 const ObjectDetailPage = lazy(() => import("@/pages/ObjectDetailPage"));
 const PlaybackPage = lazy(() => import("@/pages/PlaybackPage"));
 const IngestPage = lazy(() => import("@/pages/IngestPage"));
+const IngestRunDetailPage = lazy(() => import("@/pages/IngestRunDetailPage"));
 const DeletionsPage = lazy(() => import("@/pages/DeletionsPage"));
 const WebhooksPage = lazy(() => import("@/pages/WebhooksPage"));
 const SystemPage = lazy(() => import("@/pages/SystemPage"));
@@ -52,6 +53,10 @@ export default function App() {
                   />
                   <Route path="playback" element={<PlaybackPage />} />
                   <Route path="ingest" element={<IngestPage />} />
+                  <Route
+                    path="ingest/:runName"
+                    element={<IngestRunDetailPage />}
+                  />
                   <Route path="deletions" element={<DeletionsPage />} />
                   <Route path="webhooks" element={<WebhooksPage />} />
                   <Route path="system" element={<SystemPage />} />

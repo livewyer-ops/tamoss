@@ -208,6 +208,37 @@ func TestForwardAuthAuthenticatorBoundsGroupHeader(t *testing.T) {
 	}
 }
 
+func TestForwardAuthAuthenticatorRejectsRepeatedHeaders(t *testing.T) {
+	t.Parallel()
+	authenticator := newTestForwardAuthAuthenticator(t)
+	tests := []struct {
+		header string
+		second string
+	}{
+		// Repeating the valid proof must fail too: the first value is never
+		// trusted in isolation.
+		{header: ForwardAuthSecretHeader, second: testForwardAuthSecret},
+		{header: ForwardAuthSecretHeader, second: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+		{header: ForwardAuthSubjectHeader, second: "user-attacker"},
+		{header: ForwardAuthUsernameHeader, second: "attacker"},
+		{header: ForwardAuthGroupsHeader, second: "tamoss-admins"},
+	}
+	for _, test := range tests {
+		t.Run(test.header+"/"+test.second, func(t *testing.T) {
+			t.Parallel()
+			request := httptest.NewRequest(http.MethodGet, RuntimePath, nil)
+			request.Header.Set(ForwardAuthSecretHeader, testForwardAuthSecret)
+			request.Header.Set(ForwardAuthSubjectHeader, "user-123")
+			request.Header.Set(ForwardAuthUsernameHeader, "alice")
+			request.Header.Set(ForwardAuthGroupsHeader, "tamoss-viewers")
+			request.Header.Add(test.header, test.second)
+			if _, err := authenticator.Authenticate(request); !errors.Is(err, ErrUnauthenticated) {
+				t.Fatalf("Authenticate() error = %v, want %v", err, ErrUnauthenticated)
+			}
+		})
+	}
+}
+
 func TestForwardAuthAuthenticatorRejectsMalformedGroupHeader(t *testing.T) {
 	t.Parallel()
 	authenticator := newTestForwardAuthAuthenticator(t)

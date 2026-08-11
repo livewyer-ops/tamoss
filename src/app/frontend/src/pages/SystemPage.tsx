@@ -45,15 +45,14 @@ function conditionDetails(conditions: RuntimeResourceCondition[]) {
     <div key={`${condition.type}-${condition.status}`}>
       <strong>{condition.type}</strong>
       <div className={surfaceStyles.secondary}>
-        {[condition.reason, condition.message].filter(Boolean).join(": ") ||
-          condition.status}
+        {condition.reason || condition.status}
       </div>
     </div>
   ));
 }
 
-function diagnosticDetails(reason?: string, message?: string) {
-  return [reason, message].filter(Boolean).join(": ") || "-";
+function diagnosticDetails(reason?: string) {
+  return reason || "-";
 }
 
 function servicePorts(ports: RuntimeServicePort[]) {
@@ -210,12 +209,7 @@ export default function SystemPage() {
                             {condition.status}
                           </StatusBadge>
                         </td>
-                        <td>
-                          {diagnosticDetails(
-                            condition.reason,
-                            condition.message,
-                          )}
-                        </td>
+                        <td>{diagnosticDetails(condition.reason)}</td>
                         <td>
                           {formatRelativeTime(condition.lastTransitionTime)}
                         </td>
@@ -386,7 +380,7 @@ export default function SystemPage() {
                         <td>{pod.ready ? "Yes" : "No"}</td>
                         <td>{pod.restarts}</td>
                         <td>{formatRelativeTime(pod.startedAt)}</td>
-                        <td>{diagnosticDetails(pod.reason, pod.message)}</td>
+                        <td>{diagnosticDetails(pod.reason)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -455,7 +449,7 @@ export default function SystemPage() {
                       <tr>
                         <th>Reason</th>
                         <th>Regarding</th>
-                        <th>Message</th>
+                        <th>Count</th>
                         <th>Last seen</th>
                       </tr>
                     </thead>
@@ -476,7 +470,7 @@ export default function SystemPage() {
                           <td>
                             {event.regarding.kind}/{event.regarding.name}
                           </td>
-                          <td>{event.message || "-"}</td>
+                          <td>{event.count}</td>
                           <td>{formatRelativeTime(event.lastObservedAt)}</td>
                         </tr>
                       ))}

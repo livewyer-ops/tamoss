@@ -12,6 +12,7 @@
     "build": "tsc -b && vite build && node scripts/check-build-budget.mjs",
     "preview": "vite preview",
     "api:types": "node scripts/generate-openapi-types.mjs",
+    "api:types:check": "node scripts/generate-openapi-types.mjs --check",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "vitest run",
@@ -19,7 +20,7 @@
     "test:entrypoint": "sh tests/docker-entrypoint.test.sh",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "biome check .",
+    "lint": "npm run api:types:check && biome check .",
     "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "dependencies": {

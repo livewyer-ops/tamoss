@@ -37,7 +37,9 @@ const (
 
 	// tamossAppName is the default app.kubernetes.io/name label value for
 	// resources the operator manages.
-	tamossAppName = "tamoss"
+	tamossAppName     = "tamoss"
+	appComponentLabel = "app.kubernetes.io/component"
+	componentAPI      = "api"
 
 	defaultAuthentikProbeInterval         = 30 * time.Second
 	defaultAuthentikRetryGracePeriod      = 10 * time.Minute
@@ -499,8 +501,8 @@ func gateSchemaDependentWorkloads(objects []client.Object, schemaReady bool) []c
 			filtered = append(filtered, obj)
 			continue
 		}
-		component := deployment.Labels["app.kubernetes.io/component"]
-		if component == "api" || component == "worker" {
+		component := deployment.Labels[appComponentLabel]
+		if component == componentAPI || component == "worker" {
 			continue
 		}
 		filtered = append(filtered, obj)

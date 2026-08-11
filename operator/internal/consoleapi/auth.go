@@ -1,7 +1,6 @@
 package consoleapi
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -78,8 +77,6 @@ type developmentAnonymousAuthenticator struct{}
 
 type rejectAuthenticator struct{}
 
-type identityContextKey struct{}
-
 func NewForwardAuthAuthenticator(config ForwardAuthConfig) (Authenticator, error) {
 	secret := []byte(strings.TrimSpace(string(config.SharedSecret)))
 	if len(secret) < minForwardAuthSecretLength {
@@ -126,27 +123,42 @@ func ParseGroupRoleBindingsJSON(value []byte) (map[string][]Role, error) {
 	return validateGroupRoleBindings(bindings)
 }
 
-func IdentityFromContext(ctx context.Context) (Identity, bool) {
-	identity, ok := ctx.Value(identityContextKey{}).(Identity)
-	return identity, ok
-}
-
 func (a *forwardAuthAuthenticator) Authenticate(request *http.Request) (Identity, error) {
-	suppliedHash := sha256.Sum256([]byte(request.Header.Get(ForwardAuthSecretHeader)))
+	// A forward-auth header the gateway sent more than once makes the proof
+	// chain ambiguous, so the whole request is refused rather than resolved to
+	// its first value. This matches how the command API treats duplicated
+	// Origin and X-Forwarded-Proto headers.
+	suppliedSecret, single := singleForwardAuthHeader(request.Header, ForwardAuthSecretHeader)
+	if !single {
+		return Identity{}, ErrUnauthenticated
+	}
+	suppliedHash := sha256.Sum256([]byte(suppliedSecret))
 	if subtle.ConstantTimeCompare(suppliedHash[:], a.sharedSecretHash[:]) != 1 {
 		return Identity{}, ErrUnauthenticated
 	}
 
-	subject := strings.TrimSpace(request.Header.Get(ForwardAuthSubjectHeader))
+	forwardedSubject, single := singleForwardAuthHeader(request.Header, ForwardAuthSubjectHeader)
+	if !single {
+		return Identity{}, ErrUnauthenticated
+	}
+	subject := strings.TrimSpace(forwardedSubject)
 	if !validForwardedIdentityValue(subject) {
 		return Identity{}, ErrUnauthenticated
 	}
-	username := strings.TrimSpace(request.Header.Get(ForwardAuthUsernameHeader))
+	forwardedUsername, single := singleForwardAuthHeader(request.Header, ForwardAuthUsernameHeader)
+	if !single {
+		return Identity{}, ErrUnauthenticated
+	}
+	username := strings.TrimSpace(forwardedUsername)
 	if username != "" && !validForwardedIdentityValue(username) {
 		return Identity{}, ErrUnauthenticated
 	}
 
-	groups, ok := forwardedGroups(request.Header.Get(ForwardAuthGroupsHeader))
+	forwardedGroupList, single := singleForwardAuthHeader(request.Header, ForwardAuthGroupsHeader)
+	if !single {
+		return Identity{}, ErrUnauthenticated
+	}
+	groups, ok := forwardedGroups(forwardedGroupList)
 	if !ok {
 		return Identity{}, ErrForbidden
 	}
@@ -195,28 +207,43 @@ func validateGroupRoleBindings(bindings map[string][]Role) (map[string][]Role, e
 		return nil, fmt.Errorf("at least one Console group-role binding is required")
 	}
 	if len(bindings) > maxForwardAuthGroups {
-		return nil, fmt.Errorf("Console group-role bindings exceed the %d-group limit", maxForwardAuthGroups)
+		return nil, fmt.Errorf("console group-role bindings exceed the %d-group limit", maxForwardAuthGroups)
 	}
 	validated := make(map[string][]Role, len(bindings))
 	for group, roles := range bindings {
 		if !validForwardedIdentityValue(group) || group != strings.TrimSpace(group) || strings.Contains(group, "|") {
-			return nil, fmt.Errorf("Console group-role binding contains an invalid group name")
+			return nil, fmt.Errorf("console group-role binding contains an invalid group name")
 		}
 		if len(roles) == 0 {
-			return nil, fmt.Errorf("Console group %q has no roles", group)
+			return nil, fmt.Errorf("console group %q has no roles", group)
 		}
 		seen := make(map[Role]struct{}, len(roles))
 		for _, role := range roles {
 			switch role {
 			case RoleViewer, RoleOperator, RoleIngestRunner, roleAdminAlias:
 			default:
-				return nil, fmt.Errorf("Console group %q has unsupported role %q", group, role)
+				return nil, fmt.Errorf("console group %q has unsupported role %q", group, role)
 			}
 			seen[role] = struct{}{}
 		}
 		validated[group] = orderedConfiguredRoles(seen)
 	}
 	return validated, nil
+}
+
+// singleForwardAuthHeader returns the only value of a forward-auth header. An
+// absent header yields an empty value; a repeated header is reported as not
+// single so the caller can reject the request.
+func singleForwardAuthHeader(header http.Header, name string) (string, bool) {
+	values := header.Values(name)
+	switch len(values) {
+	case 0:
+		return "", true
+	case 1:
+		return values[0], true
+	default:
+		return "", false
+	}
 }
 
 func forwardedGroups(value string) ([]string, bool) {

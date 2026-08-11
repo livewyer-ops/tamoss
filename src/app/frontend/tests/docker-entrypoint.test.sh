@@ -46,6 +46,9 @@ run_entrypoint "none" "http://tamoss-console:8081"
 grep -q '"controlApiUrl":"/ui-api/v1"' "$tmp_dir/runtime-config.js"
 grep -q 'location /ui-api/' "$tmp_dir/runtime.conf"
 grep -q 'proxy_pass http://tamoss-console:8081;' "$tmp_dir/runtime.conf"
+grep -q 'client_max_body_size 8k;' "$tmp_dir/runtime.conf"
+test "$(grep -c 'proxy_set_header Host \$http_host;' "$tmp_dir/runtime.conf")" -eq 2
+grep -q 'proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;' "$tmp_dir/runtime.conf"
 grep -q 'proxy_buffering off;' "$tmp_dir/runtime.conf"
 grep -q 'proxy_read_timeout 1h;' "$tmp_dir/runtime.conf"
 
@@ -69,6 +72,7 @@ run_entrypoint \
   "$tmp_dir/api-forward-auth-proof" \
   "$tmp_dir/console-forward-auth-proof"
 grep -q 'location = /_tamoss/auth' "$tmp_dir/runtime.conf"
+test "$(grep -c 'proxy_set_header Host \$http_host;' "$tmp_dir/runtime.conf")" -eq 3
 if [ "$(grep -c 'auth_request /_tamoss/auth;' "$tmp_dir/runtime.conf")" -ne 2 ]; then
   echo "both API proxy locations must require the Authentik subrequest" >&2
   exit 1

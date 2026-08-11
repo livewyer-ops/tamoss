@@ -9,14 +9,37 @@ vi.mock("@/config", () => ({
 }));
 
 const eventSource = vi.fn();
+let runtimeListener: ((event: MessageEvent<string>) => void) | undefined;
 
 class FakeEventSource {
   close = vi.fn();
-  addEventListener = vi.fn();
+  addEventListener = vi.fn(
+    (type: string, listener: (event: MessageEvent<string>) => void) => {
+      if (type === "runtime") runtimeListener = listener;
+    },
+  );
 
   constructor(url: string) {
     eventSource(url);
   }
+}
+
+function CollectionsProbe() {
+  const runtime = useRuntime();
+  if (!runtime.data) return <span>loading</span>;
+  return (
+    <span>
+      {[
+        runtime.data.instance.conditions.length,
+        runtime.data.workloads.length,
+        runtime.data.services.length,
+        runtime.data.endpointSlices.length,
+        runtime.data.pods.length,
+        runtime.data.jobs.length,
+        runtime.data.events.length,
+      ].join("/")}
+    </span>
+  );
 }
 
 function Probe() {
@@ -41,6 +64,7 @@ function renderProbe() {
 describe("runtime stream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runtimeListener = undefined;
     vi.stubGlobal("EventSource", FakeEventSource);
   });
 
@@ -90,6 +114,54 @@ describe("runtime stream", () => {
       expect(eventSource).toHaveBeenCalledWith(
         expect.stringContaining("/ui-api/v1/runtime/events"),
       ),
+    );
+  });
+
+  it("normalizes null collections from snapshots and stream updates", async () => {
+    const snapshot = {
+      schemaVersion: "1.0",
+      observedAt: "2026-08-09T10:00:00Z",
+      stale: false,
+      instance: {
+        name: "tamoss-kind",
+        namespace: "tamoss",
+        uid: "instance-uid",
+        generation: 1,
+        observedGeneration: 1,
+        phase: "Ready",
+        conditions: null,
+      },
+      workloads: null,
+      services: null,
+      endpointSlices: null,
+      pods: null,
+      jobs: null,
+      events: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(snapshot),
+      }),
+    );
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <CollectionsProbe />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("0/0/0/0/0/0/0")).toBeInTheDocument();
+    await waitFor(() => expect(runtimeListener).toBeDefined());
+    runtimeListener?.(
+      new MessageEvent("runtime", { data: JSON.stringify(snapshot) }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("0/0/0/0/0/0/0")).toBeInTheDocument(),
     );
   });
 });

@@ -137,11 +137,21 @@ func setupControllers(
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
+	ingestLogReader, err := controller.NewIngestPodLogReader(mgr.GetConfig())
+	if err != nil {
+		return err
+	}
 	if err := (&controller.IngestRunReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		WatchNamespaces: watchScope,
 		TamsinImage:     strings.TrimSpace(os.Getenv("TAMOSS_TAMSIN_IMAGE")),
+		APIReader:       mgr.GetAPIReader(),
+		// Both resolvers read only the target Tamoss: inputs come from the
+		// owner-approved list, and the endpoint from what reconcile published.
+		InputResolver:    controller.ApprovedInputResolver{Client: mgr.GetClient()},
+		EndpointResolver: controller.PublishedEndpointResolver{Client: mgr.GetClient()},
+		PodLogs:          ingestLogReader,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}

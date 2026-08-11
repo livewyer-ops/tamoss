@@ -116,8 +116,11 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
 
     context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
     page = context.new_page()
+    page_errors: list[str] = []
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
     try:
         _login_through_ui_ingress(page, e2e_target)
+        page.get_by_role("heading", name="Overview", exact=True).wait_for()
         runtime_config = page.evaluate("() => window.__TAMOSS_CONFIG__")
         assert runtime_config == {"controlApiUrl": "/ui-api/v1"}
 
@@ -127,6 +130,27 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
                     headers: {Accept: 'application/json'},
                 });
                 return {status: response.status, body: await response.json()};
+            }"""
+        )
+
+        runtime_collections = page.evaluate(
+            """async () => {
+                const response = await fetch('/ui-api/v1/runtime', {
+                    headers: {Accept: 'application/json'},
+                });
+                const body = await response.json();
+                return {
+                    status: response.status,
+                    arrays: [
+                        body.instance?.conditions,
+                        body.workloads,
+                        body.services,
+                        body.endpointSlices,
+                        body.pods,
+                        body.jobs,
+                        body.events,
+                    ].map(Array.isArray),
+                };
             }"""
         )
         proxied = page.evaluate(
@@ -147,6 +171,8 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     assert proxied["status"] == 200
     assert deletion_status["status"] == 200
     assert isinstance(deletion_status["body"], list)
+    assert runtime_collections == {"status": 200, "arrays": [True] * 7}
+    assert page_errors == []
     assert "application/json" in proxied["contentType"]
     proxied_service = json.loads(proxied["body"])
     assert proxied_service["api_version"] == "8.2"

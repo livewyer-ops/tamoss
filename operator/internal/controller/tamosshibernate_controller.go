@@ -535,7 +535,7 @@ func hibernateSecretKey(secretName, key string) *cnpgv1.SecretKeySelector {
 
 func (r *TamossHibernateReconciler) quiesceTamossWorkloads(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
 	quiesced := true
-	for _, component := range []string{"worker", "api", "ui", "console"} {
+	for _, component := range []string{"worker", componentAPI, "ui", "console"} {
 		autoscaler := &autoscalingv2.HorizontalPodAutoscaler{}
 		key := types.NamespacedName{Name: tamoss.ResourceName(component), Namespace: tamoss.Namespace}
 		if err := r.Client.Get(ctx, key, autoscaler); err == nil {
@@ -635,7 +635,7 @@ func (r *TamossHibernateReconciler) ensureHibernateCNPGBackup(ctx context.Contex
 				Labels: map[string]string{
 					"app.kubernetes.io/name":                    tamossAppName,
 					appInstanceLabel:                            tamoss.Name,
-					"app.kubernetes.io/component":               "hibernate",
+					appComponentLabel:                           "hibernate",
 					"app.kubernetes.io/managed-by":              "tamoss-operator",
 					"tamoss.livewyer.io/tamosshibernate":        hibernate.Name,
 					"tamoss.livewyer.io/tamosshibernate-driver": string(hibernateDriver(hibernate)),

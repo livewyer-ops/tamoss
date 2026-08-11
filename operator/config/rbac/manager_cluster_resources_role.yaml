@@ -20,6 +20,15 @@ rules:
       - patch
       - update
       - watch
+  # The ingest collector reads a finished Tamsin Pod's event stream once, in
+  # whichever namespace the IngestRun lives. Read-only; the Console service
+  # account deliberately never receives this.
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
   - apiGroups:
       - apps
     resources:

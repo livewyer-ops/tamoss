@@ -4,18 +4,24 @@
 
 - The generated TAMS client owns media-store protocol access.
 - The same-origin Console API owns namespace-scoped Kubernetes runtime access.
-  Its current read-only runtime surface authenticates requests forwarded by
-  the UI proxy and requires a viewer-capable operator-managed role.
+  Runtime and durable `IngestRun` reads require a viewer-capable session;
+  one-way cancellation additionally requires the operator role, an exact UID
+  and revision, and same-origin validation.
 - The browser never receives Kubernetes credentials or submits arbitrary Job specifications.
 - The browser never receives an API or forwarding credential. In production,
   nginx authenticates `/api/` and `/ui-api/` with an internal Authentik
   `auth_request`, discards all browser request headers, and forwards only an
   allow-listed protocol and identity set with its mounted proof.
 - The `/api/` proxy permits only `GET`, `HEAD`, and `OPTIONS`. TAMS mutations
-  require a future end-user-scoped path; typed operational commands will use
-  the Console API after its command contract and audit trail are implemented.
-- `player/MediaPreview.tsx` is the lazy integration boundary for Omakase. Keep it dependency-free until a security-reviewed Omakase core and TAMS adapter combination is available.
-- Runtime reports Tamsin Jobs as ephemeral execution telemetry. Durable run history and create, cancel, and retry controls are gated on a versioned `IngestRun` command and event contract.
+  require a future end-user-scoped path; typed operational commands use the
+  Console API and must declare session capabilities and produce audit records.
+- `player/MediaPreview.tsx` is the lazy integration boundary for the exact-pinned
+  Omakase core. Its descriptor, URL policy, manifest compiler, DOM fallback,
+  dependency budget, and cleanup rules stay independent of catalog routes.
+- Runtime reports Tamsin Jobs as ephemeral execution telemetry. `/ingest` uses
+  cursor-paginated `IngestRun` resources for durable history and exposes only
+  the currently supported cancel command. Create and retry stay absent until
+  the Tamsin image, resolvers, collector, and artifact contract are complete.
 
 ## Proxy authentication
 

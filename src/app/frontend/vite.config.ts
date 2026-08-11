@@ -45,7 +45,7 @@ export default defineConfig({
       },
       "/ui-api": {
         target: consoleTarget,
-        changeOrigin: true,
+        changeOrigin: false,
       },
     },
   },

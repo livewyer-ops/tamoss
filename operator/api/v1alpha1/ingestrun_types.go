@@ -76,8 +76,10 @@ type IngestRunReference struct {
 
 type IngestRunOptions struct {
 	// StorageBackendRef selects a Ready, media-purpose StorageBackend belonging
-	// to spec.tamossRef. Empty uses the TAMS instance's default backend.
-	StorageBackendRef IngestStorageBackendReference `json:"storageBackendRef,omitempty"`
+	// to spec.tamossRef. Unset uses the TAMS instance's default backend. This is
+	// a pointer because encoding/json never omits a struct value, and an omitted
+	// reference must not serialise as an empty name that fails admission.
+	StorageBackendRef *IngestStorageBackendReference `json:"storageBackendRef,omitempty"`
 
 	// Verify downloads and verifies uploaded Object bytes.
 	//+kubebuilder:default=true
@@ -105,7 +107,7 @@ type IngestRunOptions struct {
 // +kubebuilder:validation:XValidation:rule="self.inputRef == oldSelf.inputRef",message="spec.inputRef is immutable"
 // +kubebuilder:validation:XValidation:rule="self.profile == oldSelf.profile",message="spec.profile is immutable"
 // +kubebuilder:validation:XValidation:rule="self.sizeClass == oldSelf.sizeClass",message="spec.sizeClass is immutable"
-// +kubebuilder:validation:XValidation:rule="self.options == oldSelf.options",message="spec.options is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.options) == has(oldSelf.options) && (!has(self.options) || self.options == oldSelf.options)",message="spec.options is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.credentialProfileRef) == has(oldSelf.credentialProfileRef) && (!has(self.credentialProfileRef) || self.credentialProfileRef == oldSelf.credentialProfileRef)",message="spec.credentialProfileRef is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.retryOf) == has(oldSelf.retryOf) && (!has(self.retryOf) || self.retryOf == oldSelf.retryOf)",message="spec.retryOf is immutable"
 // +kubebuilder:validation:XValidation:rule="oldSelf.desiredState != 'Cancelled' || self.desiredState == 'Cancelled'",message="a cancelled run cannot be restarted; create a retry instead"

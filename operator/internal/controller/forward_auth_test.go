@@ -174,10 +174,11 @@ func forwardAuthTamoss() *tamossv1alpha1.Tamoss {
 }
 
 func forwardAuthObjects(tamoss *tamossv1alpha1.Tamoss) []client.Object {
-	objects := []client.Object{&corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+	objects := make([]client.Object, 0, 4)
+	objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name:      workload_renderer.ForwardAuthProofSecretName(tamoss),
 		Namespace: tamoss.Namespace,
-	}}}
+	}})
 	for _, component := range []string{"api", "ui", "console"} {
 		objects = append(objects, &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{

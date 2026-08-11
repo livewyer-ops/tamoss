@@ -1,5 +1,5 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { type ButtonHTMLAttributes, forwardRef, type ReactNode } from "react";
 import styles from "./Surface.module.css";
 
 export function Page({ children }: { children: ReactNode }) {
@@ -52,20 +52,20 @@ export function Panel({
   );
 }
 
-export function Button({
-  variant = "secondary",
-  className = "",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "secondary" | "primary" | "danger";
-}) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: "secondary" | "primary" | "danger";
+  }
+>(function Button({ variant = "secondary", className = "", ...props }, ref) {
   return (
     <button
       {...props}
+      ref={ref}
       className={`${styles.button} ${variant === "primary" ? styles.primary : ""} ${variant === "danger" ? styles.danger : ""} ${className}`}
     />
   );
-}
+});
 
 export function StatusBadge({
   children,

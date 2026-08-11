@@ -31,7 +31,11 @@ func renderConsoleRBAC(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 				Namespace: tamoss.Namespace,
 				Labels:    labels(tamoss, "console"),
 			},
-			Rules: consoleapi.ReadOnlyPolicyRules(tamoss.Name),
+			// The Role is namespaced and instance-scoped wherever RBAC allows
+			// it. consoleapi.PolicyRules documents the one grant that cannot be
+			// narrowed further, the namespace-wide IngestRun patch, and the
+			// residual risk it leaves in a namespace shared by two instances.
+			Rules: consoleapi.PolicyRules(tamoss.Name),
 		},
 		&rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{

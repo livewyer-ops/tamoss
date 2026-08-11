@@ -74,6 +74,57 @@ var _ = Describe("Tamoss API validation", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		// A minimal IngestRun omits spec.options entirely, and the nested
+		// defaults do not materialise when the parent object is absent. The
+		// options immutability rule must therefore tolerate its absence, or the
+		// Console's only permitted mutation is rejected for the whole lifetime
+		// of the run and it can never be cancelled.
+		It("cancels a minimal IngestRun created without spec.options", func() {
+			run := &tamossv1alpha1.IngestRun{
+				ObjectMeta: metav1.ObjectMeta{Name: "minimal-ingest-run", Namespace: "default"},
+				Spec: tamossv1alpha1.IngestRunSpec{
+					TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
+					InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, run)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, run)
+			})
+
+			created := &tamossv1alpha1.IngestRun{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: run.Name, Namespace: run.Namespace}, created)).To(Succeed())
+			Expect(created.Spec.Options.StorageBackendRef).To(BeNil())
+
+			created.Spec.DesiredState = tamossv1alpha1.IngestRunDesiredStateCancelled
+			Expect(k8sClient.Update(ctx, created)).To(Succeed())
+		})
+
+		It("keeps spec.options immutable once it is set", func() {
+			run := &tamossv1alpha1.IngestRun{
+				ObjectMeta: metav1.ObjectMeta{Name: "immutable-ingest-options", Namespace: "default"},
+				Spec: tamossv1alpha1.IngestRunSpec{
+					TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
+					InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
+					Options:   tamossv1alpha1.IngestRunOptions{MaxInputs: 10},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, run)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, run)
+			})
+
+			created := &tamossv1alpha1.IngestRun{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: run.Name, Namespace: run.Namespace}, created)).To(Succeed())
+			created.Spec.Options.MaxInputs = 20
+
+			err := k8sClient.Update(ctx, created)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
 		It("requires an IngestRun spec", func() {
 			run := &unstructured.Unstructured{}
 			run.SetAPIVersion(tamossv1alpha1.SchemeGroupVersion.String())

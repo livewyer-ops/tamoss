@@ -3,16 +3,20 @@
 ## Status
 
 - The backend boundary and security model are accepted for TAMOSS 8.2.
-- A read-only informer-backed scaffold exists and remains explicit opt-in.
+- An informer-backed Console API exists and remains explicit opt-in.
   Managed Authentik sessions now cross a proof-backed same-origin proxy and
   exact group bindings authorize the `viewer`, `operator`, and `ingest-runner`
-  roles. The scaffold still has no command audit or public OpenAPI contract.
-- The scaffold exposes bounded runtime telemetry only. The cursor-paginated
-  `IngestRun` read and command surface described below is not implemented.
+  roles. The API exposes bounded runtime telemetry, cursor-paginated durable
+  `IngestRun` reads, session capabilities, and audited one-way cancellation.
+  Its checked OpenAPI contract generates the frontend operation types and is
+  verified against the Go response structs. Create and retry remain unavailable.
 - Runtime projection now validates exact UID-bound controller chains for
   Kubernetes children and exact typed references for `StorageBackend` and
   `IngestRun` roots. The namespace remains the tenancy boundary; owner
   references are an output-integrity check, not an authorisation boundary.
+- Free-form Kubernetes condition, Pod, Job, and Event messages are not exposed.
+  Diagnostic types and reasons are constrained to bounded machine-code syntax;
+  malformed values project as `Unknown`.
 - Constrained Kubernetes API egress, external OIDC, automated deployed role
   tests, and scale evidence remain gates before read access is enabled by
   default, not only before mutation controls are enabled.
@@ -40,6 +44,10 @@ Kubernetes API. The Console API uses namespaced informers, bounded direct reads
 for referenced durable roots, and typed command handlers. It returns product
 read models, not unrestricted Kubernetes objects.
 
+The [Console OpenAPI document](../../../operator/internal/consoleapi/openapi.yaml)
+is the browser contract. Generated operation types feed one reviewed frontend
+adapter; reproducibility and Go JSON-field parity are test gates.
+
 The minimum read surface is:
 
 | Read model | Sources |
@@ -62,8 +70,15 @@ cross-instance projection but do not protect against a principal that can
 already write arbitrary resources in the namespace.
 
 List/watch data is cached server-side and projected to clients. Durable
-`IngestRun` history is not watched or scanned by the runtime view: at most 16
-active, nonterminal, then newest roots referenced by discovered Jobs are
+`IngestRun` history is read separately with opaque, query-bound Kubernetes
+continuation cursors, a maximum of 100 results and 32 backend pages per request,
+four-second deadlines, and bounded concurrent reads. Sparse instance or phase
+filters can return an empty page with a next cursor; clients must not treat that
+as the end of history or calculate totals. `IngestRun` history is never held in
+an informer cache.
+
+The runtime view does not scan durable history: at most 16 active, nonterminal,
+then newest roots referenced by discovered Jobs are
 verified with exact live GETs under one four-second deadline. Successful
 immutable identity checks are cached for 30 seconds. When that budget is
 exceeded, the runtime response and UI identify the ingest Job, Pod, and Event
@@ -76,7 +91,7 @@ clients rather than allowing a Kubernetes watch to consume unbounded memory.
 
 ## Command Boundary
 
-The Console API exposes typed product commands only. For 8.2 these are:
+The Console API exposes typed product commands only. The accepted 8.2 surface is:
 
 - create an approved `IngestRun`;
 - request cancellation of an active `IngestRun`; and
@@ -87,10 +102,18 @@ commands, exec, attach, port-forward, raw log queries, or generic create,
 patch, and delete endpoints. It cannot create or modify Jobs; the operator
 does that after validating an `IngestRun`.
 
+The implemented command surface is deliberately narrower: cancellation accepts
+only an exact run name, UID, and resource revision, verifies same-origin browser
+provenance, and optimistically patches `spec.desiredState` from `Running` to
+`Cancelled`. Replays are idempotent. Create and retry remain unavailable and are
+advertised as such by `/ui-api/v1/session` until their resolver and artifact
+contracts are complete.
+
 ## Identity and Authorisation
 
-The Console API authenticates the same user session as the UI. It accepts
-either a validated OIDC bearer token or the existing trusted forward-auth mode.
+The Console API authenticates the same user session as the UI. The implemented
+production path is trusted forward-auth; direct validated OIDC bearer support
+remains a release gate.
 Forwarded identity headers are accepted only with an operator-generated proof
 header. API and Console use distinct proofs, and each verifier receives only its
 own key; the reverse proxy strips any browser-supplied proof or identity header
@@ -115,17 +138,17 @@ or request bodies that can contain credentials.
 
 ## Kubernetes RBAC
 
-The current read-only Console API service account receives one generated
-namespace `Role`:
+The Console API service account receives one generated namespace `Role`:
 
 - exact-instance `get`, `list`, and `watch` for `tamosses`;
 - `get`, `list`, and `watch` for `storagebackends`, Deployments, ReplicaSets,
   Services, EndpointSlices, Pods, Jobs, and Events; and
-- `get` only for `ingestruns` referenced by discovered Jobs. Kubernetes RBAC
-  cannot restrict these dynamic names with `resourceNames`.
+- `get` and `list` for durable `ingestruns`, plus `patch` for the typed one-way
+  cancellation handler. Kubernetes RBAC cannot restrict these dynamic names
+  with `resourceNames`.
 
-The command surface must add only `create` for `ingestruns` and `get` plus
-`patch` for the one-way cancellation field when those handlers are enabled.
+Future create and retry handlers must not broaden this to generic update,
+delete, status, Job, or Secret authority.
 
 It receives no Secret, ConfigMap, Pod log, Pod subresource, Job write, or
 cluster-scoped permission. Resource-name restrictions are used for `get` where
@@ -149,22 +172,25 @@ boundary.
 
 ## 8.2 Release Gates
 
-- Implement the authenticated, cursor-paginated `IngestRun` read API and typed
-  create, cancel, and retry commands; do not present ephemeral Jobs as durable
-  run history.
+Synthetic scale regressions now traverse a sparse 10,000-run durable history
+through bounded continuation pages and resolve a 10,000-active-Job runtime set
+with exactly 16 live `IngestRun` reads. The runtime test verifies newest active
+roots win, `ingestRuntimeTruncated` is set, and the 30-second positive cache
+eliminates repeat reads. This is bounded-algorithm evidence, not a substitute
+for API-server, informer fan-out, slow-client, or concurrent-ingest load tests.
+
+- Complete typed create and retry commands without broadening the implemented
+  cursor-paginated read and cancellation authority. Do not present ephemeral
+  Jobs as durable run history.
 - Keep the shared UI-to-TAMS API token removed and prove every future TAMS
   mutation is authorised using the authenticated human subject and scopes,
   including direct requests outside rendered controls. Until then `/api/` is
   strictly limited to `GET`, `HEAD`, and `OPTIONS` by the UI proxy and the API
   independently limits trusted forward-auth identities to `GET` and `HEAD`.
-- Publish an OpenAPI contract and generated frontend client for `/ui-api/v1/`.
 - Prove header spoofing, expired JWT, wrong audience, cross-namespace access,
   and privilege escalation attempts fail.
 - Load-test the bounded referenced-root resolver and partial-result signal with
   large durable run histories and high concurrent ingest rates.
-- Allow-list or redact all projected diagnostic text. Exact owner validation
-  does not make Kubernetes Event messages trustworthy, and bounded
-  control-stripped messages are not sufficient release evidence.
 - Restrict Console Kubernetes API egress using configured API-server CIDRs or
   a constrained in-cluster proxy, and test that arbitrary HTTPS exfiltration is
   denied. A port-only `443` rule is insufficient.

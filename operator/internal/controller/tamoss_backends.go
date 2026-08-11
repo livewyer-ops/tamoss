@@ -283,7 +283,7 @@ func defaultStorageBackend(tamoss *tamossv1alpha1.Tamoss) *tamossv1alpha1.Storag
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       tamossAppName,
 				appInstanceLabel:               tamoss.Name,
-				"app.kubernetes.io/component":  "storage-backend",
+				appComponentLabel:              "storage-backend",
 				"app.kubernetes.io/managed-by": "tamoss-operator",
 			},
 		},

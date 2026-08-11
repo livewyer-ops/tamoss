@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!src/api/generated",
+      "!src/control/generated",
       "!public/tamoss-icon.svg",
       "!dist",
       "!coverage"

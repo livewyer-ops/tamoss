@@ -7,9 +7,38 @@
 - The `IngestRun` CRD and fail-closed controller scaffold are implemented. Job
   creation remains disabled until the approved input and HTTPS endpoint
   resolvers are wired.
-- Tamsin merged its v1 NDJSON ingest protocol on 9 August 2026. TAMOSS has not
-  yet pinned a released image and matching decoder, or implemented the input
-  and credential resolvers, result collector, and end-to-end ingest path.
+- The Console API and UI expose bounded durable history, detail, session
+  capabilities, and audited one-way cancellation. Create and retry remain
+  unavailable rather than presenting controls that cannot execute safely.
+- Tamsin merged its v1 NDJSON ingest protocol on 9 August 2026 and published
+  `0.1.0-rc.2`, the first release carrying the event-based JSON output this
+  record depends on. The operator pins its multi-architecture index by digest,
+  because `TAMOSS_TAMSIN_IMAGE` accepts only an immutable `sha256` reference
+  and an ingest attempt must stay reproducible from its recorded run.
+- The input and endpoint resolvers are implemented, so the operator creates
+  Tamsin Jobs. Inputs resolve only against `spec.ingest.approvedInputs` on the
+  target instance, which binds an opaque id to fixed HTTPS locations; an
+  instance that approves nothing resolves nothing. The endpoint is the
+  instance's own published API URL, used verbatim, so a plaintext route fails
+  the boundary rather than being upgraded — Tamsin carries a full-access bearer
+  token and refuses plaintext itself.
+- When a Job finishes, the operator reads the Tamsin Pod's event stream once
+  through a dedicated `pods/log` grant and records the outcome on status: the
+  run identity, last event sequence, and the input and byte counters the
+  Console renders. Only bounded machine values are kept; free-form stream text
+  is never projected. The stream also disambiguates exit code 4 — no
+  successful inputs is `Failed`, a mixture stays `PartiallySucceeded`.
+  Collection is enrichment, never a gate: a garbage-collected Pod cannot stop
+  a run reaching its terminal phase, and the Console service account still
+  receives no log access.
+- Live progress during a run is not collected; counters appear when the Job
+  finishes. Streaming collection remains open alongside the durable artifact:
+  Tamsin 0.1.0-rc.2 writes its journal to the Job's own filesystem and
+  publishes neither a digest nor a size for it, so there is nothing for the
+  operator to fetch and verify. Digest verification therefore applies only
+  once something records a durable result; a run that records none reaches
+  its terminal phase on the Job's outcome, backed by Tamsin's own `--verify`
+  read-back of every uploaded Object.
 
 ## Context
 
@@ -185,6 +214,12 @@ window. The operator marks `Cancelled` only after termination is observed; a
 cleanup failure is retained as a condition and result, not hidden by the user
 action.
 
+The Console cancellation endpoint requires an operator-capable authenticated
+session, exact same-origin proof, the run UID, and its current resource revision.
+It performs only the one-way desired-state patch, handles a repeated request as
+an idempotent replay, and emits a bounded audit record without request bodies or
+artifact data.
+
 `run.finished` maps to `Succeeded` when every input succeeds,
 `PartiallySucceeded` when execution completes with terminal input failures, and
 `Failed` for a run-wide failure. An interrupted run maps to `Cancelled` only
@@ -193,6 +228,30 @@ when cancellation was requested.
 Pod loss, duplicate log delivery, collector restart, missing terminal events,
 and artifact upload failure all have explicit conditions. Tamsin does not write
 `IngestRun.status` directly.
+
+Every run must reach a terminal phase. Waiting indefinitely for evidence is not
+a safe resting state: it blocks retries, which require a terminal parent, and
+keeps the run in the Console's active set. Three bounds enforce this.
+
+A finished Job whose digest-verified result has not appeared within the
+observation deadline fails with `ResultVerificationTimeout` rather than polling
+until the Job's TTL removes it. The same deadline applies when a failed Job's
+Pod is garbage collected before its exit code is read: the run fails with the
+Job's own message, losing only the partial-success refinement. Success is never
+claimed without verification.
+
+A run whose recorded Job has gone fails with `IngestJobMissing`. Tamsin ingest
+is not idempotent, so the operator does not replay it, and the outcome cannot be
+confirmed. Absence is checked against the API server before the run is failed,
+so a lagging informer cache cannot end a healthy run.
+
+Deleting the target `Tamoss` while a Job runs deletes that Job and fails the run.
+The Job is owned by the `IngestRun`, not the instance, so nothing else would stop
+it uploading to a deleted endpoint until its active deadline expired.
+
+Instance readiness gates admit new work only. Once an attempt has a Job, its
+phase is tracked from that Job alone, so a transient readiness dip neither
+regresses a running attempt to `Pending` nor hides the Job's completion.
 
 ## 8.2 Release Gates
 

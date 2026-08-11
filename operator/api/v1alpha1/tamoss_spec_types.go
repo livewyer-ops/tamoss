@@ -45,6 +45,10 @@ type TamossSpec struct {
 	// optionally, a hibernation artifact to bootstrap the database from.
 	Hibernation TamossHibernationSpec `json:"hibernation,omitempty"`
 
+	// Ingest approves the media an IngestRun may read. An empty list resolves
+	// no input at all, which is the safe default.
+	Ingest IngestSpec `json:"ingest,omitempty"`
+
 	Ingress IngressSpec `json:"ingress,omitempty"`
 	//+kubebuilder:default={enabled:false}
 	HTTPRoute     HTTPRouteSpec     `json:"httpRoute,omitempty"`

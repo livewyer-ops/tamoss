@@ -557,7 +557,8 @@ func TestRenderConsoleUsesIsolatedReadOnlyIdentity(t *testing.T) {
 	}{
 		{group: "tamoss.livewyer.io", resource: "tamosses", verbs: []string{"get", "list", "watch"}},
 		{group: "tamoss.livewyer.io", resource: "storagebackends", verbs: []string{"get", "list", "watch"}},
-		{group: "tamoss.livewyer.io", resource: "ingestruns", verbs: []string{"get"}},
+		{group: "tamoss.livewyer.io", resource: "ingestruns", verbs: []string{"get", "list"}},
+		{group: "tamoss.livewyer.io", resource: "ingestruns", verbs: []string{"patch"}},
 		{group: "apps", resource: "deployments", verbs: []string{"get", "list", "watch"}},
 		{group: "apps", resource: "replicasets", verbs: []string{"get", "list", "watch"}},
 	} {
@@ -584,8 +585,12 @@ func TestRenderConsoleUsesIsolatedReadOnlyIdentity(t *testing.T) {
 			}
 		}
 		for _, verb := range rule.Verbs {
-			if verb != "get" && verb != "list" && verb != "watch" {
-				t.Fatalf("Console Role contains mutating verb %q", verb)
+			if verb == "get" || verb == "list" || verb == "watch" {
+				continue
+			}
+			if verb != "patch" || len(rule.APIGroups) != 1 || rule.APIGroups[0] != "tamoss.livewyer.io" ||
+				len(rule.Resources) != 1 || rule.Resources[0] != "ingestruns" {
+				t.Fatalf("Console Role contains unexpected mutation %q in %#v", verb, rule)
 			}
 		}
 	}

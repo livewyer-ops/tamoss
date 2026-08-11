@@ -107,7 +107,7 @@ func annotateForwardAuthProofChecksums(objects []client.Object, proofs forwardAu
 	consoleChecksum := forwardAuthProofChecksum(proofs.console)
 	consoleRendered := false
 	for _, obj := range objects {
-		if deployment, ok := obj.(*appsv1.Deployment); ok && deployment.Labels["app.kubernetes.io/component"] == "console" {
+		if deployment, ok := obj.(*appsv1.Deployment); ok && deployment.Labels[appComponentLabel] == "console" {
 			consoleRendered = true
 			break
 		}
@@ -117,7 +117,7 @@ func annotateForwardAuthProofChecksums(objects []client.Object, proofs forwardAu
 		if !ok {
 			continue
 		}
-		component := deployment.Labels["app.kubernetes.io/component"]
+		component := deployment.Labels[appComponentLabel]
 		if component != "api" && component != "ui" && component != "console" {
 			continue
 		}

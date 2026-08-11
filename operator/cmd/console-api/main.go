@@ -48,6 +48,17 @@ const (
 	consoleAuthModeDevelopment      = "development-anonymous"
 	consoleAuthModeUnavailable      = "unavailable"
 	maxForwardAuthSecretFileSize    = 4096
+
+	// One uncached client serves the snapshotter's live IngestRun reads, the
+	// command API, and browser history traversal. A single sparse history page
+	// can issue up to 32 bounded List calls, and up to four such reads run at
+	// once, so the client-go defaults of QPS 5 and burst 10 would queue those
+	// calls in the client-side limiter until the 4s request timeout expires and
+	// would starve the periodic snapshot refresh behind them. These limits let
+	// one worst-case traversal proceed without queueing while still bounding
+	// what a single Console replica can ask of the API server.
+	consoleClientQPS   = 50
+	consoleClientBurst = 100
 )
 
 type options struct {
@@ -56,6 +67,7 @@ type options struct {
 	instance        string
 	refreshInterval time.Duration
 	authenticator   consoleapi.Authenticator
+	cursorKey       []byte
 }
 
 func main() {
@@ -82,6 +94,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("load Kubernetes configuration: %w", err)
 	}
 	config.UserAgent = "tamoss-console-api/1.0"
+	applyConsoleClientRateLimits(config)
 	runtimeCache, err := newRuntimeCache(config, scheme, opts.namespace, opts.instance)
 	if err != nil {
 		return fmt.Errorf("create Kubernetes cache: %w", err)
@@ -89,6 +102,25 @@ func run(logger *slog.Logger) error {
 	ingestRunReader, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("create live IngestRun reader: %w", err)
+	}
+	ingestRuns, err := consoleapi.NewIngestRunReadStore(consoleapi.IngestRunReadConfig{
+		Reader:    ingestRunReader,
+		Namespace: opts.namespace,
+		Instance:  opts.instance,
+		CursorKey: opts.cursorKey,
+	})
+	if err != nil {
+		return fmt.Errorf("create IngestRun read store: %w", err)
+	}
+	commands, err := consoleapi.NewCommandAPI(consoleapi.CommandAPIConfig{
+		Client:        ingestRunReader,
+		Authenticator: opts.authenticator,
+		Auditor:       consoleapi.NewSlogCommandAuditor(logger),
+		Namespace:     opts.namespace,
+		Instance:      opts.instance,
+	})
+	if err != nil {
+		return fmt.Errorf("create Console command API: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -101,13 +133,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	monitor := consoleapi.NewMonitor(snapshotter)
-	httpServer := &http.Server{
-		Addr:              opts.bindAddress,
-		Handler:           consoleapi.NewServer(monitor, opts.authenticator).Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    64 << 10,
-	}
+	httpServer := newConsoleHTTPServer(opts.bindAddress, consoleapi.NewServer(
+		monitor,
+		opts.authenticator,
+		consoleapi.WithIngestRunReadAPI(ingestRuns),
+		consoleapi.WithCommandAPI(commands),
+		// Shutdown does not cancel in-flight request contexts, so event
+		// streams need the process lifetime to close before the grace period.
+		consoleapi.WithShutdownContext(ctx),
+	).Handler())
 
 	cacheErrors := make(chan error, 1)
 	go func() { cacheErrors <- runtimeCache.Start(ctx) }()
@@ -136,7 +170,7 @@ func run(logger *slog.Logger) error {
 		stop()
 	case err := <-serverErrors:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			runErr = fmt.Errorf("HTTP server stopped: %w", err)
+			runErr = fmt.Errorf("http server stopped: %w", err)
 		}
 		stop()
 	}
@@ -147,6 +181,23 @@ func run(logger *slog.Logger) error {
 		runErr = fmt.Errorf("shut down HTTP server: %w", err)
 	}
 	return runErr
+}
+
+// applyConsoleClientRateLimits replaces the client-go defaults on the shared
+// uncached client. See consoleClientQPS for why the defaults are too low.
+func applyConsoleClientRateLimits(config *rest.Config) {
+	config.QPS = consoleClientQPS
+	config.Burst = consoleClientBurst
+}
+
+func newConsoleHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
 }
 
 func parseOptions() (options, error) {
@@ -177,49 +228,55 @@ func parseOptions() (options, error) {
 	if opts.refreshInterval < time.Second || opts.refreshInterval > 5*time.Minute {
 		return options{}, fmt.Errorf("refresh interval must be between 1s and 5m")
 	}
-	authenticator, err := consoleAuthenticatorFromEnvironment()
+	authenticator, cursorKey, err := consoleAuthenticatorFromEnvironment()
 	if err != nil {
 		return options{}, err
 	}
 	opts.authenticator = authenticator
+	opts.cursorKey = cursorKey
 	return opts, nil
 }
 
-func consoleAuthenticatorFromEnvironment() (consoleapi.Authenticator, error) {
+func consoleAuthenticatorFromEnvironment() (consoleapi.Authenticator, []byte, error) {
 	mode := strings.TrimSpace(os.Getenv(consoleAuthModeEnv))
 	switch mode {
 	case consoleAuthModeDevelopment:
-		return consoleapi.NewDevelopmentAnonymousAuthenticator(), nil
+		return consoleapi.NewDevelopmentAnonymousAuthenticator(), nil, nil
 	case consoleAuthModeUnavailable:
-		return consoleapi.NewUnavailableAuthenticator(), nil
+		return consoleapi.NewUnavailableAuthenticator(), nil, nil
 	case consoleAuthModeForwardAuth:
 		secretFile := strings.TrimSpace(os.Getenv(consoleForwardAuthSecretFileEnv))
 		if secretFile == "" {
-			return nil, fmt.Errorf("%s is required when %s=%s", consoleForwardAuthSecretFileEnv, consoleAuthModeEnv, consoleAuthModeForwardAuth)
+			return nil, nil, fmt.Errorf("%s is required when %s=%s", consoleForwardAuthSecretFileEnv, consoleAuthModeEnv, consoleAuthModeForwardAuth)
 		}
 		if !filepath.IsAbs(secretFile) {
-			return nil, fmt.Errorf("%s must be an absolute path", consoleForwardAuthSecretFileEnv)
+			return nil, nil, fmt.Errorf("%s must be an absolute path", consoleForwardAuthSecretFileEnv)
 		}
 		secret, err := readForwardAuthSecretFile(secretFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		bindings, err := consoleapi.ParseGroupRoleBindingsJSON([]byte(os.Getenv(consoleGroupRoleBindingsEnv)))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return consoleapi.NewForwardAuthAuthenticator(consoleapi.ForwardAuthConfig{
+		authenticator, err := consoleapi.NewForwardAuthAuthenticator(consoleapi.ForwardAuthConfig{
 			SharedSecret:      secret,
 			GroupRoleBindings: bindings,
 		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return authenticator, consoleapi.DeriveIngestRunCursorKey(secret), nil
 	case "":
-		return nil, fmt.Errorf("%s is required; use %q, %q, or the explicit development-only %q mode", consoleAuthModeEnv, consoleAuthModeForwardAuth, consoleAuthModeUnavailable, consoleAuthModeDevelopment)
+		return nil, nil, fmt.Errorf("%s is required; use %q, %q, or the explicit development-only %q mode", consoleAuthModeEnv, consoleAuthModeForwardAuth, consoleAuthModeUnavailable, consoleAuthModeDevelopment)
 	default:
-		return nil, fmt.Errorf("unsupported %s value %q", consoleAuthModeEnv, mode)
+		return nil, nil, fmt.Errorf("unsupported %s value %q", consoleAuthModeEnv, mode)
 	}
 }
 
 func readForwardAuthSecretFile(path string) ([]byte, error) {
+	// #nosec G304,G703 -- the operator supplies an absolute projected-Secret path.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open Console forward-auth shared secret file: %w", err)
@@ -230,7 +287,7 @@ func readForwardAuthSecretFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read Console forward-auth shared secret file: %w", err)
 	}
 	if len(secret) > maxForwardAuthSecretFileSize {
-		return nil, fmt.Errorf("Console forward-auth shared secret file exceeds %d bytes", maxForwardAuthSecretFileSize)
+		return nil, fmt.Errorf("console forward-auth shared secret file exceeds %d bytes", maxForwardAuthSecretFileSize)
 	}
 	return secret, nil
 }

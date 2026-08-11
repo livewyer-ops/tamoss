@@ -12,6 +12,17 @@ async function loadApiProxy(): Promise<ProxyOptions> {
   return proxy["/api"] as ProxyOptions;
 }
 
+async function loadConsoleProxy(): Promise<ProxyOptions> {
+  vi.resetModules();
+  const module = await import("../vite.config");
+  const config = module.default as UserConfig;
+  const proxy = config.server?.proxy;
+  if (!proxy || Array.isArray(proxy)) {
+    throw new Error("Vite Console proxy is not configured");
+  }
+  return proxy["/ui-api"] as ProxyOptions;
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
@@ -41,5 +52,13 @@ describe("Vite API proxy credential", () => {
     await expect(loadApiProxy()).rejects.toThrow(
       "TAMOSS_DEV_API_TOKEN is not a valid HTTP bearer token",
     );
+  });
+});
+
+describe("Vite Console proxy origin", () => {
+  it("preserves the browser Host for same-origin command validation", async () => {
+    const proxy = await loadConsoleProxy();
+
+    expect(proxy.changeOrigin).toBe(false);
   });
 });

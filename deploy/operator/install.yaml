@@ -9983,6 +9983,54 @@ spec:
                       storage backend database registration Jobs.
                     type: string
                 type: object
+              ingest:
+                description: |-
+                  Ingest approves the media an IngestRun may read. An empty list resolves
+                  no input at all, which is the safe default.
+                properties:
+                  approvedInputs:
+                    description: |-
+                      ApprovedInputs are the media locations an IngestRun may name by id. An
+                      IngestRun carries an opaque id and never a media locator, so this list is
+                      the boundary between what a run asks for and what it can reach.
+                    items:
+                      description: ApprovedIngestInputSpec binds one opaque input
+                        id to fixed media locations.
+                      properties:
+                        id:
+                          description: ID is the value an IngestRun's spec.inputRef.id
+                            must carry.
+                          maxLength: 128
+                          minLength: 1
+                          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+                          type: string
+                        kind:
+                          description: |-
+                            Kind must match the referencing run. Only ApprovedHTTP resolves today;
+                            staged objects, manifests, and S3 prefixes need a credential boundary
+                            that does not exist yet.
+                          enum:
+                          - ApprovedHTTP
+                          type: string
+                        urls:
+                          description: |-
+                            URLs are absolute HTTPS media locations. Credentials, query strings, and
+                            fragments are rejected so an approved input cannot smuggle a signed URL.
+                          items:
+                            maxLength: 2048
+                            pattern: ^https://[^/?#@]+(/[^?#]*)?$
+                            type: string
+                          maxItems: 16
+                          minItems: 1
+                          type: array
+                      required:
+                      - id
+                      - kind
+                      - urls
+                      type: object
+                    maxItems: 16
+                    type: array
+                type: object
               ingress:
                 properties:
                   annotations:
@@ -21024,6 +21072,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
   - apps
   resources:
   - deployments
@@ -21184,6 +21238,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
 - apiGroups:
   - apps
   resources:
@@ -21631,6 +21691,8 @@ spec:
           value: ""
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
+        - name: TAMOSS_TAMSIN_IMAGE
+          value: ghcr.io/livewyer-ops/tamsin@sha256:c67222bc5d4a51770d4add021c3129bf364c92f166c899f9330959b7ec9509f3
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

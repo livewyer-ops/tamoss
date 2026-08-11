@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -20,7 +21,7 @@ func TestReadOnlyPolicyRulesStayNarrow(t *testing.T) {
 	readCached := []string{"get", "list", "watch"}
 	allowedResources := map[string]expectedAccess{
 		"tamosses":        {group: "tamoss.livewyer.io", verbs: readCached},
-		"ingestruns":      {group: "tamoss.livewyer.io", verbs: []string{"get"}},
+		"ingestruns":      {group: "tamoss.livewyer.io", verbs: []string{"get", "list"}},
 		"storagebackends": {group: "tamoss.livewyer.io", verbs: readCached},
 		"events":          {group: "", verbs: readCached},
 		"pods":            {group: "", verbs: readCached},
@@ -77,13 +78,55 @@ func TestReadOnlyPolicyRulesStayNarrow(t *testing.T) {
 	}
 }
 
+func TestPolicyRulesOnlyAddIngestRunPatch(t *testing.T) {
+	t.Parallel()
+	readRules := ReadOnlyPolicyRules("media")
+	rules := PolicyRules("media")
+	if len(rules) != len(readRules)+1 {
+		t.Fatalf("PolicyRules() count = %d, want %d", len(rules), len(readRules)+1)
+	}
+	mutation := rules[len(rules)-1]
+	if len(mutation.APIGroups) != 1 || mutation.APIGroups[0] != "tamoss.livewyer.io" ||
+		len(mutation.Resources) != 1 || mutation.Resources[0] != "ingestruns" ||
+		len(mutation.Verbs) != 1 || mutation.Verbs[0] != "patch" || len(mutation.ResourceNames) != 0 {
+		t.Fatalf("unexpected Console command permission: %#v", mutation)
+	}
+
+	// The namespace-wide IngestRun patch is the one grant RBAC cannot narrow,
+	// and PolicyRules documents that residual risk. Everything else stays a
+	// read: no second mutating verb, no wildcard, no subresource, and no
+	// non-resource URL may appear without a deliberate change here.
+	for _, rule := range rules {
+		if len(rule.NonResourceURLs) != 0 {
+			t.Fatalf("Console rules must not grant non-resource URLs: %#v", rule)
+		}
+		for _, group := range rule.APIGroups {
+			if group == "*" {
+				t.Fatalf("Console rules must not use a wildcard API group: %#v", rule)
+			}
+		}
+		for _, resource := range rule.Resources {
+			if resource == "*" || strings.Contains(resource, "/") {
+				t.Fatalf("Console rules must name concrete resources without subresources: %#v", rule)
+			}
+		}
+		for _, verb := range rule.Verbs {
+			switch verb {
+			case "get", "list", "watch", "patch":
+			default:
+				t.Fatalf("unexpected Console verb %q in %#v", verb, rule)
+			}
+		}
+	}
+}
+
 func TestGeneratedOperatorRBACCoversConsoleRole(t *testing.T) {
 	t.Parallel()
 	globalRules := readGeneratedRBACRules(t, "role.yaml", "ClusterRole", "manager-role")
 	namespacedRules := readGeneratedRBACRules(t, "role.yaml", "Role", "manager-role")
 	clusterWideOperandRules := readGeneratedRBACRules(t, "manager_cluster_resources_role.yaml", "ClusterRole", "manager-resources-role")
 
-	for _, consoleRule := range ReadOnlyPolicyRules("media") {
+	for _, consoleRule := range PolicyRules("media") {
 		for _, group := range consoleRule.APIGroups {
 			scopes := []struct {
 				name  string

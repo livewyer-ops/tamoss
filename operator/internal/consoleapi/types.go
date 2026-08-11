@@ -1,5 +1,7 @@
 package consoleapi
 
+import "encoding/json"
+
 const RuntimeSchemaVersion = "1.0"
 
 // RuntimeSnapshot is a deliberately small, read-only projection of Kubernetes
@@ -17,6 +19,65 @@ type RuntimeSnapshot struct {
 	Pods                   []Pod             `json:"pods"`
 	Jobs                   []Job             `json:"jobs"`
 	Events                 []KubernetesEvent `json:"events"`
+}
+
+// MarshalJSON preserves the runtime wire contract when Kubernetes list and
+// projection results are empty. Go otherwise encodes nil slices as null, while
+// browser clients consume these fields as arrays.
+func (snapshot RuntimeSnapshot) MarshalJSON() ([]byte, error) {
+	normalized := snapshot
+	if normalized.Instance.Conditions == nil {
+		normalized.Instance.Conditions = []InstanceCondition{}
+	}
+	if normalized.Workloads == nil {
+		normalized.Workloads = []Workload{}
+	} else {
+		normalized.Workloads = append([]Workload(nil), normalized.Workloads...)
+	}
+	for i := range normalized.Workloads {
+		if normalized.Workloads[i].Conditions == nil {
+			normalized.Workloads[i].Conditions = []ResourceCondition{}
+		}
+	}
+	if normalized.Services == nil {
+		normalized.Services = []Service{}
+	} else {
+		normalized.Services = append([]Service(nil), normalized.Services...)
+	}
+	for i := range normalized.Services {
+		if normalized.Services[i].Ports == nil {
+			normalized.Services[i].Ports = []ServicePort{}
+		}
+	}
+	if normalized.EndpointSlices == nil {
+		normalized.EndpointSlices = []EndpointSlice{}
+	} else {
+		normalized.EndpointSlices = append([]EndpointSlice(nil), normalized.EndpointSlices...)
+	}
+	for i := range normalized.EndpointSlices {
+		if normalized.EndpointSlices[i].Ports == nil {
+			normalized.EndpointSlices[i].Ports = []EndpointSlicePort{}
+		}
+	}
+	if normalized.Pods == nil {
+		normalized.Pods = []Pod{}
+	}
+	if normalized.Jobs == nil {
+		normalized.Jobs = []Job{}
+	} else {
+		normalized.Jobs = append([]Job(nil), normalized.Jobs...)
+	}
+	for i := range normalized.Jobs {
+		if normalized.Jobs[i].Conditions == nil {
+			normalized.Jobs[i].Conditions = []ResourceCondition{}
+		}
+	}
+	if normalized.Events == nil {
+		normalized.Events = []KubernetesEvent{}
+	}
+
+	type runtimeSnapshotWire RuntimeSnapshot
+	return json.Marshal(runtimeSnapshotWire(normalized))
 }
 
 type Service struct {
@@ -68,7 +129,6 @@ type InstanceCondition struct {
 	Type               string `json:"type"`
 	Status             string `json:"status"`
 	Reason             string `json:"reason,omitempty"`
-	Message            string `json:"message,omitempty"`
 	ObservedGeneration int64  `json:"observedGeneration,omitempty"`
 	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
 }
@@ -91,7 +151,6 @@ type ResourceCondition struct {
 	Type               string `json:"type"`
 	Status             string `json:"status"`
 	Reason             string `json:"reason,omitempty"`
-	Message            string `json:"message,omitempty"`
 	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
 }
 
@@ -102,7 +161,6 @@ type Pod struct {
 	Ready     bool   `json:"ready"`
 	Restarts  int32  `json:"restarts"`
 	Reason    string `json:"reason,omitempty"`
-	Message   string `json:"message,omitempty"`
 	StartedAt string `json:"startedAt,omitempty"`
 	Deleting  bool   `json:"deleting"`
 }
@@ -122,7 +180,6 @@ type Job struct {
 type KubernetesEvent struct {
 	Type            string          `json:"type"`
 	Reason          string          `json:"reason,omitempty"`
-	Message         string          `json:"message,omitempty"`
 	Regarding       ObjectReference `json:"regarding"`
 	Count           int32           `json:"count"`
 	FirstObservedAt string          `json:"firstObservedAt,omitempty"`

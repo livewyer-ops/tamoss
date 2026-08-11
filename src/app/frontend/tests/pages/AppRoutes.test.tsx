@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
@@ -201,7 +207,6 @@ function diagnosticRuntimeSnapshot(): RuntimeSnapshot {
           type: "Ready",
           status: "False",
           reason: "DatabaseUnavailable",
-          message: "Database connection timed out.",
           lastTransitionTime: "2026-08-09T09:58:00Z",
         },
       ],
@@ -223,7 +228,6 @@ function diagnosticRuntimeSnapshot(): RuntimeSnapshot {
             type: "Available",
             status: "False",
             reason: "MinimumReplicasUnavailable",
-            message: "Deployment has no available replicas.",
           },
         ],
       },
@@ -278,7 +282,6 @@ function diagnosticRuntimeSnapshot(): RuntimeSnapshot {
         ready: false,
         restarts: 4,
         reason: "CrashLoopBackOff",
-        message: "Back-off restarting failed container.",
         deleting: false,
       },
     ],
@@ -295,7 +298,6 @@ function diagnosticRuntimeSnapshot(): RuntimeSnapshot {
             type: "Failed",
             status: "True",
             reason: "BackoffLimitExceeded",
-            message: "Job reached its retry limit.",
           },
         ],
       },
@@ -304,12 +306,97 @@ function diagnosticRuntimeSnapshot(): RuntimeSnapshot {
       {
         type: "Warning",
         reason: "Unhealthy",
-        message: "Readiness probe failed with status 500.",
         regarding: { kind: "Pod", name: "tamoss-api-abc" },
         count: 3,
         lastObservedAt: "2026-08-09T09:59:00Z",
       },
     ],
+  };
+}
+
+function ingestRunSummary(name = "ingest-20260809") {
+  return {
+    name,
+    uid: `${name}-uid`,
+    revision: "17",
+    phase: "Running",
+    profile: "Editorial",
+    sizeClass: "Standard",
+    desiredState: "Running",
+    attempt: 1,
+    createdAt: "2026-08-09T10:00:00Z",
+    startedAt: "2026-08-09T10:00:03Z",
+    progress: {
+      inputsTotal: 12,
+      inputsCompleted: 5,
+      inputsSucceeded: 4,
+      inputsFailed: 1,
+      bytesUploaded: 4096,
+    },
+    cancellable: true,
+  };
+}
+
+function ingestRunDetail(name = "ingest-20260809") {
+  return {
+    ...ingestRunSummary(name),
+    generation: 2,
+    observedGeneration: 2,
+    inputKind: "ApprovedS3",
+    options: {
+      storageBackend: "archive",
+      verify: true,
+      dryRun: false,
+      maxInputs: 1000,
+      concurrency: 4,
+    },
+    job: { name: `${name}-job`, uid: `${name}-job-uid` },
+    tamsinRunId: "tamsin-run-1",
+    result: { present: false, verified: false },
+    conditions: [
+      {
+        type: "Ready",
+        status: "False",
+        reason: "IngestRunning",
+        lastTransitionTime: "2026-08-09T10:00:03Z",
+      },
+    ],
+  };
+}
+
+function consoleSession(cancelAllowed: boolean) {
+  return {
+    schemaVersion: "1.0",
+    identity: {
+      subject: "user-1",
+      username: "operator",
+      method: "forward-auth",
+      roles: cancelAllowed ? ["viewer", "operator"] : ["viewer"],
+    },
+    capabilities: {
+      ingestRuns: {
+        read: { available: true, allowed: true },
+        create: {
+          available: false,
+          allowed: false,
+          reason: "ingest_creation_unavailable",
+        },
+        cancel: { available: true, allowed: cancelAllowed },
+        retry: {
+          available: false,
+          allowed: cancelAllowed,
+          reason: "ingest_retry_unavailable",
+        },
+      },
+    },
+  };
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(body),
   };
 }
 
@@ -340,7 +427,7 @@ describe("operational routes", () => {
     ["/objects", "Object lookup", "Object lookup · TAMOSS"],
     ["/objects/object-1.ts", "Media object", "Media object · TAMOSS"],
     ["/playback", "Preview", "Preview · TAMOSS"],
-    ["/ingest", "Tamsin jobs", "Tamsin jobs · TAMOSS"],
+    ["/ingest", "Ingest runs", "Ingest runs · TAMOSS"],
     ["/deletions", "Deletion requests", "Deletion requests · TAMOSS"],
     ["/webhooks", "Webhooks", "Webhooks · TAMOSS"],
     ["/system", "Runtime", "Runtime · TAMOSS"],
@@ -672,29 +759,25 @@ describe("operational routes", () => {
     renderRoute("/system");
     expect(
       await screen.findByRole("cell", {
-        name: /Database connection timed out/,
+        name: "DatabaseUnavailable",
       }),
     ).toBeVisible();
     expect(
       screen.getByRole("cell", {
-        name: /Deployment has no available replicas/,
+        name: /MinimumReplicasUnavailable/,
       }),
     ).toBeVisible();
     expect(
       screen.getByRole("cell", {
-        name: /Back-off restarting failed container/,
+        name: "CrashLoopBackOff",
       }),
     ).toBeVisible();
     expect(
       screen.getByRole("cell", {
-        name: /Job reached its retry limit/,
+        name: /BackoffLimitExceeded/,
       }),
     ).toBeVisible();
-    expect(
-      screen.getByRole("cell", {
-        name: "Readiness probe failed with status 500.",
-      }),
-    ).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Unhealthy" })).toBeVisible();
     expect(
       screen.getByRole("cell", { name: "tamoss-api-x7k2z" }),
     ).toBeVisible();
@@ -723,6 +806,130 @@ describe("operational routes", () => {
         "Runtime view is partial. Some ingest Jobs, Pods, and Events are not shown.",
       ),
     ).toBeVisible();
+  });
+
+  it("pages durable IngestRun history without accumulating prior results", async () => {
+    const fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const cursor = url.searchParams.get("cursor");
+      return Promise.resolve(
+        jsonResponse({
+          schemaVersion: "1.0",
+          items: [ingestRunSummary(cursor ? "ingest-second" : "ingest-first")],
+          page: {
+            limit: 25,
+            nextCursor: cursor ? undefined : "opaque-next-page",
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    renderRoute("/ingest");
+    expect(await screen.findByText("ingest-first")).toBeVisible();
+    expect(screen.queryByText("Create run")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+
+    expect(await screen.findByText("ingest-second")).toBeVisible();
+    expect(screen.queryByText("ingest-first")).not.toBeInTheDocument();
+    const pagedURL = new URL(
+      String(fetch.mock.calls[fetch.mock.calls.length - 1]?.[0]),
+    );
+    expect(pagedURL.searchParams.get("cursor")).toBe("opaque-next-page");
+    expect(pagedURL.searchParams.get("limit")).toBe("25");
+  });
+
+  it("keeps sparse IngestRun pages navigable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          schemaVersion: "1.0",
+          items: [],
+          page: { limit: 25, nextCursor: "opaque-sparse-page" },
+        }),
+      ),
+    );
+
+    renderRoute("/ingest?phase=Failed");
+    expect(
+      await screen.findByText("No matching runs on this page"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Next/ })).toBeEnabled();
+  });
+
+  it("requires operator capability and confirmation for one-way cancellation", async () => {
+    const run = ingestRunDetail();
+    const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/session")) {
+        return Promise.resolve(jsonResponse(consoleSession(true)));
+      }
+      if (init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            run: {
+              ...run,
+              desiredState: "Cancelled",
+              cancellable: false,
+              revision: "18",
+            },
+            replayed: false,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse(run));
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    renderRoute("/ingest/ingest-20260809");
+    const cancelTrigger = await screen.findByRole("button", {
+      name: "Cancel run",
+    });
+    expect(screen.queryByText("Retry run")).not.toBeInTheDocument();
+    fireEvent.click(cancelTrigger);
+
+    const confirmation = screen.getByRole("region", {
+      name: "Cancel this ingest run?",
+    });
+    expect(
+      within(confirmation).getByRole("button", { name: "Keep running" }),
+    ).toHaveFocus();
+    fireEvent.click(
+      within(confirmation).getByRole("button", { name: "Cancel run" }),
+    );
+
+    expect(await screen.findByText("Cancellation requested.")).toBeVisible();
+    const commandCall = fetch.mock.calls.find(
+      ([, init]) => init?.method === "POST",
+    );
+    expect(commandCall?.[1]).toEqual(
+      expect.objectContaining({
+        credentials: "same-origin",
+        body: JSON.stringify({ uid: run.uid, revision: run.revision }),
+      }),
+    );
+  });
+
+  it("does not expose cancellation to a viewer", async () => {
+    const run = ingestRunDetail("viewer-run");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        return Promise.resolve(
+          jsonResponse(
+            url.pathname.endsWith("/session") ? consoleSession(false) : run,
+          ),
+        );
+      }),
+    );
+
+    renderRoute("/ingest/viewer-run");
+    expect(await screen.findByText("viewer-run-job")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Cancel run" }),
+    ).not.toBeInTheDocument();
   });
 
   it("includes unhealthy selector-backed routing but ignores ExternalName services", async () => {

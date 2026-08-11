@@ -1,120 +1,54 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { config } from "@/config";
+import type { components, operations } from "@/control/generated/openapi";
 
-export interface RuntimeCondition {
-  type: string;
-  status: string;
-  reason?: string;
-  message?: string;
-  observedGeneration?: number;
-  lastTransitionTime?: string;
-}
-
-export interface RuntimeResourceCondition {
-  type: string;
-  status: string;
-  reason?: string;
-  message?: string;
-  lastTransitionTime?: string;
-}
-
-export interface RuntimeServicePort {
-  name?: string;
-  protocol: string;
-  port: number;
-  targetPort: string;
-}
-
-export interface RuntimeService {
-  name: string;
-  component?: string;
-  type: string;
-  selectorComponent?: string;
-  ports: RuntimeServicePort[];
-}
-
-export interface RuntimeEndpointSlicePort {
-  name?: string;
-  protocol?: string;
-  port?: number;
-}
-
-export interface RuntimeEndpointSlice {
-  name: string;
-  serviceName: string;
-  component?: string;
-  addressType: string;
-  ports: RuntimeEndpointSlicePort[];
-  totalEndpoints: number;
-  readyEndpoints: number;
-  notReadyEndpoints: number;
-  terminatingEndpoints: number;
-}
-
-export interface RuntimeSnapshot {
-  schemaVersion: "1.0";
-  observedAt: string;
-  stale: boolean;
-  ingestRuntimeTruncated?: boolean;
-  instance: {
-    name: string;
-    namespace: string;
-    uid: string;
-    generation: number;
-    observedGeneration: number;
-    phase: string;
-    conditions: RuntimeCondition[];
-  };
-  workloads: Array<{
-    kind: "Deployment";
-    name: string;
-    component?: string;
-    status: "ready" | "progressing" | "unavailable" | "scaledDown";
-    generation: number;
-    observedGeneration: number;
-    desiredReplicas: number;
-    readyReplicas: number;
-    availableReplicas: number;
-    updatedReplicas: number;
-    conditions: RuntimeResourceCondition[];
-  }>;
-  services: RuntimeService[];
-  endpointSlices: RuntimeEndpointSlice[];
-  pods: Array<{
-    name: string;
-    component?: string;
-    phase: string;
-    ready: boolean;
-    restarts: number;
-    reason?: string;
-    message?: string;
-    startedAt?: string;
-    deleting: boolean;
-  }>;
-  jobs: Array<{
-    name: string;
-    component?: string;
-    status: "pending" | "running" | "succeeded" | "failed" | "suspended";
-    active: number;
-    succeeded: number;
-    failed: number;
-    startTime?: string;
-    completionTime?: string;
-    conditions: RuntimeResourceCondition[];
-  }>;
-  events: Array<{
-    type: string;
-    reason?: string;
-    message?: string;
-    regarding: { kind: string; name: string };
-    count: number;
-    firstObservedAt?: string;
-    lastObservedAt?: string;
-  }>;
-}
+export type RuntimeCondition =
+  components["schemas"]["RuntimeInstanceCondition"];
+export type RuntimeResourceCondition =
+  components["schemas"]["RuntimeResourceCondition"];
+export type RuntimeServicePort = components["schemas"]["RuntimeServicePort"];
+export type RuntimeService = components["schemas"]["RuntimeService"];
+export type RuntimeEndpointSlicePort =
+  components["schemas"]["RuntimeEndpointSlicePort"];
+export type RuntimeEndpointSlice =
+  components["schemas"]["RuntimeEndpointSlice"];
+export type RuntimeSnapshot =
+  operations["getRuntimeSnapshot"]["responses"][200]["content"]["application/json"];
 
 const runtimeKey = ["control", "runtime"] as const;
+
+function collection<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeRuntimeSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
+  return {
+    ...snapshot,
+    instance: {
+      ...snapshot.instance,
+      conditions: collection(snapshot.instance.conditions),
+    },
+    workloads: collection(snapshot.workloads).map((workload) => ({
+      ...workload,
+      conditions: collection(workload.conditions),
+    })),
+    services: collection(snapshot.services).map((service) => ({
+      ...service,
+      ports: collection(service.ports),
+    })),
+    endpointSlices: collection(snapshot.endpointSlices).map((slice) => ({
+      ...slice,
+      ports: collection(slice.ports),
+    })),
+    pods: collection(snapshot.pods),
+    jobs: collection(snapshot.jobs).map((job) => ({
+      ...job,
+      conditions: collection(job.conditions),
+    })),
+    events: collection(snapshot.events),
+  };
+}
 
 function controlUrl(path: string): string {
   const base = config.controlApiUrl.endsWith("/")
@@ -135,7 +69,7 @@ async function getRuntime(): Promise<RuntimeSnapshot> {
     throw new Error("Runtime status is unavailable.");
   }
   try {
-    return (await response.json()) as RuntimeSnapshot;
+    return normalizeRuntimeSnapshot((await response.json()) as RuntimeSnapshot);
   } catch {
     throw new Error("Runtime status is unavailable.");
   }
@@ -159,7 +93,10 @@ export function useRuntime() {
     });
     const update = (event: MessageEvent<string>) => {
       try {
-        queryClient.setQueryData(runtimeKey, JSON.parse(event.data));
+        queryClient.setQueryData(
+          runtimeKey,
+          normalizeRuntimeSnapshot(JSON.parse(event.data) as RuntimeSnapshot),
+        );
       } catch {
         // Polling remains available if an individual event is malformed.
       }

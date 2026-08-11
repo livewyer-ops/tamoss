@@ -531,6 +531,65 @@ func TestReferencedIngestRunResolutionIsBoundedPrioritizedAndCached(t *testing.T
 	}
 }
 
+func TestReferencedIngestRunResolutionStaysBoundedWithTenThousandActiveJobs(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	mustAddToScheme(t, scheme)
+	reader := fake.NewClientBuilder().WithScheme(scheme).Build()
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	calls := make([]string, 0, maxIngestRunRootReads)
+	getter := resourceGetterFunc(func(_ context.Context, key client.ObjectKey, object client.Object, _ ...client.GetOption) error {
+		calls = append(calls, key.Name)
+		run := object.(*tamossv1alpha1.IngestRun)
+		*run = tamossv1alpha1.IngestRun{
+			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace, UID: types.UID(key.Name + "-uid")},
+			Spec:       tamossv1alpha1.IngestRunSpec{TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "media"}},
+		}
+		return nil
+	})
+	snapshotter, err := NewSnapshotter(reader, getter, "tams", "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotter.now = func() time.Time { return now }
+
+	const jobCount = 10_000
+	jobs := make([]batchv1.Job, jobCount)
+	for i := range jobs {
+		name := fmt.Sprintf("run-%05d", i)
+		jobs[i] = referencedIngestJob(name+"-job", name, types.UID(name+"-uid"), now.Add(time.Duration(i)*time.Second))
+		jobs[i].Status.Active = 1
+	}
+
+	resolution, err := snapshotter.resolveReferencedIngestRuns(context.Background(), jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolution.truncated || len(resolution.items) != maxIngestRunRootReads || len(calls) != maxIngestRunRootReads {
+		t.Fatalf(
+			"truncated=%t resolved=%d live reads=%d, want true/%d/%d",
+			resolution.truncated,
+			len(resolution.items),
+			len(calls),
+			maxIngestRunRootReads,
+			maxIngestRunRootReads,
+		)
+	}
+	for i, name := range calls {
+		want := fmt.Sprintf("run-%05d", jobCount-1-i)
+		if name != want {
+			t.Fatalf("live read %d = %q, want newest active root %q", i, name, want)
+		}
+	}
+
+	if _, err := snapshotter.resolveReferencedIngestRuns(context.Background(), jobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != maxIngestRunRootReads {
+		t.Fatalf("cached resolution made additional live reads: %v", calls)
+	}
+}
+
 func TestReferencedIngestRunResolutionFailsClosed(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
@@ -911,7 +970,7 @@ func TestPodCapPrioritisesActiveAndCorePods(t *testing.T) {
 	}
 }
 
-func TestKubernetesMessagesAreBoundedAndControlFree(t *testing.T) {
+func TestKubernetesStructuralValuesAreBoundedAndControlFree(t *testing.T) {
 	t.Parallel()
 	raw := "before\n\t\x00" + strings.Repeat("x", maxKubernetesTextRunes+10)
 	got := boundedKubernetesText(raw)
@@ -920,6 +979,83 @@ func TestKubernetesMessagesAreBoundedAndControlFree(t *testing.T) {
 	}
 	if len([]rune(got)) != maxKubernetesTextRunes {
 		t.Fatalf("bounded text rune count = %d, want %d", len([]rune(got)), maxKubernetesTextRunes)
+	}
+}
+
+func TestRuntimeProjectionOmitsFreeFormDiagnosticMessages(t *testing.T) {
+	t.Parallel()
+	const secret = "signed-url?credential=do-not-project"
+	tamoss := &tamossv1alpha1.Tamoss{
+		Status: tamossv1alpha1.TamossStatus{Conditions: []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionFalse, Reason: "invalid-reason!", Message: secret,
+		}}},
+	}
+	deployment := appsv1.Deployment{Status: appsv1.DeploymentStatus{Conditions: []appsv1.DeploymentCondition{{
+		Type: "Available", Status: corev1.ConditionFalse, Reason: "invalid-reason!", Message: secret,
+	}}}}
+	pod := corev1.Pod{Status: corev1.PodStatus{
+		Reason: "invalid-reason!", Message: secret,
+	}}
+	job := batchv1.Job{Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+		Type: "Failed", Status: corev1.ConditionTrue, Reason: "invalid-reason!", Message: secret,
+	}}}}
+	event := corev1.Event{
+		Type: "Custom", Reason: "invalid-reason!", Message: secret,
+		InvolvedObject: corev1.ObjectReference{
+			APIVersion: corev1.SchemeGroupVersion.String(), Kind: "Pod", Namespace: "tams",
+			Name: "api", UID: types.UID("pod-uid"),
+		},
+	}
+	objects := resourceIdentitySet{{
+		APIVersion: corev1.SchemeGroupVersion.String(), Kind: "Pod", Namespace: "tams",
+		Name: "api", UID: types.UID("pod-uid"),
+	}: {}}
+	snapshot := RuntimeSnapshot{
+		Instance:  instanceFromTamoss(tamoss),
+		Workloads: workloadsFromDeployments([]appsv1.Deployment{deployment}),
+		Pods:      podsFromKubernetes([]corev1.Pod{pod}),
+		Jobs:      jobsFromKubernetes([]batchv1.Job{job}),
+		Events:    relevantEvents([]corev1.Event{event}, objects),
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal runtime snapshot: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), `"message"`) {
+		t.Fatalf("runtime projection retained free-form diagnostic text: %s", encoded)
+	}
+	if got := snapshot.Instance.Conditions[0].Reason; got != "Unknown" {
+		t.Fatalf("instance reason = %q, want Unknown", got)
+	}
+	if got := snapshot.Workloads[0].Conditions[0].Reason; got != "Unknown" {
+		t.Fatalf("workload reason = %q, want Unknown", got)
+	}
+	if got := snapshot.Pods[0].Reason; got != "Unknown" {
+		t.Fatalf("pod reason = %q, want Unknown", got)
+	}
+	if got := snapshot.Jobs[0].Conditions[0].Reason; got != "Unknown" {
+		t.Fatalf("job reason = %q, want Unknown", got)
+	}
+	if got := snapshot.Events[0].Type + "/" + snapshot.Events[0].Reason; got != "Unknown/Unknown" {
+		t.Fatalf("event codes = %q, want Unknown/Unknown", got)
+	}
+}
+
+func TestProjectedKubernetesCodeAllowsOnlyMachineIdentifiers(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"":                      "",
+		"CrashLoopBackOff":      "CrashLoopBackOff",
+		"BackoffLimitExceeded2": "BackoffLimitExceeded2",
+		"contains space":        "Unknown",
+		"contains/slash":        "Unknown",
+		"9startsWithNumber":     "Unknown",
+		strings.Repeat("A", maxKubernetesCodeLength+1): "Unknown",
+	}
+	for input, want := range tests {
+		if got := projectedKubernetesCode(input); got != want {
+			t.Errorf("projectedKubernetesCode(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 

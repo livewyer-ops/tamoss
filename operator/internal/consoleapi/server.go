@@ -16,25 +16,68 @@ const (
 	ReadinessPath     = APIBasePath + "/readyz"
 	RuntimePath       = APIBasePath + "/runtime"
 	RuntimeEventsPath = RuntimePath + "/events"
+	IngestRunsPath    = APIBasePath + "/ingest-runs"
+	jsonCodeKey       = "code"
+	jsonErrorKey      = "error"
 )
 
 type Server struct {
-	monitor           *Monitor
-	authenticator     Authenticator
+	monitor       *Monitor
+	authenticator Authenticator
+	ingestRuns    IngestRunReadAPI
+	commands      *CommandAPI
+	// shutdownContext carries the process lifetime into long-lived responses.
+	// It is never used as a request-scoped context.
+	shutdownContext   context.Context
 	heartbeatInterval time.Duration
 	maxStreamDuration time.Duration
 }
 
-func NewServer(monitor *Monitor, authenticator Authenticator) *Server {
+type ServerOption func(*Server)
+
+func WithIngestRunReadAPI(api IngestRunReadAPI) ServerOption {
+	return func(server *Server) {
+		server.ingestRuns = api
+	}
+}
+
+func WithCommandAPI(api *CommandAPI) ServerOption {
+	return func(server *Server) {
+		server.commands = api
+	}
+}
+
+// WithShutdownContext binds every event stream to the process lifetime.
+// net/http does not cancel in-flight request contexts during Shutdown, and an
+// SSE heartbeat keeps its connection out of the idle set, so without this
+// signal each open stream holds graceful shutdown open until either the stream
+// deadline or the shutdown grace period expires. Cancelling the supplied
+// context ends the streams at once while ordinary bounded requests still drain.
+func WithShutdownContext(ctx context.Context) ServerOption {
+	return func(server *Server) {
+		if ctx != nil {
+			server.shutdownContext = ctx
+		}
+	}
+}
+
+func NewServer(monitor *Monitor, authenticator Authenticator, options ...ServerOption) *Server {
 	if authenticator == nil {
 		authenticator = rejectAuthenticator{}
 	}
-	return &Server{
+	server := &Server{
 		monitor:           monitor,
 		authenticator:     authenticator,
+		shutdownContext:   context.Background(),
 		heartbeatInterval: 15 * time.Second,
 		maxStreamDuration: 5 * time.Minute,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(server)
+		}
+	}
+	return server
 }
 
 func (s *Server) Handler() http.Handler {
@@ -43,6 +86,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+ReadinessPath, s.readiness)
 	mux.Handle("GET "+RuntimePath, s.requireViewer(http.HandlerFunc(s.runtime)))
 	mux.Handle("GET "+RuntimeEventsPath, s.requireViewer(http.HandlerFunc(s.runtimeEvents)))
+	mux.Handle("GET "+IngestRunsPath, s.requireViewer(http.HandlerFunc(s.listIngestRuns)))
+	mux.Handle("GET "+IngestRunsPath+"/{name}", s.requireViewer(http.HandlerFunc(s.getIngestRun)))
+	if s.commands != nil {
+		s.commands.RegisterRoutes(mux)
+	}
 	return securityHeaders(mux)
 }
 
@@ -53,30 +101,26 @@ func (s *Server) requireViewer(next http.Handler) http.Handler {
 			switch {
 			case errors.Is(err, ErrForbidden):
 				writeJSON(w, http.StatusForbidden, map[string]string{
-					"code":  "forbidden",
-					"error": "access denied",
+					jsonCodeKey:  "forbidden",
+					jsonErrorKey: "access denied",
 				})
 			default:
 				writeJSON(w, http.StatusUnauthorized, map[string]string{
-					"code":  "unauthenticated",
-					"error": "authentication required",
+					jsonCodeKey:  "unauthenticated",
+					jsonErrorKey: "authentication required",
 				})
 			}
 			return
 		}
 		if !identity.CanView() {
 			writeJSON(w, http.StatusForbidden, map[string]string{
-				"code":  "forbidden",
-				"error": "access denied",
+				jsonCodeKey:  "forbidden",
+				jsonErrorKey: "access denied",
 			})
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(contextWithIdentity(r, identity)))
+		next.ServeHTTP(w, r)
 	})
-}
-
-func contextWithIdentity(request *http.Request, identity Identity) context.Context {
-	return context.WithValue(request.Context(), identityContextKey{}, identity)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -95,7 +139,7 @@ func (s *Server) readiness(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) runtime(w http.ResponseWriter, _ *http.Request) {
 	snapshot, _, found := s.monitor.Current()
 	if !found {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "runtime state is not available"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{jsonErrorKey: "runtime state is not available"})
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
@@ -105,7 +149,7 @@ func (s *Server) runtimeEvents(w http.ResponseWriter, r *http.Request) {
 	controller := http.NewResponseController(w)
 	streamDeadline := time.Now().Add(s.maxStreamDuration)
 	if err := controller.SetWriteDeadline(streamDeadline); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming is unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{jsonErrorKey: "streaming is unavailable"})
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -135,6 +179,8 @@ func (s *Server) runtimeEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-s.shutdownContext.Done():
 			return
 		case <-streamLifetime.C:
 			return

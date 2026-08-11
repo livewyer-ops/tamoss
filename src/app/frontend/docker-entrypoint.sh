@@ -114,7 +114,7 @@ location = /_tamoss/auth {
     proxy_set_header X-Original-Method \$request_method;
     proxy_set_header X-Forwarded-Host \$http_host;
     proxy_set_header X-Forwarded-Method \$request_method;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;
     proxy_set_header X-Forwarded-Uri \$request_uri;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -203,7 +203,7 @@ ${auth_directives}
     proxy_set_header Origin \$http_origin;
     proxy_set_header Range \$http_range;
     proxy_set_header User-Agent \$http_user_agent;
-    proxy_set_header Host \$host;
+    proxy_set_header Host \$http_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
@@ -221,6 +221,7 @@ location = /ui-api {
 
 location /ui-api/ {
 ${auth_directives}
+    client_max_body_size 8k;
     proxy_pass ${console_upstream};
     proxy_http_version 1.1;
     # The Console API receives only protocol headers plus identity established
@@ -233,10 +234,10 @@ ${auth_directives}
     proxy_set_header Last-Event-ID \$http_last_event_id;
     proxy_set_header Origin \$http_origin;
     proxy_set_header User-Agent \$http_user_agent;
-    proxy_set_header Host \$host;
+    proxy_set_header Host \$http_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;
     proxy_set_header X-Request-ID \$request_id;
 ${console_trusted_identity_headers}
     proxy_set_header Connection "";

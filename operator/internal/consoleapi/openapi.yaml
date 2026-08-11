@@ -1,0 +1,1003 @@
+openapi: 3.1.0
+info:
+  title: TAMOSS Console API
+  version: 1.0.0
+  description: >-
+    Bounded browser-facing projections and commands for one TAMOSS instance.
+    Authentication is established by the trusted UI gateway; browsers never
+    send the internal forward-auth proof headers directly.
+servers:
+  - url: /ui-api/v1
+paths:
+  /healthz:
+    get:
+      operationId: getConsoleHealth
+      summary: Check the Console process
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /readyz:
+    get:
+      operationId: getConsoleReadiness
+      summary: Check whether an initial runtime snapshot is available
+      responses:
+        "200":
+          description: Runtime state is available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: No current runtime state is available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotReadyResponse"
+  /runtime:
+    get:
+      operationId: getRuntimeSnapshot
+      summary: Get the latest bounded Kubernetes runtime projection
+      responses:
+        "200":
+          description: The latest snapshot, which may be explicitly stale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: The first runtime snapshot is not available yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeUnavailableError"
+  /runtime/events:
+    get:
+      operationId: streamRuntimeSnapshots
+      summary: Stream complete runtime snapshots
+      description: >-
+        Server-sent events named runtime. Events are latest-state notifications,
+        are not replayed, and each data field contains a RuntimeSnapshot JSON
+        document. The server closes a connection after a bounded lifetime.
+      responses:
+        "200":
+          description: A text/event-stream response.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /session:
+    get:
+      operationId: getConsoleSession
+      summary: Get the current projected identity and capabilities
+      responses:
+        "200":
+          description: Current identity and feature capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /ingest-runs:
+    get:
+      operationId: listIngestRuns
+      summary: Traverse durable ingest history
+      description: >-
+        Pages use opaque Kubernetes snapshot cursors. Filtering a namespace-wide
+        page can produce an empty items array with a nextCursor; totals and a
+        global sort order are deliberately not promised. A cursor is
+        cryptographically bound to the limit and phase that produced it, so
+        changing either value means restarting the traversal without a cursor.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum items in the page. A cursor is bound to this value; sending
+            a different limit alongside a cursor is rejected as invalid_cursor.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: phase
+          in: query
+          required: false
+          description: >-
+            Optional phase filter. A cursor is bound to this value, including
+            its absence; adding, removing, or changing the filter alongside a
+            cursor is rejected as invalid_cursor.
+          schema:
+            $ref: "#/components/schemas/IngestRunPhase"
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            The nextCursor returned by the immediately preceding page. The
+            cursor is authenticated and bound to the limit and phase it was
+            issued with, so it is only valid when replayed with exactly those
+            values, and only against a Console deployment holding the same
+            cursor key. Any other use is rejected as invalid_cursor rather than
+            silently re-anchoring the traversal.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 16384
+      responses:
+        "200":
+          description: A bounded traversal page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestRunListResponse"
+        "400":
+          description: >-
+            The query is invalid (invalid_query), or the cursor is malformed,
+            was not issued by this Console deployment, or was replayed with a
+            limit or phase other than the pair it was bound to
+            (invalid_cursor).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "410":
+          description: The Kubernetes snapshot behind the cursor expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/Busy"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "504":
+          $ref: "#/components/responses/Timeout"
+  /ingest-runs/{name}:
+    parameters:
+      - $ref: "#/components/parameters/IngestRunName"
+    get:
+      operationId: getIngestRun
+      summary: Get one durable ingest run
+      responses:
+        "200":
+          description: A bounded detail projection without credential or artifact locators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestRunDetail"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/Busy"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "504":
+          $ref: "#/components/responses/Timeout"
+  /ingest-runs/{name}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/IngestRunName"
+    post:
+      operationId: cancelIngestRun
+      summary: Request one-way cancellation of an active ingest run
+      description: >-
+        Requires the operator role, an exact same-origin browser request, and
+        the UID and revision returned by the detail resource. Replaying a
+        successful cancellation is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelIngestRunRequest"
+      responses:
+        "200":
+          description: Cancellation is now requested, or the request was replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelIngestRunResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The object was replaced, its revision changed, or it is no longer active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The request body exceeds the command limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: The request is not application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/Busy"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "504":
+          $ref: "#/components/responses/Timeout"
+components:
+  parameters:
+    IngestRunName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 253
+        pattern: "^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$"
+  responses:
+    BadRequest:
+      description: The request body or its target is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Busy:
+      description: The bounded request concurrency is exhausted.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: The identity lacks the required role.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: The run does not exist for this TAMOSS instance.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Timeout:
+      description: The bounded Kubernetes operation timed out.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthenticated:
+      description: No valid trusted browser identity is present.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unavailable:
+      description: The feature or Kubernetes operation is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ready
+    NotReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: notReady
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, error]
+      properties:
+        code:
+          type: string
+        error:
+          type: string
+    RuntimeUnavailableError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+    RuntimeSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - observedAt
+        - stale
+        - instance
+        - workloads
+        - services
+        - endpointSlices
+        - pods
+        - jobs
+        - events
+      properties:
+        schemaVersion:
+          type: string
+          const: "1.0"
+        observedAt:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        ingestRuntimeTruncated:
+          type: boolean
+        instance:
+          $ref: "#/components/schemas/RuntimeInstance"
+        workloads:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/RuntimeWorkload"
+        services:
+          type: array
+          maxItems: 64
+          items:
+            $ref: "#/components/schemas/RuntimeService"
+        endpointSlices:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/RuntimeEndpointSlice"
+        pods:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/RuntimePod"
+        jobs:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/RuntimeJob"
+        events:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/RuntimeEvent"
+    RuntimeInstance:
+      type: object
+      additionalProperties: false
+      required: [name, namespace, uid, generation, observedGeneration, phase, conditions]
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        uid:
+          type: string
+        generation:
+          type: integer
+          format: int64
+        observedGeneration:
+          type: integer
+          format: int64
+        phase:
+          type: string
+        conditions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/RuntimeInstanceCondition"
+    RuntimeInstanceCondition:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type:
+          $ref: "#/components/schemas/DiagnosticCode"
+        status:
+          type: string
+          enum: ["True", "False", Unknown]
+        reason:
+          $ref: "#/components/schemas/DiagnosticCode"
+        observedGeneration:
+          type: integer
+          format: int64
+        lastTransitionTime:
+          type: string
+          format: date-time
+    RuntimeResourceCondition:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type:
+          $ref: "#/components/schemas/DiagnosticCode"
+        status:
+          type: string
+          enum: ["True", "False", Unknown]
+        reason:
+          $ref: "#/components/schemas/DiagnosticCode"
+        lastTransitionTime:
+          type: string
+          format: date-time
+    RuntimeWorkload:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - name
+        - status
+        - generation
+        - observedGeneration
+        - desiredReplicas
+        - readyReplicas
+        - availableReplicas
+        - updatedReplicas
+        - conditions
+      properties:
+        kind:
+          type: string
+          const: Deployment
+        name:
+          type: string
+        component:
+          type: string
+        status:
+          type: string
+          enum: [ready, progressing, unavailable, scaledDown]
+        generation:
+          type: integer
+          format: int64
+        observedGeneration:
+          type: integer
+          format: int64
+        desiredReplicas:
+          type: integer
+          format: int32
+        readyReplicas:
+          type: integer
+          format: int32
+        availableReplicas:
+          type: integer
+          format: int32
+        updatedReplicas:
+          type: integer
+          format: int32
+        conditions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/RuntimeResourceCondition"
+    RuntimeService:
+      type: object
+      additionalProperties: false
+      required: [name, type, ports]
+      properties:
+        name:
+          type: string
+        component:
+          type: string
+        type:
+          type: string
+        selectorComponent:
+          type: string
+        ports:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/RuntimeServicePort"
+    RuntimeServicePort:
+      type: object
+      additionalProperties: false
+      required: [protocol, port, targetPort]
+      properties:
+        name:
+          type: string
+        protocol:
+          type: string
+        port:
+          type: integer
+          format: int32
+        targetPort:
+          type: string
+    RuntimeEndpointSlice:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - serviceName
+        - addressType
+        - ports
+        - totalEndpoints
+        - readyEndpoints
+        - notReadyEndpoints
+        - terminatingEndpoints
+      properties:
+        name:
+          type: string
+        serviceName:
+          type: string
+        component:
+          type: string
+        addressType:
+          type: string
+        ports:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/RuntimeEndpointSlicePort"
+        totalEndpoints:
+          type: integer
+          format: int32
+        readyEndpoints:
+          type: integer
+          format: int32
+        notReadyEndpoints:
+          type: integer
+          format: int32
+        terminatingEndpoints:
+          type: integer
+          format: int32
+    RuntimeEndpointSlicePort:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        protocol:
+          type: string
+        port:
+          type: integer
+          format: int32
+    RuntimePod:
+      type: object
+      additionalProperties: false
+      required: [name, phase, ready, restarts, deleting]
+      properties:
+        name:
+          type: string
+        component:
+          type: string
+        phase:
+          type: string
+        ready:
+          type: boolean
+        restarts:
+          type: integer
+          format: int32
+        reason:
+          $ref: "#/components/schemas/DiagnosticCode"
+        startedAt:
+          type: string
+          format: date-time
+        deleting:
+          type: boolean
+    RuntimeJob:
+      type: object
+      additionalProperties: false
+      required: [name, status, active, succeeded, failed, conditions]
+      properties:
+        name:
+          type: string
+        component:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, suspended]
+        active:
+          type: integer
+          format: int32
+        succeeded:
+          type: integer
+          format: int32
+        failed:
+          type: integer
+          format: int32
+        startTime:
+          type: string
+          format: date-time
+        completionTime:
+          type: string
+          format: date-time
+        conditions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/RuntimeResourceCondition"
+    RuntimeEvent:
+      type: object
+      additionalProperties: false
+      required: [type, regarding, count]
+      properties:
+        type:
+          type: string
+          enum: [Normal, Warning, Unknown]
+        reason:
+          $ref: "#/components/schemas/DiagnosticCode"
+        regarding:
+          $ref: "#/components/schemas/RuntimeObjectReference"
+        count:
+          type: integer
+          format: int32
+        firstObservedAt:
+          type: string
+          format: date-time
+        lastObservedAt:
+          type: string
+          format: date-time
+    RuntimeObjectReference:
+      type: object
+      additionalProperties: false
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+        name:
+          type: string
+    DiagnosticCode:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: "^[A-Za-z][A-Za-z0-9]*$"
+    Role:
+      type: string
+      enum: [viewer, operator, ingest-runner]
+    Capability:
+      type: object
+      additionalProperties: false
+      required: [available, allowed]
+      properties:
+        available:
+          type: boolean
+        allowed:
+          type: boolean
+        reason:
+          type: string
+    SessionIdentity:
+      type: object
+      additionalProperties: false
+      required: [subject, method, roles]
+      properties:
+        subject:
+          type: string
+        username:
+          type: string
+        method:
+          type: string
+          enum: [forward-auth, development-anonymous]
+        roles:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Role"
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, identity, capabilities]
+      properties:
+        schemaVersion:
+          type: string
+          const: "1.0"
+        identity:
+          $ref: "#/components/schemas/SessionIdentity"
+        capabilities:
+          $ref: "#/components/schemas/SessionCapabilities"
+    IngestRunCapabilities:
+      type: object
+      additionalProperties: false
+      required: [read, create, cancel, retry]
+      properties:
+        read:
+          $ref: "#/components/schemas/Capability"
+        create:
+          $ref: "#/components/schemas/Capability"
+        cancel:
+          $ref: "#/components/schemas/Capability"
+        retry:
+          $ref: "#/components/schemas/Capability"
+    SessionCapabilities:
+      type: object
+      additionalProperties: false
+      required: [ingestRuns]
+      properties:
+        ingestRuns:
+          $ref: "#/components/schemas/IngestRunCapabilities"
+    IngestRunPhase:
+      type: string
+      enum:
+        - Pending
+        - Queued
+        - Running
+        - Succeeded
+        - PartiallySucceeded
+        - Failed
+        - Cancelled
+    IngestRunProgress:
+      type: object
+      additionalProperties: false
+      required: [inputsTotal, inputsCompleted, inputsSucceeded, inputsFailed, bytesUploaded]
+      properties:
+        inputsTotal:
+          type: integer
+          format: int32
+        inputsCompleted:
+          type: integer
+          format: int32
+        inputsSucceeded:
+          type: integer
+          format: int32
+        inputsFailed:
+          type: integer
+          format: int32
+        bytesUploaded:
+          type: integer
+          format: int64
+    IngestRunSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - uid
+        - revision
+        - phase
+        - profile
+        - sizeClass
+        - desiredState
+        - attempt
+        - createdAt
+        - progress
+        - cancellable
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+        revision:
+          type: string
+        phase:
+          $ref: "#/components/schemas/IngestRunPhase"
+        profile:
+          type: string
+        sizeClass:
+          type: string
+        desiredState:
+          type: string
+          enum: [Running, Cancelled]
+        attempt:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        progress:
+          $ref: "#/components/schemas/IngestRunProgress"
+        cancellable:
+          type: boolean
+    IngestRunCondition:
+      type: object
+      additionalProperties: false
+      required: [type, status]
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+          enum: ["True", "False", Unknown]
+        reason:
+          type: string
+        lastTransitionTime:
+          type: string
+          format: date-time
+    IngestRunOptions:
+      type: object
+      additionalProperties: false
+      required: [verify, dryRun, maxInputs, concurrency]
+      properties:
+        storageBackend:
+          type: string
+        verify:
+          type: boolean
+        dryRun:
+          type: boolean
+        maxInputs:
+          type: integer
+          format: int32
+        concurrency:
+          type: integer
+          format: int32
+    IngestRunObjectReference:
+      type: object
+      additionalProperties: false
+      required: [name, uid]
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+    IngestRunResult:
+      type: object
+      additionalProperties: false
+      required: [present, verified]
+      properties:
+        present:
+          type: boolean
+        size:
+          type: integer
+          format: int64
+        mediaType:
+          type: string
+        verified:
+          type: boolean
+    IngestRunDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - uid
+        - revision
+        - phase
+        - profile
+        - sizeClass
+        - desiredState
+        - attempt
+        - createdAt
+        - progress
+        - cancellable
+        - generation
+        - observedGeneration
+        - inputKind
+        - options
+        - conditions
+      properties:
+        name:
+          type: string
+        uid:
+          type: string
+        revision:
+          type: string
+        phase:
+          $ref: "#/components/schemas/IngestRunPhase"
+        profile:
+          type: string
+        sizeClass:
+          type: string
+        desiredState:
+          type: string
+          enum: [Running, Cancelled]
+        attempt:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        progress:
+          $ref: "#/components/schemas/IngestRunProgress"
+        cancellable:
+          type: boolean
+        generation:
+          type: integer
+          format: int64
+        observedGeneration:
+          type: integer
+          format: int64
+        inputKind:
+          type: string
+        options:
+          $ref: "#/components/schemas/IngestRunOptions"
+        job:
+          $ref: "#/components/schemas/IngestRunObjectReference"
+        tamsinRunId:
+          type: string
+        retryOf:
+          $ref: "#/components/schemas/IngestRunObjectReference"
+        result:
+          $ref: "#/components/schemas/IngestRunResult"
+        conditions:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/IngestRunCondition"
+    IngestRunPageInformation:
+      type: object
+      additionalProperties: false
+      required: [limit]
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+    IngestRunListResponse:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, items, page]
+      properties:
+        schemaVersion:
+          type: string
+          const: "1.0"
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/IngestRunSummary"
+        page:
+          $ref: "#/components/schemas/IngestRunPageInformation"
+    CancelIngestRunRequest:
+      type: object
+      additionalProperties: false
+      required: [uid, revision]
+      properties:
+        uid:
+          type: string
+          minLength: 1
+          maxLength: 512
+        revision:
+          type: string
+          minLength: 1
+          maxLength: 512
+    CancelIngestRunResponse:
+      type: object
+      additionalProperties: false
+      required: [run, replayed]
+      properties:
+        run:
+          $ref: "#/components/schemas/IngestRunDetail"
+        replayed:
+          type: boolean

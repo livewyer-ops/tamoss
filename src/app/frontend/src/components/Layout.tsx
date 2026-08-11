@@ -36,7 +36,7 @@ const navigation = [
   {
     label: "Operations",
     items: [
-      { to: "/ingest", label: "Tamsin jobs", icon: FolderInput },
+      { to: "/ingest", label: "Ingest runs", icon: FolderInput },
       { to: "/deletions", label: "Deletion requests", icon: Trash2 },
       { to: "/webhooks", label: "Webhooks", icon: Webhook },
     ],

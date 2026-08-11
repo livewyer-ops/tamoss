@@ -35,6 +35,8 @@ const (
 	maxEvents                   = 50
 	maxConditions               = 32
 	maxKubernetesTextRunes      = 1024
+	maxKubernetesCodeLength     = 128
+	unknownDiagnosticCode       = "Unknown"
 	maxIngestRunRootReads       = 16
 	defaultIngestRunReadTimeout = 4 * time.Second
 	ingestRunValidationTTL      = 30 * time.Second
@@ -473,10 +475,9 @@ func instanceFromTamoss(tamoss *tamossv1alpha1.Tamoss) Instance {
 	conditions := make([]InstanceCondition, 0, len(tamoss.Status.Conditions))
 	for _, condition := range tamoss.Status.Conditions {
 		conditions = append(conditions, InstanceCondition{
-			Type:               condition.Type,
+			Type:               projectedKubernetesCode(condition.Type),
 			Status:             string(condition.Status),
-			Reason:             condition.Reason,
-			Message:            boundedKubernetesText(condition.Message),
+			Reason:             projectedKubernetesCode(condition.Reason),
 			ObservedGeneration: condition.ObservedGeneration,
 			LastTransitionTime: formatTime(condition.LastTransitionTime.Time),
 		})
@@ -505,10 +506,9 @@ func workloadsFromDeployments(items []appsv1.Deployment) []Workload {
 		conditions := make([]ResourceCondition, 0, len(deployment.Status.Conditions))
 		for _, condition := range deployment.Status.Conditions {
 			conditions = append(conditions, ResourceCondition{
-				Type:               string(condition.Type),
+				Type:               projectedKubernetesCode(string(condition.Type)),
 				Status:             string(condition.Status),
-				Reason:             condition.Reason,
-				Message:            boundedKubernetesText(condition.Message),
+				Reason:             projectedKubernetesCode(condition.Reason),
 				LastTransitionTime: formatTime(condition.LastTransitionTime.Time),
 			})
 		}
@@ -654,7 +654,7 @@ func podsFromKubernetes(items []corev1.Pod) []Pod {
 		for _, container := range pod.Status.ContainerStatuses {
 			restarts += container.RestartCount
 		}
-		reason, message := podReason(pod)
+		reason := podReason(pod)
 		startedAt := ""
 		if pod.Status.StartTime != nil {
 			startedAt = formatTime(pod.Status.StartTime.Time)
@@ -665,8 +665,7 @@ func podsFromKubernetes(items []corev1.Pod) []Pod {
 			Phase:     podPhase(pod),
 			Ready:     podReady(pod),
 			Restarts:  restarts,
-			Reason:    reason,
-			Message:   boundedKubernetesText(message),
+			Reason:    projectedKubernetesCode(reason),
 			StartedAt: startedAt,
 			Deleting:  pod.DeletionTimestamp != nil,
 		})
@@ -721,21 +720,21 @@ func podReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func podReason(pod *corev1.Pod) (string, string) {
-	if pod.Status.Reason != "" || pod.Status.Message != "" {
-		return pod.Status.Reason, pod.Status.Message
+func podReason(pod *corev1.Pod) string {
+	if pod.Status.Reason != "" {
+		return pod.Status.Reason
 	}
 	statuses := append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...)
 	statuses = append(statuses, pod.Status.ContainerStatuses...)
 	for _, status := range statuses {
-		if status.State.Waiting != nil && (status.State.Waiting.Reason != "" || status.State.Waiting.Message != "") {
-			return status.State.Waiting.Reason, status.State.Waiting.Message
+		if status.State.Waiting != nil && status.State.Waiting.Reason != "" {
+			return status.State.Waiting.Reason
 		}
-		if status.State.Terminated != nil && status.State.Terminated.ExitCode != 0 {
-			return status.State.Terminated.Reason, status.State.Terminated.Message
+		if status.State.Terminated != nil && status.State.Terminated.ExitCode != 0 && status.State.Terminated.Reason != "" {
+			return status.State.Terminated.Reason
 		}
 	}
-	return "", ""
+	return ""
 }
 
 func jobsFromKubernetes(items []batchv1.Job) []Job {
@@ -754,10 +753,9 @@ func jobsFromKubernetes(items []batchv1.Job) []Job {
 		conditions := make([]ResourceCondition, 0, len(job.Status.Conditions))
 		for _, condition := range job.Status.Conditions {
 			conditions = append(conditions, ResourceCondition{
-				Type:               string(condition.Type),
+				Type:               projectedKubernetesCode(string(condition.Type)),
 				Status:             string(condition.Status),
-				Reason:             condition.Reason,
-				Message:            boundedKubernetesText(condition.Message),
+				Reason:             projectedKubernetesCode(condition.Reason),
 				LastTransitionTime: formatTime(condition.LastTransitionTime.Time),
 			})
 		}
@@ -856,9 +854,8 @@ func relevantEvents(
 			count = 1
 		}
 		result = append(result, KubernetesEvent{
-			Type:    event.Type,
-			Reason:  event.Reason,
-			Message: boundedKubernetesText(event.Message),
+			Type:   projectedEventType(event.Type),
+			Reason: projectedKubernetesCode(event.Reason),
 			Regarding: ObjectReference{
 				Kind: event.InvolvedObject.Kind,
 				Name: event.InvolvedObject.Name,
@@ -912,6 +909,39 @@ func boundedKubernetesText(value string) string {
 		count++
 	}
 	return result.String()
+}
+
+func projectedKubernetesCode(value string) string {
+	if value == "" {
+		return ""
+	}
+	if len(value) > maxKubernetesCodeLength {
+		return unknownDiagnosticCode
+	}
+	for index := range len(value) {
+		character := value[index]
+		letter := character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z'
+		digit := character >= '0' && character <= '9'
+		if index == 0 {
+			if !letter {
+				return unknownDiagnosticCode
+			}
+			continue
+		}
+		if !letter && !digit {
+			return unknownDiagnosticCode
+		}
+	}
+	return value
+}
+
+func projectedEventType(value string) string {
+	switch value {
+	case corev1.EventTypeNormal, corev1.EventTypeWarning:
+		return value
+	default:
+		return unknownDiagnosticCode
+	}
 }
 
 func capSlice[T any](items []T, limit int) []T {

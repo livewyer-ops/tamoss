@@ -90,6 +90,31 @@ func TestRuntimeTruncationJSONIsAdditiveAndOptional(t *testing.T) {
 	}
 }
 
+func TestRuntimeSnapshotMarshalsCollectionsAsArrays(t *testing.T) {
+	t.Parallel()
+	snapshot := RuntimeSnapshot{
+		Services:       []Service{{Name: "api"}},
+		EndpointSlices: []EndpointSlice{{Name: "api-abc"}},
+		Workloads:      []Workload{{Name: "api"}},
+		Jobs:           []Job{{Name: "ingest"}},
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), ":null") {
+		t.Fatalf("runtime response contains a null collection: %s", encoded)
+	}
+	for _, expected := range []string{
+		`"conditions":[]`, `"workloads":[`, `"services":[`, `"ports":[]`,
+		`"endpointSlices":[`, `"pods":[]`, `"jobs":[`, `"events":[]`,
+	} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("runtime response omits %s: %s", expected, encoded)
+		}
+	}
+}
+
 func TestRuntimeEventStreamStartsWithLatestSnapshot(t *testing.T) {
 	t.Parallel()
 	monitor := NewMonitor(&queuedSource{results: []sourceResult{{
@@ -129,6 +154,66 @@ func TestRuntimeEventStreamStartsWithLatestSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeEventStreamStopsOnTheShutdownSignal(t *testing.T) {
+	t.Parallel()
+	monitor := NewMonitor(&queuedSource{results: []sourceResult{{
+		snapshot: RuntimeSnapshot{SchemaVersion: RuntimeSchemaVersion, Instance: Instance{Phase: "Ready"}},
+	}}})
+	if err := monitor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	shutdown, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	consoleServer := NewServer(
+		monitor,
+		NewDevelopmentAnonymousAuthenticator(),
+		WithShutdownContext(shutdown),
+	)
+	// Neither the heartbeat nor the stream deadline may end the stream instead.
+	consoleServer.heartbeatInterval = time.Hour
+	consoleServer.maxStreamDuration = time.Hour
+	server := httptest.NewServer(consoleServer.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := server.Client().Get(server.URL + RuntimeEventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := response.Body.Close(); err != nil {
+			t.Errorf("close SSE response: %v", err)
+		}
+	})
+	readFirstSSEEvent(t, response.Body)
+
+	stop()
+	// httptest.Server.Close blocks until every in-flight handler has returned.
+	closed := make(chan struct{})
+	go func() {
+		server.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the event stream ignored the shutdown signal")
+	}
+}
+
+func readFirstSSEEvent(t *testing.T, body io.Reader) {
+	t.Helper()
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		if strings.HasPrefix(scanner.Text(), "data: ") {
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read the event stream: %v", err)
+	}
+	t.Fatal("the event stream closed before its first event")
+}
+
 func TestRuntimeEndpointsRequireAuthenticatedViewerButProbesDoNot(t *testing.T) {
 	t.Parallel()
 	monitor := NewMonitor(&queuedSource{results: []sourceResult{{
@@ -160,31 +245,6 @@ func TestNilAuthenticatorFailsClosed(t *testing.T) {
 	t.Parallel()
 	monitor := NewMonitor(&queuedSource{})
 	assertAuthResponse(t, NewServer(monitor, nil).Handler(), nil, http.StatusUnauthorized, "unauthenticated")
-}
-
-func TestRuntimeAuthenticationAddsIdentityToContext(t *testing.T) {
-	t.Parallel()
-	authenticator := newTestForwardAuthAuthenticator(t)
-	server := NewServer(NewMonitor(&queuedSource{}), authenticator)
-	var got Identity
-	handler := server.requireViewer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var found bool
-		got, found = IdentityFromContext(r.Context())
-		if !found {
-			t.Error("authenticated identity was not added to the request context")
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	request := httptest.NewRequest(http.MethodGet, RuntimePath, nil)
-	request.Header.Set(ForwardAuthSecretHeader, testForwardAuthSecret)
-	request.Header.Set(ForwardAuthSubjectHeader, "user-123")
-	request.Header.Set(ForwardAuthUsernameHeader, "alice")
-	request.Header.Set(ForwardAuthGroupsHeader, "tamoss-viewers")
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNoContent || got.Subject != "user-123" || got.Username != "alice" || !got.CanView() {
-		t.Fatalf("unexpected authenticated request: status=%d identity=%#v", response.Code, got)
-	}
 }
 
 func TestRuntimeEventStreamHasBoundedAuthenticationLifetime(t *testing.T) {
