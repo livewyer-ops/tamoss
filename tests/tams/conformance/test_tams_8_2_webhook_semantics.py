@@ -18,6 +18,42 @@ from tests.tams.support import (
 pytestmark = pytest.mark.tams_conformance
 
 
+def test_segment_reads_emit_effective_object_timerange_only_when_requested(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    equal_object_id = register_segment(client, flow_id)
+    different_object_id = register_segment(
+        client,
+        flow_id,
+        timerange="[20:0_30:0)",
+        object_timerange="[100:0_110:0)",
+    )
+
+    omitted = client.get(f"/flows/{flow_id}/segments")
+    false = client.get(
+        f"/flows/{flow_id}/segments",
+        params={"include_object_timerange": "false"},
+    )
+    included = client.get(
+        f"/flows/{flow_id}/segments",
+        params={"include_object_timerange": "true"},
+    )
+
+    assert omitted.status_code == 200
+    assert false.status_code == 200
+    assert included.status_code == 200
+    assert all("object_timerange" not in item for item in omitted.json())
+    assert all("object_timerange" not in item for item in false.json())
+    timeranges = {
+        item["object_id"]: item["object_timerange"] for item in included.json()
+    }
+    assert timeranges == {
+        equal_object_id: "[0:0_10:0)",
+        different_object_id: "[100:0_110:0)",
+    }
+
+
 def test_segments_sort_exclusive_range_before_adjacent_point_and_reverse(
     client: TestClient,
 ) -> None:
@@ -51,6 +87,53 @@ def test_segments_sort_exclusive_range_before_adjacent_point_and_reverse(
     ]
     assert forward.headers["x-paging-reverse-order"] == "false"
     assert reverse.headers["x-paging-reverse-order"] == "true"
+
+
+def test_segment_webhooks_emit_effective_object_timerange_only_when_requested(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    webhook_ids: dict[str, UUID] = {}
+    for mode, option in (("omitted", None), ("false", False), ("true", True)):
+        body = webhook_payload(events=["flows/segments_added"])
+        if option is not None:
+            body["include_object_timerange"] = option
+        created = client.post("/service/webhooks", json=body)
+        assert created.status_code == 201
+        webhook_ids[mode] = UUID(created.json()["id"])
+
+    equal_object_id = register_segment(client, flow_id)
+    different_object_id = register_segment(
+        client,
+        flow_id,
+        timerange="[20:0_30:0)",
+        object_timerange="[100:0_110:0)",
+    )
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    segments_by_webhook = {
+        webhook_id: {
+            delivery.payload["event"]["segments"][0]["object_id"]: delivery.payload[
+                "event"
+            ]["segments"][0]
+            for delivery in deliveries
+            if delivery.webhook_id == webhook_id
+        }
+        for webhook_id in webhook_ids.values()
+    }
+    for mode in ("omitted", "false"):
+        assert all(
+            "object_timerange" not in segment
+            for segment in segments_by_webhook[webhook_ids[mode]].values()
+        )
+    assert {
+        object_id: segment["object_timerange"]
+        for object_id, segment in segments_by_webhook[webhook_ids["true"]].items()
+    } == {
+        equal_object_id: "[0:0_10:0)",
+        different_object_id: "[100:0_110:0)",
+    }
 
 
 def test_flow_collection_webhook_selector_distinguishes_omitted_empty_and_parent(

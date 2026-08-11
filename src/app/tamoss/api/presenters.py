@@ -20,6 +20,7 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
+from tamoss.domain.segments import segment_object_timerange
 from tamoss.errors import normalize_error_payload
 
 JsonPayload = dict[str, object]
@@ -160,7 +161,7 @@ def segment_response(
             timerange=segment.timerange,
             ts_offset=segment.ts_offset,
             last_duration=segment.last_duration,
-            object_timerange=segment.object_timerange
+            object_timerange=segment_object_timerange(segment)
             if include_object_timerange
             else None,
             sample_offset=segment.sample_offset,

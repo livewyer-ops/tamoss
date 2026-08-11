@@ -38,7 +38,7 @@ from tamoss.domain.model import (
     WebhookRecord,
     utc_now,
 )
-from tamoss.domain.segments import timerange_union
+from tamoss.domain.segments import segment_object_timerange, timerange_union
 from tamoss.metrics import observe_webhook_delivery
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import (
@@ -482,16 +482,31 @@ def publish_source_deleted(
 def segment_payload(
     segment: SegmentRecord,
     get_urls: list[JsonPayload],
+    *,
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[JsonPayload] | None = None,
+    include_object_timerange: bool = False,
 ) -> JsonPayload:
     payload = {
         "object_id": segment.object_id,
         "timerange": segment.timerange,
         "ts_offset": segment.ts_offset,
         "last_duration": segment.last_duration,
+        "object_timerange": (
+            segment_object_timerange(segment) if include_object_timerange else None
+        ),
         "sample_offset": segment.sample_offset,
         "sample_count": segment.sample_count,
         "get_urls": get_urls,
         "key_frame_count": segment.key_frame_count,
+        "init_object": (
+            {
+                "object_id": init_object.id,
+                "get_urls": init_get_urls or [],
+            }
+            if init_object is not None
+            else None
+        ),
     }
     return without_none(payload)
 
@@ -504,29 +519,53 @@ def segments_added_event(
     webhook_data: WebhookData,
     object_storage: ObjectStorage,
 ) -> JsonPayload:
-    media_objects = []
-    for object_id in dict.fromkeys(segment.object_id for segment in segments):
+    event_objects = []
+    for object_id in dict.fromkeys(
+        object_id
+        for segment in segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    ):
         media_object = objects_by_id.get(object_id)
         if media_object is not None:
-            media_objects.append(media_object)
+            event_objects.append(media_object)
+    presigned_value = webhook_data.get("presigned")
+    presigned = presigned_value if isinstance(presigned_value, bool) else None
     get_urls_by_object = (
         objects_get_urls(
-            media_objects,
+            event_objects,
             object_storage=object_storage,
             accept_get_urls=_optional_string_set(webhook_data.get("accept_get_urls")),
             accept_storage_ids=_optional_string_set(
                 webhook_data.get("accept_storage_ids")
             ),
-            presigned=webhook_data.get("presigned"),
+            presigned=presigned,
             verbose_storage=bool(webhook_data.get("verbose_storage")),
         )
-        if media_objects
+        if event_objects
         else {}
     )
+    include_object_timerange = bool(webhook_data.get("include_object_timerange"))
     return {
         "flow_id": str(flow.id),
         "segments": [
-            segment_payload(segment, get_urls_by_object.get(segment.object_id, []))
+            segment_payload(
+                segment,
+                get_urls_by_object.get(segment.object_id, []),
+                init_object=(
+                    objects_by_id.get(segment.init_object_id)
+                    if segment.init_object_id is not None
+                    else None
+                ),
+                init_get_urls=(
+                    get_urls_by_object.get(segment.init_object_id, [])
+                    if segment.init_object_id is not None
+                    else None
+                ),
+                include_object_timerange=include_object_timerange,
+            )
             for segment in segments
         ],
     }
