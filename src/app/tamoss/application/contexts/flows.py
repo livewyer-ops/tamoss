@@ -21,6 +21,7 @@ from tamoss.domain.flow_collections import (
     flow_collection,
     flow_with_collected_by,
 )
+from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
@@ -30,6 +31,7 @@ from tamoss.ports.repositories import (
     FlowCollectionRepository,
     FlowLookupRepository,
     FlowRepository,
+    ProfileRepository,
     WebhookEventRepository,
 )
 
@@ -207,17 +209,36 @@ def unlink_flow_collection_references(
         repository.save_flow(parent)
 
 
+def _optional_uuid_value(value: object) -> UUID | None:
+    return UUID(str(value)) if value is not None else None
+
+
+def _requested_profile_id(data: dict[str, Any]) -> UUID | Literal[""] | None:
+    if "profile_id" not in data:
+        return None
+    value = data["profile_id"]
+    if value == "":
+        return ""
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Profile ID.") from exc
+
+
 class FlowUseCases:
     repository: FlowRepository
     webhook_repository: WebhookEventRepository
+    profile_repository: ProfileRepository
 
     def __init__(
         self,
         *,
         repository: FlowRepository,
+        profile_repository: ProfileRepository,
         webhook_repository: WebhookEventRepository,
     ) -> None:
         self.repository = repository
+        self.profile_repository = profile_repository
         self.webhook_repository = webhook_repository
 
     def list_flows(
@@ -226,6 +247,7 @@ class FlowUseCases:
         source_id: UUID | None,
         timerange: str | None,
         format: str | None,
+        profile_id: UUID | None,
         codec: str | None,
         label: str | None,
         frame_width: int | None,
@@ -247,6 +269,13 @@ class FlowUseCases:
             timerange_is_empty=requested_timerange.is_empty,
             timerange_is_point=requested_timerange.is_point,
             format=format,
+            profile_id=profile_id,
+            status=None,
+            init_segments=None,
+            collected_by_ids=None,
+            top_level_only=False,
+            sort_by=FlowSortBy.CREATED,
+            reverse_order=False,
             codec=codec,
             label=label,
             frame_width=frame_width,
@@ -390,6 +419,11 @@ class FlowUseCases:
                 raise BadRequest("Bad request. Invalid Flow property value.")
         elif property_name in {"avg_bit_rate", "max_bit_rate"}:
             ensure_flow_writable(flow)
+            if property_name == "avg_bit_rate" and flow.profile_id is not None:
+                raise BadRequest(
+                    "Bad request. Profile-backed Flows cannot override "
+                    "average bit rate."
+                )
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise BadRequest("Bad request. Invalid Flow bit rate.")
         else:
@@ -408,6 +442,10 @@ class FlowUseCases:
     ) -> None:
         flow = self.get_flow(flow_id)
         ensure_flow_writable(flow)
+        if property_name == "avg_bit_rate" and flow.profile_id is not None:
+            raise BadRequest(
+                "Bad request. Profile-backed Flows cannot override average bit rate."
+            )
         flow.data.pop(property_name, None)
         self._save_and_publish(flow, identity)
 
@@ -496,21 +534,78 @@ class FlowUseCases:
 
         data = dict(flow)
         tags_supplied = "tags" in data
-        flow_collection = data.pop("flow_collection", None)
         strip_server_managed_flow_fields(
             data,
             preserve_metadata_version=existing is None,
         )
-        replacement_tags = dict(data.get("tags") or {})
 
-        if existing is not None:
+        requested_profile_id = _requested_profile_id(data)
+        unlinking_profile = False
+        inherited_profile_fields: set[str] = set()
+        if existing is None and requested_profile_id == "":
+            raise BadRequest("Bad request. A new Flow cannot unlink a Profile.")
+
+        if existing is None and isinstance(requested_profile_id, UUID):
+            profile_id = requested_profile_id
+            profile = self.profile_repository.get_profile(profile_id)
+            if profile is None:
+                raise BadRequest("Bad request. Profile does not exist.")
+            supplied_technical = (
+                _TECHNICAL_FLOW_FIELDS | set(profile.flow_metadata)
+            ).intersection(supplied_fields)
+            if supplied_technical:
+                raise BadRequest(
+                    "Bad request. Profile-backed Flows cannot override "
+                    "technical metadata."
+                )
+            data = {**data, **profile.flow_metadata, "profile_id": str(profile_id)}
+        elif existing is not None and existing.profile_id is None:
+            if requested_profile_id == "":
+                raise BadRequest("Bad request. The Flow is not Profile-backed.")
+            if isinstance(requested_profile_id, UUID):
+                raise BadRequest(
+                    "Bad request. A Profile cannot be attached to an existing Flow."
+                )
+        elif existing is not None and existing.profile_id is not None:
+            if (
+                isinstance(requested_profile_id, UUID)
+                and requested_profile_id != existing.profile_id
+            ):
+                raise BadRequest(
+                    "Bad request. A Flow cannot be re-pointed to another Profile."
+                )
+            profile = self.profile_repository.get_profile(existing.profile_id)
+            if profile is None:
+                raise BadRequest("Bad request. Stored Flow Profile does not exist.")
+            if requested_profile_id == "":
+                unlinking_profile = True
+                inherited_profile_fields = set(profile.flow_metadata)
+                data.pop("profile_id", None)
+            else:
+                supplied_technical = (
+                    _TECHNICAL_FLOW_FIELDS | set(profile.flow_metadata)
+                ).intersection(supplied_fields)
+                if supplied_technical:
+                    raise BadRequest(
+                        "Bad request. Profile-backed Flows cannot override "
+                        "technical metadata."
+                    )
+                data = {
+                    **data,
+                    **profile.flow_metadata,
+                    "profile_id": str(existing.profile_id),
+                }
+
+        if existing is not None and not unlinking_profile:
             data = self._flow_update_payload(existing, data)
 
         try:
-            validate_flow_payload(data)
+            data = validate_flow_payload(data)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid Flow JSON.") from exc
 
+        flow_collection = data.pop("flow_collection", None)
+        replacement_tags = dict(data.get("tags") or {})
         source_id = UUID(str(data["source_id"]))
         format_value = data["format"]
         source_was_created = False
@@ -542,6 +637,7 @@ class FlowUseCases:
                 source_id=source_id,
                 format=format_value,
                 container=data.get("container"),
+                profile_id=_optional_uuid_value(data.get("profile_id")),
                 read_only=bool(data.get("read_only")),
                 tags=replacement_tags,
                 created=now,
@@ -556,7 +652,13 @@ class FlowUseCases:
             data["metadata_updated"] = now.isoformat()
             data["metadata_version"] = str(uuid4())
             data["updated_by"] = identity.subject
-            stored_data = {**existing.data, **data}
+            existing_data = dict(existing.data)
+            if unlinking_profile:
+                for field_name in (
+                    inherited_profile_fields | _TECHNICAL_FLOW_FIELDS | {"profile_id"}
+                ):
+                    existing_data.pop(field_name, None)
+            stored_data = {**existing_data, **data}
             stored_data.pop("collected_by", None)
             if not tags_supplied:
                 stored_data.pop("tags", None)
@@ -567,7 +669,8 @@ class FlowUseCases:
                 data=stored_data,
                 source_id=source_id,
                 format=format_value,
-                container=data.get("container"),
+                container=stored_data.get("container"),
+                profile_id=_optional_uuid_value(stored_data.get("profile_id")),
                 read_only=bool(data.get("read_only"))
                 if data.get("read_only") is not None
                 else existing.read_only,

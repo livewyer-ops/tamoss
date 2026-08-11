@@ -243,6 +243,36 @@ def test_oauth2_route_scopes_are_enforced_independently_of_provider(
     assert admin_service.status_code == 200
 
 
+def test_oauth2_profile_routes_require_read_and_write_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_id = "00000000-0000-4000-8000-000000000001"
+    with _oauth_client(
+        monkeypatch,
+        {
+            "read-token": {"tams-api/read"},
+            "write-token": {"tams-api/write"},
+        },
+    ) as client:
+        read_list = client.get("/service/profiles", headers=_bearer("read-token"))
+        write_list = client.get("/service/profiles", headers=_bearer("write-token"))
+        read_create = client.post(
+            f"/service/profiles/{profile_id}",
+            json={},
+            headers=_bearer("read-token"),
+        )
+        write_create = client.post(
+            f"/service/profiles/{profile_id}",
+            json={},
+            headers=_bearer("write-token"),
+        )
+
+    assert read_list.status_code == 200
+    assert write_list.status_code == 403
+    assert read_create.status_code == 403
+    assert write_create.status_code != 403
+
+
 def test_oauth2_scope_names_are_configurable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
