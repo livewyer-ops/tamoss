@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.tams.support import multi_flow_payload, video_flow_payload
+from tests.tams.support import (
+    image_flow_payload,
+    multi_flow_payload,
+    register_segment,
+    upload_allocated_object,
+    video_flow_payload,
+)
 
 pytestmark = pytest.mark.tams_conformance
 
@@ -402,6 +411,143 @@ def test_profile_filters_and_item_ids_reject_invalid_values_with_contract_status
     assert malformed_create.status_code == 404
 
 
+def _set_init_segments(payload: dict[str, Any], enabled: bool) -> dict[str, Any]:
+    updated = deepcopy(payload)
+    updated["essence_parameters"]["init_segments"] = enabled
+    return updated
+
+
+def test_init_segments_changes_only_before_first_segment(
+    client: TestClient,
+) -> None:
+    empty_flow_id = uuid4()
+    empty_payload = video_flow_payload(empty_flow_id, uuid4())
+    assert client.put(f"/flows/{empty_flow_id}", json=empty_payload).status_code == 201
+    assert (
+        client.put(
+            f"/flows/{empty_flow_id}",
+            json=_set_init_segments(empty_payload, True),
+        ).status_code
+        == 204
+    )
+    assert client.put(f"/flows/{empty_flow_id}", json=empty_payload).status_code == 204
+
+    ordinary_flow_id = uuid4()
+    ordinary_payload = video_flow_payload(ordinary_flow_id, uuid4())
+    assert (
+        client.put(f"/flows/{ordinary_flow_id}", json=ordinary_payload).status_code
+        == 201
+    )
+    register_segment(client, ordinary_flow_id)
+    changed_ordinary = client.put(
+        f"/flows/{ordinary_flow_id}",
+        json=_set_init_segments(ordinary_payload, True),
+    )
+    assert changed_ordinary.status_code == 400
+    assert (
+        client.put(f"/flows/{ordinary_flow_id}", json=ordinary_payload).status_code
+        == 204
+    )
+
+    init_flow_id = uuid4()
+    init_payload = _set_init_segments(
+        video_flow_payload(init_flow_id, uuid4()),
+        True,
+    )
+    assert client.put(f"/flows/{init_flow_id}", json=init_payload).status_code == 201
+    media_id = f"objects/{uuid4()}.m4s"
+    init_id = f"objects/{uuid4()}.mp4"
+    assert (
+        client.post(
+            f"/flows/{init_flow_id}/storage",
+            json={"object_ids": [media_id]},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/flows/{init_flow_id}/storage",
+            json={"object_ids": [init_id], "content_type": "video/mp4"},
+        ).status_code
+        == 201
+    )
+    upload_allocated_object(client, media_id)
+    upload_allocated_object(client, init_id)
+    registered = client.post(
+        f"/flows/{init_flow_id}/segments",
+        json={
+            "object_id": media_id,
+            "init_object_id": init_id,
+            "timerange": "[0:0_10:0)",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+
+    changed_init = client.put(
+        f"/flows/{init_flow_id}",
+        json=video_flow_payload(init_flow_id, init_payload["source_id"]),
+    )
+    assert changed_init.status_code == 400
+    assert client.put(f"/flows/{init_flow_id}", json=init_payload).status_code == 204
+
+
+def test_flow_write_rejects_coerced_technical_scalars_and_indexes_valid_boolean(
+    client: TestClient,
+) -> None:
+    invalid_flow_id = uuid4()
+    invalid_payload = video_flow_payload(invalid_flow_id, uuid4())
+    invalid_payload["essence_parameters"]["init_segments"] = "false"
+
+    rejected = client.put(f"/flows/{invalid_flow_id}", json=invalid_payload)
+    assert rejected.status_code == 400
+
+    invalid_bitrate_id = uuid4()
+    invalid_bitrate = video_flow_payload(invalid_bitrate_id, uuid4())
+    invalid_bitrate["avg_bit_rate"] = "1234"
+    assert (
+        client.put(f"/flows/{invalid_bitrate_id}", json=invalid_bitrate).status_code
+        == 400
+    )
+
+    flow_id = uuid4()
+    payload = _set_init_segments(video_flow_payload(flow_id, uuid4()), False)
+    assert client.put(f"/flows/{flow_id}", json=payload).status_code == 201
+    assert (
+        client.get(f"/flows/{flow_id}").json()["essence_parameters"]["init_segments"]
+        is False
+    )
+    assert flow_id in {
+        UUID(item["id"])
+        for item in client.get("/flows", params={"init_segments": "false"}).json()
+    }
+    assert flow_id not in {
+        UUID(item["id"])
+        for item in client.get("/flows", params={"init_segments": "true"}).json()
+    }
+
+
+def test_image_flows_and_profiles_reject_init_segments(
+    client: TestClient,
+) -> None:
+    flow_id = uuid4()
+    flow_payload = image_flow_payload(flow_id, uuid4())
+    flow_payload["essence_parameters"]["init_segments"] = True
+    assert client.put(f"/flows/{flow_id}", json=flow_payload).status_code == 400
+
+    profile_id = uuid4()
+    profile_payload = _single_essence_profile_payload(
+        profile_id,
+        format=IMAGE_FORMAT,
+        codec="image/jpeg",
+        label="Invalid init image Profile",
+    )
+    profile_payload["flow_metadata"]["essence_parameters"]["init_segments"] = True
+    assert (
+        client.post(f"/service/profiles/{profile_id}", json=profile_payload).status_code
+        == 400
+    )
+
+
 @pytest.mark.parametrize(
     ("field_name", "invalid_value"),
     [
@@ -420,6 +566,59 @@ def test_profile_write_rejects_coerced_technical_scalars(
 
     response = client.post(f"/service/profiles/{profile_id}", json=payload)
     assert response.status_code == 400
+
+
+def test_init_segments_check_and_flow_save_share_the_segment_write_lock(
+    tamoss_app: FastAPI,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow_id = uuid4()
+    payload = video_flow_payload(flow_id, uuid4())
+    assert client.put(f"/flows/{flow_id}", json=payload).status_code == 201
+    register_segment(client, flow_id)
+
+    repository = tamoss_app.state.tamoss_use_cases.repository
+    original_unit_of_work = repository.unit_of_work
+    original_lock = repository.lock_flow_segments
+    original_has_segments = repository.has_segments
+    calls: list[str] = []
+
+    @contextmanager
+    def tracked_unit_of_work() -> Iterator[object]:
+        calls.append("unit-of-work-enter")
+        try:
+            with original_unit_of_work() as active:
+                yield active
+        finally:
+            calls.append("unit-of-work-exit")
+
+    def tracked_lock(requested_flow_id: UUID) -> None:
+        assert calls == ["unit-of-work-enter"]
+        calls.append("segment-lock")
+        original_lock(requested_flow_id)
+
+    def tracked_has_segments(requested_flow_id: UUID) -> bool:
+        assert calls == ["unit-of-work-enter", "segment-lock"]
+        calls.append("has-segments")
+        return original_has_segments(requested_flow_id)
+
+    monkeypatch.setattr(repository, "unit_of_work", tracked_unit_of_work)
+    monkeypatch.setattr(repository, "lock_flow_segments", tracked_lock)
+    monkeypatch.setattr(repository, "has_segments", tracked_has_segments)
+
+    changed = client.put(
+        f"/flows/{flow_id}",
+        json=_set_init_segments(payload, True),
+    )
+
+    assert changed.status_code == 400
+    assert calls == [
+        "unit-of-work-enter",
+        "segment-lock",
+        "has-segments",
+        "unit-of-work-exit",
+    ]
 
 
 def test_all_flow_status_values_are_filterable_through_get_and_head(

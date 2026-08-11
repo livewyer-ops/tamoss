@@ -139,6 +139,7 @@ def get_object(
     with_page_headers(response, request, flow_page)
     if head := head_response(request, response):
         return head
+    init_object = objects.object_with_init(media_object)
     return object_response(
         media_object,
         flow_page.items,
@@ -151,4 +152,16 @@ def get_object(
             storage_tag_values=storage_tag_values,
             storage_tag_exists=storage_tag_exists,
         ),
+        init_object=init_object,
+        init_get_urls=objects.object_get_urls(
+            init_object,
+            accept_get_urls=accepted_labels,
+            accept_storage_ids=accepted_storage_ids,
+            presigned=presigned,
+            verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values,
+            storage_tag_exists=storage_tag_exists,
+        )
+        if init_object is not None
+        else [],
     )

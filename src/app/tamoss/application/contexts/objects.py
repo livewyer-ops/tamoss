@@ -225,6 +225,13 @@ class ObjectUseCases:
             storage_tag_exists=storage_tag_exists,
         ).get(media_object.id, [])
 
+    def object_with_init(
+        self, media_object: MediaObjectRecord
+    ) -> MediaObjectRecord | None:
+        if media_object.init_object_id is None:
+            return None
+        return self.repository.get_object(media_object.init_object_id)
+
 
 def _object_instance_matches(
     instance: ObjectInstance, *, storage_id: UUID | None, label: str | None

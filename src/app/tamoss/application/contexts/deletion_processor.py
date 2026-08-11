@@ -319,13 +319,27 @@ def _refresh_deleted_object_references(
     deleted_segments: list[SegmentRecord],
     delete_request_id: UUID | None,
 ) -> None:
-    deleted_object_ids = {segment.object_id for segment in deleted_segments}
+    deleted_object_ids = {
+        object_id
+        for segment in deleted_segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    }
     repository.lock_objects(deleted_object_ids)
     remaining_segments = repository.list_segments_for_objects(
         flow_id=flow_id,
         object_ids=deleted_object_ids,
     )
-    remaining_object_ids = {segment.object_id for segment in remaining_segments}
+    remaining_object_ids = {
+        object_id
+        for segment in remaining_segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    }
     media_objects = repository.get_objects(deleted_object_ids)
     segments_by_flow_id = {flow_id: remaining_segments}
     for object_id in deleted_object_ids:
@@ -335,10 +349,14 @@ def _refresh_deleted_object_references(
         if object_id not in remaining_object_ids:
             media_object.referenced_by_flows.discard(flow_id)
         if media_object.referenced_by_flows:
-            media_object.timerange = object_timerange(
-                repository,
-                media_object,
-                segments_by_flow_id=segments_by_flow_id,
+            media_object.timerange = (
+                object_timerange(
+                    repository,
+                    media_object,
+                    segments_by_flow_id=segments_by_flow_id,
+                )
+                if media_object.object_kind != "init"
+                else None
             )
             repository.save_object(media_object)
             continue

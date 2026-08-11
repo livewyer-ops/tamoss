@@ -150,6 +150,8 @@ def segment_response(
     segment: SegmentRecord,
     get_urls: list[dict[str, object]],
     *,
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[dict[str, object]] | None = None,
     include_object_timerange: bool = False,
 ) -> JsonPayload:
     return contract_dump(
@@ -165,6 +167,12 @@ def segment_response(
             sample_count=segment.sample_count,
             get_urls=get_urls,
             key_frame_count=segment.key_frame_count,
+            init_object=contract_models.InitObject(
+                object_id=init_object.id,
+                get_urls=init_get_urls or [],
+            )
+            if init_object is not None
+            else None,
         )
     )
 
@@ -174,8 +182,9 @@ def object_response(
     referenced_by_flows: list[UUID],
     *,
     get_urls: list[dict[str, object]],
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[dict[str, object]] | None = None,
 ) -> JsonPayload:
-    timerange = media_object.timerange or "()"
     return contract_dump(
         contract_models.Object(
             id=media_object.id,
@@ -183,8 +192,14 @@ def object_response(
             first_referenced_by_flow=str(media_object.first_referenced_by_flow)
             if media_object.first_referenced_by_flow is not None
             else None,
-            timerange=timerange,
+            timerange=media_object.timerange,
             get_urls=get_urls,
             key_frame_count=media_object.key_frame_count,
+            init_object=contract_models.InitObject1(
+                id=init_object.id,
+                get_urls=init_get_urls or [],
+            )
+            if init_object is not None
+            else None,
         )
     )

@@ -59,7 +59,7 @@ def concurrent_postgres_repos(
             connection.close()
 
 
-@pytest.mark.parametrize("shared_kind", ["media"])
+@pytest.mark.parametrize("shared_kind", ["media", "init"])
 def test_concurrent_cross_flow_registration_preserves_shared_object_references(
     shared_kind: str,
     postgres_connection: psycopg.Connection,
@@ -153,7 +153,161 @@ def test_concurrent_cross_flow_registration_preserves_shared_object_references(
     assert len(postgres_repo.segment_repository.list_segments(flow_ids[1])) == 1
 
 
-@pytest.mark.parametrize("shared_kind", ["media"])
+def test_implicit_init_reuse_locks_the_discovered_shared_object(
+    postgres_connection: psycopg.Connection,
+    postgres_repo: PostgresRepository,
+    concurrent_postgres_repos: ConcurrentPostgresRepos,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (first_repo, first_pid), (second_repo, second_pid) = concurrent_postgres_repos
+    seed_flow_ids = (uuid4(), uuid4())
+    reuse_flow_ids = (uuid4(), uuid4())
+    media_object_ids = (
+        f"bbc/implicit-media-a-{uuid4()}.mxf",
+        f"bbc/implicit-media-b-{uuid4()}.mxf",
+    )
+    shared_init_id = f"bbc/implicit-init-{uuid4()}.mxf"
+    for flow_id in (*seed_flow_ids, *reuse_flow_ids):
+        postgres_repo.flow_repository.save_flow(_flow(flow_id, init_segments=True))
+    for object_id in (*media_object_ids, shared_init_id):
+        postgres_repo.object_repository.save_object(MediaObjectRecord(id=object_id))
+    for flow_id, media_object_id in zip(seed_flow_ids, media_object_ids, strict=True):
+        result = use_cases(postgres_repo).segments.register_segment(
+            flow_id=flow_id,
+            segment_post=_segment_post(
+                object_id=media_object_id,
+                init_object_id=shared_init_id,
+            ),
+        )
+        assert result.error is None
+
+    first_locked = Event()
+    release_first = Event()
+    second_attempted = Event()
+    second_locked = Event()
+    original_first_lock = first_repo.segment_repository.lock_objects
+    original_second_lock = second_repo.segment_repository.lock_objects
+
+    def hold_first_lock(object_ids: Iterable[str]) -> None:
+        locked_ids = set(object_ids)
+        assert shared_init_id in locked_ids
+        original_first_lock(locked_ids)
+        first_locked.set()
+        if not release_first.wait(timeout=10):
+            raise AssertionError("timed out holding the implicit init Object lock")
+
+    def track_second_lock(object_ids: Iterable[str]) -> None:
+        locked_ids = set(object_ids)
+        assert shared_init_id in locked_ids
+        second_attempted.set()
+        original_second_lock(locked_ids)
+        second_locked.set()
+
+    monkeypatch.setattr(
+        first_repo.segment_repository,
+        "lock_objects",
+        hold_first_lock,
+    )
+    monkeypatch.setattr(
+        second_repo.segment_repository,
+        "lock_objects",
+        track_second_lock,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(
+            use_cases(first_repo).segments.register_segment,
+            flow_id=reuse_flow_ids[0],
+            segment_post=_segment_post(
+                object_id=media_object_ids[0],
+                init_object_id=None,
+            ),
+        )
+        assert first_locked.wait(timeout=5)
+
+        second_future = executor.submit(
+            use_cases(second_repo).segments.register_segment,
+            flow_id=reuse_flow_ids[1],
+            segment_post=_segment_post(
+                object_id=media_object_ids[1],
+                init_object_id=None,
+            ),
+        )
+        assert second_attempted.wait(timeout=5)
+        try:
+            _wait_for_ungranted_advisory_lock(
+                postgres_connection,
+                waiter_pid=second_pid,
+                blocker_pid=first_pid,
+            )
+            assert second_locked.is_set() is False
+        finally:
+            release_first.set()
+
+        first_result = first_future.result(timeout=5)
+        second_result = second_future.result(timeout=5)
+
+    assert first_result.error is None
+    assert second_result.error is None
+    shared_init = postgres_repo.object_repository.get_object(shared_init_id)
+    assert shared_init is not None
+    assert shared_init.referenced_by_flows == {
+        *seed_flow_ids,
+        *reuse_flow_ids,
+    }
+
+
+@pytest.mark.parametrize(
+    ("initial_uses_init", "reuse_uses_init"),
+    [(True, False), (False, True)],
+)
+def test_referenced_media_cannot_change_its_init_link_on_cross_flow_reuse(
+    initial_uses_init: bool,
+    reuse_uses_init: bool,
+    postgres_repo: PostgresRepository,
+) -> None:
+    initial_flow_id = uuid4()
+    reuse_flow_id = uuid4()
+    media_object_id = f"bbc/immutable-init-link-media-{uuid4()}.mxf"
+    init_object_id = f"bbc/immutable-init-link-init-{uuid4()}.mxf"
+    for flow_id, init_segments in (
+        (initial_flow_id, initial_uses_init),
+        (reuse_flow_id, reuse_uses_init),
+    ):
+        postgres_repo.flow_repository.save_flow(
+            _flow(flow_id, init_segments=init_segments)
+        )
+    for object_id in (media_object_id, init_object_id):
+        postgres_repo.object_repository.save_object(MediaObjectRecord(id=object_id))
+
+    initial_result = use_cases(postgres_repo).segments.register_segment(
+        flow_id=initial_flow_id,
+        segment_post=_segment_post(
+            object_id=media_object_id,
+            init_object_id=init_object_id if initial_uses_init else None,
+        ),
+    )
+    assert initial_result.error is None
+
+    reuse_result = use_cases(postgres_repo).segments.register_segment(
+        flow_id=reuse_flow_id,
+        segment_post=_segment_post(
+            object_id=media_object_id,
+            init_object_id=init_object_id if reuse_uses_init else None,
+        ),
+    )
+
+    assert reuse_result.error is not None
+    stored_media = postgres_repo.object_repository.get_object(media_object_id)
+    assert stored_media is not None
+    assert stored_media.referenced_by_flows == {initial_flow_id}
+    assert stored_media.init_object_id == (
+        init_object_id if initial_uses_init else None
+    )
+    assert postgres_repo.segment_repository.list_segments(reuse_flow_id) == []
+
+
+@pytest.mark.parametrize("shared_kind", ["media", "init"])
 def test_registration_and_cross_flow_deletion_preserve_the_retained_reference(
     shared_kind: str,
     postgres_connection: psycopg.Connection,

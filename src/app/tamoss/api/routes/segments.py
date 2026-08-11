@@ -113,8 +113,10 @@ def list_segments(
         response.headers["X-TAMOSS-Coverage-Gaps"] = ",".join(coverage_gaps)
     if head := head_response(request, response):
         return head
+    objects_by_id = segments.segment_objects(segment_page.items)
     get_urls_by_object_id = segments.segment_get_urls(
         segment_page.items,
+        objects_by_id=objects_by_id,
         accept_get_urls=accepted_labels,
         accept_storage_ids=accepted_storage_ids,
         presigned=presigned,
@@ -126,6 +128,12 @@ def list_segments(
         segment_response(
             segment,
             get_urls_by_object_id.get(segment.object_id, []),
+            init_object=objects_by_id.get(segment.init_object_id)
+            if segment.init_object_id is not None
+            else None,
+            init_get_urls=get_urls_by_object_id.get(segment.init_object_id, [])
+            if segment.init_object_id is not None
+            else [],
             include_object_timerange=include_object_timerange,
         )
         for segment in segment_page.items

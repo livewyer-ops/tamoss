@@ -225,6 +225,13 @@ def _requested_profile_id(data: dict[str, Any]) -> UUID | Literal[""] | None:
         raise BadRequest("Bad request. Invalid Profile ID.") from exc
 
 
+def _flow_init_segments(data: dict[str, Any]) -> bool:
+    essence = data.get("essence_parameters")
+    if not isinstance(essence, dict):
+        return False
+    return bool(essence.get("init_segments", False))
+
+
 class FlowUseCases:
     repository: FlowRepository
     webhook_repository: WebhookEventRepository
@@ -249,6 +256,7 @@ class FlowUseCases:
         format: str | None,
         profile_id: UUID | None,
         status: contract_models.FlowStatus | None,
+        init_segments: bool | None,
         collected_by_ids: set[UUID] | None,
         top_level_only: bool,
         sort_by: FlowSortBy,
@@ -276,7 +284,7 @@ class FlowUseCases:
             format=format,
             profile_id=profile_id,
             status=status.value if status is not None else None,
-            init_segments=None,
+            init_segments=init_segments,
             collected_by_ids=collected_by_ids,
             top_level_only=top_level_only,
             sort_by=sort_by,
@@ -529,7 +537,31 @@ class FlowUseCases:
         supplied_fields: set[str] | None = None,
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
-        if UUID(str(flow.get("id"))) != flow_id:
+        with self.repository.unit_of_work():
+            # Segment registration takes the same per-Flow lock. Keeping the
+            # capability check and Flow save inside it prevents a concurrent
+            # first Segment from racing an init_segments transition.
+            self.repository.lock_flow_segments(flow_id)
+            return self._put_flow_locked(
+                flow_id=flow_id,
+                flow=flow,
+                supplied_fields=supplied_fields,
+                identity=identity,
+            )
+
+    def _put_flow_locked(
+        self,
+        *,
+        flow_id: UUID,
+        flow: dict[str, Any],
+        supplied_fields: set[str] | None,
+        identity: Identity,
+    ) -> tuple[FlowRecord, bool]:
+        try:
+            body_flow_id = UUID(str(flow.get("id")))
+        except TypeError, ValueError:
+            raise NotFound("The requested Flow ID in the path is invalid.") from None
+        if body_flow_id != flow_id:
             raise NotFound("The requested Flow ID in the path is invalid.")
         supplied_fields = supplied_fields or set(flow)
         flow_collection_supplied = "flow_collection" in supplied_fields
@@ -609,6 +641,15 @@ class FlowUseCases:
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid Flow JSON.") from exc
 
+        if (
+            existing is not None
+            and _flow_init_segments(data) != existing.init_segments
+            and self.repository.has_segments(flow_id)
+        ):
+            raise BadRequest(
+                "Bad request. init_segments cannot change after Segments exist."
+            )
+
         flow_collection = data.pop("flow_collection", None)
         replacement_tags = dict(data.get("tags") or {})
         source_id = UUID(str(data["source_id"]))
@@ -644,6 +685,7 @@ class FlowUseCases:
                 container=data.get("container"),
                 profile_id=_optional_uuid_value(data.get("profile_id")),
                 status=data.get("status"),
+                init_segments=_flow_init_segments(data),
                 read_only=bool(data.get("read_only")),
                 tags=replacement_tags,
                 created=now,
@@ -678,6 +720,7 @@ class FlowUseCases:
                 container=stored_data.get("container"),
                 profile_id=_optional_uuid_value(stored_data.get("profile_id")),
                 status=stored_data.get("status"),
+                init_segments=_flow_init_segments(stored_data),
                 read_only=bool(data.get("read_only"))
                 if data.get("read_only") is not None
                 else existing.read_only,
