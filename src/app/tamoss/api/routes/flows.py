@@ -140,6 +140,7 @@ def get_flow(
 @router.put(
     "/flows/{flowId}",
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_json_body)],
     responses={
         204: {"description": "No content. The Flow has been updated."},
         400: {"description": "Bad request. Invalid Flow JSON."},
@@ -149,15 +150,15 @@ def get_flow(
 )
 def put_flow(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    flow: contract_models.FlowPut,
     request: Request,
+    flow: dict[str, Any] = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     identity = identify_request(request)
     stored, created = flows.put_flow(
         flow_id=flow_id,
-        flow=contract_dump(flow),
-        supplied_fields=set(flow.root.model_fields_set),
+        flow=flow,
+        supplied_fields=set(flow),
         identity=identity,
     )
     if not created:

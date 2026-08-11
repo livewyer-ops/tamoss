@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 from tamoss.application import webhooks as webhooking
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_aware_flow_timeranges,
@@ -54,6 +56,12 @@ _SERVER_MANAGED_FLOW_FIELDS = {
     "updated_by",
 }
 VALID_FLOW_FORMATS = {item.value for item in contract_models.ContentFormat}
+INIT_SEGMENTS_FLOW_FORMATS = {
+    "urn:x-nmos:format:video",
+    "urn:x-nmos:format:audio",
+    "urn:x-nmos:format:data",
+    "urn:x-nmos:format:multi",
+}
 
 
 @dataclass(frozen=True)
@@ -116,14 +124,42 @@ def validate_content_format_filter(value: str | None) -> None:
         raise ValueError("format must be a supported BBC content format")
 
 
-def validate_flow_payload(payload: dict[str, Any]) -> None:
+_TECHNICAL_FLOW_FIELDS = {
+    "format",
+    "codec",
+    "container",
+    "avg_bit_rate",
+    "segment_duration",
+    "container_mapping",
+    "essence_parameters",
+}
+
+
+def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    validate_init_segments_capability(payload)
     try:
-        flow = contract_models.FlowPut.model_validate(payload)
-    except ValidationError as exc:
+        # Validate as JSON so strict mode still accepts contract encodings such
+        # as UUID and datetime strings while rejecting scalar coercion.
+        flow = contract_models.FlowGet.model_validate_json(
+            json.dumps(payload),
+            strict=True,
+        )
+    except (TypeError, ValidationError) as exc:
         raise ValueError("flow payload does not match the BBC TAMS contract") from exc
 
     if isinstance(flow.root, contract_models.FlowVideo):
         _validate_video_frame_rate(flow.root.essence_parameters)
+    return contract_dump(flow, exclude_unset=True)
+
+
+def validate_init_segments_capability(payload: dict[str, Any]) -> None:
+    essence_parameters = payload.get("essence_parameters")
+    if (
+        isinstance(essence_parameters, dict)
+        and "init_segments" in essence_parameters
+        and payload.get("format") not in INIT_SEGMENTS_FLOW_FORMATS
+    ):
+        raise ValueError("init_segments is not supported by this Flow format")
 
 
 def _validate_video_frame_rate(
