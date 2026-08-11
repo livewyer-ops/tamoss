@@ -82,6 +82,56 @@ def test_target_env_loads_token_command_and_service_readiness(
     assert "unused" not in target_repr
 
 
+def test_target_env_media_origin_matches_whatever_path_storage_serves(
+    tmp_path: Path,
+) -> None:
+    target = _minimal_target(
+        tmp_path, "TEST_TAMOSS_S3=https://s3.example.test/", "TEST_TAMOSS_TOKEN=token"
+    )
+
+    loaded = E2ETarget.from_file(target)
+
+    assert loaded.s3_url == "https://s3.example.test"
+    assert loaded.is_media_origin("https://s3.example.test/bucket/object?signed=1")
+    assert loaded.is_media_origin("https://S3.EXAMPLE.TEST/object")
+    assert not loaded.is_media_origin("https://cdn.example.test/object")
+    assert not loaded.is_media_origin("https://s3.example.test.evil/object")
+
+
+def test_target_env_without_media_origin_matches_nothing(tmp_path: Path) -> None:
+    target = _minimal_target(tmp_path, "TEST_TAMOSS_TOKEN=token")
+
+    loaded = E2ETarget.from_file(target)
+
+    assert loaded.s3_url is None
+    assert not loaded.is_media_origin("https://s3.example.test/object")
+
+
+def test_target_env_rejects_media_origin_without_a_scheme(tmp_path: Path) -> None:
+    target = _minimal_target(
+        tmp_path, "TEST_TAMOSS_S3=s3.example.test", "TEST_TAMOSS_TOKEN=token"
+    )
+
+    with pytest.raises(pytest.UsageError, match="TEST_TAMOSS_S3"):
+        E2ETarget.from_file(target)
+
+
+def _minimal_target(tmp_path: Path, *extra_lines: str) -> Path:
+    target = tmp_path / "target.env"
+    target.write_text(
+        "\n".join(
+            [
+                "TEST_TAMOSS_API=https://api.example.test",
+                "TEST_TAMOSS_UI=https://ui.example.test",
+                "TEST_TAMOSS_AUTH_PASSWORD=unused",
+                *extra_lines,
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
 def test_target_env_rejects_non_positive_memory_budget(tmp_path: Path) -> None:
     target = tmp_path / "target.env"
     target.write_text(

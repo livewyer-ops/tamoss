@@ -6,6 +6,7 @@ import subprocess
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import urllib3
@@ -104,7 +105,7 @@ class E2ETarget:
             api_url=api_url.rstrip("/"),
             ui_url=ui_url.rstrip("/"),
             auth_url=auth_url.rstrip("/"),
-            s3_url=values.get("TEST_TAMOSS_S3", "").rstrip("/") or None,
+            s3_url=_optional_origin(values.get("TEST_TAMOSS_S3", ""), "TEST_TAMOSS_S3"),
             namespace=namespace,
             kubeconfig=kubeconfig,
             auth_namespace=auth_namespace,
@@ -151,6 +152,39 @@ class E2ETarget:
                 values.get("TEST_TAMOSS_MEMORY_BUDGET_MIB")
             ),
         )
+
+    def is_ui_origin(self, url: str) -> bool:
+        """Whether url is served by the TAMOSS UI origin."""
+        return _url_origin(url) == _url_origin(self.ui_url)
+
+    def is_media_origin(self, url: str) -> bool:
+        """Whether url is served by the media origin the target declares.
+
+        Matching is by origin rather than string prefix so a CDN or ingress in
+        front of object storage only has to be named once in TEST_TAMOSS_S3,
+        whatever bucket or path layout it exposes.
+        """
+        if not self.s3_url:
+            return False
+        return _url_origin(url) == _url_origin(self.s3_url)
+
+
+def _optional_origin(value: str, key: str) -> str | None:
+    candidate = value.strip().rstrip("/")
+    if not candidate:
+        return None
+    parts = urlsplit(candidate)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise pytest.UsageError(
+            f"{key} must be an absolute http(s) origin such as "
+            f"https://s3.example.com; got {value!r}."
+        )
+    return candidate
+
+
+def _url_origin(url: str) -> tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.lower()
 
 
 def _load_env_file(path: Path, seen: set[Path] | None = None) -> dict[str, str]:

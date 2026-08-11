@@ -30,6 +30,9 @@ _E2E_CHECK_IDS = {
     ),
     "test_deployed_oidc_metadata_and_jwks_are_ready": "e2e auth.oidc-discovery",
     "test_deployed_ui_ingest_run_history_is_read_only": "e2e ui.ingest-run-read-only",
+    "test_deployed_browser_session_cannot_mutate_same_origin_paths": (
+        "e2e ui.same-origin-write-denied"
+    ),
     "test_deployed_ui_playback_preview_buffers_demo_media": "e2e ui.playback-preview",
     "test_operator_kind_zero_to_ready_api_ingest_and_ui_load": (
         "e2e operator.kind-install"
@@ -39,6 +42,10 @@ _E2E_CHECK_IDS = {
 
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> None:
     _ = nextitem
+    # Helper unit tests share this package but are not deployed checks, so they
+    # must not be announced as unclassified e2e coverage.
+    if item.get_closest_marker("e2e") is None:
+        return
     terminal = item.config.pluginmanager.get_plugin("terminalreporter")
     message = _e2e_check_id(item.name)
     if terminal is not None:

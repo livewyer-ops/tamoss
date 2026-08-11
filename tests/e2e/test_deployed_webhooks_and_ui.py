@@ -7,6 +7,7 @@ from contextlib import suppress
 from string import Template
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
@@ -117,21 +118,19 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
     page = context.new_page()
     page_errors: list[str] = []
-    page.on("pageerror", lambda error: page_errors.append(str(error)))
+
+    def record_tamoss_page_error(error: Exception) -> None:
+        # Authentik's login pages are third-party and out of scope for this
+        # check, so only script errors raised on the TAMOSS origin count.
+        if e2e_target.is_ui_origin(page.url):
+            page_errors.append(f"{page.url}: {error}")
+
     try:
         _login_through_ui_ingress(page, e2e_target)
+        page.on("pageerror", record_tamoss_page_error)
         page.get_by_role("heading", name="Overview", exact=True).wait_for()
         runtime_config = page.evaluate("() => window.__TAMOSS_CONFIG__")
         assert runtime_config == {"controlApiUrl": "/ui-api/v1"}
-
-        deletion_status = page.evaluate(
-            """async () => {
-                const response = await fetch('/api/flow-delete-requests', {
-                    headers: {Accept: 'application/json'},
-                });
-                return {status: response.status, body: await response.json()};
-            }"""
-        )
 
         runtime_collections = page.evaluate(
             """async () => {
@@ -153,6 +152,16 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
                 };
             }"""
         )
+
+        deletion_status = page.evaluate(
+            """async () => {
+                const response = await fetch('/api/flow-delete-requests', {
+                    headers: {Accept: 'application/json'},
+                });
+                return {status: response.status, body: await response.json()};
+            }"""
+        )
+
         proxied = page.evaluate(
             """async () => {
                 const response = await fetch('/api/service', {
@@ -169,9 +178,9 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
         context.close()
 
     assert proxied["status"] == 200
+    assert runtime_collections == {"status": 200, "arrays": [True] * 7}
     assert deletion_status["status"] == 200
     assert isinstance(deletion_status["body"], list)
-    assert runtime_collections == {"status": 200, "arrays": [True] * 7}
     assert page_errors == []
     assert "application/json" in proxied["contentType"]
     proxied_service = json.loads(proxied["body"])
@@ -388,21 +397,121 @@ def test_deployed_ui_ingest_run_history_is_read_only(
 
 
 @pytest.mark.smoke
+def test_deployed_browser_session_cannot_mutate_same_origin_paths(
+    e2e_client: E2EClient,
+    e2e_target: E2ETarget,
+    e2e_browser: Browser,
+) -> None:
+    """An authenticated browser session must not be able to write anything.
+
+    The session capability flags are the server's own claim about itself. This
+    drives real writes through the same-origin paths the browser can reach and
+    proves the deployed proxy and Console reject them.
+    """
+    probe_flow_id = str(uuid4())
+    probe_run_name = f"tamoss-write-probe-{uuid4().hex[:8]}"
+    api_probes = [
+        {"method": "PUT", "path": f"/api/flows/{probe_flow_id}", "body": "{}"},
+        {
+            "method": "POST",
+            "path": f"/api/flows/{probe_flow_id}/segments",
+            "body": "{}",
+        },
+        {"method": "DELETE", "path": f"/api/flows/{probe_flow_id}", "body": None},
+        {"method": "POST", "path": "/api/service/webhooks", "body": "{}"},
+    ]
+    console_probes = [
+        {"method": "POST", "path": "/ui-api/v1/runtime", "body": "{}"},
+        {
+            "method": "DELETE",
+            "path": f"/ui-api/v1/ingest-runs/{probe_run_name}",
+            "body": None,
+        },
+    ]
+
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    page = context.new_page()
+    page.set_default_timeout(60_000)
+    try:
+        _login_through_ui_ingress(page, e2e_target)
+        # Positive controls: both same-origin paths answer reads for this
+        # session, so a rejected write is the proxy's doing and not an outage.
+        api_read = page.evaluate(_SAME_ORIGIN_FETCH, [_read_probe("/api/service")])
+        console_read = page.evaluate(
+            _SAME_ORIGIN_FETCH, [_read_probe("/ui-api/v1/session")]
+        )
+        api_writes = page.evaluate(_SAME_ORIGIN_FETCH, api_probes)
+        console_writes = page.evaluate(_SAME_ORIGIN_FETCH, console_probes)
+    finally:
+        context.close()
+
+    assert api_read[0]["status"] == 200, api_read
+    assert console_read[0]["status"] == 200, console_read
+    for attempt in api_writes:
+        assert attempt["status"] in {403, 405}, (
+            "The UI proxy accepted a browser write to the TAMS API: "
+            f"{attempt}. /api/ must be limited to GET, HEAD, and OPTIONS."
+        )
+    for attempt in console_writes:
+        assert attempt["status"] in {403, 405}, (
+            f"The Console API accepted an undeclared browser mutation: {attempt}"
+        )
+
+    # The rejection has to be real: the probe flow must not exist afterwards.
+    e2e_client.request("GET", f"/flows/{probe_flow_id}", expected={404})
+
+
+_SAME_ORIGIN_FETCH = """async (requests) => {
+    const results = [];
+    for (const request of requests) {
+        const init = {method: request.method, headers: {Accept: 'application/json'}};
+        if (request.body !== null) {
+            init.headers['Content-Type'] = 'application/json';
+            init.body = request.body;
+        }
+        const response = await fetch(request.path, init);
+        results.push({
+            method: request.method,
+            path: request.path,
+            status: response.status,
+            body: (await response.text()).slice(0, 200),
+        });
+    }
+    return results;
+}"""
+
+
+def _read_probe(path: str) -> dict[str, str | None]:
+    return {"method": "GET", "path": path, "body": None}
+
+
+@pytest.mark.smoke
 def test_deployed_ui_playback_preview_buffers_demo_media(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
     e2e_browser: Browser,
 ) -> None:
+    if not e2e_target.s3_url:
+        pytest.fail(
+            "This target does not set TEST_TAMOSS_S3, so the preview checks "
+            "cannot tell media traffic from application traffic. Add "
+            "TEST_TAMOSS_S3=<origin the deployed UI fetches media from> to "
+            f"the {e2e_target.name} target env file; see "
+            "tests/targets/remote.env.example."
+        )
+
     split_flow_id, audio_flow_id = _split_preview_flow_ids(e2e_client)
     context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
     page = context.new_page()
     page.set_default_timeout(60_000)
     media_requests: list[dict[str, object]] = []
     media_responses: list[dict[str, object]] = []
+    observed_origins: set[str] = set()
     signed_url_console_leak = False
 
     def observe_request(request: Any) -> None:
-        if not _is_storage_url(request.url, e2e_target):
+        observed_origins.add(_url_origin(request.url))
+        if not e2e_target.is_media_origin(request.url):
             return
         headers = {key.lower(): value for key, value in request.all_headers().items()}
         media_requests.append(
@@ -413,7 +522,7 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
         )
 
     def observe_response(response: Any) -> None:
-        if not _is_storage_url(response.url, e2e_target):
+        if not e2e_target.is_media_origin(response.url):
             return
         headers = {key.lower(): value for key, value in response.all_headers().items()}
         media_responses.append(
@@ -464,7 +573,13 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
     finally:
         context.close()
 
-    assert media_requests, "Preview made no request to the configured storage origin"
+    assert media_requests, (
+        "The preview loaded but issued no request to the configured media "
+        f"origin {e2e_target.s3_url}. The browser fetched from "
+        f"{sorted(observed_origins)}. If this deployment serves media through "
+        "a CDN or a different ingress hostname, set TEST_TAMOSS_S3 to that "
+        f"origin in the {e2e_target.name} target env file."
+    )
     assert not any(request["authorization"] for request in media_requests)
     assert not any(request["cookie"] for request in media_requests)
     assert media_responses, "Storage returned no media response"
@@ -599,8 +714,9 @@ def _split_preview_flow_ids(e2e_client: E2EClient) -> tuple[str, str]:
     )
 
 
-def _is_storage_url(url: str, target: E2ETarget) -> bool:
-    return bool(target.s3_url and url.startswith(f"{target.s3_url}/"))
+def _url_origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}" if parts.netloc else url
 
 
 def _contains_signed_url_marker(value: str) -> bool:
