@@ -49,7 +49,7 @@ def upgrade() -> None:
             to_jsonb(created),
             true
         )
-        WHERE record->>'created' IS NULL;
+        WHERE NULLIF(record->>'created', '') IS NULL;
         ALTER TABLE tamoss_sources ALTER COLUMN created SET NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_tamoss_sources_created
         ON tamoss_sources(created, id);
@@ -249,6 +249,14 @@ def upgrade() -> None:
             NULLIF(record->>'created', '')::timestamptz,
             created_at
         );
+        UPDATE tamoss_delete_requests
+        SET record = jsonb_set(
+            record,
+            '{created}',
+            to_jsonb(created_at),
+            true
+        )
+        WHERE NULLIF(record->>'created', '') IS NULL;
         CREATE INDEX IF NOT EXISTS idx_tamoss_delete_requests_created
         ON tamoss_delete_requests(created_at DESC NULLS LAST, id DESC);
         CREATE INDEX IF NOT EXISTS idx_tamoss_delete_requests_expiry

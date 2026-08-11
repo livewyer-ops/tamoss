@@ -108,7 +108,7 @@ class PostgresFlowSourceMixin:
             clauses.append(sql.SQL("flow.record #>> '{data,codec}' = %(codec)s"))
             params["codec"] = codec
         if label is not None:
-            clauses.append(sql.SQL("flow.record #>> '{data,label}' = %(label)s"))
+            clauses.append(sql.SQL("flow.label = %(label)s"))
             params["label"] = label
         if profile_id is not None:
             clauses.append(sql.SQL("flow.profile_id = %(profile_id)s"))

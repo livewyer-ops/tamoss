@@ -145,6 +145,11 @@ def test_tams_8_2_large_listing_queries_have_indexed_plans(
                 "WHERE status = 'ingesting' ORDER BY id LIMIT 51",
                 "idx_tamoss_flows_status_id",
             ),
+            "flow-label-filter": (
+                "SELECT record FROM tamoss_flows "
+                "WHERE label = 'flow-00100' ORDER BY id LIMIT 51",
+                "idx_tamoss_flows_label",
+            ),
             "storage": (
                 "SELECT record FROM tamoss_storage_backends "
                 "ORDER BY label ASC NULLS LAST, id ASC LIMIT 51",
@@ -346,6 +351,18 @@ def test_tams_8_2_migration_upgrades_populated_8_1_schema(
                 connection=upgraded_connection,
                 storage_backend=primary_backend(),
             )
+            runtime_source_created_rows: dict[str, datetime] = {}
+            for source_id, *_ in source_rows:
+                source = repository.source_repository.get_source(UUID(source_id))
+                assert source is not None
+                runtime_source_created_rows[source_id] = source.created
+            runtime_delete_created_rows: dict[str, datetime] = {}
+            for request_id, *_ in delete_rows:
+                request = repository.deletion_repository.get_delete_request(
+                    UUID(request_id)
+                )
+                assert request is not None
+                runtime_delete_created_rows[request_id] = request.created
             runtime_flow_rows: dict[str, dict[str, object]] = {}
             runtime_created_rows: dict[str, tuple[datetime, datetime]] = {}
             for flow_id in flow_projection_rows:
@@ -391,7 +408,17 @@ def test_tams_8_2_migration_upgrades_populated_8_1_schema(
             datetime(2026, 6, 1, 10, tzinfo=UTC),
             "2026-06-01T10:00:00+00:00",
         ),
+        (
+            "10000000-0000-4000-8000-000000000003",
+            datetime(2026, 6, 3, 11, tzinfo=UTC),
+            "2026-06-03T11:00:00+00:00",
+        ),
     ]
+    assert runtime_source_created_rows == {
+        "10000000-0000-4000-8000-000000000001": datetime(2026, 5, 26, 9, tzinfo=UTC),
+        "10000000-0000-4000-8000-000000000002": datetime(2026, 6, 1, 10, tzinfo=UTC),
+        "10000000-0000-4000-8000-000000000003": datetime(2026, 6, 3, 11, tzinfo=UTC),
+    }
     assert flow_rows == [
         (
             "20000000-0000-4000-8000-000000000001",
@@ -693,9 +720,13 @@ def test_tams_8_2_migration_upgrades_populated_8_1_schema(
         (
             "00000000-0000-4000-8000-000000000002",
             datetime(2026, 6, 2, 11, tzinfo=UTC),
-            None,
+            "2026-06-02T11:00:00+00:00",
         ),
     ]
+    assert runtime_delete_created_rows == {
+        "00000000-0000-4000-8000-000000000001": datetime(2026, 5, 1, 10, tzinfo=UTC),
+        "00000000-0000-4000-8000-000000000002": datetime(2026, 6, 2, 11, tzinfo=UTC),
+    }
     assert object_rows == [
         (
             "legacy/allocated.ts",
@@ -757,6 +788,7 @@ def _assert_tams_8_1_schema(connection: psycopg.Connection) -> None:
 def _seed_tams_8_1_upgrade_data(connection: psycopg.Connection) -> None:
     source_id = "10000000-0000-4000-8000-000000000001"
     fallback_source_id = "10000000-0000-4000-8000-000000000002"
+    empty_source_id = "10000000-0000-4000-8000-000000000003"
     flow_id = "20000000-0000-4000-8000-000000000001"
     collection_flow_id = "20000000-0000-4000-8000-000000000002"
     invalid_extension_flow_id = "20000000-0000-4000-8000-000000000003"
@@ -959,6 +991,7 @@ def _seed_tams_8_1_upgrade_data(connection: psycopg.Connection) -> None:
               id, format, label, tags, record, metadata_updated, created_at
             ) VALUES
               (%s, %s, %s, '{}'::jsonb, %s, %s, %s),
+              (%s, %s, %s, '{}'::jsonb, %s, %s, %s),
               (%s, %s, %s, '{}'::jsonb, %s, %s, %s)
             """,
             (
@@ -991,6 +1024,21 @@ def _seed_tams_8_1_upgrade_data(connection: psycopg.Connection) -> None:
                 ),
                 "2026-06-01T10:00:00+00:00",
                 "2026-06-01T10:00:00+00:00",
+                empty_source_id,
+                "urn:x-nmos:format:data",
+                "Migrated empty-created source",
+                Jsonb(
+                    {
+                        "id": empty_source_id,
+                        "format": "urn:x-nmos:format:data",
+                        "label": "Migrated empty-created source",
+                        "created": "",
+                        "metadata_updated": "2026-06-03T11:00:00+00:00",
+                        "tags": {},
+                    }
+                ),
+                "2026-06-03T11:00:00+00:00",
+                "2026-06-03T11:00:00+00:00",
             ),
         )
         cur.execute(
@@ -1108,7 +1156,12 @@ def _seed_tams_8_1_upgrade_data(connection: psycopg.Connection) -> None:
                 flow_id,
                 Jsonb(
                     {
+                        "id": "00000000-0000-4000-8000-000000000001",
+                        "flow_id": flow_id,
+                        "timerange_to_delete": "[0:0_1:0)",
+                        "delete_flow": False,
                         "created": "2026-05-01T10:00:00+00:00",
+                        "updated": "2026-05-01T10:00:00+00:00",
                         "status": "created",
                     }
                 ),
@@ -1116,7 +1169,16 @@ def _seed_tams_8_1_upgrade_data(connection: psycopg.Connection) -> None:
                 "2026-08-01T10:00:00+00:00",
                 "00000000-0000-4000-8000-000000000002",
                 flow_id,
-                Jsonb({"status": "created"}),
+                Jsonb(
+                    {
+                        "id": "00000000-0000-4000-8000-000000000002",
+                        "flow_id": flow_id,
+                        "timerange_to_delete": "[1:0_2:0)",
+                        "delete_flow": False,
+                        "updated": "2026-06-02T11:00:00+00:00",
+                        "status": "created",
+                    }
+                ),
                 "2026-06-02T11:00:00+00:00",
                 "2026-06-02T11:00:00+00:00",
             ),
