@@ -1,0 +1,510 @@
+schemaVersion: 1
+requirements:
+- id: TAMS-PROFILE-001
+  summary: Profile collection GET/HEAD, four essence formats, MIME filters, paging and invalid-query errors
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/profiles.py
+  - src/app/tamoss/application/contexts/profiles.py
+  - src/app/tamoss/adapters/postgres_repository/profiles.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_filters_accept_all_single_essence_formats_mime_and_paging
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_filters_and_item_ids_reject_invalid_values_with_contract_statuses
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-PROFILE-002
+  summary: Immutable Profile POST and item GET/HEAD with contract 404 semantics
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/profiles.py
+  - src/app/tamoss/application/contexts/profiles.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_profiles_are_immutable_filterable_paged_and_expand_flows
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_filters_and_item_ids_reject_invalid_values_with_contract_statuses
+  - tests/tams/conformance/test_request_validation.py::test_profiles_enforce_video_frame_rate_conditionals
+  - tests/tams/conformance/test_request_validation.py::test_profile_optional_contract_fields_reject_explicit_null
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-PROFILE-003
+  summary: Profile-backed Flow creation eagerly denormalises technical data and supports profile filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/adapters/postgres_repository/flows_sources.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_profiles_are_immutable_filterable_paged_and_expand_flows
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_fields
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-PROFILE-004
+  summary: Profile association is immutable; explicit empty-string unlink requires complete direct technical
+    metadata
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/api/routes/flows.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_fields
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_id_rejects_malformed_empty_attach_and_repoint
+- id: TAMS-PROFILE-005
+  summary: Profile flow_metadata rejects Flow-owned identity, common, status and server fields while retaining
+    non-conflicting extensions
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/profiles.py
+  - src/app/tamoss/application/contexts/flows.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_flow_metadata_rejects_flow_owned_keys_and_allows_extensions
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_image_flows_and_profiles_reject_init_segments
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_write_rejects_coerced_technical_scalars
+  - tests/tams/conformance/test_request_validation.py::test_profile_essence_parameters_reject_unknown_fields
+  - tests/tams/conformance/test_request_validation.py::test_profile_nested_technical_fields_reject_explicit_null
+  - tests/tams/conformance/test_request_validation.py::test_profile_open_technical_objects_preserve_null_extensions
+- id: TAMS-PROFILE-006
+  summary: Profile-backed avg_bit_rate cannot be changed through the Flow property endpoint
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/api/routes/flows.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_profile_backed_avg_bit_rate_put_and_delete_are_rejected
+- id: TAMS-FLOW-001
+  summary: Flow PUT/GET common and technical schema split
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/api/routes/flows.py
+  - src/app/tamoss/contract/generated/contract_models.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_profiles_are_immutable_filterable_paged_and_expand_flows
+  - tests/tams/conformance/test_request_validation.py::test_flow_essence_parameters_reject_unknown_fields
+  - tests/tams/conformance/test_request_validation.py::test_closed_essence_parameters_reject_explicit_null_fields
+  - tests/tams/conformance/test_request_validation.py::test_flow_nested_contract_fields_reject_explicit_null
+  - tests/tams/conformance/test_request_validation.py::test_open_technical_objects_preserve_null_extensions
+  - tests/tams/conformance/test_openapi_contract.py::test_runtime_openapi_has_bbc_operation_parity
+- id: TAMS-FLOW-002
+  summary: All four core Flow status values and exact GET/HEAD filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/domain/model.py
+  - src/app/tamoss/api/query_params.py
+  - src/app/tamoss/adapters/postgres_repository/flows_sources.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_all_flow_status_values_are_filterable_through_get_and_head
+  - tests/tams/conformance/test_request_validation.py::test_flow_status_and_init_segments_reject_explicit_null
+- id: TAMS-FLOW-003
+  summary: Flow init-segment capability and filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/query_params.py
+  - src/app/tamoss/adapters/postgres_repository/flows_sources.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_flow_status_init_filters_sorting_and_missing_label_order
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_image_flows_and_profiles_reject_init_segments
+- id: TAMS-LISTING-001
+  summary: Source created/updated/label sorting, reversal, and empty/non-empty collected-by filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/sources.py
+  - src/app/tamoss/domain/listings.py
+  - src/app/tamoss/adapters/postgres_repository/flows_sources.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_optional_collection_roles_order_and_top_level_filters
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_nonempty_flow_and_source_collected_by_filters_match_parent_ids
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_flow_and_source_created_and_updated_sorting_defaults_and_reversal
+  - tests/tams/conformance/test_request_validation.py::test_collected_by_ids_matches_uuid_list_empty_schema
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMS-LISTING-002
+  summary: Flow created/metadata-updated/label sorting, reversal, and empty/non-empty collected-by filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/flows.py
+  - src/app/tamoss/domain/listings.py
+  - src/app/tamoss/adapters/postgres_repository/flows_sources.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_flow_status_init_filters_sorting_and_missing_label_order
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_optional_collection_roles_order_and_top_level_filters
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_nonempty_flow_and_source_collected_by_filters_match_parent_ids
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_flow_and_source_created_and_updated_sorting_defaults_and_reversal
+  - tests/tams/conformance/test_request_validation.py::test_collected_by_ids_matches_uuid_list_empty_schema
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMS-LISTING-003
+  summary: Delete-request paging and resource-created/expiry sorting
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/delete_requests.py
+  - src/app/tamoss/adapters/postgres_repository/queues.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_storage_webhook_and_delete_request_list_paging_and_reversal
+  - tests/tams/conformance/test_storage_and_listing_semantics.py::test_delete_request_created_sort_uses_resource_timestamp
+  - tests/adapters/postgres/test_repository.py::test_delete_request_created_sort_uses_persisted_resource_timestamp
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMS-LISTING-004
+  summary: Storage-backend and webhook paging and reversal
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/adapters/postgres_repository/storage_service.py
+  - src/app/tamoss/adapters/postgres_repository/queues.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_storage_webhook_and_delete_request_list_paging_and_reversal
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMS-LISTING-005
+  summary: Missing-key fallback placement and paging response headers
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/adapters/postgres_repository/query_filters.py
+  - src/app/tamoss/api/presenters.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_flow_status_init_filters_sorting_and_missing_label_order
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMS-LISTING-006
+  summary: Segment timerange ordering handles exclusive ranges adjacent to point ranges in both directions
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/segments.py
+  - src/app/tamoss/adapters/postgres_repository/query_filters.py
+  - src/app/tamoss/api/presenters.py
+  tests:
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_segments_sort_exclusive_range_before_adjacent_point_and_reverse
+- id: TAMS-INIT-OBJECT-001
+  summary: Init Object allocation, content type and selectable presigning
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/storage.py
+  - src/app/tamoss/adapters/object_storage.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_lifecycle_direct_put_and_storage_tag_filtering
+  - tests/tams/conformance/test_request_validation.py::test_storage_presigned_rejects_non_boolean_json_values
+  - tests/tams/conformance/test_request_validation.py::test_storage_optional_contract_fields_reject_explicit_null
+  - tests/tams/conformance/test_request_validation.py::test_storage_distinguishes_omitted_body_from_explicit_null
+  - tests/adapters/storage/test_configured_object_storage_unit.py::test_build_put_request_can_return_direct_public_url_without_presigning
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-INIT-OBJECT-002
+  summary: Segment init reference validation and persistence
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/segments.py
+  - src/app/tamoss/adapters/postgres_repository/objects_segments.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_lifecycle_direct_put_and_storage_tag_filtering
+  - tests/tams/conformance/test_request_validation.py::test_segment_posts_reject_explicit_null_init_object_id
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_concurrent_cross_flow_registration_preserves_shared_object_references
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_implicit_init_reuse_locks_the_discovered_shared_object
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_referenced_media_cannot_change_its_init_link_on_cross_flow_reuse
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-INIT-OBJECT-003
+  summary: Nested init projection and consistent URL filtering
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/segments.py
+  - src/app/tamoss/application/contexts/object_get_urls.py
+  - src/app/tamoss/application/contexts/objects.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_lifecycle_direct_put_and_storage_tag_filtering
+  - tests/tams/deployed/test_api_workflow.py::test_deployed_profile_and_init_object_workflow
+- id: TAMS-INIT-OBJECT-004
+  summary: Media/init timerange rules and cross-use rejection
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/segments.py
+  - src/app/tamoss/application/contexts/objects.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_cross_use_and_missing_init_are_rejected
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_referenced_media_cannot_change_its_init_link_on_cross_flow_reuse
+- id: TAMS-INIT-OBJECT-005
+  summary: Reference-aware deletion retains shared init Objects
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/deletion.py
+  - src/app/tamoss/application/contexts/deletion_processor.py
+  - src/app/tamoss/application/contexts/segments.py
+  - src/app/tamoss/application/contexts/objects.py
+  - src/app/tamoss/adapters/postgres_repository/mappers.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_shared_init_object_is_retained_until_its_last_segment_is_deleted
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_registration_and_cross_flow_deletion_preserve_the_retained_reference
+  - tests/adapters/postgres/test_shared_object_concurrency.py::test_object_instance_writer_reloads_references_after_registration_lock
+- id: TAMS-INIT-OBJECT-006
+  summary: Requested segment and webhook object_timerange is always effective, including equality fallback
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/presenters.py
+  - src/app/tamoss/application/webhooks.py
+  - src/app/tamoss/application/contexts/webhooks.py
+  tests:
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_segment_reads_emit_effective_object_timerange_only_when_requested
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_segment_webhooks_emit_effective_object_timerange_only_when_requested
+- id: TAMS-INIT-OBJECT-007
+  summary: A Flow's effective init_segments capability cannot change after its first Segment
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/ports/repositories.py
+  - src/app/tamoss/adapters/postgres_repository/objects_segments.py
+  tests:
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_init_segments_changes_only_before_first_segment
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_flow_write_rejects_coerced_technical_scalars_and_indexes_valid_boolean
+  - tests/tams/conformance/test_flow_profile_semantics.py::test_init_segments_check_and_flow_save_share_the_segment_write_lock
+  - tests/adapters/postgres/test_profile_flow_invariants.py::test_flow_repository_has_segments_reports_persisted_existence
+  - tests/adapters/postgres/test_profile_flow_invariants.py::test_first_segment_serializes_before_init_segments_change
+  - tests/adapters/postgres/test_profile_flow_invariants.py::test_init_segments_change_serializes_before_incompatible_first_segment
+- id: TAMS-STORAGE-001
+  summary: Read-only freeform Storage Backend tags
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/domain/model.py
+  - src/app/tamoss/adapters/postgres_repository/storage_service.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_storage_webhook_and_delete_request_list_paging_and_reversal
+- id: TAMS-STORAGE-002
+  summary: Storage Backend tag value/existence filters are consistent across backend, Segment and Object
+    reads
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/query_params.py
+  - src/app/tamoss/application/contexts/object_get_urls.py
+  - src/app/tamoss/adapters/postgres_repository/storage_service.py
+  tests:
+  - tests/tams/conformance/test_storage_and_listing_semantics.py::test_storage_backend_tag_filters_cover_storage_segments_and_objects
+  - tests/tams/conformance/test_request_validation.py::test_resource_tag_filters_match_url_tag_list_schema
+  - tests/tams/conformance/test_request_validation.py::test_object_dynamic_tag_filters_match_url_tag_list_schema
+  - tests/tams/conformance/test_request_validation.py::test_segment_storage_tag_filters_match_url_tag_list_schema
+- id: TAMS-STORAGE-003
+  summary: PUT URL requests select and explicitly signal presigning
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/ports/object_storage.py
+  - src/app/tamoss/adapters/object_storage.py
+  - src/app/tamoss/application/contexts/storage.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_lifecycle_direct_put_and_storage_tag_filtering
+- id: TAMS-STORAGE-004
+  summary: Verbose controlled media and init URLs include Storage Backend tags; non-verbose URLs do not
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/object_get_urls.py
+  - src/app/tamoss/api/presenters.py
+  tests:
+  - tests/tams/conformance/test_storage_and_listing_semantics.py::test_controlled_media_and_init_urls_include_backend_tags_only_when_verbose
+- id: TAMS-STORAGE-005
+  summary: Storage allocation accepts canonical content_type and rejects the non-schema content-type request
+    alias
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/api/routes/storage.py
+  - src/app/tamoss/application/contexts/storage.py
+  tests:
+  - tests/tams/conformance/test_storage_and_listing_semantics.py::test_storage_allocation_rejects_content_type_alias_and_conflict
+- id: TAMS-STORAGE-006
+  summary: Deleting a controlled media instance does not cascade to its Object or referenced init Object
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/objects.py
+  - src/app/tamoss/application/contexts/deletion.py
+  tests:
+  - tests/tams/conformance/test_storage_and_listing_semantics.py::test_media_instance_copy_and_delete_do_not_cascade_to_init_object
+  - tests/tams/conformance/test_storage_objects_and_deletion.py::test_controlled_instance_delete_uses_recoverable_cleanup_path
+- id: TAMS-COLLECTION-001
+  summary: Collection role is optional and list order is authoritative
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/adapters/postgres_repository/mappers.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_optional_collection_roles_order_and_top_level_filters
+  - tests/tams/conformance/test_request_validation.py::test_flow_collection_rejects_explicit_null_role
+- id: TAMS-TAG-001
+  summary: Single tag endpoints accept arrays and editorial purpose remains freeform
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/contract/payloads.py
+  - src/app/tamoss/application/contexts/flows.py
+  - src/app/tamoss/application/contexts/sources.py
+  tests:
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_single_tag_endpoints_accept_array_values
+- id: TAMS-WEBHOOK-001
+  summary: Webhook object-timerange option controls event projection
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/webhooks.py
+  - src/app/tamoss/application/contexts/webhooks.py
+  tests:
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_segment_webhooks_emit_effective_object_timerange_only_when_requested
+  - tests/tams/conformance/test_request_validation.py::test_webhook_options_reject_non_boolean_json_values
+  - tests/tams/conformance/test_request_validation.py::test_webhook_put_uses_strict_option_validation
+- id: TAMS-WEBHOOK-002
+  summary: Webhook init Object projection and successful response contract
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/webhooks.py
+  - src/app/tamoss/contract/openapi.json
+  tests:
+  - tests/tams/conformance/test_webhooks.py::test_webhook_segment_payload_includes_object_timerange_and_init_object
+  - tests/tams/conformance/test_openapi_contract.py::test_runtime_openapi_has_bbc_operation_parity
+- id: TAMS-WEBHOOK-003
+  summary: Flow and Source collection selectors distinguish omitted, empty/top-level and populated/parent
+    UUID lists
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/application/contexts/webhooks.py
+  - src/app/tamoss/application/webhooks.py
+  - src/app/tamoss/application/contexts/deletion.py
+  - src/app/tamoss/application/contexts/deletion_processor.py
+  tests:
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_flow_collection_webhook_selector_distinguishes_omitted_empty_and_parent
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_source_collection_webhook_selector_distinguishes_omitted_empty_and_parent
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_flow_deletion_uses_pre_delete_collection_selector_context
+  - tests/tams/conformance/test_segment_and_webhook_semantics.py::test_source_deletion_uses_context_from_its_deleted_flow
+  - tests/tams/conformance/test_request_validation.py::test_webhook_options_reject_non_boolean_json_values
+- id: TAMOSS-AUTH-001
+  summary: Profile route scopes and storage-aware policy/filter boundary
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/auth.py
+  - src/app/tamoss/application/contexts/object_get_urls.py
+  tests:
+  - tests/application/test_authentication.py::test_oauth2_profile_routes_require_read_and_write_scopes
+  - tests/tams/conformance/test_profiles_collections_and_init_objects.py::test_init_object_lifecycle_direct_put_and_storage_tag_filtering
+- id: TAMOSS-MIGRATION-001
+  summary: Populated database upgrades preserve media while backfilling Profile and Object fields
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/tamoss/db/migrations/versions/20260810_0007_tams_8_2.py
+  - src/app/tamoss/db/migrations/assets/schema.sql
+  tests:
+  - tests/adapters/postgres/test_repository_schema.py::test_upgrade_8_1_to_8_2_migrates_populated_schema
+  - tests/adapters/postgres/test_repository_schema.py::test_large_resource_listing_queries_have_indexed_plans
+- id: TAMOSS-OPERATOR-001
+  summary: StorageBackend CR and primary S3 tags reach registration SQL and hashes
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - operator/api/v1alpha1/storagebackend_types.go
+  - operator/api/v1alpha1/tamoss_backend_types.go
+  - operator/internal/controller/storagebackend_database.go
+  - operator/internal/controller/storagebackend_database_scripts.go
+  tests:
+  - operator/api/v1alpha1/storagebackend_types_test.go::TestValidateStorageBackendTagsAcceptsTAMSValueUnion
+  - operator/api/v1alpha1/storagebackend_types_test.go::TestValidateStorageBackendTagsRejectsValuesOutsideTAMSUnion
+  - operator/internal/controller/storagebackend_controller_unit_test.go::TestDefaultStorageBackendUsesTamossS3Connection
+  - operator/internal/controller/storagebackend_controller_unit_test.go::TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata
+  - operator/internal/controller/storagebackend_controller_unit_test.go::TestStorageBackendRegistrationHashIncludesTags
+  - operator/internal/controller/storagebackend_controller_unit_test.go::TestStorageBackendInvalidTagsDegradeBeforeProvisioning
+  - operator/internal/controller/suite_test.go::TestControllers
+- id: TAMOSS-OPERATOR-002
+  summary: Release compatibility metadata and serialized schema orchestration
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - operator/compatibility.yaml
+  - operator/internal/schema/bundle.go
+  - operator/internal/controller/schema_controller.go
+  - .tasks/kind.yaml
+  - operator/Makefile
+  - operator/Dockerfile
+  tests:
+  - operator/internal/schema/verify_test.go::TestSupportedTAMSAPIVersionDefaultsTo82
+  - operator/internal/controller/schema_controller_unit_test.go::TestSucceededPinned81SchemaJobIsDeletedWithoutStamping82State
+  - operator/internal/controller/schema_controller_unit_test.go::TestPinned81TerminalFailureIsReplacedAfter82ImageUpdate
+  - operator/internal/controller/schema_controller_unit_test.go::TestFailureOnlySchemaStateRetriesBootstrapWithFixtures
+  - operator/internal/controller/schema_controller_unit_test.go::TestDriftedSchemaJobWaitsForForegroundPodCleanupBeforeReplacement
+  - operator/internal/controller/schema_controller_unit_test.go::TestObsoleteVersionSchemaJobAndPodAreRemovedBeforeCurrentLaunch
+  - operator/internal/controller/reconcile_stage_test.go::TestTamossCompletionResultRequeuesSchemaCleanupForExternalDependencies
+- id: TAMOSS-UI-001
+  summary: Generated TypeScript client and Flow compatibility alias track the vendored schema
+  normative: true
+  disposition: implemented
+  introducedIn: '8.2'
+  implementation:
+  - src/app/frontend/src/api/generated/openapi.ts
+  - src/app/frontend/src/types/tams.ts
+  tests:
+  - src/app/frontend/tests/api/client.test.ts
+- id: TAMOSS-UI-002
+  summary: Full UI Profile/filter/status/init/ordered-collection surfaces
+  normative: false
+  disposition: not-applicable
+  introducedIn: '8.2'
+  implementation: []
+  tests: []
+  rationale: The approved delivery sequence lands the API/operator compatibility foundation first, then
+    rebases the separate feat/ui-overhaul-8.2 branch. The generated client is validated here; product
+    UI surfaces are a release gate on that later branch, not this compatibility branch.
+- id: TAMS-GUIDANCE-001
+  summary: Transform-on-request architecture guidance
+  normative: false
+  disposition: not-applicable
+  introducedIn: '8.2'
+  implementation: []
+  tests: []
+  rationale: AppNote 0022 is informational client/architecture guidance and adds no TAMS API operation.
+    Tamsin integration is planned independently of the 8.2 compatibility contract.

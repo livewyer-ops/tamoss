@@ -44,7 +44,7 @@ from tests.adapters.postgres.support import (
 pytestmark = pytest.mark.needs_db
 
 
-def test_repository_round_trips_tams_8_2_profiles_flow_fields_and_init_links(
+def test_repository_round_trips_profiles_flow_fields_and_init_links(
     postgres_repo: PostgresRepository,
 ) -> None:
     profile_id = uuid4()

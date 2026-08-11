@@ -34,7 +34,7 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 SECONDARY_BACKEND_ID = UUID("22222222-2222-4222-8222-222222222222")
 

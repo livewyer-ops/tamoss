@@ -1,0 +1,443 @@
+schemaVersion: 2
+release:
+  fromTag: '8.1'
+  fromCommit: 98d307b09b5ebf79278aa7d3aad53295154e2c17
+  toTag: '8.2'
+  toCommit: ebb18b09cc6effe70a3464fc0282e9663d0a583f
+  commitCount: 101
+  changedFileCount: 76
+  changedOperationCount: 35
+  changedSchemaCount: 28
+  changedWebhookCount: 8
+records:
+- docs/adr/0006-flow-status.md
+- docs/adr/0045-flow-init-segments.md
+- docs/adr/0047-flow-profiles.md
+- docs/adr/0049-source-collected_by-query-parameter.md
+- docs/adr/0052-specifying-the-sorting-of-listings.md
+- docs/adr/0053-editorial-purpose-tag.md
+- docs/adr/0054-selectable-presigned-storage-urls.md
+- docs/adr/0055-fine-grained-auth-storage-backends.md
+- docs/adr/0056-roles-in-collections.md
+- docs/appnotes/0003-tag-names.md
+- docs/appnotes/0016-authorisation-in-tams-workflows.md
+- docs/appnotes/0020-using-flow-profiles.md
+- docs/appnotes/0022-transform-architectures.md
+- docs/appnotes/0024-using-init-segments.md
+- docs/appnotes/0025-editorial-purpose.md
+operations:
+  GET /flow-delete-requests:
+  - TAMS-LISTING-003
+  HEAD /flow-delete-requests:
+  - TAMS-LISTING-003
+  GET /flows:
+  - TAMS-PROFILE-003
+  - TAMS-FLOW-002
+  - TAMS-FLOW-003
+  - TAMS-LISTING-002
+  HEAD /flows:
+  - TAMS-PROFILE-003
+  - TAMS-FLOW-002
+  - TAMS-FLOW-003
+  - TAMS-LISTING-002
+  DELETE /flows/{flowId}:
+  - TAMS-FLOW-001
+  - TAMS-INIT-OBJECT-005
+  GET /flows/{flowId}:
+  - TAMS-FLOW-001
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-004
+  PUT /flows/{flowId}:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-003
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-004
+  - TAMS-PROFILE-005
+  - TAMS-INIT-OBJECT-007
+  PUT /flows/{flowId}/avg_bit_rate:
+  - TAMS-FLOW-001
+  - TAMS-PROFILE-006
+  GET /flows/{flowId}/flow_collection:
+  - TAMS-COLLECTION-001
+  PUT /flows/{flowId}/flow_collection:
+  - TAMS-COLLECTION-001
+  DELETE /flows/{flowId}/segments:
+  - TAMS-INIT-OBJECT-005
+  GET /flows/{flowId}/segments:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-006
+  - TAMS-LISTING-006
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  HEAD /flows/{flowId}/segments:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-006
+  - TAMS-LISTING-006
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  POST /flows/{flowId}/segments:
+  - TAMS-INIT-OBJECT-002
+  - TAMS-INIT-OBJECT-004
+  POST /flows/{flowId}/storage:
+  - TAMS-INIT-OBJECT-001
+  - TAMS-STORAGE-003
+  - TAMS-STORAGE-005
+  GET /flows/{flowId}/tags/{name}:
+  - TAMS-TAG-001
+  PUT /flows/{flowId}/tags/{name}:
+  - TAMS-TAG-001
+  GET /objects/{objectId}:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-004
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  HEAD /objects/{objectId}:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-004
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  DELETE /objects/{objectId}/instances:
+  - TAMS-INIT-OBJECT-004
+  - TAMS-INIT-OBJECT-005
+  - TAMS-STORAGE-006
+  POST /objects/{objectId}/instances:
+  - TAMS-INIT-OBJECT-004
+  GET /service/profiles:
+  - TAMS-PROFILE-001
+  HEAD /service/profiles:
+  - TAMS-PROFILE-001
+  GET /service/profiles/{profileId}:
+  - TAMS-PROFILE-002
+  HEAD /service/profiles/{profileId}:
+  - TAMS-PROFILE-002
+  POST /service/profiles/{profileId}:
+  - TAMS-PROFILE-002
+  GET /service/storage-backends:
+  - TAMS-LISTING-004
+  - TAMS-STORAGE-001
+  - TAMS-STORAGE-002
+  HEAD /service/storage-backends:
+  - TAMS-LISTING-004
+  - TAMS-STORAGE-001
+  - TAMS-STORAGE-002
+  GET /service/webhooks:
+  - TAMS-LISTING-004
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  HEAD /service/webhooks:
+  - TAMS-LISTING-004
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  GET /sources:
+  - TAMS-LISTING-001
+  HEAD /sources:
+  - TAMS-LISTING-001
+  GET /sources/{sourceId}:
+  - TAMS-COLLECTION-001
+  GET /sources/{sourceId}/tags/{name}:
+  - TAMS-TAG-001
+  PUT /sources/{sourceId}/tags/{name}:
+  - TAMS-TAG-001
+schemas:
+  api/schemas/collection-item.json:
+  - TAMS-COLLECTION-001
+  api/schemas/flow-audio.json:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-003
+  api/schemas/flow-collection.json:
+  - TAMS-COLLECTION-001
+  api/schemas/flow-common.json:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-002
+  - TAMS-COLLECTION-001
+  api/schemas/flow-data.json:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-003
+  api/schemas/flow-get.json:
+  - TAMS-FLOW-001
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-004
+  api/schemas/flow-image.json:
+  - TAMS-FLOW-001
+  api/schemas/flow-multi.json:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-003
+  api/schemas/flow-put.json:
+  - TAMS-FLOW-001
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-004
+  - TAMS-PROFILE-005
+  - TAMS-INIT-OBJECT-007
+  api/schemas/flow-segment-post.json:
+  - TAMS-INIT-OBJECT-002
+  - TAMS-INIT-OBJECT-004
+  api/schemas/flow-segment.json:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-006
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  api/schemas/flow-status.json:
+  - TAMS-FLOW-002
+  api/schemas/flow-storage-post.json:
+  - TAMS-INIT-OBJECT-001
+  - TAMS-STORAGE-003
+  - TAMS-STORAGE-005
+  api/schemas/flow-storage.json:
+  - TAMS-INIT-OBJECT-001
+  - TAMS-STORAGE-003
+  api/schemas/flow-technical.json:
+  - TAMS-FLOW-001
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-004
+  - TAMS-PROFILE-005
+  - TAMS-PROFILE-006
+  - TAMS-INIT-OBJECT-007
+  api/schemas/flow-video.json:
+  - TAMS-FLOW-001
+  - TAMS-FLOW-003
+  api/schemas/flow.json:
+  - TAMS-FLOW-001
+  api/schemas/object-core.json:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  api/schemas/object-media-core.json:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-004
+  api/schemas/object.json:
+  - TAMS-INIT-OBJECT-003
+  - TAMS-INIT-OBJECT-004
+  api/schemas/objects-instances-post.json:
+  - TAMS-INIT-OBJECT-004
+  api/schemas/profile.json:
+  - TAMS-PROFILE-001
+  - TAMS-PROFILE-002
+  - TAMS-PROFILE-003
+  - TAMS-PROFILE-005
+  - TAMS-PROFILE-006
+  api/schemas/service.json:
+  - TAMOSS-OPERATOR-002
+  api/schemas/storage-backend.json:
+  - TAMS-STORAGE-001
+  - TAMS-STORAGE-002
+  - TAMOSS-OPERATOR-001
+  api/schemas/url-label-list.json:
+  - TAMS-STORAGE-002
+  - TAMS-STORAGE-004
+  api/schemas/uuid-list-empty.json:
+  - TAMS-LISTING-001
+  - TAMS-LISTING-002
+  - TAMS-WEBHOOK-003
+  api/schemas/webhook-get.json:
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  api/schemas/webhook.json:
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+webhooks:
+  flows/created:
+  - TAMS-FLOW-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  flows/deleted:
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  flows/segments_added:
+  - TAMS-INIT-OBJECT-006
+  - TAMS-WEBHOOK-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  flows/segments_deleted:
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  flows/updated:
+  - TAMS-FLOW-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  sources/created:
+  - TAMS-COLLECTION-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  sources/deleted:
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+  sources/updated:
+  - TAMS-COLLECTION-001
+  - TAMS-WEBHOOK-002
+  - TAMS-WEBHOOK-003
+fileSelectors:
+  TAMS-PROFILE-001:
+  - api/schemas/profile.json
+  - api/examples/profile-*.json
+  - api/examples/profiles-get-200.json
+  - docs/adr/0047-flow-profiles.md
+  - docs/adr/images/adr0047-flow-profile-data-model-changes.png
+  - docs/appnotes/*using-flow-profiles.md
+  - docs/appnotes/0020-using-flow-profiles.md
+  TAMS-PROFILE-002:
+  - api/schemas/profile.json
+  - api/examples/profile-post-201.json
+  - docs/adr/0047-flow-profiles.md
+  TAMS-PROFILE-003:
+  - api/schemas/flow-put.json
+  - api/schemas/flow-get.json
+  - api/examples/flow-put-profile.json
+  - docs/appnotes/0020-using-flow-profiles.md
+  TAMS-PROFILE-004:
+  - api/schemas/flow-get.json
+  - api/schemas/flow-put.json
+  - docs/adr/0047-flow-profiles.md
+  - docs/appnotes/0020-using-flow-profiles.md
+  TAMS-PROFILE-005:
+  - api/schemas/profile.json
+  - api/schemas/flow-put.json
+  - api/schemas/flow-technical.json
+  - docs/adr/0047-flow-profiles.md
+  TAMS-PROFILE-006:
+  - api/schemas/profile.json
+  - api/schemas/flow-technical.json
+  - docs/appnotes/0020-using-flow-profiles.md
+  TAMS-FLOW-001:
+  - api/schemas/flow.json
+  - api/schemas/flow-*.json
+  - api/examples/flow-get-200-*.json
+  - api/examples/flow-put-*.json
+  TAMS-FLOW-002:
+  - api/schemas/flow-status.json
+  - docs/adr/0006-flow-status.md
+  - docs/appnotes/0003-tag-names.md
+  TAMS-FLOW-003:
+  - api/schemas/flow-video.json
+  - api/schemas/flow-audio.json
+  - api/schemas/flow-multi.json
+  - docs/adr/0045-flow-init-segments.md
+  TAMS-LISTING-001:
+  - api/examples/sources-get-200.json
+  - api/schemas/uuid-list-empty.json
+  - docs/adr/*source-collected_by-query-parameter.md
+  - docs/adr/0049-source-collected_by-query-parameter.md
+  - docs/adr/0052-*.md
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-LISTING-002:
+  - api/examples/flows-get-200.json
+  - docs/adr/0049-source-collected_by-query-parameter.md
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-LISTING-003:
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-LISTING-004:
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-LISTING-005:
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-LISTING-006:
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0052-specifying-the-sorting-of-listings.md
+  TAMS-INIT-OBJECT-001:
+  - api/schemas/flow-storage-post.json
+  - api/schemas/flow-storage.json
+  - docs/adr/0045-flow-init-segments.md
+  - docs/adr/0054-selectable-presigned-storage-urls.md
+  TAMS-INIT-OBJECT-002:
+  - api/schemas/flow-segment-post.json
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-INIT-OBJECT-003:
+  - api/schemas/flow-segment.json
+  - api/schemas/object.json
+  - api/examples/flow-segments-get-200-init.json
+  - api/examples/objects-get-200*.json
+  TAMS-INIT-OBJECT-004:
+  - api/schemas/object-core.json
+  - api/schemas/object-media-core.json
+  - api/schemas/objects-instances-post.json
+  - docs/adr/0045-flow-init-segments.md
+  TAMS-INIT-OBJECT-005:
+  - docs/adr/0045-flow-init-segments.md
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-INIT-OBJECT-006:
+  - api/schemas/flow-segment.json
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0045-flow-init-segments.md
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-INIT-OBJECT-007:
+  - api/schemas/flow-put.json
+  - api/schemas/flow-technical.json
+  - docs/adr/0045-flow-init-segments.md
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-STORAGE-001:
+  - api/schemas/storage-backend.json
+  - docs/adr/*fine-grained-auth-storage-backends.md
+  TAMS-STORAGE-002:
+  - api/TimeAddressableMediaStore.yaml
+  - api/schemas/url-label-list.json
+  - docs/appnotes/0016-authorisation-in-tams-workflows.md
+  TAMS-STORAGE-003:
+  - api/schemas/flow-storage-post.json
+  - api/schemas/flow-storage.json
+  - docs/adr/0054-selectable-presigned-storage-urls.md
+  TAMS-STORAGE-004:
+  - api/schemas/object-core.json
+  - api/schemas/url-label-list.json
+  - docs/adr/*fine-grained-auth-storage-backends.md
+  - docs/appnotes/0016-authorisation-in-tams-workflows.md
+  TAMS-STORAGE-005:
+  - api/schemas/flow-storage-post.json
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0045-flow-init-segments.md
+  TAMS-STORAGE-006:
+  - api/schemas/object.json
+  - api/schemas/objects-instances-post.json
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0045-flow-init-segments.md
+  TAMS-COLLECTION-001:
+  - api/schemas/collection-item.json
+  - api/schemas/flow-collection.json
+  - api/examples/flow-collection-*.json
+  - api/examples/source-get-200-*.json
+  - docs/adr/0056-roles-in-collections.md
+  TAMS-TAG-001:
+  - docs/adr/0053-editorial-purpose-tag.md
+  - docs/appnotes/0003-tag-names.md
+  - docs/appnotes/0025-editorial-purpose.md
+  TAMS-WEBHOOK-001:
+  - api/schemas/webhook.json
+  - api/schemas/webhook-get.json
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-WEBHOOK-002:
+  - api/TimeAddressableMediaStore.yaml
+  - api/schemas/webhook.json
+  - api/schemas/webhook-get.json
+  TAMS-WEBHOOK-003:
+  - api/schemas/uuid-list-empty.json
+  - api/schemas/webhook.json
+  - api/schemas/webhook-get.json
+  - api/TimeAddressableMediaStore.yaml
+  - docs/adr/0049-source-collected_by-query-parameter.md
+  TAMOSS-AUTH-001:
+  - docs/adr/*fine-grained-auth-storage-backends.md
+  - docs/appnotes/0016-authorisation-in-tams-workflows.md
+  TAMOSS-MIGRATION-001:
+  - api/schemas/profile.json
+  - api/schemas/object.json
+  - api/schemas/flow-get.json
+  TAMOSS-OPERATOR-001:
+  - api/schemas/storage-backend.json
+  - docs/adr/*fine-grained-auth-storage-backends.md
+  TAMOSS-OPERATOR-002:
+  - api/TimeAddressableMediaStore.yaml
+  - api/schemas/service.json
+  - docs/README.md
+  TAMOSS-UI-001:
+  - api/TimeAddressableMediaStore.yaml
+  TAMOSS-UI-002:
+  - docs/appnotes/0020-using-flow-profiles.md
+  - docs/appnotes/0024-using-init-segments.md
+  TAMS-GUIDANCE-001:
+  - docs/appnotes/0022-*-architectures.md
+  - docs/appnotes/0022-transform-architectures.md
+  - README.md

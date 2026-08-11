@@ -32,7 +32,7 @@ TAMS_8_1_SCHEMA_FIXTURE = (
 )
 
 
-def test_tams_8_2_large_listing_queries_have_indexed_plans(
+def test_large_resource_listing_queries_have_indexed_plans(
     postgres_connection: psycopg.Connection,
 ) -> None:
     with postgres_connection.cursor() as cur:
@@ -198,7 +198,7 @@ def test_tams_8_2_large_listing_queries_have_indexed_plans(
         cur.execute("RESET enable_seqscan")
 
 
-def test_tams_8_2_migration_upgrades_populated_8_1_schema(
+def test_upgrade_8_1_to_8_2_migrates_populated_schema(
     postgres_connection: psycopg.Connection,
 ) -> None:
     schema = f"tamoss_upgrade_{uuid4().hex}"

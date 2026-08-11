@@ -72,6 +72,7 @@ use stable `reports/junit-*.xml` names.
 | --- | --- |
 | `task test:tams` | Run local TAMS conformance, including real Postgres/RustFS integration checks. |
 | `task test:tams:conformance` | Alias for the complete local TAMS conformance gate. |
+| `task test:tams:traceability` | Validate stable requirement evidence and immutable upstream release deltas. |
 | `task test:tams:inventory` | Generate the current TAMS conformance inventory report. |
 | `task test:tams:coverage` | Generate backend coverage over the TAMS conformance tests. |
 | `task lint:mypy` | Run Python mypy checks. |

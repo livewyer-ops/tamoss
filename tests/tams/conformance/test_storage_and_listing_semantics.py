@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -8,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from tamoss.app import create_app
 from tamoss.application.use_cases import TamossUseCases
-from tamoss.domain.model import StorageBackend
+from tamoss.domain.model import DeletionRequestRecord, StorageBackend
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.memory_repository import FakeTamossRepository
@@ -21,7 +22,7 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_controlled_media_and_init_urls_include_backend_tags_only_when_verbose(
@@ -291,6 +292,45 @@ def test_media_instance_copy_and_delete_do_not_cascade_to_init_object() -> None:
     assert object_storage.read(media_id, backend=primary) is None
     assert object_storage.read(media_id, backend=secondary) == b"segment"
     assert object_storage.read(init_id, backend=primary) == b"segment"
+
+
+def test_delete_request_created_sort_uses_resource_timestamp(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    repository = tamoss_app.state.tamoss_use_cases.repository
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    requests = [
+        DeletionRequestRecord(
+            id=UUID(f"00000000-0000-4000-8000-{index:012d}"),
+            flow_id=uuid4(),
+            timerange_to_delete="[0:0_10:0)",
+            delete_flow=False,
+            status="created",
+            created=base + timedelta(hours=offset),
+            updated=base + timedelta(hours=offset),
+        )
+        for index, offset in ((1, 1), (3, 3), (2, 2))
+    ]
+    for request in requests:
+        repository.save_delete_request(request)
+
+    newest_first = client.get("/flow-delete-requests", params={"sort_by": "created"})
+    oldest_first = client.get(
+        "/flow-delete-requests",
+        params={"sort_by": "created", "reverse_order": "true"},
+    )
+
+    assert [item["id"] for item in newest_first.json()] == [
+        str(requests[1].id),
+        str(requests[2].id),
+        str(requests[0].id),
+    ]
+    assert [item["id"] for item in oldest_first.json()] == [
+        str(requests[0].id),
+        str(requests[2].id),
+        str(requests[1].id),
+    ]
 
 
 def _registered_media_and_init(

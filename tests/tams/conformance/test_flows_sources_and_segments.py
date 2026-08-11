@@ -27,7 +27,7 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_video_flow_write_creates_source_and_supports_read_filters(

@@ -18,7 +18,7 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 VIDEO_FORMAT = "urn:x-nmos:format:video"
 AUDIO_FORMAT = "urn:x-nmos:format:audio"
@@ -49,7 +49,7 @@ def _video_profile_payload(
     return {
         "id": str(profile_id),
         "label": label,
-        "description": "TAMS 8.2 Profile",
+        "description": "Video flow profile",
         "tags": {"profile_version": "1"},
         "flow_metadata": flow_metadata,
     }

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from tests.support.paths import load_python_module
 from tests.tams.support import BBC_API_SPEC_PATH, REPO_ROOT
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_contract]
 
 
 def test_runtime_openapi_has_bbc_operation_parity(tamoss_app: FastAPI) -> None:

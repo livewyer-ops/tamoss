@@ -18,7 +18,7 @@ from tests.tams.support import (
     webhook_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_webhook_registration_lifecycle_hides_secret_material(

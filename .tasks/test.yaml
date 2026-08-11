@@ -13,7 +13,10 @@ vars:
   TAMS_CONFORMANCE_DIR: tests/tams/conformance
   TAMS_INTEGRATION_DIR: tests/tams/integration
   TAMS_DEPLOYED_DIR: tests/tams/deployed
+  TAMS_TRACEABILITY_DIR: tests/tams/traceability
   TAMS_CONFORMANCE_MARK: "tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_CONTRACT_MARK: "tams_contract and tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_SEMANTICS_MARK: "tams_semantics and tams_conformance and not tamoss_extension and not tamoss_security"
 
 tasks:
   # TAMS gates validate the contract separately from TAMOSS extensions.
@@ -24,14 +27,22 @@ tasks:
       - mkdir -p reports
       - printf 'test py.tams.contract\n'
       - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/openapi-parity.txt
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_openapi_contract.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_CONTRACT_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
 
   tams:semantics:
     silent: true
     cmds:
       - mkdir -p reports
       - printf 'test py.tams.semantics\n'
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_service_and_metadata.py {{.TAMS_CONFORMANCE_DIR}}/test_flows_sources_and_segments.py {{.TAMS_CONFORMANCE_DIR}}/test_storage_objects_and_deletion.py {{.TAMS_CONFORMANCE_DIR}}/test_webhooks.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_SEMANTICS_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
+
+  tams:traceability:
+    silent: true
+    cmds:
+      - task: :dev:submodules
+      - mkdir -p reports
+      - printf 'test py.tams.traceability\n'
+      - "{{.PYTEST}} {{.TAMS_TRACEABILITY_DIR}} -ra --junitxml=reports/junit-py-tams-traceability.xml"
 
   tams:integration:
     silent: true
@@ -75,6 +86,7 @@ tasks:
     cmds:
       - task: tams:contract
       - task: tams:semantics
+      - task: tams:traceability
       - task: tams:integration
 
   tams:
@@ -109,12 +121,14 @@ tasks:
           printf '%s\n\n' '- `{{.TAMS_CONFORMANCE_DIR}}`'
           printf '%s\n\n' '- `{{.TAMS_INTEGRATION_DIR}}`'
           printf '%s\n\n' '- `{{.TAMS_DEPLOYED_DIR}}`'
+          printf '%s\n\n' '- `{{.TAMS_TRACEABILITY_DIR}}`'
           printf '## Test Files\n\n'
-          find '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
+          find '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' '{{.TAMS_TRACEABILITY_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
             | sort \
             | sed 's#^#- `#; s#$#`#'
           printf '\n## Collected Tests\n\n```text\n'
           {{.PYTEST_COLLECT}} '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -m '{{.TAMS_CONFORMANCE_MARK}}' --collect-only -q
+          {{.PYTEST_COLLECT}} '{{.TAMS_TRACEABILITY_DIR}}' --collect-only -q
           printf '```\n'
         } > reports/tams-conformance-inventory.md
 

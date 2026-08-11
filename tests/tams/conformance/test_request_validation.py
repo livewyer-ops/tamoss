@@ -16,7 +16,7 @@ from tests.tams.support import (
     webhook_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 AUDIO_FORMAT = "urn:x-nmos:format:audio"
 DATA_FORMAT = "urn:x-nmos:format:data"

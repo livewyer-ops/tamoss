@@ -84,7 +84,7 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
     e2e_client: E2EClient,
 ) -> None:
     service = e2e_client.request_json("GET", "/service")
-    assert service["api_version"] == "8.1"
+    assert service["api_version"] == "8.2"
     assert {"name": "webhooks"} in service["event_stream_mechanisms"]
 
     backends = e2e_client.request_json("GET", "/service/storage-backends")
@@ -190,6 +190,159 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
         e2e_client.request("GET", f"/sources/{source_id}", expected=404)
         e2e_client.request("GET", f"/objects/{object_id}", expected=404)
         e2e_client.request("GET", direct_get_url, auth=False, expected={403, 404})
+    finally:
+        if not deleted:
+            cleanup = e2e_client.request(
+                "DELETE", f"/flows/{flow_id}", expected={202, 204, 404}
+            )
+            if cleanup.status_code == 202:
+                e2e_client.poll_delete_request(cleanup.json()["id"])
+
+
+@pytest.mark.smoke
+def test_deployed_profile_and_init_object_workflow(
+    e2e_client: E2EClient,
+) -> None:
+    backends = e2e_client.request_json("GET", "/service/storage-backends")
+    default_backend = next((item for item in backends if item["default_storage"]), None)
+    assert default_backend is not None
+    assert "tags" in default_backend
+
+    profile_id = str(uuid4())
+    flow_id = str(uuid4())
+    source_id = str(uuid4())
+    media_object_id = f"tams-8-2-media-{uuid4()}.m4s"
+    init_object_id = f"tams-8-2-init-{uuid4()}.mp4"
+    profile = {
+        "id": profile_id,
+        "label": "TAMOSS deployed 8.2 profile",
+        "flow_metadata": {
+            "format": "urn:x-nmos:format:video",
+            "codec": "video/h264",
+            "container": "video/mp4",
+            "avg_bit_rate": 8_000_000,
+            "essence_parameters": {
+                "frame_rate": {"numerator": 25, "denominator": 1},
+                "frame_width": 1920,
+                "frame_height": 1080,
+                "init_segments": True,
+            },
+        },
+    }
+
+    deleted = False
+    try:
+        created_profile = e2e_client.request_json(
+            "POST",
+            f"/service/profiles/{profile_id}",
+            json=profile,
+            expected=201,
+        )
+        assert (
+            created_profile["flow_metadata"]["essence_parameters"]["init_segments"]
+            is True
+        )
+        e2e_client.request(
+            "POST",
+            f"/service/profiles/{profile_id}",
+            json=profile,
+            expected=400,
+        )
+
+        flow = e2e_client.request_json(
+            "PUT",
+            f"/flows/{flow_id}",
+            json={
+                "id": flow_id,
+                "source_id": source_id,
+                "profile_id": profile_id,
+                "label": "TAMOSS deployed 8.2 Flow",
+                "status": "ingesting",
+            },
+            expected=201,
+        )
+        assert flow["profile_id"] == profile_id
+        assert flow["container"] == "video/mp4"
+        assert flow["essence_parameters"]["init_segments"] is True
+
+        allocations = []
+        for object_id, content_type in (
+            (media_object_id, None),
+            (init_object_id, "video/quicktime"),
+        ):
+            request: dict[str, Any] = {
+                "object_ids": [object_id],
+                "storage_id": default_backend["id"],
+                "presigned": True,
+            }
+            if content_type is not None:
+                request["content_type"] = content_type
+            allocation = e2e_client.request_json(
+                "POST",
+                f"/flows/{flow_id}/storage",
+                json=request,
+                expected=201,
+            )["media_objects"][0]
+            assert allocation["presigned"] is True
+            allocations.append(allocation)
+
+        for allocation, body in zip(
+            allocations,
+            (b"deployed 8.2 media\n", b"deployed 8.2 init\n"),
+            strict=True,
+        ):
+            put_request = allocation["put_url"]
+            e2e_client.upload_put_url(
+                put_request["url"],
+                body=body,
+                headers=_put_url_headers(put_request),
+            )
+
+        e2e_client.request(
+            "POST",
+            f"/flows/{flow_id}/segments",
+            json={
+                "object_id": media_object_id,
+                "init_object_id": init_object_id,
+                "timerange": "[0:0_10:0)",
+                "object_timerange": "[1:0_11:0)",
+            },
+            expected=201,
+        )
+
+        segments = e2e_client.request_json(
+            "GET",
+            f"/flows/{flow_id}/segments",
+            params={"include_object_timerange": "true", "presigned": "true"},
+        )
+        assert segments[0]["object_timerange"] == "[1:0_11:0)"
+        assert segments[0]["init_object"]["object_id"] == init_object_id
+        assert segments[0]["init_object"]["get_urls"]
+
+        media_object = e2e_client.request_json("GET", f"/objects/{media_object_id}")
+        assert media_object["init_object"]["id"] == init_object_id
+        init_object = e2e_client.request_json("GET", f"/objects/{init_object_id}")
+        assert "timerange" not in init_object
+
+        by_profile = e2e_client.request_json(
+            "GET", "/flows", params={"profile_id": profile_id}
+        )
+        assert [item["id"] for item in by_profile] == [flow_id]
+        by_status = e2e_client.request_json(
+            "GET", "/flows", params={"status": "ingesting"}
+        )
+        assert flow_id in {item["id"] for item in by_status}
+        by_init = e2e_client.request_json(
+            "GET", "/flows", params={"init_segments": "true"}
+        )
+        assert flow_id in {item["id"] for item in by_init}
+
+        accepted = e2e_client.request_json(
+            "DELETE", f"/flows/{flow_id}", expected={202}
+        )
+        assert e2e_client.poll_delete_request(accepted["id"])["status"] == "done"
+        deleted = True
+        e2e_client.request("GET", f"/objects/{init_object_id}", expected=404)
     finally:
         if not deleted:
             cleanup = e2e_client.request(

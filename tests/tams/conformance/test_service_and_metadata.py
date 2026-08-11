@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from tests.support.fixtures import load_json_fixture
 from tests.tams.support import PRIMARY_BACKEND_LABEL
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_service_root_and_metadata_follow_bbc_service_shape(

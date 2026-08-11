@@ -91,6 +91,8 @@ Test code lives under `tests/`, organised by what it tests:
   S3/[RustFS](https://github.com/rustfs/rustfs).
 - `tests/tams/deployed/` — deployed TAMS conformance checks against Kind or a
   remote target file.
+- `tests/tams/traceability/` — stable requirement evidence and immutable
+  per-release upstream delta mappings.
 - `tests/e2e/` — deployed product API/UI checks against Kind or a remote target
   file.
 
@@ -103,7 +105,8 @@ task test:tams # local TAMS conformance, including real Postgres/RustFS checks
 
 Run `task deps` before `task test:tams` when local Postgres and RustFS are not
 already running. Use `task test:tams:contract`, `task test:tams:semantics`, or
-`task test:tams:integration` only when you need a narrower CI-style slice.
+`task test:tams:traceability`, or `task test:tams:integration` only when you
+need a narrower CI-style slice.
 
 Other focused suites:
 
@@ -113,6 +116,7 @@ task test:adapters:postgres # Postgres repository persistence checks
 task test:adapters:storage  # configured object-storage checks
 task test:workers           # asynchronous deletion and webhook workers
 task test:frontend # frontend unit/component suite
+task test:tams:traceability # requirement evidence and upstream release deltas
 task test:tams:coverage # backend coverage report over the TAMS gates
 ```
 
@@ -130,6 +134,8 @@ checks against an existing target file.
 Test markers in use:
 
 - `tams_conformance` — TAMS API, ADR, or AppNote conformance requirement.
+- `tams_contract` — generated and runtime TAMS contract parity requirement.
+- `tams_semantics` — executable TAMS behavior and capability requirement.
 - `tamoss_extension` — TAMOSS compatibility or operational extension outside core TAMS conformance.
 - `tamoss_security` — TAMOSS authentication, authorisation, or hardening policy.
 - `e2e` — deployed TAMS-facing black-box checks.
@@ -143,6 +149,11 @@ Prefer adding new TAMS-facing behaviour coverage under the contract or semantic
 task that matches the failure mode. Add deployed checks only when the behaviour
 requires a real ingress, browser, object store, or worker deployment.
 
+Use capability-oriented names for enduring tests and requirement IDs. Record
+the version that introduced a requirement in `tests/tams/traceability/`, and use
+versioned test names only when a release or upgrade boundary is the behaviour
+under test.
+
 ## Code organisation
 
 - **Runtime**: `src/app/tamoss/`, split into API routes, application use
@@ -151,7 +162,8 @@ requires a real ingress, browser, object store, or worker deployment.
   Runtime implementation lives under `src/app/tamoss/`.
 - **Tests**: maintained TAMS conformance tests live under
   `tests/tams/conformance/`, focused DB/S3 conformance tests under
-  `tests/tams/integration/`, deployed TAMS checks under
+  `tests/tams/integration/`, stable requirements and release provenance under
+  `tests/tams/traceability/`, deployed TAMS checks under
   `tests/tams/deployed/`, and deployed product API/UI checks under
   `tests/e2e/`.
 - **Database**: canonical SQL assets live under

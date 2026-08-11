@@ -15,7 +15,7 @@ from tests.tams.support import (
     webhook_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_segment_reads_emit_effective_object_timerange_only_when_requested(

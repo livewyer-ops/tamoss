@@ -27,16 +27,18 @@ task test:media:fixtures
 task openapi:check
 ```
 
-`task test:tams` is the local TAMS conformance gate: OpenAPI parity, semantic
-checks, and focused real Postgres/S3 checks. `task test:tams:conformance` is an
-alias for the same local gate. Run `task deps` first when local Postgres and
-RustFS are not already running. `task test:tams:deployed` runs the deployed
-TAMS slice against a target env file.
+`task test:tams` is the local TAMS conformance gate: OpenAPI parity, capability
+semantics, release traceability, and focused real Postgres/S3 checks.
+`task test:tams:conformance` is an alias for the same local gate. Run
+`task deps` first when local Postgres and RustFS are not already running.
+`task test:tams:deployed` runs the deployed TAMS slice against a target env
+file.
 `task test:media:fixtures` validates the small managed-ingest media fixture with
 containerised `ffprobe`, so developers do not need unmanaged local media tools.
 
 Validation tasks print compact suite labels before runner output. Common labels
 include `test py.tams.contract`, `test py.tams.semantics`,
+`test py.tams.traceability`,
 `test frontend.unit`, `test operator.go`, and `test operator.chainsaw`.
 
 JUnit reports are written under `reports/` with stable names such as
@@ -47,7 +49,7 @@ The report names identify the affected quality area:
 
 | Area | Report |
 | --- | --- |
-| TAMS API contract | `junit-py-tams-contract.xml`, `junit-py-tams-semantics.xml`, `junit-py-tams-integration.xml`, `junit-py-tams-deployed-<profile>.xml` |
+| TAMS API contract | `junit-py-tams-contract.xml`, `junit-py-tams-semantics.xml`, `junit-py-tams-traceability.xml`, `junit-py-tams-integration.xml`, `junit-py-tams-deployed-<profile>.xml` |
 | Python local fast gate | `junit-py-fast.xml` |
 | Python application | `junit-py-application.xml`, `junit-py-workers.xml` |
 | Frontend | `junit-frontend-unit.xml` |
