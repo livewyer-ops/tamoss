@@ -16,7 +16,8 @@ import {
   descriptorMediaUrls,
   type MediaPreviewDescriptor,
 } from "@/player/descriptor";
-import { compilePlaybackPlan } from "@/player/hls-manifest";
+import { compilePlaybackPlan, PlaybackPlanError } from "@/player/hls-manifest";
+import { halfOpenTimerange } from "@/utils/tams-time";
 
 const AUDIO_ONLY_TIMELINE_FRAME_RATE = 25;
 
@@ -49,8 +50,19 @@ export interface PlaybackSnapshot {
   warning?: string;
 }
 
+export interface PreviewAudioTrack {
+  flowId: string;
+  label: string;
+}
+
 export interface OmakasePreviewHandle {
   ready: Promise<void>;
+  /**
+   * Audio renditions this player can switch between. Only synchronized
+   * sidecars are switchable, so an audio-only plan reports none: its single
+   * main media element cannot be swapped without reloading the player.
+   */
+  audioTracks: readonly PreviewAudioTrack[];
   selectAudioTrack(flowId: string): void;
   destroy(): void;
 }
@@ -75,9 +87,21 @@ export function createOmakasePreview({
   timelineElementId,
   onChange,
 }: CreateOmakasePreviewOptions): OmakasePreviewHandle {
+  // The descriptor preserves the TAMS form of the Flow timerange, including an
+  // inclusive end or a single instant. The manifest compiler works in half-open
+  // nanoseconds, so convert exactly at this boundary instead of relaxing either
+  // contract. A window with no playable duration never reaches the player: the
+  // preview reports it as absent media rather than as a playback failure.
+  const playbackWindow = halfOpenTimerange(descriptor.initialTimerange);
+  if (!playbackWindow) {
+    throw new PlaybackPlanError(
+      "no-playable-media",
+      "The selected media window has no playable duration.",
+    );
+  }
   const plan = compilePlaybackPlan({
     tracks: descriptor.tracks,
-    initialTimerange: descriptor.initialTimerange,
+    initialTimerange: playbackWindow.timerange,
   });
   const releaseConsoleRedaction = installSensitiveConsoleErrorRedaction(
     descriptorMediaUrls(descriptor),
@@ -305,6 +329,10 @@ export function createOmakasePreview({
 
   return {
     ready,
+    audioTracks:
+      plan.kind === "hls"
+        ? plan.audioSidecars.map(({ flowId, label }) => ({ flowId, label }))
+        : [],
     selectAudioTrack(flowId: string) {
       if (
         plan.kind !== "hls" ||

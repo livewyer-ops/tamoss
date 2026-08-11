@@ -57,7 +57,7 @@ spec:
 | `.spec.auth` | Selects Authentik Blueprints, external OAuth/OIDC, or no authentication. |
 | `.spec.api`, `.spec.ui`, `.spec.worker` | Component enablement, replicas, images, resources, scheduling, probes, env, volumes, and security context. |
 | `.spec.service`, `.spec.ingress`, `.spec.httpRoute` | Service and public routing configuration. |
-| `.spec.networkPolicy` | Profile default NetworkPolicy settings and overrides. |
+| `.spec.networkPolicy` | Profile default NetworkPolicy settings, component overrides, and destination-scoped Kubernetes API IP blocks for Console. |
 | `.spec.secrets.apiToken` | Generated or explicit API token configuration. |
 | `.spec.images` | Shared helper images that are not owned by one component. |
 | `.spec.advanced` | Advanced resource patches and additional resources for provider fields that do not have first-class TAMOSS fields. |
@@ -100,8 +100,10 @@ API then allows browser preflight and authenticated requests from matching
 origins. Exact origin values must be absolute `http` or `https` origins without
 a path, query string, or fragment.
 
-For managed RustFS backends, the operator also applies exact allowed origins to
-bucket CORS and to [Traefik](https://traefik.io/) S3 ingress middleware.
+For managed RustFS backends, the operator also applies
+`spec.publicEndpoint.uiURL` and exact allowed origins to bucket CORS and to
+[Traefik](https://traefik.io/) S3 ingress middleware. This preserves a
+non-standard external UI port for browser media requests.
 `allowedOriginRegexes` is
 also applied to Traefik S3 ingress middleware, but not to S3 bucket CORS. For
 `external-s3` backends, update the bucket CORS policy separately for every

@@ -36,6 +36,15 @@ type NetworkPolicySpec struct {
 	UI      NetworkPolicyRulesSpec `json:"ui,omitempty"`
 	Worker  NetworkPolicyRulesSpec `json:"worker,omitempty"`
 	Console NetworkPolicyRulesSpec `json:"console,omitempty"`
+	// KubernetesAPIIPBlocks contains the Kubernetes Service and API-server
+	// endpoint CIDRs that an enabled Console may reach. It is an optional
+	// tightening: when the list is empty the Console's Kubernetes API egress
+	// rule is still rendered but permits any destination on those ports, because
+	// the addresses are cluster-specific and cannot be derived from a Tamoss
+	// spec. Destination-scoped egress is otherwise deferred; see
+	// docs/development/ui-overhaul/0002-console-api-and-kubernetes.md.
+	//+kubebuilder:validation:MaxItems=16
+	KubernetesAPIIPBlocks []networkingv1.IPBlock `json:"kubernetesAPIIPBlocks,omitempty"`
 }
 
 type NetworkPolicyRulesSpec struct {

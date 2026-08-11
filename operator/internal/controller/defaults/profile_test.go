@@ -1,6 +1,7 @@
 package defaults
 
 import (
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -60,16 +61,18 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[1], 9090)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Ingress[0].Ports[0], 9090)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Ingress[0].Ports[0], 8080)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[0], 53, corev1.ProtocolTCP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[1], 53, corev1.ProtocolUDP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[2], 8053, corev1.ProtocolTCP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[3], 8053, corev1.ProtocolUDP)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[0], 8000)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[1], 80)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[2], 9000)
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.API.Egress[0])
+	if len(tamoss.Spec.NetworkPolicy.UI.Egress) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", tamoss.Spec.NetworkPolicy.UI.Egress)
+	}
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.UI.Egress[0])
+	assertPortScopedTCPRule(t, tamoss.Spec.NetworkPolicy.UI.Egress[1], 8000, 80, 9000)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Ingress[0].Ports[0], 8080)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[0], 443)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[1], 6443)
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) != 2 {
+		t.Fatalf("expected port-scoped DNS and Kubernetes API Console egress, got %#v", tamoss.Spec.NetworkPolicy.Console.Egress)
+	}
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.Console.Egress[0])
+	assertPortScopedTCPRule(t, tamoss.Spec.NetworkPolicy.Console.Egress[1], 443, 6443)
 	consoleIngressLabels := tamoss.Spec.NetworkPolicy.Console.Ingress[0].From[0].PodSelector.MatchLabels
 	if consoleIngressLabels["app.kubernetes.io/component"] != "ui" ||
 		consoleIngressLabels["app.kubernetes.io/instance"] != tamoss.Name {
@@ -133,13 +136,13 @@ func TestApplyMultiServerAllowsUIToReachOptInConsole(t *testing.T) {
 
 	Apply(tamoss)
 
-	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
-	if len(ports) != 4 {
-		t.Fatalf("expected UI egress to API and Console, got %#v", ports)
+	rules := tamoss.Spec.NetworkPolicy.UI.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", rules)
 	}
-	assertNetworkPolicyPort(t, ports[1], 8080)
-	assertNetworkPolicyPort(t, ports[2], 80)
-	assertNetworkPolicyPort(t, ports[3], 9000)
+	assertPortScopedDNSRule(t, rules[0])
+	// The API, Console, and Authentik forward-auth ports the UI must reach.
+	assertPortScopedTCPRule(t, rules[1], 8000, 8080, 80, 9000)
 }
 
 func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
@@ -159,15 +162,73 @@ func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
 
 	Apply(tamoss)
 
-	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
-	if len(ports) != 5 {
-		t.Fatalf("expected UI egress to API plus Console service and target ports, got %#v", ports)
+	rules := tamoss.Spec.NetworkPolicy.UI.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", rules)
 	}
-	assertNetworkPolicyPort(t, ports[0], 8000)
-	assertNetworkPolicyPort(t, ports[1], 8181)
-	assertNetworkPolicyPort(t, ports[2], 8080)
-	assertNetworkPolicyPort(t, ports[3], 80)
-	assertNetworkPolicyPort(t, ports[4], 9000)
+	assertPortScopedDNSRule(t, rules[0])
+	// A CNI may enforce egress before or after Service translation, so both the
+	// Console Service port and its container target port are allowed.
+	assertPortScopedTCPRule(t, rules[1], 8000, 8181, 8080, 80, 9000)
+}
+
+// spec.networkPolicy.kubernetesAPIIPBlocks is an optional tightening of the
+// Kubernetes API rule. Omitting it leaves that rule port-scoped rather than
+// removing it, because destination-scoped egress is deferred.
+func TestApplyMultiServerConsoleKubernetesAPIEgressIsPortScopedWithoutIPBlocks(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+		},
+	}
+
+	Apply(tamoss)
+
+	rules := tamoss.Spec.NetworkPolicy.Console.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected DNS and Kubernetes API rules, got %#v", rules)
+	}
+	assertPortScopedDNSRule(t, rules[0])
+	assertPortScopedTCPRule(t, rules[1], 443, 6443)
+}
+
+func TestApplyMultiServerScopesConsoleKubernetesAPIEgressToDeclaredIPBlocks(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+			NetworkPolicy: tamossv1alpha1.NetworkPolicySpec{KubernetesAPIIPBlocks: []networkingv1.IPBlock{
+				{CIDR: "10.96.0.1/32"},
+				{CIDR: "192.0.2.10/31", Except: []string{"192.0.2.11/32"}},
+			}},
+		},
+	}
+
+	Apply(tamoss)
+
+	rules := tamoss.Spec.NetworkPolicy.Console.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected DNS and Kubernetes API rules, got %#v", rules)
+	}
+	apiRule := rules[1]
+	if len(apiRule.To) != 2 || apiRule.To[0].IPBlock == nil || apiRule.To[0].IPBlock.CIDR != "10.96.0.1/32" ||
+		apiRule.To[1].IPBlock == nil || apiRule.To[1].IPBlock.CIDR != "192.0.2.10/31" ||
+		!slices.Equal(apiRule.To[1].IPBlock.Except, []string{"192.0.2.11/32"}) {
+		t.Fatalf("unexpected Kubernetes API peers: %#v", apiRule.To)
+	}
+	if len(apiRule.Ports) != 2 {
+		t.Fatalf("expected Service and target API ports, got %#v", apiRule.Ports)
+	}
+	assertNetworkPolicyPort(t, apiRule.Ports[0], 443)
+	assertNetworkPolicyPort(t, apiRule.Ports[1], 6443)
+	// Declaring API-server blocks tightens that one rule only; DNS stays
+	// port-scoped so an unmatched resolver cannot remove DNS from the Console.
+	assertPortScopedDNSRule(t, rules[0])
 }
 
 func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
@@ -1002,6 +1063,47 @@ func assertNetworkPolicyPortAndProtocol(t *testing.T, port networkingv1.NetworkP
 	}
 }
 
+// assertPortScopedDNSRule checks the default DNS rule stays port-scoped.
+// Destination scoping is deferred: naming resolvers is only safe when the peer
+// list covers every resolver a supported cluster may run, and an unmatched
+// resolver removes DNS from the workload entirely.
+func assertPortScopedDNSRule(t *testing.T, rule networkingv1.NetworkPolicyEgressRule) {
+	t.Helper()
+	if len(rule.To) != 0 {
+		t.Fatalf("expected port-scoped DNS egress, got peers %#v", rule.To)
+	}
+	want := []struct {
+		port     int32
+		protocol corev1.Protocol
+	}{
+		{53, corev1.ProtocolTCP},
+		{53, corev1.ProtocolUDP},
+		{8053, corev1.ProtocolTCP},
+		{8053, corev1.ProtocolUDP},
+	}
+	if len(rule.Ports) != len(want) {
+		t.Fatalf("expected the DNS Service and post-DNAT target ports, got %#v", rule.Ports)
+	}
+	for index, expected := range want {
+		assertNetworkPolicyPortAndProtocol(t, rule.Ports[index], expected.port, expected.protocol)
+	}
+}
+
+// assertPortScopedTCPRule checks a default egress rule allows exactly the given
+// TCP ports to any destination.
+func assertPortScopedTCPRule(t *testing.T, rule networkingv1.NetworkPolicyEgressRule, ports ...int32) {
+	t.Helper()
+	if len(rule.To) != 0 {
+		t.Fatalf("expected port-scoped egress, got peers %#v", rule.To)
+	}
+	if len(rule.Ports) != len(ports) {
+		t.Fatalf("expected %d egress ports, got %#v", len(ports), rule.Ports)
+	}
+	for index, port := range ports {
+		assertNetworkPolicyPortAndProtocol(t, rule.Ports[index], port, corev1.ProtocolTCP)
+	}
+}
+
 func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 	t.Helper()
 	if spec.ReadinessProbe == nil || spec.ReadinessProbe.HTTPGet == nil {
@@ -1049,7 +1151,12 @@ func assertUIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 		got  *corev1.Probe
 		path string
 	}{
-		{name: "readiness", got: spec.ReadinessProbe, path: "/readyz"},
+		// Readiness probes /healthz rather than /readyz. /readyz reports 503
+		// while browser authentication is unconfigured and exists only from 8.2
+		// onwards, so probing it would block rollouts of a pinned earlier UI
+		// image and remove the Pod from its Service for a state the instance
+		// already reports on BrowserAuthenticationReady.
+		{name: "readiness", got: spec.ReadinessProbe, path: "/healthz"},
 		{name: "liveness", got: spec.LivenessProbe, path: "/healthz"},
 		{name: "startup", got: spec.StartupProbe, path: "/healthz"},
 	}

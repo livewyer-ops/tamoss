@@ -145,10 +145,11 @@ TAMOSS does not configure bucket CORS for `external-s3` backends.
 ## Managed RustFS Browser Access
 
 For managed RustFS backends the operator configures bucket CORS automatically,
-including the UI web host from `.spec.ingress.ui.web.host` (`https` when
-`.spec.ingress.tls` is set, otherwise `http`) and exact origins from
-`.spec.api.cors.allowedOrigins`. When no exact origins are configured, the
-operator falls back to a wildcard (`*`) bucket CORS origin.
+including the exact `.spec.publicEndpoint.uiURL`, the UI web host from
+`.spec.ingress.ui.web.host` (`https` when `.spec.ingress.tls` is set, otherwise
+`http`), and exact origins from `.spec.api.cors.allowedOrigins`. The exact
+public UI URL preserves non-standard ports. When no exact origins are
+configured, the operator falls back to a wildcard (`*`) bucket CORS origin.
 
 Regex origins from `.spec.api.cors.allowedOriginRegexes` are supported by the
 API and at the [Traefik](https://traefik.io/) S3 ingress layer. They are not

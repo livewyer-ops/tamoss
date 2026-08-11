@@ -5,7 +5,7 @@
 - The backend boundary and security model are accepted for TAMOSS 8.2.
 - An informer-backed Console API exists and remains explicit opt-in.
   Managed Authentik sessions now cross a proof-backed same-origin proxy and
-  exact group bindings authorize the `viewer`, `operator`, and `ingest-runner`
+  exact group bindings authorise the `viewer`, `operator`, and `ingest-runner`
   roles. The API exposes bounded runtime telemetry, cursor-paginated durable
   `IngestRun` reads, session capabilities, and audited one-way cancellation.
   Its checked OpenAPI contract generates the frontend operation types and is
@@ -17,9 +17,12 @@
 - Free-form Kubernetes condition, Pod, Job, and Event messages are not exposed.
   Diagnostic types and reasons are constrained to bounded machine-code syntax;
   malformed values project as `Unknown`.
-- Constrained Kubernetes API egress, external OIDC, automated deployed role
-  tests, and scale evidence remain gates before read access is enabled by
-  default, not only before mutation controls are enabled.
+- Multi-server NetworkPolicy and bounded 10,000-item scale regressions are
+  implemented. Destination-scoped egress is deferred: default egress is
+  port-scoped, as it was in 8.1, because the destination-scoped rules could not
+  be verified against an enforcing CNI in CI. External browser OIDC remains a
+  gate before read access is enabled by default, not only before mutation
+  controls are enabled.
 
 ## Context
 
@@ -119,13 +122,22 @@ header. API and Console use distinct proofs, and each verifier receives only its
 own key; the reverse proxy strips any browser-supplied proof or identity header
 before adding trusted values.
 
-Claims map to additive application roles:
+Claims map to additive application roles. A group binding accepts exactly four
+permission values; any other value is rejected when the binding is validated.
 
-| Role | Console authority |
+| Permission | Console authority |
 | --- | --- |
 | `viewer` | Read instance, catalog, workload, run, and sanitised Event state |
 | `operator` | `viewer`, cancel active runs, and retry terminal runs |
 | `ingest-runner` | `viewer` and create runs using approved profiles and credentials |
+| `admin` | Compatibility alias for the three roles above; no extra authority |
+
+`operator` and `ingest-runner` each imply `viewer`, and `admin` expands to all
+three before the identity is built, so `/ui-api/v1/session` only ever reports
+`viewer`, `operator`, and `ingest-runner`. The TAMS API treats the four
+permissions identically: each grants the read scope alone, and forward-auth
+identities remain limited to `GET` and `HEAD` on explicitly mapped read routes
+whatever their role.
 
 No role implies arbitrary Kubernetes administration. TAMS metadata mutations
 continue to require their TAMS API scopes. A shared high-privilege TAMS token
@@ -156,10 +168,27 @@ possible, but they do not replace the namespace boundary for list/watch.
 
 The operator retains Job lifecycle authority. Console and operator service
 accounts are distinct, use projected short-lived tokens, disable token
-automount on unrelated containers, and are subject to NetworkPolicy. The
-initial multi-server policy permits outbound HTTPS generally because it cannot
-derive an API-server destination from the CR; that is not an API-only egress
-boundary.
+automount on unrelated containers, and are subject to NetworkPolicy.
+Destination-scoped egress is deferred for 8.2. Default egress is port-scoped
+only, as it was in 8.1: multi-server UI egress allows the DNS ports plus the
+API, Console, and Authentik forward-auth ports, and Console API egress allows
+the DNS ports plus Service port 443 and the common post-DNAT target port 6443.
+Any destination on those ports is permitted, so this is a weaker boundary than
+naming destinations; it is not equivalent.
+
+`spec.networkPolicy.kubernetesAPIIPBlocks` remains supported as an optional
+tightening. Supplying the Kubernetes Service and API-server endpoint CIDRs
+scopes the Console 443 and 6443 rule to those destinations. It is not required,
+and enabling Console without it is accepted on every profile.
+
+Destination scoping was deferred rather than shipped because it could not be
+verified against an enforcing CNI in CI, and an unverified peer list is a worse
+outcome than a port-scoped rule. Naming DNS resolvers in particular must cover
+every resolver a supported cluster may run, since an unmatched resolver removes
+DNS from the workload entirely and presents as a total outage rather than a
+policy error. A cluster that wants destination-scoped egress today can declare
+explicit rules under `spec.networkPolicy.<component>.egress`, which the operator
+renders unchanged.
 
 ## Failure Behaviour
 
@@ -179,6 +208,12 @@ roots win, `ingestRuntimeTruncated` is set, and the 30-second positive cache
 eliminates repeat reads. This is bounded-algorithm evidence, not a substitute
 for API-server, informer fan-out, slow-client, or concurrent-ingest load tests.
 
+There is no deployed egress deny regression in 8.2. The destination-scoped rules
+it covered are deferred, and the check could not be run on an enforcing CNI in
+CI, so the rules and the check were removed together rather than left as
+unverified assertions. Rendered policy shape is covered by operator unit tests
+only, which prove what is declared, not what a CNI enforces.
+
 - Complete typed create and retry commands without broadening the implemented
   cursor-paginated read and cancellation authority. Do not present ephemeral
   Jobs as durable run history.
@@ -191,9 +226,13 @@ for API-server, informer fan-out, slow-client, or concurrent-ingest load tests.
   and privilege escalation attempts fail.
 - Load-test the bounded referenced-root resolver and partial-result signal with
   large durable run histories and high concurrent ingest rates.
-- Restrict Console Kubernetes API egress using configured API-server CIDRs or
-  a constrained in-cluster proxy, and test that arbitrary HTTPS exfiltration is
-  denied. A port-only `443` rule is insufficient.
+- Restore destination-scoped UI and Console egress with a deployed deny
+  regression that runs on the release GCP CNI as well as a recorded Cilium
+  configuration. Cilium needs `policyCIDRMatchMode: nodes` for its standard
+  `NetworkPolicy.ipBlock` implementation to match a self-hosted API server, so
+  the peer list must be proven per CNI rather than assumed. When external OIDC
+  is enabled, include its exact provider or egress-proxy destinations without
+  permitting arbitrary DNS or HTTPS traffic.
 - Assert the rendered Role contains no wildcard, Secret, exec, log, or Job
   write permission.
 - Build, sign, and publish the Console image; validate generated CRDs and the

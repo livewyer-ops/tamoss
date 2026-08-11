@@ -3,6 +3,7 @@ package workload_renderer
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -1092,6 +1093,23 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 			wantOriginRegexes:  []string{`^https://[a-z0-9-]+\.github\.io$`},
 		},
 		{
+			name: "explicit public UI origin retains its port",
+			mutate: func(tamoss *tamossv1alpha1.Tamoss) {
+				tamoss.Spec.PublicEndpoint.UIURL = "https://app.example.com:30443/"
+				tamoss.Spec.Backends.S3 = tamossv1alpha1.S3BackendSpec{
+					ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator,
+					RustFSOperator: &tamossv1alpha1.S3RustFSOperatorSpec{
+						PublicEndpoint: tamossv1alpha1.S3PublicEndpointSpec{URL: "https://s3.example.com"},
+					},
+				}
+			},
+			wantIngress:        true,
+			wantService:        "example-s3",
+			wantMiddleware:     true,
+			wantMiddlewareAnno: true,
+			wantTLSSecret:      "tamoss-tls",
+		},
+		{
 			name: "external s3 does not render managed ingress",
 			mutate: func(tamoss *tamossv1alpha1.Tamoss) {
 				tamoss.Spec.Backends.S3 = tamossv1alpha1.S3BackendSpec{
@@ -1201,9 +1219,16 @@ func TestRenderManagedS3PublicExposure(t *testing.T) {
 			if tt.wantMiddleware {
 				middleware := unstructuredByName(t, objects, "Middleware", "example-s3-cors")
 				origins, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowOriginList")
-				if len(origins) != 2 ||
-					origins[0] != "https://app.example.com" ||
-					origins[1] != "https://cuttingroom.github.io" {
+				wantUIOrigin := "https://app.example.com"
+				if tamoss.Spec.PublicEndpoint.UIURL != "" {
+					wantUIOrigin = strings.TrimSuffix(tamoss.Spec.PublicEndpoint.UIURL, "/")
+				}
+				wantOrigins := []string{wantUIOrigin}
+				if wantUIOrigin != "https://app.example.com" {
+					wantOrigins = append(wantOrigins, "https://app.example.com")
+				}
+				wantOrigins = append(wantOrigins, "https://cuttingroom.github.io")
+				if !slices.Equal(origins, wantOrigins) {
 					t.Fatalf("expected S3 CORS origins for UI and browser tools, got %#v", origins)
 				}
 				methods, _, _ := unstructured.NestedStringSlice(middleware.Object, "spec", "headers", "accessControlAllowMethods")

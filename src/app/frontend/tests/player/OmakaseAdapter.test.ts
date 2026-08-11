@@ -116,7 +116,8 @@ vi.mock("@byomakase/omakase-player/dist/omakase-player.es.js", () => ({
   },
 }));
 
-vi.mock("@/player/hls-manifest", () => ({
+vi.mock("@/player/hls-manifest", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/player/hls-manifest")>()),
   compilePlaybackPlan: vi.fn(() => mocks.plan),
 }));
 
@@ -124,6 +125,7 @@ vi.mock("@/player/audio-sidecar", () => ({
   createSynchronizedAudioSidecar: mocks.createAudioSidecar,
 }));
 
+import { compilePlaybackPlan } from "@/player/hls-manifest";
 import {
   createOmakasePreview,
   PreviewPlaybackError,
@@ -397,6 +399,49 @@ describe("OmakaseAdapter", () => {
     handle.destroy();
   });
 
+  it("hands the manifest compiler a half-open playback window", async () => {
+    const inclusive = descriptor();
+    const handle = createOmakasePreview({
+      descriptor: { ...inclusive, initialTimerange: "[100:0_106:0]" },
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+
+    await handle.ready;
+
+    expect(compilePlaybackPlan).toHaveBeenCalledWith({
+      tracks: inclusive.tracks,
+      initialTimerange: "[100:0_106:1)",
+    });
+    handle.destroy();
+  });
+
+  it("refuses a window with no playable duration", () => {
+    expect(() =>
+      createOmakasePreview({
+        descriptor: { ...descriptor(), initialTimerange: "[100:0]" },
+        playerElementId: "player",
+        timelineElementId: "timeline",
+        onChange: vi.fn(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "no-playable-media" }));
+    expect(compilePlaybackPlan).not.toHaveBeenCalled();
+  });
+
+  it("reports no switchable renditions when playback has no audio sidecar", async () => {
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+
+    expect(handle.audioTracks).toEqual([]);
+    await handle.ready;
+    handle.destroy();
+  });
+
   it("loads synchronized audio and switches renditions", async () => {
     document.body.innerHTML = '<div id="player"></div>';
     mocks.plan.audioSidecars = [
@@ -422,6 +467,10 @@ describe("OmakaseAdapter", () => {
 
     await handle.ready;
 
+    expect(handle.audioTracks).toEqual([
+      { flowId: "audio-1", label: "Programme" },
+      { flowId: "audio-2", label: "Commentary" },
+    ]);
     expect(mocks.createAudioSidecar).toHaveBeenCalledTimes(2);
     expect(mocks.createAudioSidecar).toHaveBeenNthCalledWith(
       1,

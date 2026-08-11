@@ -101,7 +101,7 @@ export interface paths {
         };
         /**
          * Traverse durable ingest history
-         * @description Pages use opaque Kubernetes snapshot cursors. Filtering a namespace-wide page can produce an empty items array with a nextCursor; totals and a global sort order are deliberately not promised.
+         * @description Pages use opaque Kubernetes snapshot cursors. Filtering a namespace-wide page can produce an empty items array with a nextCursor; totals and a global sort order are deliberately not promised. A cursor is cryptographically bound to the limit and phase that produced it, so changing either value means restarting the traversal without a cursor.
          */
         get: operations["listIngestRuns"];
         put?: never;
@@ -464,7 +464,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description The request or cursor is invalid. */
+        /** @description The request body or its target is invalid. */
         BadRequest: {
             headers: {
                 [name: string]: unknown;
@@ -665,8 +665,11 @@ export interface operations {
     listIngestRuns: {
         parameters: {
             query?: {
+                /** @description Maximum items in the page. A cursor is bound to this value; sending a different limit alongside a cursor is rejected as invalid_cursor. */
                 limit?: number;
+                /** @description Optional phase filter. A cursor is bound to this value, including its absence; adding, removing, or changing the filter alongside a cursor is rejected as invalid_cursor. */
                 phase?: components["schemas"]["IngestRunPhase"];
+                /** @description The nextCursor returned by the immediately preceding page. The cursor is authenticated and bound to the limit and phase it was issued with, so it is only valid when replayed with exactly those values, and only against a Console deployment holding the same cursor key. Any other use is rejected as invalid_cursor rather than silently re-anchoring the traversal. */
                 cursor?: string;
             };
             header?: never;
@@ -684,7 +687,15 @@ export interface operations {
                     "application/json": components["schemas"]["IngestRunListResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description The query is invalid (invalid_query), or the cursor is malformed, was not issued by this Console deployment, or was replayed with a limit or phase other than the pair it was bound to (invalid_cursor). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             /** @description The Kubernetes snapshot behind the cursor expired. */

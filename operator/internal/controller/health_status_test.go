@@ -137,9 +137,11 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 
 func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	var probedPath string
+	var probedOrigin string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probedPath = r.URL.Path
-		w.Header().Set("Access-Control-Allow-Origin", "https://app.tamoss.example.com")
+		probedOrigin = r.Header.Get("Origin")
+		w.Header().Set("Access-Control-Allow-Origin", probedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -159,6 +161,16 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	if probedPath != "/archive" {
 		t.Fatalf("expected preflight against the bucket URL, got path %q", probedPath)
 	}
+	if probedOrigin != "https://app.tamoss.example.com" {
+		t.Fatalf("expected derived UI origin, got %q", probedOrigin)
+	}
+
+	tamoss.Spec.PublicEndpoint.UIURL = "https://app.tamoss.example.com:30443/"
+	diagnostic = reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
+	if diagnostic.Status != metav1.ConditionTrue || probedOrigin != "https://app.tamoss.example.com:30443" {
+		t.Fatalf("expected diagnostic to use the exact public UI origin, got origin %q and result %#v", probedOrigin, diagnostic)
+	}
+	tamoss.Spec.PublicEndpoint.UIURL = ""
 
 	blockedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

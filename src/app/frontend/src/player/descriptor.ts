@@ -12,6 +12,7 @@ import type {
   PaginatedResponse,
 } from "@/types/tams";
 import {
+  boundsFromTimerange,
   timerangeFromNanoseconds,
   timestampFromNanoseconds,
 } from "@/utils/tams-time";
@@ -125,13 +126,6 @@ interface TrackCandidate {
   role?: string;
 }
 
-interface TimerangeBounds {
-  start?: bigint;
-  end: bigint;
-  endInclusive: boolean;
-  instantaneous: boolean;
-}
-
 function boundedPositiveInteger(
   value: number | undefined,
   fallback: number,
@@ -142,45 +136,6 @@ function boundedPositiveInteger(
   return Math.min(value, maximum);
 }
 
-function parseTimestamp(timestamp: string): bigint | undefined {
-  const match = /^(-?)(\d+):(\d{1,9})$/u.exec(timestamp);
-  if (!match) return undefined;
-  const nanos = BigInt(match[3]);
-  if (nanos >= NANOS_PER_SECOND) return undefined;
-  const absolute = BigInt(match[2]) * NANOS_PER_SECOND + nanos;
-  return match[1] === "-" ? -absolute : absolute;
-}
-
-function parseBoundedTimerange(timerange: string): TimerangeBounds | undefined {
-  const instant = /^\[(-?\d+:\d{1,9})\]$/u.exec(timerange);
-  if (instant) {
-    const timestamp = parseTimestamp(instant[1]);
-    return timestamp === undefined
-      ? undefined
-      : {
-          start: timestamp,
-          end: timestamp,
-          endInclusive: true,
-          instantaneous: true,
-        };
-  }
-
-  const range = /^(?:(\[|\()(-?\d+:\d{1,9})?)?_(-?\d+:\d{1,9})(\)|\])$/u.exec(
-    timerange,
-  );
-  if (!range || (range[1] && !range[2])) return undefined;
-  const start = range[2] ? parseTimestamp(range[2]) : undefined;
-  const end = parseTimestamp(range[3]);
-  if (end === undefined || (range[2] && start === undefined)) return undefined;
-  if (start !== undefined && start > end) return undefined;
-  return {
-    ...(start === undefined ? {} : { start }),
-    end,
-    endInclusive: range[4] === "]",
-    instantaneous: false,
-  };
-}
-
 function recentTimerange(flow: Flow, windowSeconds: number): string {
   if (!flow.timerange) {
     throw new PreviewDescriptorError(
@@ -189,7 +144,7 @@ function recentTimerange(flow: Flow, windowSeconds: number): string {
       { flowId: flow.id },
     );
   }
-  const bounds = parseBoundedTimerange(flow.timerange);
+  const bounds = boundsFromTimerange(flow.timerange);
   if (!bounds) {
     throw new PreviewDescriptorError(
       "invalid-timerange",

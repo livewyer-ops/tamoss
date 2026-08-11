@@ -206,7 +206,7 @@ ${auth_directives}
     proxy_set_header Host \$http_host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;
     proxy_set_header X-Request-ID \$request_id;
 ${api_trusted_identity_headers}
 }
@@ -246,6 +246,15 @@ ${console_trusted_identity_headers}
     proxy_read_timeout 1h;
     proxy_send_timeout 1h;
     add_header X-Accel-Buffering "no" always;
+    # This location defines its own add_header, so nginx stops inheriting the
+    # server-level security headers. Repeat them here.
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    add_header Content-Security-Policy \$tamoss_content_security_policy always;
 }
 EOF
 fi

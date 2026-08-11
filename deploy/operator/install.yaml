@@ -134,7 +134,9 @@ spec:
                   storageBackendRef:
                     description: |-
                       StorageBackendRef selects a Ready, media-purpose StorageBackend belonging
-                      to spec.tamossRef. Empty uses the TAMS instance's default backend.
+                      to spec.tamossRef. Unset uses the TAMS instance's default backend. This is
+                      a pointer because encoding/json never omits a struct value, and an omitted
+                      reference must not serialise as an empty name that fails admission.
                     properties:
                       name:
                         maxLength: 253
@@ -206,7 +208,8 @@ spec:
             - message: spec.sizeClass is immutable
               rule: self.sizeClass == oldSelf.sizeClass
             - message: spec.options is immutable
-              rule: self.options == oldSelf.options
+              rule: has(self.options) == has(oldSelf.options) && (!has(self.options)
+                || self.options == oldSelf.options)
             - message: spec.credentialProfileRef is immutable
               rule: has(self.credentialProfileRef) == has(oldSelf.credentialProfileRef)
                 && (!has(self.credentialProfileRef) || self.credentialProfileRef ==
@@ -11042,6 +11045,40 @@ spec:
                     type: object
                   enabled:
                     type: boolean
+                  kubernetesAPIIPBlocks:
+                    description: |-
+                      KubernetesAPIIPBlocks contains the Kubernetes Service and API-server
+                      endpoint CIDRs that an enabled Console may reach. It is an optional
+                      tightening: when the list is empty the Console's Kubernetes API egress
+                      rule is still rendered but permits any destination on those ports, because
+                      the addresses are cluster-specific and cannot be derived from a Tamoss
+                      spec. Destination-scoped egress is otherwise deferred; see
+                      docs/development/ui-overhaul/0002-console-api-and-kubernetes.md.
+                    items:
+                      description: |-
+                        IPBlock describes a particular CIDR (Ex. "192.168.1.0/24","2001:db8::/64") that is allowed
+                        to the pods matched by a NetworkPolicySpec's podSelector. The except entry describes CIDRs
+                        that should not be included within this rule.
+                      properties:
+                        cidr:
+                          description: |-
+                            cidr is a string representing the IPBlock
+                            Valid examples are "192.168.1.0/24" or "2001:db8::/64"
+                          type: string
+                        except:
+                          description: |-
+                            except is a slice of CIDRs that should not be included within an IPBlock
+                            Valid examples are "192.168.1.0/24" or "2001:db8::/64"
+                            Except values will be rejected if they are outside the cidr range
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - cidr
+                      type: object
+                    maxItems: 16
+                    type: array
                   ui:
                     properties:
                       egress:
@@ -21409,6 +21446,7 @@ rules:
   verbs:
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - tamoss.livewyer.io

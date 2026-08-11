@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -135,6 +136,34 @@ var _ = Describe("Tamoss API validation", func() {
 			err := k8sClient.Create(ctx, run)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		// Destination-scoped Console egress is deferred, so
+		// spec.networkPolicy.kubernetesAPIIPBlocks is an optional tightening
+		// rather than a precondition for a multi-server Console.
+		It("accepts a multi-server Console with and without Kubernetes API IP blocks", func() {
+			resource := &tamossv1alpha1.Tamoss{
+				ObjectMeta: metav1.ObjectMeta{Name: "console-egress-unscoped", Namespace: "default"},
+				Spec:       minimalTamossSpec(),
+			}
+			resource.Spec.Profile = tamossv1alpha1.TamossProfileMultiServer
+			resource.Spec.Console.Enabled = ptr.To(true)
+
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, resource)
+				cleanupTamossArtifacts(ctx, resource.Name, resource.Namespace)
+			})
+
+			scoped := resource.DeepCopy()
+			scoped.Name = "console-egress-scoped"
+			scoped.ResourceVersion = ""
+			scoped.Spec.NetworkPolicy.KubernetesAPIIPBlocks = []networkingv1.IPBlock{{CIDR: "10.96.0.1/32"}}
+			Expect(k8sClient.Create(ctx, scoped)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, scoped)
+				cleanupTamossArtifacts(ctx, scoped.Name, scoped.Namespace)
+			})
 		})
 
 		It("rejects StorageBackend durable identity updates", func() {

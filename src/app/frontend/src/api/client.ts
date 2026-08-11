@@ -3,6 +3,7 @@ import {
   type ApiRequestOptions,
   ApiTransport,
   type PagingParams,
+  path,
   type QueryParams,
 } from "@/api/transport";
 import type {
@@ -115,7 +116,7 @@ export class TamossApiClient extends ApiTransport {
   }
 
   async getSource(sourceId: string): Promise<Source> {
-    return this.request<Source>(`/sources/${sourceId}`);
+    return this.request<Source>(path`/sources/${sourceId}`);
   }
 
   async getProfiles(
@@ -133,7 +134,7 @@ export class TamossApiClient extends ApiTransport {
     sourceId: string,
   ): Promise<Record<string, string | string[]>> {
     return this.request<Record<string, string | string[]>>(
-      `/sources/${sourceId}/tags`,
+      path`/sources/${sourceId}/tags`,
     );
   }
 
@@ -142,26 +143,20 @@ export class TamossApiClient extends ApiTransport {
     name: string,
     value: string,
   ): Promise<void> {
-    return this.request<void>(
-      `/sources/${sourceId}/tags/${encodeURIComponent(name)}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(value),
-      },
-    );
+    return this.request<void>(path`/sources/${sourceId}/tags/${name}`, {
+      method: "PUT",
+      body: JSON.stringify(value),
+    });
   }
 
   async deleteSourceTag(sourceId: string, name: string): Promise<void> {
-    return this.request<void>(
-      `/sources/${sourceId}/tags/${encodeURIComponent(name)}`,
-      {
-        method: "DELETE",
-      },
-    );
+    return this.request<void>(path`/sources/${sourceId}/tags/${name}`, {
+      method: "DELETE",
+    });
   }
 
   async updateSourceLabel(sourceId: string, label: string): Promise<void> {
-    return this.request<void>(`/sources/${sourceId}/label`, {
+    return this.request<void>(path`/sources/${sourceId}/label`, {
       method: "PUT",
       body: JSON.stringify(label),
     });
@@ -171,7 +166,7 @@ export class TamossApiClient extends ApiTransport {
     sourceId: string,
     description: string,
   ): Promise<void> {
-    return this.request<void>(`/sources/${sourceId}/description`, {
+    return this.request<void>(path`/sources/${sourceId}/description`, {
       method: "PUT",
       body: JSON.stringify(description),
     });
@@ -189,18 +184,18 @@ export class TamossApiClient extends ApiTransport {
     params?: FlowParams,
     options: ApiRequestOptions = {},
   ): Promise<Flow> {
-    return this.request<Flow>(`/flows/${flowId}`, options, params);
+    return this.request<Flow>(path`/flows/${flowId}`, options, params);
   }
 
   async updateFlow(flowId: string, data: Partial<Flow>): Promise<Flow> {
-    return this.request<Flow>(`/flows/${flowId}`, {
+    return this.request<Flow>(path`/flows/${flowId}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
   async deleteFlow(flowId: string): Promise<DeletionRequest | undefined> {
-    return this.request<DeletionRequest | undefined>(`/flows/${flowId}`, {
+    return this.request<DeletionRequest | undefined>(path`/flows/${flowId}`, {
       method: "DELETE",
     });
   }
@@ -209,7 +204,7 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
   ): Promise<Record<string, string | string[]>> {
     return this.request<Record<string, string | string[]>>(
-      `/flows/${flowId}/tags`,
+      path`/flows/${flowId}/tags`,
     );
   }
 
@@ -218,26 +213,20 @@ export class TamossApiClient extends ApiTransport {
     name: string,
     value: string,
   ): Promise<void> {
-    return this.request<void>(
-      `/flows/${flowId}/tags/${encodeURIComponent(name)}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(value),
-      },
-    );
+    return this.request<void>(path`/flows/${flowId}/tags/${name}`, {
+      method: "PUT",
+      body: JSON.stringify(value),
+    });
   }
 
   async deleteFlowTag(flowId: string, name: string): Promise<void> {
-    return this.request<void>(
-      `/flows/${flowId}/tags/${encodeURIComponent(name)}`,
-      {
-        method: "DELETE",
-      },
-    );
+    return this.request<void>(path`/flows/${flowId}/tags/${name}`, {
+      method: "DELETE",
+    });
   }
 
   async updateFlowLabel(flowId: string, label: string): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/label`, {
+    return this.request<void>(path`/flows/${flowId}/label`, {
       method: "PUT",
       body: JSON.stringify(label),
     });
@@ -247,7 +236,7 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
     description: string,
   ): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/description`, {
+    return this.request<void>(path`/flows/${flowId}/description`, {
       method: "PUT",
       body: JSON.stringify(description),
     });
@@ -257,7 +246,7 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
     avgBitRate: number,
   ): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/avg_bit_rate`, {
+    return this.request<void>(path`/flows/${flowId}/avg_bit_rate`, {
       method: "PUT",
       body: JSON.stringify(avgBitRate),
     });
@@ -267,7 +256,7 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
     maxBitRate: number,
   ): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/max_bit_rate`, {
+    return this.request<void>(path`/flows/${flowId}/max_bit_rate`, {
       method: "PUT",
       body: JSON.stringify(maxBitRate),
     });
@@ -278,7 +267,7 @@ export class TamossApiClient extends ApiTransport {
     options: ApiRequestOptions = {},
   ): Promise<FlowCollectionItem[]> {
     return this.request<FlowCollectionItem[]>(
-      `/flows/${flowId}/flow_collection`,
+      path`/flows/${flowId}/flow_collection`,
       options,
     );
   }
@@ -287,14 +276,14 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
     items: Array<{ id: string; role: string }>,
   ): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/flow_collection`, {
+    return this.request<void>(path`/flows/${flowId}/flow_collection`, {
       method: "PUT",
       body: JSON.stringify(items),
     });
   }
 
   async setFlowReadOnly(flowId: string, readOnly: boolean): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/read_only`, {
+    return this.request<void>(path`/flows/${flowId}/read_only`, {
       method: "PUT",
       body: JSON.stringify(readOnly),
     });
@@ -306,7 +295,7 @@ export class TamossApiClient extends ApiTransport {
     options?: ApiRequestOptions,
   ): Promise<PaginatedResponse<FlowSegment>> {
     return this.requestPaginated<FlowSegment>(
-      `/flows/${flowId}/segments`,
+      path`/flows/${flowId}/segments`,
       params,
       options,
     );
@@ -317,7 +306,7 @@ export class TamossApiClient extends ApiTransport {
     timerange: string,
   ): Promise<DeletionRequest | undefined> {
     return this.request<DeletionRequest | undefined>(
-      `/flows/${flowId}/segments`,
+      path`/flows/${flowId}/segments`,
       { method: "DELETE" },
       { timerange },
     );
@@ -325,7 +314,7 @@ export class TamossApiClient extends ApiTransport {
 
   // Convenience wrapper around BBC PUT /flows/{flowId}.
   async createFlow(flowId: string, data: Partial<Flow>): Promise<Flow> {
-    return this.request<Flow>(`/flows/${flowId}`, {
+    return this.request<Flow>(path`/flows/${flowId}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -335,7 +324,7 @@ export class TamossApiClient extends ApiTransport {
     flowId: string,
     segments: FlowSegmentWrite[],
   ): Promise<void> {
-    return this.request<void>(`/flows/${flowId}/segments`, {
+    return this.request<void>(path`/flows/${flowId}/segments`, {
       method: "POST",
       body: JSON.stringify(segments),
     });
@@ -353,14 +342,13 @@ export class TamossApiClient extends ApiTransport {
     objectId: string,
     params?: ObjectParams,
   ): Promise<MediaObject | PaginatedResourceResponse<MediaObject>> {
-    const encodedObjectId = encodeURIComponent(objectId);
     if (params?.limit !== undefined || params?.page !== undefined) {
       return this.requestPaginatedResource<MediaObject>(
-        `/objects/${encodedObjectId}`,
+        path`/objects/${objectId}`,
         params,
       );
     }
-    return this.request<MediaObject>(`/objects/${encodedObjectId}`, {}, params);
+    return this.request<MediaObject>(path`/objects/${objectId}`, {}, params);
   }
 
   async deleteObjectInstance(
@@ -368,7 +356,7 @@ export class TamossApiClient extends ApiTransport {
     params: { storage_id?: string; label?: string },
   ): Promise<void> {
     return this.request<void>(
-      `/objects/${encodeURIComponent(objectId)}/instances`,
+      path`/objects/${objectId}/instances`,
       { method: "DELETE" },
       params,
     );
@@ -381,7 +369,7 @@ export class TamossApiClient extends ApiTransport {
   }
 
   async getWebhook(webhookId: string): Promise<WebhookDetail> {
-    return this.request<WebhookDetail>(`/service/webhooks/${webhookId}`);
+    return this.request<WebhookDetail>(path`/service/webhooks/${webhookId}`);
   }
 
   async createWebhook(payload: WebhookWritePayload): Promise<WebhookDetail> {
@@ -395,14 +383,14 @@ export class TamossApiClient extends ApiTransport {
     webhookId: string,
     payload: Partial<WebhookWritePayload>,
   ): Promise<WebhookDetail> {
-    return this.request<WebhookDetail>(`/service/webhooks/${webhookId}`, {
+    return this.request<WebhookDetail>(path`/service/webhooks/${webhookId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
   }
 
   async deleteWebhook(webhookId: string): Promise<void> {
-    return this.request<void>(`/service/webhooks/${webhookId}`, {
+    return this.request<void>(path`/service/webhooks/${webhookId}`, {
       method: "DELETE",
     });
   }
@@ -419,7 +407,9 @@ export class TamossApiClient extends ApiTransport {
   }
 
   async getDeletionRequest(requestId: string): Promise<DeletionRequest> {
-    return this.request<DeletionRequest>(`/flow-delete-requests/${requestId}`);
+    return this.request<DeletionRequest>(
+      path`/flow-delete-requests/${requestId}`,
+    );
   }
 
   async allocateStorage(
@@ -431,7 +421,7 @@ export class TamossApiClient extends ApiTransport {
       object_ids: objectIds,
       ...(options.storageId ? { storage_id: options.storageId } : {}),
     };
-    return this.request<StorageAllocation>(`/flows/${flowId}/storage`, {
+    return this.request<StorageAllocation>(path`/flows/${flowId}/storage`, {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -446,7 +436,7 @@ export class TamossApiClient extends ApiTransport {
       limit,
       ...(options.storageId ? { storage_id: options.storageId } : {}),
     };
-    return this.request<StorageAllocation>(`/flows/${flowId}/storage`, {
+    return this.request<StorageAllocation>(path`/flows/${flowId}/storage`, {
       method: "POST",
       body: JSON.stringify(body),
     });

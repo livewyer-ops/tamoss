@@ -1,4 +1,8 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  replaceEqualDeep,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect } from "react";
 import { config } from "@/config";
 import type { components, operations } from "@/control/generated/openapi";
@@ -50,6 +54,36 @@ function normalizeRuntimeSnapshot(snapshot: RuntimeSnapshot): RuntimeSnapshot {
   };
 }
 
+function observationTime(snapshot: RuntimeSnapshot): number | undefined {
+  const observedAt = Date.parse(snapshot.observedAt);
+  return Number.isNaN(observedAt) ? undefined : observedAt;
+}
+
+/**
+ * Resolves the race between the recovery poll and the event stream.
+ *
+ * Both write the same cache entry, so a poll that started before a streamed
+ * update can land after it. Every snapshot records when the Console API
+ * observed cluster state, so an older observation never replaces a newer one.
+ * Snapshots without a comparable observation time keep last-write-wins.
+ */
+function newestRuntimeSnapshot(
+  previous: RuntimeSnapshot | undefined,
+  next: RuntimeSnapshot,
+): RuntimeSnapshot {
+  const previousTime = previous ? observationTime(previous) : undefined;
+  const nextTime = observationTime(next);
+  if (
+    previous !== undefined &&
+    previousTime !== undefined &&
+    nextTime !== undefined &&
+    nextTime < previousTime
+  ) {
+    return previous;
+  }
+  return replaceEqualDeep(previous, next);
+}
+
 function controlUrl(path: string): string {
   const base = config.controlApiUrl.endsWith("/")
     ? config.controlApiUrl
@@ -83,6 +117,13 @@ export function useRuntime() {
     retry: false,
     staleTime: 15_000,
     refetchInterval: 30_000,
+    // Applied to every cache write, so it orders both poll responses and
+    // streamed updates.
+    structuralSharing: (previous, next) =>
+      newestRuntimeSnapshot(
+        previous as RuntimeSnapshot | undefined,
+        next as RuntimeSnapshot,
+      ),
   });
   const runtimeAvailable = Boolean(query.data);
 

@@ -10369,6 +10369,40 @@ spec:
                     type: object
                   enabled:
                     type: boolean
+                  kubernetesAPIIPBlocks:
+                    description: |-
+                      KubernetesAPIIPBlocks contains the Kubernetes Service and API-server
+                      endpoint CIDRs that an enabled Console may reach. It is an optional
+                      tightening: when the list is empty the Console's Kubernetes API egress
+                      rule is still rendered but permits any destination on those ports, because
+                      the addresses are cluster-specific and cannot be derived from a Tamoss
+                      spec. Destination-scoped egress is otherwise deferred; see
+                      docs/development/ui-overhaul/0002-console-api-and-kubernetes.md.
+                    items:
+                      description: |-
+                        IPBlock describes a particular CIDR (Ex. "192.168.1.0/24","2001:db8::/64") that is allowed
+                        to the pods matched by a NetworkPolicySpec's podSelector. The except entry describes CIDRs
+                        that should not be included within this rule.
+                      properties:
+                        cidr:
+                          description: |-
+                            cidr is a string representing the IPBlock
+                            Valid examples are "192.168.1.0/24" or "2001:db8::/64"
+                          type: string
+                        except:
+                          description: |-
+                            except is a slice of CIDRs that should not be included within an IPBlock
+                            Valid examples are "192.168.1.0/24" or "2001:db8::/64"
+                            Except values will be rejected if they are outside the cidr range
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - cidr
+                      type: object
+                    maxItems: 16
+                    type: array
                   ui:
                     properties:
                       egress:

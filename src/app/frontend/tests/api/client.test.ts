@@ -855,4 +855,50 @@ describe("TamossApiClient", () => {
       );
     });
   });
+
+  describe("path segment encoding", () => {
+    const traversal = "..%2F..%2Fservice";
+
+    it("keeps an identifier inside one path segment", async () => {
+      const client = new TamossApiClient("/api");
+      mockFetch.mockResolvedValue(mockResponse({}));
+
+      await client.getFlow(traversal);
+      await client.getSource(traversal);
+      await client.getWebhook(traversal);
+      await client.getDeletionRequest(traversal);
+
+      const paths = mockFetch.mock.calls.map(
+        (call) => new URL(call[0] as string).pathname,
+      );
+      expect(paths).toEqual([
+        "/api/flows/..%252F..%252Fservice",
+        "/api/sources/..%252F..%252Fservice",
+        "/api/service/webhooks/..%252F..%252Fservice",
+        "/api/flow-delete-requests/..%252F..%252Fservice",
+      ]);
+    });
+
+    it("does not let an unencoded identifier escape the read-only boundary", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}));
+
+      const client = new TamossApiClient("/api");
+      await client.getFlow("../../service");
+
+      expect(lastCalledUrl().pathname).toBe("/api/flows/..%2F..%2Fservice");
+    });
+
+    it("encodes a nested identifier exactly once", async () => {
+      mockFetch.mockResolvedValue(mockResponse({}));
+
+      const client = new TamossApiClient("/api");
+      await client.getObject("bucket/key with space");
+      expect(lastCalledUrl().pathname).toBe(
+        "/api/objects/bucket%2Fkey%20with%20space",
+      );
+
+      await client.getFlowTags("flow 1");
+      expect(lastCalledUrl().pathname).toBe("/api/flows/flow%201/tags");
+    });
+  });
 });

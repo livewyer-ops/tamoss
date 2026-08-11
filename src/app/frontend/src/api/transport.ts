@@ -17,6 +17,27 @@ export type PagingParams = QueryParams & {
   page?: string;
 };
 
+/**
+ * Builds a request path, encoding every interpolated value as exactly one URL
+ * path segment.
+ *
+ * Identifiers reach the client from routes, query strings and pasted links.
+ * `new URL(relative, base)` resolves dot segments and honours an unencoded
+ * slash, so an unencoded identifier can address a resource outside the path
+ * the caller wrote. Interpolating through this tag keeps every identifier
+ * inside its own segment.
+ */
+export function path(
+  literals: TemplateStringsArray,
+  ...values: ReadonlyArray<string | number>
+): string {
+  let result = literals[0];
+  for (let index = 0; index < values.length; index += 1) {
+    result += encodeURIComponent(values[index]) + literals[index + 1];
+  }
+  return result;
+}
+
 export function errorMessageFromText(text: string): string {
   if (!text.trim()) return "Service request failed";
   try {

@@ -39,12 +39,22 @@ func networkPolicyFor(tamoss *tamossv1alpha1.Tamoss, component string, rules tam
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: selectorLabels(tamoss, component),
 			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeIngress,
-				networkingv1.PolicyTypeEgress,
-			},
-			Ingress: rules.Ingress,
-			Egress:  rules.Egress,
+			PolicyTypes: policyTypesFor(rules),
+			Ingress:     rules.Ingress,
+			Egress:      rules.Egress,
 		},
 	}
+}
+
+// policyTypesFor declares Egress only for a component that has egress rules.
+// Declaring the type with an empty rule list denies all outbound traffic
+// including DNS, which is never the intent of a component that simply has no
+// egress rules of its own. Ingress is unconditional: an empty ingress list
+// denying inbound traffic is the intended default for a selected component.
+func policyTypesFor(rules tamossv1alpha1.NetworkPolicyRulesSpec) []networkingv1.PolicyType {
+	policyTypes := []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	if len(rules.Egress) > 0 {
+		policyTypes = append(policyTypes, networkingv1.PolicyTypeEgress)
+	}
+	return policyTypes
 }

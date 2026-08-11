@@ -48,7 +48,7 @@ deploying TAMOSS in production:
    secret on every request.
 
 3. **Reverse-proxy identity is proof-bound and opt-in.** When
-   `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=1`, the API trusts only normalized
+   `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=1`, the API trusts only normalised
    `X-TAMOSS-Forward-Auth-*` headers carrying a verifier-specific proof, a
    stable subject, and groups matching configured bindings. `Remote-User` and
    raw `X-Authentik-*` headers are ignored. Direct Bearer, Basic, and URL-token
@@ -59,17 +59,22 @@ deploying TAMOSS in production:
    Required deployment stance:
 
    - Strip browser-supplied authorization and identity headers before adding
-     only the normalized allow-list established by the authentication
+     only the normalised allow-list established by the authentication
      subrequest; keep that subrequest location internal and non-routable.
    - Use distinct operator-generated proofs for API and Console. The proxy may
      receive both issuer keys, but each verifier receives only its own key;
      proofs must never reach the browser, logs, or unrelated workloads.
    - Isolate API and Console verifier Services from untrusted bypass paths.
      Allow only the trusted proxy and separately intended direct-auth clients.
-   - Make NetworkPolicy egress destination-scoped as well as port-scoped: the
-     UI needs only its Authentik, API, and Console destinations, and Console
-     needs only the intended Kubernetes API endpoint (plus required DNS).
-     Permitting arbitrary destinations on ports 443 or 6443 is insufficient.
+   - Declare destination-scoped NetworkPolicy egress yourself under
+     `spec.networkPolicy.<component>.egress`: the UI needs only its Authentik,
+     API, and Console destinations, and Console needs only the intended
+     Kubernetes API endpoint (plus required DNS). Default egress is port-scoped
+     only, because destination-scoped defaults are deferred until they can be
+     verified against an enforcing CNI, so an unmodified install does permit
+     arbitrary destinations on those ports. Setting
+     `spec.networkPolicy.kubernetesAPIIPBlocks` narrows the Console 443 and 6443
+     rule but leaves the remaining rules port-scoped.
 
 ### Object Storage
 

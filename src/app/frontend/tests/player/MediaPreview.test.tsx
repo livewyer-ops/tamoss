@@ -83,6 +83,7 @@ describe("MediaPreview", () => {
       onChange({ phase: "ready", currentTime: 0, duration: 10 });
       return {
         ready: Promise.resolve(),
+        audioTracks: [],
         destroy: mocks.destroy,
         selectAudioTrack: mocks.selectAudioTrack,
       };
@@ -150,23 +151,34 @@ describe("MediaPreview", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
-  it("selects the default split-audio track and switches renditions", async () => {
-    const base = descriptor();
-    const audio = ["Programme", "Commentary"].map((role, index) => ({
-      ...base.tracks[0],
-      kind: "audio" as const,
-      role,
-      flow: {
-        ...base.tracks[0].flow,
-        id: `audio-${index + 1}`,
-        format: "urn:x-nmos:format:audio",
-        codec: "audio/aac",
-      },
-    }));
+  it("reports an instantaneous window as empty rather than as a failure", async () => {
     mocks.buildDescriptor.mockResolvedValue({
-      ...base,
-      tracks: [...base.tracks, ...audio],
-      audio,
+      ...descriptor(),
+      initialTimerange: "[100:0]",
+    });
+
+    renderWithQueryClient(<MediaPreview flowId="video-1" />);
+
+    expect(
+      await screen.findByText("No playable media in this window"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(mocks.createPreview).not.toHaveBeenCalled();
+  });
+
+  it("selects the default split-audio track and switches renditions", async () => {
+    mocks.buildDescriptor.mockResolvedValue(multiAudioDescriptor());
+    mocks.createPreview.mockImplementation(({ onChange }) => {
+      onChange({ phase: "ready", currentTime: 0, duration: 10 });
+      return {
+        ready: Promise.resolve(),
+        audioTracks: [
+          { flowId: "audio-1", label: "Programme" },
+          { flowId: "audio-2", label: "Commentary" },
+        ],
+        destroy: mocks.destroy,
+        selectAudioTrack: mocks.selectAudioTrack,
+      };
     });
     renderWithQueryClient(<MediaPreview flowId="multi-1" />);
 
@@ -178,4 +190,39 @@ describe("MediaPreview", () => {
     fireEvent.change(selector, { target: { value: "audio-2" } });
     expect(mocks.selectAudioTrack).toHaveBeenLastCalledWith("audio-2");
   });
+
+  it("omits the audio selector when the player cannot switch renditions", async () => {
+    const base = multiAudioDescriptor();
+    mocks.buildDescriptor.mockResolvedValue({
+      ...base,
+      tracks: base.audio,
+      video: undefined,
+    });
+    renderWithQueryClient(<MediaPreview flowId="multi-1" />);
+
+    await waitFor(() => expect(mocks.createPreview).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByRole("combobox", { name: "Audio" }),
+    ).not.toBeInTheDocument();
+    expect(mocks.selectAudioTrack).not.toHaveBeenCalled();
+    // The inventory still lists every audio track that the window contains.
+    expect(screen.getByText("audio-1")).toBeInTheDocument();
+    expect(screen.getByText("audio-2")).toBeInTheDocument();
+  });
 });
+
+function multiAudioDescriptor(): MediaPreviewDescriptor {
+  const base = descriptor();
+  const audio = ["Programme", "Commentary"].map((role, index) => ({
+    ...base.tracks[0],
+    kind: "audio" as const,
+    role,
+    flow: {
+      ...base.tracks[0].flow,
+      id: `audio-${index + 1}`,
+      format: "urn:x-nmos:format:audio",
+      codec: "audio/aac",
+    },
+  }));
+  return { ...base, tracks: [...base.tracks, ...audio], audio };
+}

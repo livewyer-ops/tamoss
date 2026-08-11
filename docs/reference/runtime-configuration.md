@@ -35,8 +35,57 @@ when a workload image requires a different setting.
 
 `multi-server` enables default NetworkPolicies. Disable them with
 `spec.networkPolicy.enabled: false`, or replace the per-component ingress and
-egress rules under `spec.networkPolicy.api`, `spec.networkPolicy.worker`, and
-`spec.networkPolicy.ui`.
+egress rules under `spec.networkPolicy.api`, `spec.networkPolicy.worker`,
+`spec.networkPolicy.ui`, and `spec.networkPolicy.console`.
+
+Default egress is port-scoped, not destination-scoped: it names the ports each
+component must reach and permits any destination on them. DNS egress allows TCP
+and UDP on `53` and `8053`, the latter because some clusters enforce policy
+after `kube-dns` Service translation. Destination-scoped defaults are deferred
+until they can be verified against an enforcing CNI, so scope destinations for
+your cluster by declaring rules under `spec.networkPolicy.<component>.egress`;
+the operator renders explicit rules unchanged and adds no defaults alongside
+them.
+
+`spec.networkPolicy.kubernetesAPIIPBlocks` is an optional tightening for an
+enabled Console: declaring the Kubernetes Service and API server endpoint
+addresses scopes its `443` and `6443` egress rule to those destinations. Use
+host CIDRs when addresses are individual IPs; include both destinations because
+CNI enforcement can happen before or after Service translation:
+
+```yaml
+spec:
+  profile: multi-server
+  console:
+    enabled: true
+  networkPolicy:
+    kubernetesAPIIPBlocks:
+      - cidr: 10.96.0.1/32   # kubernetes.default Service ClusterIP
+      - cidr: 192.0.2.10/32  # API server EndpointSlice address
+```
+
+Retrieve the current values with:
+
+```bash
+kubectl get service kubernetes -n default \
+  -o jsonpath='{.spec.clusterIPs[*]}{"\n"}'
+kubectl get endpointslice -n default \
+  -l kubernetes.io/service-name=kubernetes \
+  -o jsonpath='{range .items[*].endpoints[*].addresses[*]}{.}{"\n"}{end}'
+```
+
+Keep the overlay updated when control-plane endpoints change; a stale block list
+denies the Console the Kubernetes API and its runtime reads report as stale.
+Omitting the blocks is accepted on every profile and leaves the `443` and `6443`
+rule open to any destination. Explicitly disabling NetworkPolicy remains the
+advanced escape hatch when an external policy engine owns this boundary.
+
+Cilium does not match node identities with standard `NetworkPolicy.ipBlock`
+selectors by default. A self-hosted Kubernetes API therefore also requires the
+Cilium `policyCIDRMatchMode: nodes` Helm setting when the blocks are declared;
+restart the Cilium DaemonSet after changing it so every agent loads the mode.
+This is not needed when the API endpoint is external to the cluster's node
+identities, and not needed at all when the blocks are omitted.
 
 ## Image Overrides
 
@@ -121,7 +170,7 @@ Forward-auth identity headers are only trusted when
 `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=true` and the proxy sends
 `X-TAMOSS-Forward-Auth-Secret` matching `TAMOSS_FORWARD_AUTH_SHARED_SECRET` or
 `TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE`; the proof must contain at least 32
-characters. The operator-sanitized stable
+characters. The operator-sanitised stable
 `X-TAMOSS-Forward-Auth-Subject` and pipe-separated
 `X-TAMOSS-Forward-Auth-Groups` headers must both be nonempty, while
 `X-TAMOSS-Forward-Auth-Username` is optional display metadata. A missing or
@@ -132,7 +181,7 @@ shape as `.spec.auth.authentikBlueprints.groupBindings`; `viewer`,
 `operator`, `ingest-runner`, and legacy `admin` grant read-only `GET`/`HEAD`
 access only to explicitly mapped routes that admit the configured read scope.
 Raw Authentik identity headers are not trusted by the API, and forward-auth
-never authorizes TAMS mutations. Basic auth is only enabled when
+never authorises TAMS mutations. Basic auth is only enabled when
 `TAMOSS_BASIC_AUTH_PASSWORD` or `TAMOSS_BASIC_AUTH_PASSWORD_FILE` is configured;
 `TAMOSS_API_TOKEN` is used for Bearer token authentication only.
 

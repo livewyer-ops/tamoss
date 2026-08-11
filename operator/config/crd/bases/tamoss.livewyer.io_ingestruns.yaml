@@ -126,7 +126,9 @@ spec:
                   storageBackendRef:
                     description: |-
                       StorageBackendRef selects a Ready, media-purpose StorageBackend belonging
-                      to spec.tamossRef. Empty uses the TAMS instance's default backend.
+                      to spec.tamossRef. Unset uses the TAMS instance's default backend. This is
+                      a pointer because encoding/json never omits a struct value, and an omitted
+                      reference must not serialise as an empty name that fails admission.
                     properties:
                       name:
                         maxLength: 253
@@ -198,7 +200,8 @@ spec:
             - message: spec.sizeClass is immutable
               rule: self.sizeClass == oldSelf.sizeClass
             - message: spec.options is immutable
-              rule: self.options == oldSelf.options
+              rule: has(self.options) == has(oldSelf.options) && (!has(self.options)
+                || self.options == oldSelf.options)
             - message: spec.credentialProfileRef is immutable
               rule: has(self.credentialProfileRef) == has(oldSelf.credentialProfileRef)
                 && (!has(self.credentialProfileRef) || self.credentialProfileRef ==

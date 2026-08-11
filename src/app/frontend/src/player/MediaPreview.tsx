@@ -19,8 +19,10 @@ import {
   createOmakasePreview,
   type OmakasePreviewHandle,
   type PlaybackSnapshot,
+  type PreviewAudioTrack,
 } from "@/player/OmakaseAdapter";
 import { formatCodec, formatFormat } from "@/utils/format";
+import { halfOpenTimerange } from "@/utils/tams-time";
 import styles from "./MediaPreview.module.css";
 
 const INITIAL_PLAYBACK: PlaybackSnapshot = {
@@ -36,6 +38,9 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
   const timelineElementId = `omakase-timeline-${reactId}`;
   const playerHandle = useRef<OmakasePreviewHandle | null>(null);
   const [playback, setPlayback] = useState<PlaybackSnapshot>(INITIAL_PLAYBACK);
+  const [audioTracks, setAudioTracks] = useState<readonly PreviewAudioTrack[]>(
+    [],
+  );
   const [selectedAudioFlowId, setSelectedAudioFlowId] = useState("");
   const preview = useQuery({
     queryKey: ["api", "preview", flowId, "descriptor"],
@@ -49,8 +54,6 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
   useLayoutEffect(() => {
     if (!preview.data || !hasPlayableMedia(preview.data)) return;
     setPlayback(INITIAL_PLAYBACK);
-    const defaultAudioFlowId = preview.data.audio[0]?.flow.id ?? "";
-    setSelectedAudioFlowId(defaultAudioFlowId);
     let handle: ReturnType<typeof createOmakasePreview> | undefined;
     try {
       handle = createOmakasePreview({
@@ -60,9 +63,14 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
         onChange: setPlayback,
       });
       playerHandle.current = handle;
+      // Only the player knows which renditions it can actually switch between.
+      setAudioTracks(handle.audioTracks);
+      const defaultAudioFlowId = handle.audioTracks[0]?.flowId ?? "";
+      setSelectedAudioFlowId(defaultAudioFlowId);
       if (defaultAudioFlowId) handle.selectAudioTrack(defaultAudioFlowId);
       handle.ready.catch(() => undefined);
     } catch (error: unknown) {
+      setAudioTracks([]);
       setPlayback({
         phase: "error",
         currentTime: 0,
@@ -123,7 +131,7 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
                 <span role="status" aria-live="polite">
                   {phaseLabel(playback.phase)}
                 </span>
-                {descriptor.audio.length > 0 ? (
+                {audioTracks.length > 1 ? (
                   <label className={styles.audioSelector}>
                     <span>Audio</span>
                     <select
@@ -134,11 +142,9 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
                         playerHandle.current?.selectAudioTrack(flowId);
                       }}
                     >
-                      {descriptor.audio.map((track, index) => (
-                        <option key={track.flow.id} value={track.flow.id}>
-                          {track.role ||
-                            track.flow.label ||
-                            `Track ${index + 1}`}
+                      {audioTracks.map((track) => (
+                        <option key={track.flowId} value={track.flowId}>
+                          {track.label}
                         </option>
                       ))}
                     </select>
@@ -300,6 +306,9 @@ function TrackRow({ track }: { track: PreviewTrack }) {
 }
 
 function hasPlayableMedia(descriptor: MediaPreviewDescriptor): boolean {
+  // A point timerange carries no playable duration, so the preview reports the
+  // window as empty instead of asking the player to fail on it.
+  if (!halfOpenTimerange(descriptor.initialTimerange)) return false;
   return Boolean(
     descriptor.muxed?.segments.length ||
       descriptor.video?.segments.length ||

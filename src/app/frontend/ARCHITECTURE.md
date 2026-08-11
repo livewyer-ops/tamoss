@@ -44,9 +44,28 @@ same-origin browser session before that mode can be enabled; the proposed
 boundary is recorded in
 [`0006-external-browser-identity.md`](../../../docs/development/ui-overhaul/0006-external-browser-identity.md).
 
+## Browser response boundary
+
+`X-Forwarded-Proto` is client-supplied, so the externally visible scheme is
+honoured only for private-network peers and otherwise falls back to the scheme
+nginx served. The Authentik subrequest and both browser backend paths use that
+one normalised value. A deployment that publishes the container port beyond the
+cluster network must narrow the trusted set in `nginx.conf`.
+
+Every response carries the same `Content-Security-Policy`. Scripts, styles and
+documents stay same-origin; script execution permits the narrow
+`'wasm-unsafe-eval'` source needed by Omakase's waveform engine without
+permitting JavaScript `eval()`. Scripts and workers allow `blob:` for the
+generated AudioWorklet and media worker, while media and XHR allow it for
+generated manifests. Media and XHR allow `data:` for Omakase's bundled silent
+audio and WASM assets, and `https:` because presigned object storage URLs are
+only known at deployment time. A location that defines its own `add_header`
+stops inheriting the server-level headers, so every such location repeats the
+full set.
+
 ## Catalogs
 
-Sources and Flows keep one response page in component state and at most four previous cursors. The supported TAMS 8.1 exact filters are reflected in the URL. The UI must not download every page to implement search, sorting, or totals.
+Sources and Flows keep one response page in component state and a bounded trail of previous cursors, deep enough to reverse a whole hand-driven traversal. The supported TAMS 8.1 exact filters are reflected in the URL. The UI must not download every page to implement search, sorting, or totals.
 
 Full-text search, arbitrary sorting, totals, reverse traversal, saved views, and query-wide bulk actions require a versioned server API. Do not simulate them over a partial client-side result set.
 

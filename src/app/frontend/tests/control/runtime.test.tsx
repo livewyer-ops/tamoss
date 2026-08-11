@@ -58,7 +58,34 @@ function renderProbe() {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return render(<Probe />, { wrapper: Wrapper });
+  return { client, ...render(<Probe />, { wrapper: Wrapper }) };
+}
+
+function snapshot(observedAt: string, name: string) {
+  return {
+    schemaVersion: "1.0",
+    observedAt,
+    stale: false,
+    instance: {
+      name,
+      namespace: "tamoss",
+      uid: "instance-uid",
+      generation: 1,
+      observedGeneration: 1,
+      phase: "Ready",
+      conditions: [],
+    },
+    workloads: [],
+    services: [],
+    endpointSlices: [],
+    pods: [],
+    jobs: [],
+    events: [],
+  };
+}
+
+function jsonResponse(body: unknown) {
+  return { ok: true, json: () => Promise.resolve(body) };
 }
 
 describe("runtime stream", () => {
@@ -163,5 +190,93 @@ describe("runtime stream", () => {
     await waitFor(() =>
       expect(screen.getByText("0/0/0/0/0/0/0")).toBeInTheDocument(),
     );
+  });
+
+  it("keeps the newest observation when a slow poll answers last", async () => {
+    let answerPoll: (response: unknown) => void = () => undefined;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(snapshot("2026-08-09T10:00:00Z", "first")),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerPoll = resolve;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { client } = renderProbe();
+    expect(await screen.findByText("first")).toBeInTheDocument();
+    await waitFor(() => expect(runtimeListener).toBeDefined());
+
+    const polled = client.refetchQueries({ queryKey: ["control", "runtime"] });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    runtimeListener?.(
+      new MessageEvent("runtime", {
+        data: JSON.stringify(snapshot("2026-08-09T10:00:10Z", "streamed")),
+      }),
+    );
+    expect(await screen.findByText("streamed")).toBeInTheDocument();
+
+    answerPoll(jsonResponse(snapshot("2026-08-09T10:00:05Z", "stale-poll")));
+    await polled;
+
+    expect(client.getQueryData(["control", "runtime"])).toMatchObject({
+      observedAt: "2026-08-09T10:00:10Z",
+      instance: { name: "streamed" },
+    });
+  });
+
+  it("ignores a stream update older than the cached snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(snapshot("2026-08-09T10:00:10Z", "polled")),
+        ),
+    );
+
+    const { client } = renderProbe();
+    expect(await screen.findByText("polled")).toBeInTheDocument();
+    await waitFor(() => expect(runtimeListener).toBeDefined());
+
+    runtimeListener?.(
+      new MessageEvent("runtime", {
+        data: JSON.stringify(snapshot("2026-08-09T10:00:00Z", "stale-stream")),
+      }),
+    );
+
+    expect(client.getQueryData(["control", "runtime"])).toMatchObject({
+      observedAt: "2026-08-09T10:00:10Z",
+      instance: { name: "polled" },
+    });
+    expect(screen.queryByText("stale-stream")).not.toBeInTheDocument();
+  });
+
+  it("accepts a newer stream update", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(snapshot("2026-08-09T10:00:00Z", "polled")),
+        ),
+    );
+
+    renderProbe();
+    expect(await screen.findByText("polled")).toBeInTheDocument();
+    await waitFor(() => expect(runtimeListener).toBeDefined());
+
+    runtimeListener?.(
+      new MessageEvent("runtime", {
+        data: JSON.stringify(snapshot("2026-08-09T10:00:10Z", "streamed")),
+      }),
+    );
+
+    expect(await screen.findByText("streamed")).toBeInTheDocument();
   });
 });

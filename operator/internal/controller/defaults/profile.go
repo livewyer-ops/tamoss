@@ -99,6 +99,24 @@ func applyBaseComponentDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	defaultConsoleProbes(&tamoss.Spec.Console.WorkloadCommonSpec)
 	defaultWorkloadResources(&tamoss.Spec.Console.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
 	defaultConsoleSecurity(&tamoss.Spec.Console.WorkloadCommonSpec)
+	defaultConsoleNetworkPolicy(tamoss)
+}
+
+// defaultConsoleNetworkPolicy renders Console rules for every profile, not just
+// multi-server. The rendered policy always declares policyTypes Ingress, so an
+// enabled Console left with no rules is denied all inbound traffic and the UI
+// cannot reach it. Egress is port-scoped by default;
+// spec.networkPolicy.kubernetesAPIIPBlocks is an optional tightening.
+func defaultConsoleNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
+	if !tamoss.Spec.ConsoleEnabled() || !tamoss.Spec.NetworkPolicy.IsEnabled() {
+		return
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Ingress = consoleIngressRules(tamoss, 8080)
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules(tamoss.Spec.NetworkPolicy.KubernetesAPIIPBlocks)
+	}
 }
 
 func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
@@ -536,9 +554,17 @@ func defaultAPIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
+// defaultUIProbes probes /healthz for every check, including readiness.
+//
+// /readyz reports 503 while browser authentication is unconfigured, and it only
+// exists on images from 8.2 onwards. Using it for readiness would both block
+// rollouts of a pinned earlier UI image, which serves /healthz alone, and pull
+// the Pod out of its Service for a condition the instance reports on
+// BrowserAuthenticationReady. The UI answers that state with an explanatory
+// response, which is more useful than being unroutable.
 func defaultUIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	if spec.ReadinessProbe == nil {
-		spec.ReadinessProbe = httpProbe("/readyz", 10, 5, 3)
+		spec.ReadinessProbe = httpProbe("/healthz", 10, 5, 3)
 	}
 	if spec.LivenessProbe == nil {
 		spec.LivenessProbe = httpProbe("/healthz", 30, 5, 3)
@@ -629,7 +655,7 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		tamoss.Spec.NetworkPolicy.UI.Ingress = serviceIngressRules(firstContainerPort(tamoss.Spec.UI.Ports, 8080))
 	}
 	if len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 {
-		forwardAuthPorts := []int32{}
+		forwardAuthPorts := []int32(nil)
 		if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints && tamoss.Spec.Auth.RequiredForRuntime() {
 			_, servicePort := authentik.OutpostExternalService(tamoss)
 			if servicePort == 0 {
@@ -659,7 +685,7 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		tamoss.Spec.NetworkPolicy.Console.Ingress = consoleIngressRules(tamoss, 8080)
 	}
 	if len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
-		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules()
+		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules(tamoss.Spec.NetworkPolicy.KubernetesAPIIPBlocks)
 	}
 }
 
@@ -686,12 +712,30 @@ func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	}
 }
 
-func uiEgressRules(apiPort, consoleServicePort, consoleTargetPort int32, consoleEnabled bool, forwardAuthPorts ...int32) []networkingv1.NetworkPolicyEgressRule {
-	portNumbers := []int32{apiPort}
+// uiEgressRules keeps default UI egress port-scoped: the DNS ports plus the API,
+// Console, and forward-auth ports the UI must reach. Destination-scoped egress
+// is deferred until it can be verified against an enforcing CNI, so the defaults
+// stay at the 8.1 shape; declare rules under spec.networkPolicy.ui.egress to
+// name destinations for a given cluster.
+func uiEgressRules(
+	apiServicePort, consoleServicePort, consoleTargetPort int32,
+	consoleEnabled bool,
+	forwardAuthPorts ...int32,
+) []networkingv1.NetworkPolicyEgressRule {
+	// Both the Service port and the container target port are allowed, because
+	// CNIs may enforce egress policy before or after Service translation.
+	ports := []int32{apiServicePort, 8000}
 	if consoleEnabled {
-		portNumbers = append(portNumbers, consoleServicePort, consoleTargetPort)
+		ports = append(ports, consoleServicePort, consoleTargetPort)
 	}
-	portNumbers = append(portNumbers, forwardAuthPorts...)
+	ports = append(ports, forwardAuthPorts...)
+	return []networkingv1.NetworkPolicyEgressRule{
+		dnsEgressRule(),
+		tcpEgressRule(ports...),
+	}
+}
+
+func tcpEgressRule(portNumbers ...int32) networkingv1.NetworkPolicyEgressRule {
 	ports := make([]networkingv1.NetworkPolicyPort, 0, len(portNumbers))
 	seen := make(map[int32]struct{}, len(portNumbers))
 	for _, port := range portNumbers {
@@ -701,10 +745,7 @@ func uiEgressRules(apiPort, consoleServicePort, consoleTargetPort int32, console
 		seen[port] = struct{}{}
 		ports = append(ports, networkPolicyTCPPort(port))
 	}
-	return []networkingv1.NetworkPolicyEgressRule{
-		dnsEgressRule(),
-		{Ports: ports},
-	}
+	return networkingv1.NetworkPolicyEgressRule{Ports: ports}
 }
 
 func consoleIngressRules(tamoss *tamossv1alpha1.Tamoss, port int32) []networkingv1.NetworkPolicyIngressRule {
@@ -724,23 +765,38 @@ func consoleIngressRules(tamoss *tamossv1alpha1.Tamoss, port int32) []networking
 	}}
 }
 
-func consoleEgressRules() []networkingv1.NetworkPolicyEgressRule {
-	return []networkingv1.NetworkPolicyEgressRule{
-		dnsEgressRule(),
-		{
-			// CNIs may enforce egress policy before or after kubernetes.default.svc
-			// rewrites the Service port to the API server target port.
-			Ports: []networkingv1.NetworkPolicyPort{
-				networkPolicyTCPPort(443),
-				networkPolicyTCPPort(6443),
-			},
+// consoleEgressRules keeps default Console egress port-scoped: the DNS ports
+// plus the Kubernetes API Service port and the common post-DNAT target port.
+// spec.networkPolicy.kubernetesAPIIPBlocks is optional; supplying it tightens
+// the Kubernetes API rule to those destinations without changing the ports.
+func consoleEgressRules(apiServerIPBlocks []networkingv1.IPBlock) []networkingv1.NetworkPolicyEgressRule {
+	apiServerRule := networkingv1.NetworkPolicyEgressRule{
+		// CNIs may enforce egress policy before or after kubernetes.default.svc
+		// rewrites the Service port to the API server target port.
+		Ports: []networkingv1.NetworkPolicyPort{
+			networkPolicyTCPPort(443),
+			networkPolicyTCPPort(6443),
 		},
 	}
+	for index := range apiServerIPBlocks {
+		apiServerRule.To = append(apiServerRule.To, networkingv1.NetworkPolicyPeer{
+			IPBlock: apiServerIPBlocks[index].DeepCopy(),
+		})
+	}
+	return []networkingv1.NetworkPolicyEgressRule{dnsEgressRule(), apiServerRule}
 }
 
 func dnsEgressRule() networkingv1.NetworkPolicyEgressRule {
 	// Some managed clusters evaluate NetworkPolicy after kube-dns Service DNAT,
 	// where CoreDNS receives traffic on target port 8053 instead of Service port 53.
+	//
+	// The rule stays port-scoped. Naming resolver destinations is only safe if
+	// the peer list covers every resolver a supported cluster may run, and an
+	// unmatched resolver removes DNS from the workload entirely, which presents
+	// as a total outage rather than a policy error. That scoping is deferred
+	// until it can be verified against an enforcing CNI; a cluster that needs it
+	// can declare explicit egress rules for the affected workloads. See
+	// docs/reference/runtime-configuration.md.
 	return networkingv1.NetworkPolicyEgressRule{
 		Ports: []networkingv1.NetworkPolicyPort{
 			networkPolicyTCPPort(53),

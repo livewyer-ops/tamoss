@@ -48,9 +48,37 @@ grep -q 'location /ui-api/' "$tmp_dir/runtime.conf"
 grep -q 'proxy_pass http://tamoss-console:8081;' "$tmp_dir/runtime.conf"
 grep -q 'client_max_body_size 8k;' "$tmp_dir/runtime.conf"
 test "$(grep -c 'proxy_set_header Host \$http_host;' "$tmp_dir/runtime.conf")" -eq 2
-grep -q 'proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;' "$tmp_dir/runtime.conf"
 grep -q 'proxy_buffering off;' "$tmp_dir/runtime.conf"
 grep -q 'proxy_read_timeout 1h;' "$tmp_dir/runtime.conf"
+
+# Every proxied browser path reports one normalised external scheme, never the
+# scheme a client asserted directly.
+if [ "$(grep -c 'proxy_set_header X-Forwarded-Proto \$tamoss_external_scheme;' "$tmp_dir/runtime.conf")" -ne 2 ]; then
+  echo "a proxied browser path did not use the normalised external scheme" >&2
+  exit 1
+fi
+if grep -q 'proxy_set_header X-Forwarded-Proto \$scheme;' "$tmp_dir/runtime.conf"; then
+  echo "a proxied browser path forwarded the unnormalised scheme" >&2
+  exit 1
+fi
+
+# A location that defines add_header stops inheriting the server-level headers,
+# so the streaming Console location must repeat the full set.
+grep -q 'add_header X-Accel-Buffering "no" always;' "$tmp_dir/runtime.conf"
+for header in \
+  'add_header X-Frame-Options "SAMEORIGIN" always;' \
+  'add_header X-Content-Type-Options "nosniff" always;' \
+  'add_header Referrer-Policy "strict-origin-when-cross-origin" always;' \
+  'add_header Cross-Origin-Opener-Policy "same-origin" always;' \
+  'add_header Cross-Origin-Embedder-Policy "require-corp" always;' \
+  'add_header Cross-Origin-Resource-Policy "same-origin" always;' \
+  'add_header Content-Security-Policy $tamoss_content_security_policy always;'
+do
+  if ! grep -Fq "$header" "$tmp_dir/runtime.conf"; then
+    echo "the Console location dropped the security header: $header" >&2
+    exit 1
+  fi
+done
 
 run_entrypoint "unavailable" "http://tamoss-console:8081"
 grep -q 'return 503 "browser authentication is unavailable";' "$tmp_dir/runtime.conf"
@@ -125,5 +153,54 @@ if run_entrypoint "none" 'file:///tmp/socket' >/dev/null 2>&1; then
 fi
 if run_entrypoint "none" 'http://console:8081/;return' >/dev/null 2>&1; then
   echo "an nginx-directive injection was accepted in an upstream URL" >&2
+  exit 1
+fi
+
+# The static server configuration the generated locations are included into.
+nginx_conf="$frontend_root/nginx.conf"
+
+# The external scheme is only taken from a trusted peer.
+grep -q 'geo \$tamoss_forwarded_scheme_trusted {' "$nginx_conf"
+grep -q 'map "\$tamoss_forwarded_scheme_trusted:\$http_x_forwarded_proto" \$tamoss_external_scheme {' "$nginx_conf"
+if grep -q '^map \$http_x_forwarded_proto \$tamoss_external_scheme' "$nginx_conf"; then
+  echo "the external scheme is mapped from the client header without a trusted edge" >&2
+  exit 1
+fi
+
+# One Content-Security-Policy definition, repeated by every location that
+# defines any add_header of its own.
+grep -q 'map \$host \$tamoss_content_security_policy {' "$nginx_conf"
+for directive in \
+  "default-src 'self'" \
+  "base-uri 'self'" \
+  "object-src 'none'" \
+  "frame-ancestors 'self'" \
+  "script-src 'self' 'wasm-unsafe-eval' blob:" \
+  "worker-src 'self' blob:" \
+  "media-src 'self' data: blob: https:" \
+  "connect-src 'self' data: blob: https:"
+do
+  if ! grep -Fq "$directive" "$nginx_conf"; then
+    echo "the content security policy is missing: $directive" >&2
+    exit 1
+  fi
+done
+csp_headers="$(grep -c 'add_header Content-Security-Policy' "$nginx_conf")"
+frame_headers="$(grep -c 'add_header X-Frame-Options' "$nginx_conf")"
+if [ "$csp_headers" -ne "$frame_headers" ] || [ "$csp_headers" -lt 2 ]; then
+  echo "a location sends the security header set without a content security policy" >&2
+  exit 1
+fi
+
+# The health check must not cancel header inheritance with its own add_header.
+if grep -q 'add_header Content-Type' "$nginx_conf"; then
+  echo "the health check cancels security header inheritance" >&2
+  exit 1
+fi
+
+# Request bodies are not proxied, so the container must not advertise a media
+# ingestion body limit.
+if grep -q 'client_max_body_size 500M;' "$nginx_conf"; then
+  echo "the vestigial media ingestion body limit is still configured" >&2
   exit 1
 fi

@@ -66,6 +66,46 @@ describe("useCursorPage", () => {
     expect(result.current.hasPrevious).toBe(false);
   });
 
+  it("keeps Previous available across a deep forward traversal", async () => {
+    const depth = 12;
+    const load = vi.fn(async (cursor?: string) => ({
+      data: [cursor ?? "page-0"],
+      nextKey: `page-${Number(cursor?.replace("page-", "") ?? 0) + 1}`,
+    }));
+    const onCursorChange = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ cursor }: { cursor?: string }) =>
+        useCursorPage<string>({ cursor, load, onCursorChange }),
+      { initialProps: { cursor: undefined as string | undefined } },
+    );
+
+    await waitFor(() => expect(result.current.hasNext).toBe(true));
+    for (let page = 1; page <= depth; page += 1) {
+      act(() => result.current.next());
+      rerender({ cursor: `page-${page}` });
+      await waitFor(() =>
+        expect(result.current.data).toEqual([`page-${page}`]),
+      );
+      expect(result.current.hasPrevious).toBe(true);
+    }
+
+    for (let page = depth - 1; page >= 1; page -= 1) {
+      act(() => result.current.previous());
+      expect(onCursorChange).toHaveBeenLastCalledWith(`page-${page}`);
+      rerender({ cursor: `page-${page}` });
+      await waitFor(() =>
+        expect(result.current.data).toEqual([`page-${page}`]),
+      );
+      expect(result.current.hasPrevious).toBe(true);
+    }
+
+    act(() => result.current.previous());
+    expect(onCursorChange).toHaveBeenLastCalledWith(undefined);
+    rerender({ cursor: undefined });
+    await waitFor(() => expect(result.current.data).toEqual(["page-0"]));
+    expect(result.current.hasPrevious).toBe(false);
+  });
+
   it("aborts superseded loads and only publishes the newest page", async () => {
     const requests: PendingRequest[] = [];
     const load = pendingCatalogLoad(requests);

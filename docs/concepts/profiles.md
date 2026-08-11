@@ -68,6 +68,15 @@ NetworkPolicy defaults allow only the traffic TAMOSS commonly needs: ingress
 from routing or monitoring systems to exposed component ports, DNS egress, and
 egress to HTTP/TLS services, PostgreSQL, and S3-compatible storage. A CNI that
 enforces NetworkPolicy is required for those restrictions to take effect.
+UI egress is destination-scoped to the instance API and Console, the managed
+Authentik server, and cluster DNS. An enabled Console additionally requires
+explicit Kubernetes Service and API-server endpoint IP blocks; it never
+defaults to arbitrary HTTPS egress.
+
+On Cilium clusters with a self-hosted API server, enable
+`policyCIDRMatchMode: nodes` so standard `NetworkPolicy.ipBlock` peers can match
+the configured control-plane node CIDRs. Without that Cilium setting, Console
+fails closed because its Kubernetes watch traffic is denied.
 
 ## Routing
 

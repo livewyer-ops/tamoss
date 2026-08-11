@@ -6,7 +6,12 @@ interface CursorResponse<T> {
   limit?: number;
 }
 
-const MAX_CURSOR_HISTORY = 4;
+/**
+ * Retained Previous cursors. Cursors are short opaque strings, so this bounds
+ * memory well beyond the paging depth an operator reaches by hand while
+ * keeping Previous available for the whole of that traversal.
+ */
+const MAX_CURSOR_HISTORY = 100;
 
 export function useCursorPage<T>({
   cursor,
