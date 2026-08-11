@@ -17,7 +17,7 @@ Each record separates:
 | [0002: Console API and Kubernetes](0002-console-api-and-kubernetes.md) | Same-origin, namespace-scoped backend; no Kubernetes credentials or arbitrary workloads in the browser | Prove identity, authorisation, audit, and least-privilege RBAC end to end |
 | [0003: Large catalog queries](0003-large-catalog-queries.md) | Bounded server-side query and keyset pagination contract | Meet the query budget with 10 million synthetic records |
 | [0004: Omakase preview](0004-omakase-preview.md) | Omakase behind a lazy, read-only preview adapter | Resolve package compatibility and pass media, security, and accessibility tests |
-| [0005: Tamsin ingest runs](0005-tamsin-ingest-runs.md) | Declarative `IngestRun`, operator-created Jobs, and pinned versioned Tamsin events | Promote a matching Tamsin image/decoder and pass interruption, scale, and credential-boundary tests |
+| [0005: TAMSin ingest runs](0005-tamsin-ingest-runs.md) | Declarative `IngestRun`, operator-created Jobs, and pinned versioned TAMSin events | Promote a matching TAMSin image/decoder and pass interruption, scale, and credential-boundary tests |
 | [0006: External browser identity](0006-external-browser-identity.md) | Proposed same-origin OIDC session broker; no provider token or shared application credential in the browser | Agree the boundary, then pass redirect, token, cookie, role, outage, and enforcing-CNI tests |
 
 The records may be amended before 8.2 while a release gate is unresolved. A

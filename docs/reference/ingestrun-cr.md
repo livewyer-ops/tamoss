@@ -2,7 +2,7 @@
 
 `IngestRun` declares one durable attempt to ingest approved media into a
 `Tamoss` instance. The operator validates the request and owns the resulting
-Tamsin Kubernetes Job.
+[TAMSin](https://github.com/livewyer-ops/tamsin) Kubernetes Job.
 
 Group: `tamoss.livewyer.io`
 
@@ -66,7 +66,7 @@ HTTPS and cannot contain user information, query strings, or fragments.
 | `.spec.tamossRef.name` | Target `Tamoss` in the same namespace. Required and immutable. |
 | `.spec.inputRef.kind` | Opaque input kind. The CRD reserves `StagedObject`, `Manifest`, `ApprovedS3`, and `ApprovedHTTP`; only `ApprovedHTTP` currently resolves. |
 | `.spec.inputRef.id` | Approved input ID, 1-128 characters matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`. Required and immutable. |
-| `.spec.profile` | Versioned Tamsin treatment: `preserve@1`, `editorial@1`, or `streaming-ts@1`. Defaults to `editorial@1`; immutable. |
+| `.spec.profile` | Versioned TAMSin treatment: `preserve@1`, `editorial@1`, or `streaming-ts@1`. Defaults to `editorial@1`; immutable. |
 | `.spec.sizeClass` | Operator-owned resource class: `small`, `standard`, or `large`. Defaults to `standard`; immutable. |
 | `.spec.options.storageBackendRef.name` | Optional Ready, media-purpose `StorageBackend` belonging to the target instance. Unset uses the default TAMS backend. |
 | `.spec.options.verify` | Verify uploaded Object bytes. Defaults to `true`. |
@@ -89,11 +89,11 @@ and credential profile.
 | `.status.observedGeneration` | Resource generation observed by the controller. |
 | `.status.phase` | `Pending`, `Queued`, `Running`, `Succeeded`, `PartiallySucceeded`, `Failed`, or `Cancelled`. |
 | `.status.conditions` | At most 16 Kubernetes conditions with bounded, stable reason codes. |
-| `.status.jobRef` | Name and UID of the operator-owned Tamsin Job. |
-| `.status.tamsinRunId` | Tamsin attempt identity observed from its event stream. |
+| `.status.jobRef` | Name and UID of the operator-owned TAMSin Job. |
+| `.status.tamsinRunId` | TAMSin attempt identity observed from its event stream. |
 | `.status.attempt` | Attempt number, including validated retry lineage. |
 | `.status.progress` | Bounded input totals, completion counts, failure counts, and uploaded bytes. |
-| `.status.lastEventSequence` | Last accepted Tamsin event sequence. |
+| `.status.lastEventSequence` | Last accepted TAMSin event sequence. |
 | `.status.resultRef` | Durable key, SHA-256 digest, size, media type, and verification state. The Console projection omits the private key. |
 | `.status.startedAt`, `.status.completedAt` | Attempt start and completion timestamps. |
 
@@ -108,7 +108,7 @@ and credential profile.
 
 ## Ownership and Access
 
-The operator alone creates and mutates the Tamsin Job. A user-supplied
+The operator alone creates and mutates the TAMSin Job. A user-supplied
 `IngestRun` cannot choose its image, command, environment, volumes, service
 account, Pod security context, Secret, or arbitrary network destination.
 

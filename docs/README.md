@@ -101,8 +101,8 @@ navigation becomes a clear maintenance burden.
 | --- | --- |
 | `Tamoss` | The namespaced custom resource reconciled into API, UI, worker, database, storage, identity, and routing resources. |
 | `StorageBackend` | A namespaced custom resource that represents a registered TAMS object-store backend and its readiness. |
-| `IngestRun` | A durable, namespaced request and history record for one approved Tamsin ingest attempt. |
-| Tamsin Job | The temporary Kubernetes `Job` created and owned by the operator for an `IngestRun`; it is not a user-authored ingest API. |
+| `IngestRun` | A durable, namespaced request and history record for one approved TAMSin ingest attempt. |
+| TAMSin Job | The temporary Kubernetes `Job` created and owned by the operator for an `IngestRun`; it is not a user-authored ingest API. See [TAMSin](https://github.com/livewyer-ops/tamsin). |
 | Deployment profile | A Kubernetes deployment shape such as `local-kind`, `edge`, `single-server`, or `multi-server` that supplies defaults. |
 | Flow Profile | An immutable TAMS technical-metadata definition eagerly expanded into each linked Flow. |
 | Environment | A checked-in Kustomize overlay under `deploy/environments/<name>` used for durable cluster configuration. |

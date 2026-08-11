@@ -28,8 +28,9 @@ not replace current user-facing explanation, operations, or reference pages.
 - Describe enduring behaviour by capability. Use release numbers only when the
   version boundary itself matters, such as an upgrade or release-delta record.
 - Name the public product resource before its implementation detail. For
-  example, an `IngestRun` is the durable request and history record; its Tamsin
-  Kubernetes `Job` is operator-owned execution machinery, not a second public
+  example, an `IngestRun` is the durable request and history record; its
+  [TAMSin](https://github.com/livewyer-ops/tamsin) Kubernetes `Job` is
+  operator-owned execution machinery, not a second public
   resource called an "IngestJob".
 - State current behaviour in public documentation. Put proposed or unavailable
   behaviour in a design record, and label it explicitly.

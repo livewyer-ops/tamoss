@@ -140,7 +140,7 @@ Read `.status.conditions` first. Common reasons include:
 | `InputResolutionFailed` | Confirm `inputRef` exactly matches an approved input on the target `Tamoss`. |
 | `CredentialProfileResolverUnavailable` | Remove `credentialProfileRef`; credential profiles are not enabled. |
 | `IngestStorageBackendNotReady` | Restore the selected media backend or choose a Ready backend belonging to the same instance. |
-| `TamsinRuntimeUnavailable` or `TamsinImageNotImmutable` | Check the operator's configured Tamsin image and release metadata. |
+| `TamsinRuntimeUnavailable` or `TamsinImageNotImmutable` | Check the operator's configured [TAMSin](https://github.com/livewyer-ops/tamsin) image and release metadata. |
 | `IngestJobMissing` | Treat the outcome as unknown and create a deliberate retry only after reviewing possible side effects. |
 
 Verify the target configuration and approved input IDs without printing Secret

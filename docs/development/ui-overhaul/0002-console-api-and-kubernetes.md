@@ -27,9 +27,10 @@
 ## Context
 
 The UI must explain instance, workload, Pod, Job, and Event state and must
-start and control Tamsin ingest. The BBC TAMS API is deliberately
-Kubernetes-agnostic, while a browser-held Kubernetes token would grant a much
-larger and less auditable authority than the product needs.
+start and control [TAMSin](https://github.com/livewyer-ops/tamsin) ingest. The
+BBC TAMS API is deliberately Kubernetes-agnostic, while a browser-held
+Kubernetes token would grant a much larger and less auditable authority than
+the product needs.
 
 Kubernetes RBAC cannot restrict `list` and `watch` by an instance label. The
 security boundary is therefore the namespace, consistent with

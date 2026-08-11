@@ -70,7 +70,7 @@ The frontend uses these boundaries:
 
 The new UI does not ship browser FFmpeg, a second direct HLS implementation, a
 general design-system package, or a second remote-state library. Media ingest
-runs in Tamsin Jobs as defined in
+runs in [TAMSin](https://github.com/livewyer-ops/tamsin) Jobs as defined in
 [record 0005](0005-tamsin-ingest-runs.md).
 
 ## Dependency Policy

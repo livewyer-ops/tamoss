@@ -7,14 +7,14 @@ the temporary Kubernetes workload that performs the work.
 ## Resource and Workload
 
 The public resource is `IngestRun`. After validating its immutable intent, the
-operator creates a fixed-purpose Tamsin Kubernetes `Job` and records the Job's
-name and UID in `status.jobRef`.
+operator creates a fixed-purpose [TAMSin](https://github.com/livewyer-ops/tamsin)
+Kubernetes `Job` and records the Job's name and UID in `status.jobRef`.
 
 The distinction is deliberate:
 
 - `IngestRun` remains after workload cleanup and records phase, progress,
   attempt lineage, conditions, and verified result metadata.
-- The Tamsin `Job` is an operator-owned execution detail with a pinned image,
+- The TAMSin `Job` is an operator-owned execution detail with a pinned image,
   bounded resources, a fixed command, and no user-supplied Pod fields.
 - Deleting or editing the Job does not edit the request. If the recorded Job
   disappears before the outcome is known, the run fails with
@@ -61,14 +61,14 @@ The operator projects these phases:
 | Phase | Meaning |
 | --- | --- |
 | `Pending` | Configuration, approval, readiness, or scheduling prerequisites are not yet satisfied. |
-| `Queued` | The Tamsin Job exists and is waiting to run. |
-| `Running` | Tamsin is starting, processing media, or terminating after cancellation. |
+| `Queued` | The TAMSin Job exists and is waiting to run. |
+| `Running` | TAMSin is starting, processing media, or terminating after cancellation. |
 | `Succeeded` | Every input completed successfully. |
 | `PartiallySucceeded` | Execution completed with both successful and failed inputs. |
 | `Failed` | The request cannot proceed or the attempt ended without a safe successful outcome. |
 | `Cancelled` | Cancellation was requested and the owned workload has terminated. |
 
-Tamsin emits a versioned machine event stream. The operator retains only
+TAMSin emits a versioned machine event stream. The operator retains only
 bounded counters, stable reasons, attempt identity, and verified result
 metadata on the CR. Free-form Pod logs and raw media locators are not exposed by
 the Console API.
@@ -83,5 +83,5 @@ CR permissions must create those resources.
 
 See [Manage ingest runs](../operations/manage-ingest-runs.md) for operational
 commands and [IngestRun CR](../reference/ingestrun-cr.md) for the exact fields.
-The internal [Tamsin ingest design record](../development/ui-overhaul/0005-tamsin-ingest-runs.md)
+The internal [TAMSin ingest design record](../development/ui-overhaul/0005-tamsin-ingest-runs.md)
 preserves architecture decisions and future work.
