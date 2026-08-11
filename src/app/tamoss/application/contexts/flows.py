@@ -118,7 +118,7 @@ def validate_content_format_filter(value: str | None) -> None:
 
 def validate_flow_payload(payload: dict[str, Any]) -> None:
     try:
-        flow = contract_models.Flow.model_validate(payload)
+        flow = contract_models.FlowPut.model_validate(payload)
     except ValidationError as exc:
         raise ValueError("flow payload does not match the BBC TAMS contract") from exc
 

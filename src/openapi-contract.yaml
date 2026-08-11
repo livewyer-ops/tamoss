@@ -15,8 +15,8 @@ info:
 
 
     **Note**: the examples provided in this specification are for a system which uses
-    a Storage Backend that provides HTTP URLs for uploading and downloading Media
-    Objects in buckets.
+    a Storage Backend that provides HTTP URLs for uploading and downloading Objects
+    in buckets.
 
     This could for example be implemented using an AWS S3 compatible store using presigned
     URLs or by a simple file system storage with an HTTP frontend.
@@ -25,7 +25,7 @@ info:
     the Storage Backend type in use appropriately.
 
     '
-  version: '8.1'
+  version: '8.2'
   contact:
     name: BBC R&D - Cloud-Fit Production Team
     email: cloudfit-opensource@rd.bbc.co.uk
@@ -41,7 +41,7 @@ servers:
   variables:
     version:
       description: API version
-      default: v8.1
+      default: v8.2
 security:
 - bearer_token_auth: []
 - basic_auth: []
@@ -130,25 +130,386 @@ paths:
       operationId: HEAD_storage-backends
       tags:
       - Service
+      parameters:
+      - name: tag.{name}
+        in: query
+        description: 'Filter on Storage Backends that have a tag named {name} with
+          a value in the given comma-separated list of values.
+
+          The {name} and the value MUST be URL encoded where special characters are
+          present.
+
+          Where the tag''s value is a string, at least one of the given values will
+          match.
+
+          Where the tag''s value is an array, at least one value in the array will
+          match at least one of the given values.
+
+          Partial string matches of the values are not valid.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UrlTagList'
+      - name: tag_exists.{name}
+        in: query
+        description: 'Filter on Storage Backends that have a tag named {name} regardless
+          of value.
+
+          The {name} MUST be URL encoded where special characters are present.
+
+          If set to true then the presence of the tag is filtered for.
+
+          If set to false then its absence is.
+
+          If left out then no filtering on tag presence is performed.
+
+          '
+        schema:
+          type: boolean
+      - name: reverse_order
+        in: query
+        description: Return Storage Backends in reverse-alphabetical order of their
+          `label`.
+        schema:
+          default: false
+          type: boolean
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
       responses:
         '200':
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' is currently supported. If 'next' is not
+                present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the service implementation
+              schema:
+                type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
           $ref: '#/components/responses/trait_resource_listing_head_200'
     get:
       summary: Storage Backend Information
-      description: Provide information about the storage backends available on this
-        service instance. These are populated on deployment of the service instance.
+      description: 'Provide information about the storage backends available on this
+        service instance.
+
+        These are populated on deployment of the service instance.
+
+
+        Storage Backends are sorted in alphabetical order of their `label` by default.
+
+        For resources where `label` is unset, `id` shall be used.
+
+        Resources using this fallback shall be sorted after those that aren''t by
+        default, and before when `reverse_order` is `true`.
+
+        '
       operationId: GET_storage-backends
       tags:
       - Service
+      parameters:
+      - name: tag.{name}
+        in: query
+        description: 'Filter on Storage Backends that have a tag named {name} with
+          a value in the given comma-separated list of values.
+
+          The {name} and the value MUST be URL encoded where special characters are
+          present.
+
+          Where the tag''s value is a string, at least one of the given values will
+          match.
+
+          Where the tag''s value is an array, at least one value in the array will
+          match at least one of the given values.
+
+          Partial string matches of the values are not valid.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UrlTagList'
+      - name: tag_exists.{name}
+        in: query
+        description: 'Filter on Storage Backends that have a tag named {name} regardless
+          of value.
+
+          The {name} MUST be URL encoded where special characters are present.
+
+          If set to true then the presence of the tag is filtered for.
+
+          If set to false then its absence is.
+
+          If left out then no filtering on tag presence is performed.
+
+          '
+        schema:
+          type: boolean
+      - name: reverse_order
+        in: query
+        description: Return Storage Backends in reverse-alphabetical order of their
+          `label`.
+        schema:
+          default: false
+          type: boolean
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
       responses:
         '200':
           description: ''
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' is currently supported. If 'next' is not
+                present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the service implementation
+              schema:
+                type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/StorageBackendsList'
               example:
                 $ref: vendor/bbc-tams/api/examples/storage-backends-get-200.json
+  /service/profiles:
+    head:
+      summary: Profile Backend Information
+      description: Return Profile headers
+      operationId: HEAD_profiles
+      tags:
+      - Profiles
+      parameters:
+      - name: format
+        in: query
+        description: Filter on Profile format. Only single-essence formats are supported.
+        schema:
+          title: Profile Content Format
+          description: Identifies the content format for a Profile using a URN string.
+            The multi format is not applicable to Profiles.
+          type: string
+          format: uri
+          enum:
+          - urn:x-nmos:format:video
+          - urn:x-tam:format:image
+          - urn:x-nmos:format:audio
+          - urn:x-nmos:format:data
+      - name: codec
+        in: query
+        description: Filter on Profile codec.
+        schema:
+          $ref: '#/components/schemas/MimeType'
+      - name: label
+        in: query
+        description: Filter on Profiles that have the given label.
+        schema:
+          type: string
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
+      responses:
+        '200':
+          description: ''
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' and a link to the next page is currently
+                supported. If 'next' is not present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the implementation
+              schema:
+                type: integer
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: string
+        '400':
+          description: Bad request. Invalid query options.
+          x-tamoss-error-payload:
+            $ref: '#/components/schemas/ErrorPayload'
+    get:
+      summary: Profile Backend Information
+      description: List of Profiles supported by the store instance for use when creating
+        flows.
+      operationId: GET_profiles
+      tags:
+      - Profiles
+      parameters:
+      - name: format
+        in: query
+        description: Filter on Profile format.
+        schema:
+          $ref: '#/components/schemas/ContentFormat'
+      - name: codec
+        in: query
+        description: Filter on Profile codec.
+        schema:
+          $ref: '#/components/schemas/MimeType'
+      - name: label
+        in: query
+        description: Filter on Profiles that have the given label.
+        schema:
+          type: string
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
+      responses:
+        '200':
+          description: ''
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' and a link to the next page is currently
+                supported. If 'next' is not present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the implementation
+              schema:
+                type: integer
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
+          content:
+            application/json:
+              example:
+                $ref: vendor/bbc-tams/api/examples/profiles-get-200.json
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Profile'
+        '400':
+          description: Bad request. Invalid query options.
+          x-tamoss-error-payload:
+            $ref: '#/components/schemas/ErrorPayload'
+  /service/profiles/{profileId}:
+    parameters:
+    - name: profileId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+      description: The Profile identifier.
+    head:
+      summary: Profile Details
+      description: Return Profile path headers
+      operationId: HEAD_profiles-profileId
+      tags:
+      - Profiles
+      responses:
+        '200':
+          $ref: '#/components/responses/trait_resource_info_head_200'
+        '404':
+          $ref: '#/components/responses/trait_resource_info_head_404'
+    get:
+      summary: Profile Details
+      description: Returns Profile metadata.
+      operationId: GET_profiles-profileId
+      tags:
+      - Profiles
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+              examples:
+                video-h264:
+                  summary: h264 TS Video Profile
+                  externalValue: vendor/bbc-tams/api/examples/profile-get-200-video-h264.json
+                video-h264-mxf:
+                  summary: h264 MXF Video Profile
+                  externalValue: vendor/bbc-tams/api/examples/profile-get-200-video-h264-mxf.json
+                jpegimage:
+                  summary: Image Profile
+                  externalValue: vendor/bbc-tams/api/examples/profile-get-200-image.json
+        '404':
+          description: The requested profile does not exist.
+          x-tamoss-error-payload:
+            $ref: '#/components/schemas/ErrorPayload'
+    post:
+      summary: Create Profile
+      description: "Create a new Profile to be used when creating flows with the matching\
+        \ metadata.  \n\nServices MUST reject requests that would update an existing\
+        \ Profile as this would mean it no longer matches flows that have already\
+        \ been created using it.\nIf a change to a Profile is required then a new\
+        \ Profile should be created with the updated information and new flows reference\
+        \ this new Profile.  \n\nAttempting to update an existing profiles should\
+        \ return a 400 error.\n\nTags can be created at the Profile level to hold\
+        \ information about the Profile itself.  \nThese do not form part of the flow\
+        \ that is created.  \nThese are tag/value format and could be used for tasks\
+        \ such as version tracking or holding encoding parameters.\n"
+      operationId: POST_profiles-profileId
+      tags:
+      - Profiles
+      requestBody:
+        content:
+          application/json:
+            example:
+              $ref: vendor/bbc-tams/api/examples/profile-put.json
+            schema:
+              $ref: '#/components/schemas/Profile'
+        required: true
+      responses:
+        '201':
+          description: The Profile has been created.
+          content:
+            application/json:
+              example:
+                $ref: vendor/bbc-tams/api/examples/profile-post-201.json
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Bad request. Invalid Profile JSON or Profile already exists.
+          x-tamoss-error-payload:
+            $ref: '#/components/schemas/ErrorPayload'
+        '404':
+          description: The requested Profile ID in the path is invalid.
+          x-tamoss-error-payload:
+            $ref: '#/components/schemas/ErrorPayload'
   /service/webhooks:
     head:
       summary: List Webhook URLs
@@ -157,6 +518,12 @@ paths:
       tags:
       - Webhooks
       parameters:
+      - name: reverse_order
+        in: query
+        description: Return Webhooks in reverse-alphabetical order of their `url`.
+        schema:
+          default: false
+          type: boolean
       - name: tag.{name}
         in: query
         description: 'Filter on webhooks that have a tag named {name} with a value
@@ -214,6 +581,14 @@ paths:
                 for the implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -238,11 +613,20 @@ paths:
         in the `event_stream_mechanisms` list on the [/service](#/operations/GET_service)
         endpoint.
 
+
+        Webhooks are sorted in alphabetical order of their `url` by default.
+
         '
       operationId: GET_webhooks
       tags:
       - Webhooks
       parameters:
+      - name: reverse_order
+        in: query
+        description: Return Webhooks in reverse-alphabetical order of their `url`.
+        schema:
+          default: false
+          type: boolean
       - name: tag.{name}
         in: query
         description: 'Filter on webhooks that have a tag named {name} with a value
@@ -300,6 +684,14 @@ paths:
                 for the implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -516,6 +908,36 @@ paths:
         description: Filter on Sources that have the given label.
         schema:
           type: string
+      - name: reverse_order
+        in: query
+        description: Return Sources in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Sources by.
+
+          `created` and `updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - updated
+          - label
       - name: tag.{name}
         in: query
         description: 'Filter on Sources that have a tag named {name} with a value
@@ -560,6 +982,20 @@ paths:
         description: Filter on Source format.
         schema:
           $ref: '#/components/schemas/ContentFormat'
+      - name: collected_by_ids
+        in: query
+        description: 'Filter on Sources by the Source Collection(s) that collect them,
+          given as a comma-separated list of Source IDs.
+
+          Returns Sources whose `collected_by` includes at least one of the given
+          Source IDs.
+
+          An empty value (`collected_by_ids=`) returns only Sources that are not collected
+          by any Source, i.e. top-level Sources with no `collected_by` value.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UuidListEmpty'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -578,6 +1014,14 @@ paths:
                 for the service implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -602,6 +1046,36 @@ paths:
         description: Filter on Sources that have the given label.
         schema:
           type: string
+      - name: reverse_order
+        in: query
+        description: Return Sources in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Sources by.
+
+          `created` and `updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - updated
+          - label
       - name: tag.{name}
         in: query
         description: 'Filter on Sources that have a tag named {name} with a value
@@ -646,6 +1120,20 @@ paths:
         description: Filter on Source format.
         schema:
           $ref: '#/components/schemas/ContentFormat'
+      - name: collected_by_ids
+        in: query
+        description: 'Filter on Sources by the Source Collection(s) that collect them,
+          given as a comma-separated list of Source IDs.
+
+          Returns Sources whose `collected_by` includes at least one of the given
+          Source IDs.
+
+          An empty value (`collected_by_ids=`) returns only Sources that are not collected
+          by any Source, i.e. top-level Sources with no `collected_by` value.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UuidListEmpty'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -664,6 +1152,14 @@ paths:
                 for the service implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -722,6 +1218,10 @@ paths:
                   description: Multi-essence Sources collect multiple Sources of different
                     formats under one Source ID.
                   externalValue: vendor/bbc-tams/api/examples/source-get-200-multi.json
+                tags:
+                  summary: Source with tags
+                  description: Source example with tags set matching associated Flow
+                  externalValue: vendor/bbc-tams/api/examples/source-get-200-tags.json
         '404':
           description: The requested Source does not exist.
           x-tamoss-error-payload:
@@ -809,7 +1309,11 @@ paths:
 
                 '
               schema:
-                type: string
+                oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
         '404':
           description: The requested Source or tag does not exist.
           x-tamoss-error-payload:
@@ -827,7 +1331,11 @@ paths:
 
               '
             schema:
-              type: string
+              oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
         required: true
       responses:
         '204':
@@ -1079,11 +1587,51 @@ paths:
         description: Filter on Flow codec.
         schema:
           $ref: '#/components/schemas/MimeType'
+      - name: profile_id
+        in: query
+        description: Filter on Profile identifier.
+        schema:
+          $ref: '#/components/schemas/Uuid'
       - name: label
         in: query
         description: Filter on Flows that have the given label.
         schema:
           type: string
+      - name: reverse_order
+        in: query
+        description: Return Flows in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flows by.
+
+          `created` and `metadata_updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - metadata_updated
+          - label
+      - name: status
+        in: query
+        description: Filter on Flows on the value of `status`.
+        schema:
+          $ref: '#/components/schemas/FlowStatus'
       - name: tag.{name}
         in: query
         description: 'Filter on flows that have a tag named {name} with a value in
@@ -1132,6 +1680,25 @@ paths:
         description: Filter on video Flows that have the given frame height.
         schema:
           type: integer
+      - name: init_segments
+        in: query
+        description: Filter Flows on the value of `init_segments`.
+        schema:
+          type: boolean
+      - name: collected_by_ids
+        in: query
+        description: 'Filter on Flows by the Flow Collection(s) that collect them,
+          given as a comma-separated list of Flow IDs.
+
+          Returns Flows whose `collected_by` includes at least one of the given Flow
+          IDs.
+
+          An empty value (`collected_by_ids=`) returns only Flows that are not collected
+          by any Flow, i.e. top-level Flows with no `collected_by` value.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UuidListEmpty'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -1150,6 +1717,14 @@ paths:
                 for the service implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -1200,11 +1775,51 @@ paths:
         description: Filter on Flow codec.
         schema:
           $ref: '#/components/schemas/MimeType'
+      - name: profile_id
+        in: query
+        description: Filter on Profile identifier.
+        schema:
+          $ref: '#/components/schemas/Uuid'
       - name: label
         in: query
         description: Filter on Flows that have the given label.
         schema:
           type: string
+      - name: reverse_order
+        in: query
+        description: Return Flows in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flows by.
+
+          `created` and `metadata_updated` sort most recent first by default.
+
+          `label` sorts alphabetically by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - metadata_updated
+          - label
+      - name: status
+        in: query
+        description: Filter on Flows on the value of `status`.
+        schema:
+          $ref: '#/components/schemas/FlowStatus'
       - name: tag.{name}
         in: query
         description: 'Filter on flows that have a tag named {name} with a value in
@@ -1253,6 +1868,25 @@ paths:
         description: Filter on video Flows that have the given frame height.
         schema:
           type: integer
+      - name: init_segments
+        in: query
+        description: Filter Flows on the value of `init_segments`.
+        schema:
+          type: boolean
+      - name: collected_by_ids
+        in: query
+        description: 'Filter on Flows by the Flow Collection(s) that collect them,
+          given as a comma-separated list of Flow IDs.
+
+          Returns Flows whose `collected_by` includes at least one of the given Flow
+          IDs.
+
+          An empty value (`collected_by_ids=`) returns only Flows that are not collected
+          by any Flow, i.e. top-level Flows with no `collected_by` value.
+
+          '
+        schema:
+          $ref: '#/components/schemas/UuidListEmpty'
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -1271,6 +1905,14 @@ paths:
                 for the service implementation
               schema:
                 type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
             X-Paging-NextKey:
               description: Opaque string that can be supplied to the `page` query
                 parameter to get the next page of results.
@@ -1283,7 +1925,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Flow'
+                  $ref: '#/components/schemas/FlowGet'
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -1351,7 +1993,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Flow'
+                $ref: '#/components/schemas/FlowGet'
               examples:
                 video:
                   summary: Video Flow - H.264 Codec
@@ -1365,12 +2007,18 @@ paths:
                 mxf_h264:
                   summary: Video Flow - H.264 (MXF container)
                   externalValue: vendor/bbc-tams/api/examples/flow-get-200-video-h264-mxf.json
+                fmp4_h264:
+                  summary: Video Flow - H.264 (fmp4 container)
+                  externalValue: vendor/bbc-tams/api/examples/flow-get-200-video-h264-fmp4.json
                 jp2_jpeg2k_singleframe:
                   summary: Video Flow - JPEG-2000 (JP2 container, single frame segments)
                   externalValue: vendor/bbc-tams/api/examples/flow-get-200-video-jpeg-jp2.json
                 video_vfr:
                   summary: Video Flow - H.264 Codec, Variable Frame Rate
                   externalValue: vendor/bbc-tams/api/examples/flow-get-200-video-h264-vfr.json
+                video_cleanfeed:
+                  summary: Video Flow - H.264 Codec, with Editorial Purpose Tag
+                  externalValue: vendor/bbc-tams/api/examples/flow-get-200-video-h264-cleanfeed.json
                 audio:
                   summary: Audio Flow - AAC Codec
                   externalValue: vendor/bbc-tams/api/examples/flow-get-200-audio-aac.json
@@ -1417,42 +2065,47 @@ paths:
             $ref: '#/components/schemas/ErrorPayload'
     put:
       summary: Create or Replace Flow
-      description: 'Create or replace the Flow metadata.
-
-
-        Clients should aim to populate as many of the Flow metadata fields as possible
-        and practical. The fewer parameters that are set, the higher the likelihood
-        that reading clients will have to retrieve the media to determine technical
-        metadata to e.g. configure decoders.
-
-
-        Some parameters may be ignored/overridden by service implementations. This
-        is to enable the Flow json-blob to be re-used with no/minimal editing in various
-        use cases. Such parameters are called out in their description.
-
-
-        Service implementations SHOULD verify that Flow metadata is compatible with
-        the associated Source.
-
-        Service implementations MAY accept modification/addition of parameters, and
-        reflect such changes in the Source, where it will not bring any Flows of the
-        Source into conflict.
-
-        Where metadata would result in any Flow of the Source coming into conflict,
-        the request SHOULD be rejected with a 400 response.
-
-        Examples of conflicting metadata include `format` not matching, or the `role`
-        in `source_collection` and `flow_collection` not matching.
-
-        It may also be possible for service implementations to detect some instances
-        where multiple Flows should not be considered of the same Source, such as
-        audio Flows with different numbers of tracks.
-
-        Further guidance on when Flows/Sources may be considered the same/different
-        may be found in the [Practical Guidance for Media](https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/3.0._Practical_Guidance_for_Media.html)
-        section of AMWA MS-04.
-
-        '
+      description: "Create or replace the Flow metadata.\n\nClients should aim to\
+        \ populate as many of the Flow metadata fields as possible and practical.\
+        \ The fewer parameters that are set, the higher the likelihood that reading\
+        \ clients will have to retrieve the media to determine technical metadata\
+        \ to e.g. configure decoders.\n\nSome parameters may be ignored/overridden\
+        \ by service implementations. This is to enable the Flow json-blob to be re-used\
+        \ with no/minimal editing in various use cases. Such parameters are called\
+        \ out in their description.\n\nService implementations SHOULD verify that\
+        \ Flow metadata is compatible with the associated Source.\nService implementations\
+        \ MAY accept modification/addition of parameters, and reflect such changes\
+        \ in the Source, where it will not bring any Flows of the Source into conflict.\n\
+        Where metadata would result in any Flow of the Source coming into conflict,\
+        \ the request SHOULD be rejected with a 400 response.\nExamples of conflicting\
+        \ metadata include `format` not matching, or `role` or ordering in `source_collection`\
+        \ and `flow_collection` not matching.\nIt may also be possible for service\
+        \ implementations to detect some instances where multiple Flows should not\
+        \ be considered of the same Source, such as audio Flows with different numbers\
+        \ of tracks.\nFurther guidance on when Flows/Sources may be considered the\
+        \ same/different may be found in the [Practical Guidance for Media](https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/3.0._Practical_Guidance_for_Media.html)\
+        \ section of AMWA MS-04.\n\nFlows can be created either by directly supplying\
+        \ all the required technical metadata or by referencing an existing Profile\
+        \ in the store.  \nWhen using a Profile, the Service Implementation will populate\
+        \ the Flow's technical parameters (format, codec, essence_parameters etc.)\
+        \ from that profile, along with the metadata provided.  \nIt is up to the\
+        \ Service Implementation whether this is normalised on the Flow creation or\
+        \ on read.\n\nWhen creating a flow using a Profile it is not possible to override\
+        \ any specific fields as this would invalidate the link to the Profile.  \n\
+        Supplying a Profile ID and any technical metadata should result in a 400 validation\
+        \ error.\n\nWhen updating a Flow created using a profile then  consideration\
+        \ needs to be given to the fields which were inherited. \nFor the standard\
+        \ fields (eg label, description, tags) which form part of the common Flow\
+        \ metadata and provided directly regardless of the Profile then these can\
+        \ be updated through the standard process.\n\nIn the scenario where the technical\
+        \ characteristics do need to be changed on a Flow created from a Profile then\
+        \ it is necessary to remove the link to the Profile as part of the update\
+        \ since it will no longer match the Profile entirely.\nThis is achieved by\
+        \ means of setting the `profile_id` field to an empty string as part of the\
+        \ update.\nThis will then break the link to the Profile and allow the store\
+        \ to update the technical parameters.\nIt should be noted that searching for\
+        \ Flows using a Profile will no longer include the updated Flow since it no\
+        \ longer matches or is linked to the Profile.\n"
       operationId: PUT_flows-flowId
       tags:
       - Flows
@@ -1466,8 +2119,11 @@ paths:
               multi:
                 summary: Multi-essence Flow
                 externalValue: vendor/bbc-tams/api/examples/flow-put-multi.json
+              profile:
+                summary: Flow created using a Profile
+                externalValue: vendor/bbc-tams/api/examples/flow-put-profile.json
             schema:
-              $ref: '#/components/schemas/Flow'
+              $ref: '#/components/schemas/FlowPut'
         required: true
       responses:
         '201':
@@ -1477,7 +2133,7 @@ paths:
               example:
                 $ref: vendor/bbc-tams/api/examples/flow-put-201.json
               schema:
-                $ref: '#/components/schemas/Flow'
+                $ref: '#/components/schemas/FlowGet'
         '204':
           description: No content. The Flow has been updated.
         '400':
@@ -1499,7 +2155,11 @@ paths:
 
         If Flow Segment deletion takes too long then this request will return 202
         Accepted and the `Location` header will point to a Flow Delete Request to
-        monitor deletion progress
+        monitor deletion progress.
+
+
+        Services SHALL only delete Objects when they are no longer referenced by any
+        Flow Segments or other Objects (i.e. as init Objects).
 
         '
       operationId: DELETE_flows-flowId
@@ -1522,9 +2182,9 @@ paths:
                 $ref: vendor/bbc-tams/api/examples/deletion-request-get-200.json
         '204':
           description: No content. The Flow has been deleted and the Flow Segments
-            have been or will be deleted. Media Objects referenced in other Flows
-            will not be deleted. Media Objects that are no longer referenced by any
-            Segments will be deleted.
+            have been or will be deleted. Objects referenced in other Flows will not
+            be deleted. Objects that are no longer referenced by any Segments will
+            be deleted.
         '403':
           description: Forbidden. You do not have permission to modify this Flow.
             It may be marked read-only.
@@ -1617,7 +2277,11 @@ paths:
 
                 '
               schema:
-                type: string
+                oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
         '404':
           description: The requested Flow or tag does not exist.
           x-tamoss-error-payload:
@@ -1635,7 +2299,11 @@ paths:
 
               '
             schema:
-              type: string
+              oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
         required: true
       responses:
         '204':
@@ -1950,8 +2618,8 @@ paths:
           $ref: '#/components/responses/trait_resource_info_head_404'
     get:
       summary: Flow Collection
-      description: Returns the Flow collection property. A list of Flows that are
-        collected together by this Flow.
+      description: Returns the Flow collection property. An ordered list of Flows
+        that are collected together by this Flow.
       operationId: GET_flows-flowId-flow-collection
       tags:
       - Flows
@@ -1970,8 +2638,8 @@ paths:
             $ref: '#/components/schemas/ErrorPayload'
     put:
       summary: Create or Update Flow Collection
-      description: 'Create or update the Flow collection property. A list of Flows
-        that are collected together by this Flow.
+      description: 'Create or update the Flow collection property. An ordered list
+        of Flows that are collected together by this Flow.
 
 
         Service implementations SHOULD verify that Flow metadata is compatible with
@@ -2188,6 +2856,19 @@ paths:
         A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
         AppNote.
 
+
+        When a Flow is created from a Profile then the average bit rate is inherited
+        from the Profile.
+
+        In this scenario is it not possible to update the average bit rate directly
+        as it would invalidate the link to the Profile.
+
+        Any attempt to update the average bitrate should be rejected by the store
+        with a 400 error message as this is a bad request.
+
+        To update the average bit rate then it is necessary to remove the link to
+        the Profile first before updating directly.
+
         '
       operationId: PUT_flows-flowId-avg-bit-rate
       tags:
@@ -2271,7 +2952,7 @@ paths:
         description: 'Include storage metadata in `get_urls` in the response.
 
           When `verbose_storage` is `false` only `url`, `presigned`, and `label` will
-          be included in `get_urls`.
+          be included in `get_urls` and `init_object.get_urls`.
 
           '
         schema:
@@ -2280,21 +2961,23 @@ paths:
       - name: accept_get_urls
         in: query
         description: 'A comma separated list of labels of Flow Segment `get_urls`
-          to include in the response.
+          and `init_object.get_urls` to include in the response.
 
-          Omitting `accept_get_urls` will result in no filtering of `get_urls`.
+          Omitting `accept_get_urls` will result in no filtering of `get_urls` or
+          `init_object.get_urls`.
 
-          An empty `accept_get_urls` results in an empty or no `get_urls` in the response.
+          An empty `accept_get_urls` results in `get_urls` and `init_object.get_urls`
+          being empty or omitted in the response.
 
-          Flow Segment `get_urls` with no label will only be returned if `accept_get_urls`
-          is omitted.
+          Flow Segment `get_urls` and `init_object.get_urls` with no label will only
+          be returned if `accept_get_urls` is omitted.
 
           Without `get_urls`, the response from the service could be substantially
           faster if it is not required to generate a large number of pre-signed URLs
           for example.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2302,19 +2985,19 @@ paths:
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Flow Segment `get_urls`
-          to include in the response.
+          and `init_object.get_urls` to include in the response.
 
           Omitting `accept_storage_ids`, or providing an empty `accept_storage_ids`
-          will result in no filtering of `get_urls`.
+          will result in no filtering of `get_urls` or `init_object.get_urls`.
 
-          Flow Segment `get_urls` with no storage ID will only be returned if `accept_storage_ids`
-          is omitted or empty.
+          Flow Segment `get_urls` and `init_object.get_urls` with no storage ID will
+          only be returned if `accept_storage_ids` is omitted or empty.
 
           A full list of available `storage_id`s may be found at the [/service/storage-backends](#/operations/GET_storage-backends)
           endpoint.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2322,10 +3005,11 @@ paths:
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
-          property is `true`) will be returned in `get_urls` in the response.
+          property is `true`) will be returned in `get_urls` and `init_object.get_urls`
+          in the response.
 
           If set to `false`, only non-presigned URLs (i.e. those whos `presigned`
-          property is `false`) will be returned in `get_urls`.
+          property is `false`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If omitted, both presigned and non-presigned URLs will be returned.
 
@@ -2334,7 +3018,25 @@ paths:
           pre-signed URLs.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
+
+          '
+        schema:
+          type: boolean
+      - name: storage_backend_tag.{name}
+        in: query
+        description: 'Filter Flow Segment `get_urls` and `init_object.get_urls` on
+          tag values. This option is the same as the `tag.{name}` query parameter
+          on the `/service/storage-backends` API endpoint.
+
+          '
+        schema:
+          type: string
+      - name: storage_backend_tag_exists.{name}
+        in: query
+        description: 'Filter Flow Segment `get_urls` and `init_object.get_urls` on
+          tag names. This option is the same as the `tag_exists.{name}` query parameter
+          on the `/service/storage-backends` API endpoint.
 
           '
         schema:
@@ -2342,7 +3044,7 @@ paths:
       - name: include_object_timerange
         in: query
         description: 'If set to `true`, the underlying object''s timerange should
-          appear in the response (if it differs from the segment timerange).
+          appear in the response.
 
           Assume `false` if omitted.
 
@@ -2427,6 +3129,18 @@ paths:
         which samples to skip.
 
 
+        Segments are sorted by timerange, in ascending order by default.
+
+        As Segments in TAMS do not overlap, either of the start or end timestamp of
+        the timerange may be used as the sort key.
+
+        Service implementations MUST take clusivity markers of the timerange into
+        account.
+
+        Service implementations should consider edge cases such as a timerange with
+        an exclusive end `[1:0_2:0)` followed by an instantaneous timerange of `[2:0]`.
+
+
         Clients should use the pagination options to limit the results to a timerange
         and/or count.
 
@@ -2446,9 +3160,19 @@ paths:
         retrieve enough reference material to start decoding.
 
 
-        When making requests to the provided `get_urls`, clients should include credentials
-        if the provided URL is on the same origin as the API itself, akin to the `same-origin`
-        mode in the [WhatWG Fetch Standard](https://fetch.spec.whatwg.org/#concept-request-credentials-mode).
+        Where Flow Segments reference initialisation segment Objects with the same
+        ID, the initialisation segment is the same.
+
+        Consuming clients may choose to ignore initialisation segment Objects that
+        haven''t changed in subsequent Flow Segments.
+
+
+        When making requests to provided `get_url`s that are not presigned, clients
+        SHOULD include credentials if the provided URL is on the same origin as the
+        Service itself, akin to the `same-origin` mode in the [WhatWG Fetch Standard](https://fetch.spec.whatwg.org/#concept-request-credentials-mode).
+        Services MAY support the use of out-of-band credentials where the provided
+        URL is on a different origin to the Service itself. Services SHOULD NOT solely
+        require the use of out-of-band credentials.
 
         '
       operationId: GET_flows-flowId-segments
@@ -2477,7 +3201,7 @@ paths:
         description: 'Include storage metadata in `get_urls` in the response.
 
           When `verbose_storage` is `false` only `url`, `presigned`, and `label` will
-          be included in `get_urls`.
+          be included in `get_urls` and `init_object.get_urls`.
 
           '
         schema:
@@ -2486,21 +3210,23 @@ paths:
       - name: accept_get_urls
         in: query
         description: 'A comma separated list of labels of Flow Segment `get_urls`
-          to include in the response.
+          and `init_object.get_urls` to include in the response.
 
-          Omitting `accept_get_urls` will result in no filtering of `get_urls`.
+          Omitting `accept_get_urls` will result in no filtering of `get_urls` or
+          `init_object.get_urls`.
 
-          An empty `accept_get_urls` results in an empty or no `get_urls` in the response.
+          An empty `accept_get_urls` results in `get_urls` and `init_object.get_urls`
+          being empty or omitted in the response.
 
-          Flow Segment `get_urls` with no label will only be returned if `accept_get_urls`
-          is omitted.
+          Flow Segment `get_urls` and `init_object.get_urls` with no label will only
+          be returned if `accept_get_urls` is omitted.
 
           Without `get_urls`, the response from the service could be substantially
           faster if it is not required to generate a large number of pre-signed URLs
           for example.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2508,19 +3234,19 @@ paths:
       - name: accept_storage_ids
         in: query
         description: 'A comma separated list of `storage_id`s of Flow Segment `get_urls`
-          to include in the response.
+          and `init_object.get_urls` to include in the response.
 
           Omitting `accept_storage_ids`, or providing an empty `accept_storage_ids`
-          will result in no filtering of `get_urls`.
+          will result in no filtering of `get_urls` or `init_object.get_urls`.
 
-          Flow Segment `get_urls` with no storage ID will only be returned if `accept_storage_ids`
-          is omitted or empty.
+          Flow Segment `get_urls` and `init_object.get_urls` with no storage ID will
+          only be returned if `accept_storage_ids` is omitted or empty.
 
           A full list of available `storage_id`s may be found at the [/service/storage-backends](#/operations/GET_storage-backends)
           endpoint.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2528,10 +3254,10 @@ paths:
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
-          property is `true`) will be returned in `get_urls`.
+          property is `true`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If set to `false`, only non-presigned URLs (i.e. those whos `presigned`
-          property is `false`) will be returned in `get_urls`.
+          property is `false`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If omitted, both presigned and non-presigned URLs will be returned.
 
@@ -2540,7 +3266,25 @@ paths:
           pre-signed URLs.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
+
+          '
+        schema:
+          type: boolean
+      - name: storage_backend_tag.{name}
+        in: query
+        description: 'Filter Flow Segment `get_urls` and `init_object.get_urls` on
+          tag values. This option is the same as the `tag.{name}` query parameter
+          on the `/service/storage-backends` API endpoint.
+
+          '
+        schema:
+          type: string
+      - name: storage_backend_tag_exists.{name}
+        in: query
+        description: 'Filter Flow Segment `get_urls` and `init_object.get_urls` on
+          tag names. This option is the same as the `tag_exists.{name}` query parameter
+          on the `/service/storage-backends` API endpoint.
 
           '
         schema:
@@ -2548,7 +3292,7 @@ paths:
       - name: include_object_timerange
         in: query
         description: 'If set to `true`, the underlying object''s timerange should
-          appear in the response (if it differs from the Flow Segment''s `timerange`).
+          appear in the response.
 
           Assume `false` if omitted.
 
@@ -2618,6 +3362,16 @@ paths:
 
                     '
                   externalValue: vendor/bbc-tams/api/examples/flow-segments-get-200-multiple-urls.json
+                init_segments:
+                  summary: Objects with initialisation segments
+                  description: 'This example shows how Media Objects signal the use
+                    of initialisation segments.
+
+                    Note the re-use of the same initialisation segment in some consecutive
+                    Flow Segments.
+
+                    '
+                  externalValue: vendor/bbc-tams/api/examples/flow-segments-get-200-init.json
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -2673,8 +3427,13 @@ paths:
         \ of the Segment MUST NOT overlap any other Segment in the same Flow.\n  -\
         \ The Flow Segment's `timerange` start and end, once offset by `ts_offset`,\
         \ MUST be contained entirely within the Media Object's `timerange`\n\nWhen\
-        \ re-using Media Objects, requests which change object properties (e.g. `key_frame_count`\
-        \ or `object_timerange`) SHOULD be rejected.\n"
+        \ re-using Media Objects, requests which change object properties (e.g. `key_frame_count`,\
+        \ `object_timerange`, or `init_object_id`) SHOULD be rejected.\n\nIf an Object\
+        \ has previously been registered as an initialisation segment (i.e. via `init_object_id`),\
+        \ Service implementations SHOULD reject its use as a media segment (i.e. via\
+        \ `object_id`).\nIf an Object has previously been registered as a media segment\
+        \ (i.e. via `object_id`), Service implementations SHOULD reject its use as\
+        \ an initialisation segment (i.e. via `init_object_id`).\n"
       operationId: POST_flows-flowId-segments
       tags:
       - FlowSegments
@@ -2720,7 +3479,11 @@ paths:
       summary: Delete Flow Segment
       description: 'Deletes the Flow Segments. If the deletion takes too long then
         this request will return 202 Accepted and the `Location` header will point
-        to a Flow Delete Request to monitor deletion progress
+        to a Flow Delete Request to monitor deletion progress.
+
+
+        Services SHALL only delete Objects when they are no longer referenced by any
+        Flow Segments or other Objects (i.e. as init Objects).
 
         '
       operationId: DELETE_flows-flowId-segments
@@ -2756,8 +3519,8 @@ paths:
                 $ref: vendor/bbc-tams/api/examples/deletion-request-get-200.json
         '204':
           description: No content. The Flow Segments have been or will be deleted.
-            Media Objects referenced in other Segments will not be deleted. Media
-            Objects that are no longer referenced by any Segments will be deleted.
+            Objects referenced in other Segments will not be deleted. Objects that
+            are no longer referenced by any Segments will be deleted.
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
@@ -2781,7 +3544,7 @@ paths:
       description: The Flow identifier.
     post:
       summary: Allocate Initial Flow Storage
-      description: 'Allocate initial storage locations for writing Media Objects.
+      description: 'Allocate initial storage locations for writing Objects.
 
 
         The Storage Backend type, which is indicated in the [/service](#/operations/GET_service)
@@ -2791,11 +3554,10 @@ paths:
         Backend type.
 
         This Storage Backend type provides HTTP URLs for uploading and downloading
-        Media Objects in buckets.
+        Objects in buckets.
 
 
-        The response will include a PUT URL that a client uses to upload the Media
-        Object.
+        The response will include a PUT URL that a client uses to upload the Object.
 
         The client is expected to register the Flow Segment using the [/flows/{flowId}/segments](#/operations/POST_flows-flowId-segments)
         endpoint once the upload is complete.
@@ -2815,17 +3577,37 @@ paths:
         a specified minimum (see service endpoint schema).
 
 
+        Where media format make use of initialisation segments, the mime-type of those
+        initialisation segments may differ from that of the media segments.
+
+        In such cases, the `container` on the Flow will be set to the mime-type of
+        the media segments and is the assumed default.
+
+        A separate request to this endpoint should be made to allocate storage for
+        the initialisation segment(s) with `content-type` set to the mime type of
+        the initialisation segment(s).
+
+        `content-type` MUST NOT be set in the request body of this end point at any
+        other time.
+
+        Initialisation segment Objects SHOULD be re-used wherever possible.
+
+
         Service implementations need to handle situations where Objects are not used,
-        and where content was uploaded but no Flow Segment was registered successfully.
+        and where content was uploaded but the Object is not successfully registered
+        against a Flow Segment or as an init Object against Media Objects.
 
         In these circumstances, Services should garbage collect Objects after the
         timeout advertised in [`min_object_timeout` at the `/service`](#/operations/GET_service)
         endpoint.
 
 
-        When making requests to the provided `put_url`, clients should include credentials
-        if the provided URL is on the same origin as the API itself, akin to the `same-origin`
-        mode in the [WhatWG Fetch Standard](https://fetch.spec.whatwg.org/#concept-request-credentials-mode).
+        When making requests to provided `put_url`s that are not presigned, clients
+        SHOULD include credentials if the provided URL is on the same origin as the
+        Service itself, akin to the `same-origin` mode in the [WhatWG Fetch Standard](https://fetch.spec.whatwg.org/#concept-request-credentials-mode).
+        Services MAY support the use of out-of-band credentials where the provided
+        URL is on a different origin to the Service itself. Services SHOULD NOT solely
+        require the use of out-of-band credentials.
 
         '
       operationId: POST_flows-flowId-storage
@@ -2845,7 +3627,7 @@ paths:
               $ref: '#/components/schemas/FlowStoragePost'
       responses:
         '201':
-          description: Storage locations for writing Media Objects.
+          description: Storage locations for writing Objects.
           content:
             application/json:
               schema:
@@ -2877,16 +3659,17 @@ paths:
             $ref: '#/components/schemas/ErrorPayload'
   /objects/{objectId}:
     head:
-      summary: Media Object Information
-      description: Return Flow references and other information about Media Objects.
+      summary: Object Information
+      description: Return Flow references and other information about init or Media
+        Objects.
       operationId: HEAD_objects
       tags:
       - Objects
       parameters:
       - name: objectId
         in: path
-        description: The Media Object identifier. The Object ID may include special
-          characters such as `/` which should be URL encoded.
+        description: The Object identifier. The Object ID may include special characters
+          such as `/` which should be URL encoded.
         required: true
         schema:
           type: string
@@ -2895,7 +3678,7 @@ paths:
         description: 'Include storage metadata in `get_urls`.
 
           When `verbose_storage` is `false` only `url`, `presigned`, and `label` will
-          be included in `get_urls`.
+          be included in `get_urls` and `init_object.get_urls`.
 
           '
         schema:
@@ -2903,43 +3686,45 @@ paths:
           type: boolean
       - name: accept_get_urls
         in: query
-        description: 'A comma separated list of labels of Media Object `get_urls`
+        description: 'A comma separated list of labels of Object `get_urls` and `init_object.get_urls`
           to include in the response.
 
-          Omitting `accept_get_urls` will result in no filtering of `get_urls`.
+          Omitting `accept_get_urls` will result in no filtering of `get_urls` or
+          `init_object.get_urls`.
 
-          An empty `accept_get_urls` results in an empty or no `get_urls` in the response.
+          An empty `accept_get_urls` results in `get_urls` and `init_object.get_urls`
+          being empty or omitted in the response.
 
-          Media Object `get_urls` with no label will only be returned if `accept_get_urls`
-          is omitted.
+          Object `get_urls` and `init_object.get_urls` with no label will only be
+          returned if `accept_get_urls` is omitted.
 
-          Without `get_urls`, the response from the service could be substantially
-          faster if it is not required to
+          Without `get_urls` or `init_object.get_urls`, the response from the service
+          could be substantially faster if it is not required to
 
           generate a large number of pre-signed URLs for example.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
           $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
-        description: 'A comma separated list of `storage_id`s of Media Object `get_urls`
-          to include in the response.
+        description: 'A comma separated list of `storage_id`s of Object `get_urls`
+          and `init_object.get_urls` to include in the response.
 
           Omitting `accept_storage_ids`, or providing an empty `accept_storage_ids`
-          will result in no filtering of `get_urls`.
+          will result in no filtering of `get_urls` or `init_object.get_urls`.
 
-          Media Object `get_urls` with no storage ID will only be returned if `accept_storage_ids`
-          is omitted or empty.
+          Object `get_urls` and `init_object.get_urls` with no storage ID will only
+          be returned if `accept_storage_ids` is omitted or empty.
 
           A full list of available `storage_id`s may be found at the `service/storage-backends`
           endpoint.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2948,10 +3733,10 @@ paths:
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
-          property is `true`) will be returned in `get_urls`.
+          property is `true`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If set to `false`, only non-presigned URLs (i.e. those whos `presigned`
-          property is `false`) will be returned in `get_urls`.
+          property is `false`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If omitted, both presigned and non-presigned URLs will be returned.
 
@@ -2961,7 +3746,7 @@ paths:
           generate a large number of pre-signed URLs.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -2986,6 +3771,24 @@ paths:
           type: boolean
         allowReserved: true
         required: false
+      - name: storage_backend_tag.{name}
+        in: query
+        description: 'Filter `get_urls` and `init_object.get_urls` on tag values.
+          This option is the same as the `tag.{name}` query parameter on the `/service/storage-backends`
+          API endpoint.
+
+          '
+        schema:
+          type: string
+      - name: storage_backend_tag_exists.{name}
+        in: query
+        description: 'Filter `get_urls` and `init_object.get_urls` on tag names. This
+          option is the same as the `tag_exists.{name}` query parameter on the `/service/storage-backends`
+          API endpoint.
+
+          '
+        schema:
+          type: boolean
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -3016,22 +3819,31 @@ paths:
         '400':
           $ref: '#/components/responses/trait_resource_info_head_400'
         '404':
-          description: The requested Media Object does not exist. 404 MUST be returned
-            if the ID has been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
+          description: The requested Object does not exist. 404 MUST be returned if
+            the ID has been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
             but not yet registered against a Flow Segment.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     get:
-      summary: Media Object Information
-      description: 'Contains Flows that references the Media Object and other information.
+      summary: Object Information
+      description: 'Contains Flows that references the init/Media Object and other
+        information.
 
 
         The paging query parameters and headers are required for the list of Flow
-        references in the Media Object.
+        references in the Object.
 
         Service implementations should return a complete list of Flow references within
         reason and API clients should expect paging to happen in some rare cases where
-        a Media Object is used in many Flows.
+        a Object is used in many Flows.
+
+
+        When making requests to provided `get_url`s that are not presigned, clients
+        SHOULD include credentials if the provided URL is on the same origin as the
+        Service itself, akin to the `same-origin` mode in the [WhatWG Fetch Standard](https://fetch.spec.whatwg.org/#concept-request-credentials-mode).
+        Services MAY support the use of out-of-band credentials where the provided
+        URL is on a different origin to the Service itself. Services SHOULD NOT solely
+        require the use of out-of-band credentials.
 
         '
       operationId: GET_objects
@@ -3040,8 +3852,8 @@ paths:
       parameters:
       - name: objectId
         in: path
-        description: The Media Object identifier. The Object ID may include special
-          characters such as `/` which should be URL encoded.
+        description: The Object identifier. The Object ID may include special characters
+          such as `/` which should be URL encoded.
         required: true
         schema:
           type: string
@@ -3050,7 +3862,7 @@ paths:
         description: 'Include storage metadata in `get_urls`.
 
           When `verbose_storage` is `false` only `url`, `presigned`, and `label` will
-          be included in `get_urls`.
+          be included in `get_urls` and `init_object.get_urls`.
 
           '
         schema:
@@ -3058,43 +3870,45 @@ paths:
           type: boolean
       - name: accept_get_urls
         in: query
-        description: 'A comma separated list of labels of Media Object `get_urls`
+        description: 'A comma separated list of labels of Object `get_urls` and `init_object.get_urls`
           to include in the response.
 
-          Omitting `accept_get_urls` will result in no filtering of `get_urls`.
+          Omitting `accept_get_urls` will result in no filtering of `get_urls` or
+          `init_object.get_urls`.
 
-          An empty `accept_get_urls` results in an empty or no `get_urls` in the response.
+          An empty `accept_get_urls` results in `get_urls` and `init_object.get_urls`
+          being empty or omitted in the response.
 
-          Media Object `get_urls` with no label will only be returned if `accept_get_urls`
-          is omitted.
+          Object `get_urls` and `init_object.get_urls` with no label will only be
+          returned if `accept_get_urls` is omitted.
 
-          Without `get_urls`, the response from the service could be substantially
-          faster if it is not required to
+          Without `get_urls` and `init_object.get_urls`, the response from the service
+          could be substantially faster if it is not required to
 
           generate a large number of pre-signed URLs for example.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
           $ref: '#/components/schemas/UrlLabelList'
       - name: accept_storage_ids
         in: query
-        description: 'A comma separated list of `storage_id`s of Media Object `get_urls`
-          to include in the response.
+        description: 'A comma separated list of `storage_id`s of Object `get_urls`
+          and `init_object.get_urls` to include in the response.
 
           Omitting `accept_storage_ids`, or providing an empty `accept_storage_ids`
-          will result in no filtering of `get_urls`.
+          will result in no filtering of `get_urls` or `init_object.get_urls`.
 
-          Media Object `get_urls` with no storage ID will only be returned if `accept_storage_ids`
-          is omitted or empty.
+          Object `get_urls` and `init_object.get_urls` with no storage ID will only
+          be returned if `accept_storage_ids` is omitted or empty.
 
           A full list of available `storage_id`s may be found at the `service/storage-backends`
           endpoint.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -3103,10 +3917,10 @@ paths:
       - name: presigned
         in: query
         description: 'If set to `true`, only presigned URLs (i.e. those whos `presigned`
-          property is `true`) will be returned in `get_urls`.
+          property is `true`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If set to `false`, only non-presigned URLs (i.e. those whos `presigned`
-          property is `false`) will be returned in `get_urls`.
+          property is `false`) will be returned in `get_urls` and `init_object.get_urls`.
 
           If omitted, both presigned and non-presigned URLs will be returned.
 
@@ -3116,7 +3930,7 @@ paths:
           generate a large number of pre-signed URLs.
 
           Where multiple filter query parameters are provided, the returned `get_urls`
-          will match all filters.
+          and `init_object.get_urls` will match all filters.
 
           '
         schema:
@@ -3141,6 +3955,24 @@ paths:
           type: boolean
         allowReserved: true
         required: false
+      - name: storage_backend_tag.{name}
+        in: query
+        description: 'Filter `get_urls` and `init_object.get_urls` on tag values.
+          This option is the same as the `tag.{name}` query parameter on the `/service/storage-backends`
+          API endpoint.
+
+          '
+        schema:
+          type: string
+      - name: storage_backend_tag_exists.{name}
+        in: query
+        description: 'Filter `get_urls` and `init_object.get_urls` on tag names. This
+          option is the same as the `tag_exists.{name}` query parameter on the `/service/storage-backends`
+          API endpoint.
+
+          '
+        schema:
+          type: boolean
       - $ref: '#/components/parameters/trait_resource_paged_key'
       - $ref: '#/components/parameters/trait_paged_limit'
       responses:
@@ -3166,8 +3998,13 @@ paths:
                 type: string
           content:
             application/json:
-              example:
-                $ref: vendor/bbc-tams/api/examples/objects-get-200.json
+              examples:
+                basic:
+                  summary: Basic example
+                  externalValue: vendor/bbc-tams/api/examples/objects-get-200.json
+                init_segment:
+                  summary: Object that makes use of an initialisation segment
+                  externalValue: vendor/bbc-tams/api/examples/objects-get-200-init.json
               schema:
                 $ref: '#/components/schemas/Object'
         '400':
@@ -3175,14 +4012,14 @@ paths:
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
         '404':
-          description: The requested Media Object does not exist. 404 MUST be returned
-            if the ID has been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
+          description: The requested Object does not exist. 404 MUST be returned if
+            the ID has been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
             but not yet registered against a Flow Segment.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
   /objects/{objectId}/instances:
     post:
-      summary: Register a Media Object instance
+      summary: Register an Object instance
       description: 'Request the service to create an Object instance on a new Storage
         Backend. Or add a new uncontrolled URL to `get_urls`.
 
@@ -3192,15 +4029,22 @@ paths:
         of the Object. The API will then:
 
 
-        - Allocate storage for Media Object `objectId` on Storage Backend `storage_id`
+        - Allocate storage for Object `objectId` on Storage Backend `storage_id`
 
-        - Copy the Media Object from an existing location to the newly allocated storage
+        - Copy the Object from an existing location to the newly allocated storage
 
         - Start advertising the new copy in `get_urls` once ready
 
 
         The API instances SHOULD be capable of handling the case where the only existant
         instances are uncontrolled.
+
+
+        API instances SHALL NOT cascade the creation of new Object instances to initialisation
+        Objects.
+
+        Clients MUST initiate the creation of new Object instances of initialisation
+        Objects directly.
 
 
         Where a client has written a new uncontrolled Object instance, the client
@@ -3217,8 +4061,8 @@ paths:
       parameters:
       - name: objectId
         in: path
-        description: The Media Object identifier. The Object ID may include special
-          characters such as `/` which should be URL encoded.
+        description: The Object identifier. The Object ID may include special characters
+          such as `/` which should be URL encoded.
         required: true
         schema:
           type: string
@@ -3243,34 +4087,39 @@ paths:
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
         '403':
-          description: Forbidden. You do not have permission to modify this Media
-            Object.
+          description: Forbidden. You do not have permission to modify this Object.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
         '404':
-          description: The Media Object does not exist. 404 MUST be returned if the
-            ID has been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
+          description: The Object does not exist. 404 MUST be returned if the ID has
+            been assigned via the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage),
             but not yet registered against a Flow Segment.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
     delete:
-      summary: Delete a Media Object instance
-      description: 'Delete an instance of a Media Object.
+      summary: Delete an Object instance
+      description: 'Delete an instance of a Object.
 
 
         One of `storage_id` or `label` MUST be specified in the query parameters.
         `storage_id` SHOULD be used where `controlled` is `True` for the instance.
 
 
-        API instances should remove the Media Object instance from the `get_urls`
-        list and then, if the instance is controlled, delete the Object instance from
-        storage.
+        API instances should remove the Object instance from the `get_urls` list and
+        then, if the instance is controlled, delete the Object instance from storage.
 
 
         API instances SHOULD prevent clients from deleting all Object instances. Additionally,
         API instances MAY prevent clients from deleting all controlled Object instances.
         Where clients wish to remove all copies of an Object from the store, they
         should do so by deleting all Flows or Flow Segments which reference the Object.
+
+
+        API instances SHALL NOT cascade the deletion of Object instances to initialisation
+        Objects.
+
+        Clients MUST initiate the deletion of Object instances of initialisation Objects
+        directly.
 
         '
       operationId: DELETE_objects-instances
@@ -3279,31 +4128,30 @@ paths:
       parameters:
       - name: objectId
         in: path
-        description: The Media Object identifier. The Object ID may include special
-          characters such as `/` which should be URL encoded.
+        description: The Object identifier. The Object ID may include special characters
+          such as `/` which should be URL encoded.
         required: true
         schema:
           type: string
       - name: storage_id
         in: query
-        description: The storage_id identifying the Media Object instance to be deleted.
+        description: The storage_id identifying the Object instance to be deleted.
         schema:
           type: string
       - name: label
         in: query
-        description: The label identifying the Media Object instance to be deleted.
+        description: The label identifying the Object instance to be deleted.
         schema:
           type: string
       responses:
         '204':
-          description: No content. The Media Object instance has been deleted.
+          description: No content. The Object instance has been deleted.
         '400':
           description: Bad request. Invalid query options.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
         '403':
-          description: Forbidden. You do not have permission to modify this Media
-            Object.
+          description: Forbidden. You do not have permission to modify this Object.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
         '404':
@@ -3319,8 +4167,64 @@ paths:
       operationId: HEAD_flow-delete-requests
       tags:
       - FlowDeleteRequests
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Flow Delete Requests in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flow Delete Requests by.
+
+          `created` and `expiry` sort most recent first by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - expiry
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
       responses:
         '200':
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' is currently supported. If 'next' is not
+                present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the service implementation
+              schema:
+                type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
           $ref: '#/components/responses/trait_resource_listing_head_200'
     get:
       summary: List Flow Delete Requests
@@ -3335,9 +4239,65 @@ paths:
       operationId: GET_flow-delete-requests
       tags:
       - FlowDeleteRequests
+      parameters:
+      - name: reverse_order
+        in: query
+        description: Return Flow Delete Requests in reverse order.
+        schema:
+          default: false
+          type: boolean
+      - name: sort_by
+        in: query
+        description: 'Parameter to sort Flow Delete Requests by.
+
+          `created` and `expiry` sort most recent first by default.
+
+          Sorting may be reversed using the `reverse_order` query parameter.
+
+          Assume `created` if not set.
+
+          For resources where the selected parameter is unset, `id` shall be used.
+
+          Resources using this fallback shall be sorted after those that aren''t by
+          default, and before when `reverse_order` is `true`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - created
+          - expiry
+      - $ref: '#/components/parameters/trait_resource_paged_key'
+      - $ref: '#/components/parameters/trait_paged_limit'
       responses:
         '200':
           description: ''
+          headers:
+            Link:
+              description: Provides references to cursors for paging. Only the 'rel'
+                attribute with value 'next' is currently supported. If 'next' is not
+                present then it is the last page.
+              schema:
+                type: string
+            X-Paging-Limit:
+              description: Identifies the current limit being used for paging. This
+                may not match the requested value if the requested value was too high
+                for the service implementation
+              schema:
+                type: integer
+            X-Paging-Count:
+              description: The number of items in the returned data set.
+              schema:
+                type: integer
+            X-Paging-Reverse-Order:
+              description: The items are returned in reverse order.
+              schema:
+                type: boolean
+            X-Paging-NextKey:
+              description: Opaque string that can be supplied to the `page` query
+                parameter to get the next page of results.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -3422,7 +4382,7 @@ webhooks:
                   - flow
                   properties:
                     flow:
-                      $ref: '#/components/schemas/Flow'
+                      $ref: '#/components/schemas/FlowGet'
   flows/updated:
     post:
       security:
@@ -3452,7 +4412,7 @@ webhooks:
                   - flow
                   properties:
                     flow:
-                      $ref: '#/components/schemas/Flow'
+                      $ref: '#/components/schemas/FlowGet'
   flows/deleted:
     post:
       security:
@@ -3483,6 +4443,9 @@ webhooks:
                   properties:
                     flow_id:
                       $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Webhook received successfully
   flows/segments_added:
     post:
       security:
@@ -3520,6 +4483,9 @@ webhooks:
                       type: array
                       items:
                         $ref: '#/components/schemas/FlowSegment'
+      responses:
+        '200':
+          description: Webhook received successfully
   flows/segments_deleted:
     post:
       security:
@@ -3559,6 +4525,9 @@ webhooks:
                         deleted at both start and end (e.g. it cannot start or end
                         in empty space).
                       $ref: '#/components/schemas/Timerange'
+      responses:
+        '200':
+          description: Webhook received successfully
   sources/created:
     post:
       security:
@@ -3589,6 +4558,9 @@ webhooks:
                   properties:
                     source:
                       $ref: '#/components/schemas/Source'
+      responses:
+        '200':
+          description: Webhook received successfully
   sources/updated:
     post:
       security:
@@ -3619,6 +4591,9 @@ webhooks:
                   properties:
                     source:
                       $ref: '#/components/schemas/Source'
+      responses:
+        '200':
+          description: Webhook received successfully
   sources/deleted:
     post:
       security:
@@ -3648,6 +4623,9 @@ webhooks:
                   properties:
                     source_id:
                       $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Webhook received successfully
 components:
   responses:
     trait_resource_listing_head_200:
@@ -3822,8 +4800,8 @@ components:
           items:
             $ref: '#/components/schemas/EventStreamCommon'
         min_object_timeout:
-          description: The minimum timeframe within which a Media Object created by
-            this service must be registered against a Flow segment before it is garbage
+          description: The minimum timeframe within which a Object created by this
+            service must be registered against a Flow segment before it is garbage
             collected. Services SHOULD allow a small grace period beyond the advertised
             value to account for latency in assigning the Objects and returning them
             to the Client. This timeout MUST be `300:0` (i.e. 5 minutes) or greater.
@@ -3860,6 +4838,22 @@ components:
         description:
           description: The service instance description
           type: string
+    UrlTagList:
+      title: Query String Tag value list
+      description: A list of tag values, formatted for use in query string parameters
+      type: string
+      pattern: ^([^,]+(,[^,]+)*)?$
+    Tags:
+      title: Tags
+      description: Key is a freeform string. Value is a freeform string, or an array
+        of freeform strings.
+      type: object
+      additionalProperties:
+        anyOf:
+        - type: string
+        - type: array
+          items:
+            type: string
     StorageBackend:
       title: Storage Backend
       description: Provides technical, and logic metadata about a storage backend
@@ -3888,6 +4882,9 @@ components:
         store_product:
           description: The storage product name.
           type: string
+        tags:
+          description: Key value is a freeform string.
+          $ref: '#/components/schemas/Tags'
     Uuid:
       title: UUID
       description: A Universally Unique Identifier (UUID) as defined in [RFC9562](https://www.rfc-editor.org/rfc/rfc9562)
@@ -3923,243 +4920,12 @@ components:
                 must always specify a storage backend.
               type: boolean
       additionalProperties: false
-    UrlTagList:
-      title: Query String Tag value list
-      description: A list of tag values, formatted for use in query string parameters
+    MimeType:
+      title: MIME Type
+      description: A Mime Type without parameters as defined in [RFC2045](https://www.rfc-editor.org/rfc/rfc2045#section-5.1)
+        and [RFC7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1)
       type: string
-      pattern: ^([^,]+(,[^,]+)*)?$
-    Tags:
-      title: Tags
-      description: Key is a freeform string. Value is a freeform string, or an array
-        of freeform strings.
-      type: object
-      additionalProperties:
-        anyOf:
-        - type: string
-        - type: array
-          items:
-            type: string
-    Webhook:
-      title: Register Webhook
-      description: Register to receive updates via webhook
-      type: object
-      required:
-      - url
-      - events
-      properties:
-        url:
-          description: The URL to which the service instance should make HTTP POST
-            requests with event data
-          type: string
-        api_key_name:
-          description: The HTTP header name that is added to the event POST
-          type: string
-        events:
-          description: List of event types to receive
-          type: array
-          items:
-            type: string
-            enum:
-            - flows/created
-            - flows/updated
-            - flows/deleted
-            - flows/segments_added
-            - flows/segments_deleted
-            - sources/created
-            - sources/updated
-            - sources/deleted
-        flow_ids:
-          description: Limit Flow and Flow Segment events to Flows in the given list
-            of Flow IDs
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-        source_ids:
-          description: Limit Flow, Flow Segment and Source events to Sources in the
-            given list of Source IDs
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-        flow_collected_by_ids:
-          description: Limit Flow and Flow Segment events to those with Flow that
-            is collected by a Flow Collection in the given list of Flow Collection
-            IDs
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-        source_collected_by_ids:
-          description: Limit Flow, Flow Segment and Source events to those with Source
-            that is collected by a Source Collection in the given list of Source Collection
-            IDs
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-        accept_get_urls:
-          description: List of labels of URLs to include in the `get_urls` property
-            in `flows/segments_added` events. Where multiple `get_urls` filter query
-            parameters are provided, the included `get_urls` will match all filters.
-            This option is the same as the `accept_get_urls` query parameter for the
-            [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API
-            endpoint, except that the labels are represented using a JSON array rather
-            than a (comma separated list) string.
-          type: array
-          items:
-            type: string
-        accept_storage_ids:
-          description: List of labels of `storage_id`s to include in the `get_urls`
-            property in `flows/segments_added` events. Where multiple `get_urls` filter
-            query parameters are provided, the included `get_urls` will match all
-            filters. This option is the same as the `accept_storage_ids` query parameter
-            for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
-            API endpoint, except that the IDs are represented using a JSON array rather
-            than a (comma separated list) string.
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-        presigned:
-          description: Whether to include presigned/non-presigned URLs in the `get_urls`
-            property in `flows/segments_added` events. Where multiple `get_urls` filter
-            query parameters are provided, the included `get_urls` will match all
-            filters. This option is the same as the `presigned` query parameter for
-            the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
-            API endpoint.
-          type: boolean
-        verbose_storage:
-          description: Whether to include storage metadata in the `get_urls` property
-            in `flows/segments_added` events. This option is the same as the `verbose_storage`
-            query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
-            API endpoint.
-          type: boolean
-        tags:
-          $ref: '#/components/schemas/Tags'
-    WebhookWithId:
-      title: Webhook Details
-      description: Details of an existing registered webhook
-      type: object
-      allOf:
-      - $ref: '#/components/schemas/Webhook'
-      - type: object
-        required:
-        - id
-        properties:
-          id:
-            description: Webhook identifier
-            $ref: '#/components/schemas/Uuid'
-    Error:
-      title: Error status metadata
-      description: Provides more information for an error status.
-      type: object
-      required:
-      - type
-      - summary
-      - time
-      properties:
-        type:
-          description: The error type name.
-          type: string
-        summary:
-          description: Summary description of the error and causes.
-          type: string
-        traceback:
-          description: Stack trace leading to error (as a list of strings)
-          type: array
-          items:
-            type: string
-        time:
-          description: Time at which the error ocurred, to aid in log correlation
-          type: string
-          format: date-time
-    WebhookGet:
-      title: Webhook Detail
-      description: Describes a Webhook
-      type: object
-      allOf:
-      - $ref: '#/components/schemas/WebhookWithId'
-      - type: object
-        required:
-        - status
-        properties:
-          error:
-            description: Provides more information for the error status, as described
-              by the [Error](#/schemas/error) type
-            $ref: '#/components/schemas/Error'
-          status:
-            description: Status of the Webhook. `created` indicates the webhook has
-              been successfully registered but is yet to begin sending events or,
-              depending on the service implementation, the worker responsible for
-              sending the events has yet to start. `started` indicates the webhook
-              is active and sending events. `disabled` indicates the webhook has been
-              disabled by a client and is not currently sending events. `error` indicates
-              an error condition has been encountered and the webhook has been disabled
-              by the service instance. More information about the error condition
-              will be indicated by the service instance in the `error` parameter.
-              Service implementations SHOULD implement appropriate retries and only
-              enter the `error` state when absolutely necesary. A webhook in the `error`
-              or `disabled` state may be re-enabled by a client by setting the status
-              to `created`. A webhook in the `created` or `started` state may be disabled
-              by a client by setting the status to `disabled`. Attempting to transition
-              an `error` status to `disabled` SHOULD be rejected.
-            type: string
-            enum:
-            - created
-            - started
-            - disabled
-            - error
-    WebhookPost:
-      title: Register Webhook
-      description: Register to receive updates via webhook
-      type: object
-      allOf:
-      - $ref: '#/components/schemas/Webhook'
-      - type: object
-        properties:
-          api_key_value:
-            description: The value that the HTTP header 'api_key_name' will be set
-              to
-            type: string
-          status:
-            description: Status of the Webhook. `created` will register the webhook
-              in the created state and the service instance will attempt to start
-              sending events. `disabled` will register the webhook in a disabled state
-              and will not send events. Assumed to be `created` if not set.
-            type: string
-            enum:
-            - created
-            - disabled
-    WebhookPut:
-      title: Modify Webhook
-      description: Modify existing webhook
-      type: object
-      allOf:
-      - $ref: '#/components/schemas/WebhookWithId'
-      - type: object
-        required:
-        - status
-        properties:
-          api_key_value:
-            description: The value that the HTTP header 'api_key_name' will be set
-              to
-            type: string
-          status:
-            description: Status of the Webhook. `created` indicates the webhook has
-              been successfully registered but is yet to begin sending events or,
-              depending on the service implementation, the worker responsible for
-              sending the events has yet to start. `started` indicates the webhook
-              is active and sending events. `disabled` indicates the webhook has been
-              disabled by a client and is not currently sending events. `error` indicates
-              an error condition has been encountered and the webhook has been disabled
-              by the service instance. More information about the error condition
-              will be indicated by the service instance in the `error` parameter.
-              Service implementations SHOULD implement appropriate retries and only
-              enter the `error` state when absolutely necesary. A webhook in the `error`
-              or `disabled` state may be re-enabled by a client by setting the status
-              to `created`. A webhook in the `created` or `started` state may be disabled
-              by a client by setting the status to `disabled`. Attempting to transition
-              an `error` status to `disabled` SHOULD be rejected.
-            type: string
-            enum:
-            - created
-            - disabled
+      pattern: ^(application|audio|font|example|image|message|model|multipart|text|video|x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/([0-9A-Za-z!#$%&'*+.^_`|~-]+)$
     ContentFormat:
       title: Content Format
       description: Identifies the content format for a Flow or Source using a URN
@@ -4172,117 +4938,6 @@ components:
       - urn:x-nmos:format:audio
       - urn:x-nmos:format:data
       - urn:x-nmos:format:multi
-    CollectionItem:
-      title: Collection Item
-      description: Describes how an entity (Source or Flow) is collected into another
-        entity of the same type
-      type: object
-      required:
-      - id
-      - role
-      properties:
-        id:
-          description: Source or Flow Identifier of the member of this collection.
-            Sources MUST only collect Sources, and Flows MUST only collect Flows.
-            Must already be registered in this service instance
-          $ref: '#/components/schemas/Uuid'
-        role:
-          description: A human-readable role of the element in this collection (e.g.
-            'R' to denote a right audio channel in a collection of mono audio Sources)
-          type: string
-    Source:
-      title: Source
-      description: 'Describes a Source: an abstract representation of a piece of media
-        as defined in <https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.2._Explanation_-_Source.html>
-
-
-        Sources may be elemental (and represented directly by a Flow), or may represent
-        a collection of other Sources, e.g. a Source collecting video and audio together.'
-      type: object
-      required:
-      - id
-      - format
-      properties:
-        id:
-          description: Source identifier
-          $ref: '#/components/schemas/Uuid'
-        format:
-          description: The primary content type URN for the Source.
-          $ref: '#/components/schemas/ContentFormat'
-        label:
-          description: Freeform string label for the Source. This should be a very
-            short, human-readable label that may be displayed in listings of Sources.
-          type: string
-        description:
-          description: Freeform text describing the Source. This should be a human-readable
-            description that may be showed in detailed views of Sources. The description
-            should be longer and more detailed than `label`.
-          type: string
-        created_by:
-          description: A string identifier for the entity that created the Source.
-            Service implementations SHOULD set suitable default values for `created_by`
-            based on the principal accessing the systems.
-          type: string
-        updated_by:
-          description: A string identifier for the entity that updated the Source
-            metadata most recently. Service implementations SHOULD set suitable default
-            values for `updated_by` based on the principal accessing the system.
-          type: string
-        created:
-          description: The date-time the Source was created in a given context, e.g.
-            in the service instance. Service implementations SHOULD ignore this if
-            given in a PUT request, and instead manage it internally
-          type: string
-          format: date-time
-        updated:
-          description: The date-time the Source metadata was last updated in a given
-            context, e.g. in the service instance. Service implementations SHOULD
-            ignore this if given in a PUT request, and instead manage it internally
-          type: string
-          format: date-time
-        tags:
-          $ref: '#/components/schemas/Tags'
-        source_collection:
-          description: List of Sources that are collected together by this Source.
-            This attribute is intended to be read-only. Service implementations SHOULD
-            ignore this if given in a PUT request, and instead manage it internally.
-            Source collections can be inferred from Flow collection definitions.
-          type: array
-          items:
-            $ref: '#/components/schemas/CollectionItem'
-        collected_by:
-          description: Sources that reference this Source to include it in a collection.
-            This attribute is intended to be read-only. Service implementations SHOULD
-            ignore this if given in a PUT request, and instead manage it internally.
-            Source collections can be inferred from Flow collection definitions.
-          type: array
-          items:
-            $ref: '#/components/schemas/Uuid'
-    Timerange:
-      title: TimeRange
-      description: "A timerange of timestamps. It is represented using one or two\
-        \ timestamps with inclusivity and exclusivity markers.\n\nE.g.\n* `[0:0_10:0)`\
-        \ represents 10 seconds of media starting at timestamp `0:0` and ending before\
-        \ `10:0`.\n* `(5:0_` represents a timerange starting after `5:0` and to eternity.\n\
-        * `_` without timestamps or inclusivity markers represents \"eternity\" (i.e.\
-        \ the entire timeline).\n* `()` without timestamps represents \"never\" (i.e.\
-        \ a range of zero length in no particular position).\n* `[1694429247:0_1694429248:0)`\
-        \ is a 1 second TAI timerange starting at 2023-09-11T10:46:50.0Z UTC.\n* `[1694429247:0]`\
-        \ is an instantaneous TAI timerange at 2023-09-11T10:46:50.0Z UTC.\n  This\
-        \ is equivalent to `[1694429247:0_1694429247:0]`.\n  The short syntax is preferred\
-        \ due to ease of identification as instantaneous.\n  Instantaneous TimeRanges\
-        \ cannot use exclusive markers (i.e. `(` or `)`).\n* A `[` or `]` indicates\
-        \ that bound is inclusive, and a `(` or `)` indicates that bound is exclusive.\n\
-        \nDetails of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md)\
-        \ application note.\n"
-      type: string
-      pattern: ^(\[|\()?(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?(_(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?)?(\]|\))?$
-    MimeType:
-      title: MIME Type
-      description: A Mime Type without parameters as defined in [RFC2045](https://www.rfc-editor.org/rfc/rfc2045#section-5.1)
-        and [RFC7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1)
-      type: string
-      pattern: ^(application|audio|font|example|image|message|model|multipart|text|video|x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/([0-9A-Za-z!#$%&'*+.^_`|~-]+)$
     ContainerMapping:
       title: Container Mapping
       description: Defines the location of Flow essence data in a container track
@@ -4344,121 +4999,12 @@ components:
             track_id:
               description: The track ID
               type: integer
-    FlowCollection:
-      title: Flow Collection
-      description: Describes how Flows are collected into another Flow
-      type: array
-      items:
-        type: object
-        title: Flow Collection Item
-        allOf:
-        - $ref: '#/components/schemas/CollectionItem'
-        - type: object
-          properties:
-            container_mapping:
-              description: Describes the mapping of the Flow essence from this Flow
-                collection's container
-              $ref: '#/components/schemas/ContainerMapping'
-    FlowCore:
-      title: Flow Core
-      description: Describes a Flow (common properties to all Flows, imported by type-specific
-        specifications)
+    FlowTechnical:
+      title: Flow Technical
+      description: Describes the technical characteristics of a Flow (imported by
+        type-specific specifications or as part of a profile)
       type: object
-      required:
-      - id
-      - source_id
       properties:
-        id:
-          description: Flow identifier
-          $ref: '#/components/schemas/Uuid'
-        source_id:
-          description: Source identifier
-          $ref: '#/components/schemas/Uuid'
-        label:
-          description: Freeform string label for the Flow. This should be a very short,
-            human-readable label that may be displayed in listings of Flows.
-          type: string
-        description:
-          description: Freeform text describing the Flow. This should be a human-readable
-            description that may be showed in detailed views of Flows. The description
-            should be longer and more detailed than `label`.
-          type: string
-        created_by:
-          description: A string identifier for the entity that created the Flow. Service
-            implementations SHOULD set suitable default values for `created_by` based
-            on the principal accessing the system, and MAY permit clients to edit
-            the value, subject to suitable permissions-based limitations.
-          type: string
-        updated_by:
-          description: A string identifier for the entity that updated the Flow metadata
-            most recently. Service implementations SHOULD set suitable default values
-            for `updated_by` based on the principal accessing the system, and MAY
-            permit clients to edit the value, subject to suitable permissions-based
-            limitations.
-          type: string
-        tags:
-          description: 'Key value is a freeform string. WARNING: When updating a Flow
-            with `tags` set, `tags` will be replaced with the provided dictionary.
-            `tags` WILL NOT be merged with the provided values. When `tags` is not
-            set in the request, `tags` will be unset (i.e. set to `{}`). To update
-            individual tags, clients should use the [Create or Update Flow Tag](#/operations/PUT_flows-flowId-tags-name)
-            endpoint.'
-          $ref: '#/components/schemas/Tags'
-        metadata_version:
-          description: A change to the Flow metadata, not including metadata_version,
-            metadata_updated, segments_updated, or Segments, results in a new version.
-            If the metadata_version for Flow instances is identical then the metadata
-            is identical. Service implementations SHOULD set suitable default values
-            for `metadata_version` whenever Flow metadata is changed and `metadata_version`
-            is either not set by the client, or set to it's existing value. Service
-            implementations MAY permit clients to edit the value, subject to suitable
-            permissions-based limitations. Where media is transfered between TAMS
-            service instances without changing the Flow metadata, clients SHOULD maintain
-            the `metadata_version`. To support this, service implementations SHOULD
-            always accept the setting of `metadata_version` by the client on initial
-            Flow creation. Service implementations SHOULD update this field where
-            metadata is updated via child endpoints. Note that this specification
-            places no requirements on incremental versioning. Service implementations
-            may, for example, choose to use hashes or date-time version identifiers.
-          type: string
-        generation:
-          description: An indication of how many lossy encodings the Flow content
-            has been through. This parameter provides a hint to clients as to which
-            is the "highest qualty" Flow available to them. A Flow with a higher generation
-            may contain less of the original information than a Flow with a lower
-            generation. Where a Flow is captured straight from the orginating device
-            (e.g. camera/microphone) in its highest quality, and there is no possibility
-            of the content becoming available in a higher quality (e.g. via capture
-            from ST2110 or SDI), it SHOULD have a `generation` of `0`. Where the originating
-            device outputs multiple qualities of the Source, `generation` should represent
-            the encoding processes each has been through as accurately as possible.
-          type: integer
-          minimum: 0
-        created:
-          description: The date-time the Flow was created in a given context, e.g.
-            in the service instance. Service implementations SHOULD ignore this if
-            given in a PUT request, and instead manage it internally
-          type: string
-          format: date-time
-        metadata_updated:
-          description: The date-time the Flow metadata was updated in a given context,
-            e.g. in the service instance. Service implementations SHOULD ignore this
-            if given in a PUT request, and instead manage it internally
-          type: string
-          format: date-time
-        segments_updated:
-          description: The date-time the Flow Segments were updated in a given context,
-            e.g. in the service instance. Service implementations SHOULD ignore this
-            if given in a PUT request, and instead manage it internally
-          type: string
-          format: date-time
-        read_only:
-          description: If set to 'true', service implementations SHOULD reject client
-            requests to update Flow metadata (other than the read_only property),
-            and Flow Segments. Service implementations should also reject requests
-            to the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage)
-            endpoint for the Flow, and requests to delete the Flow.
-          type: boolean
         codec:
           description: A MIME type identification of the (lossy or lossless) coding
             used for the Flow content. Note that the `type` component of the container
@@ -4470,7 +5016,8 @@ components:
             common should be preferred. Where this is insufficient, the maintainers
             of the TAMS repository may create an application note advising which MIME
             type to use.
-          $ref: '#/components/schemas/MimeType'
+          type: string
+          pattern: ^[^\s/]+/[^\s/]+$
         container:
           description: The container MIME type for Flow Segments. Note that the `type`
             component of the container MIME type (i.e. the component before the `/`)
@@ -4483,18 +5030,11 @@ components:
             should be preferred. Where multiple MIME types are possible, the most
             common should be preferred. Where this is insufficient, the maintainers
             of the TAMS repository may create an application note advising which MIME
-            type to use. Where the Flow does not reference any Media Object(s) directly
-            (e.g. an empty Multi Flow that serves only to collect related mono-essence
-            Flows that do reference Media Objects), this property MUST NOT be set.
-          $ref: '#/components/schemas/MimeType'
+            type to use.
+          type: string
+          pattern: ^[^\s/]+/[^\s/]+$
         avg_bit_rate:
           description: The average bit rate of the Flow Segments in 1000 bits/second.
-            A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
-            AppNote.
-          type: integer
-          minimum: 0
-        max_bit_rate:
-          description: The maximum bit rate of the Flow Segments in 1000 bits/second.
             A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
             AppNote.
           type: integer
@@ -4517,21 +5057,6 @@ components:
               type: integer
               default: 1
               exclusiveMinimum: 0
-        timerange:
-          description: The timerange of samples available in the Flow, as described
-            by the [TimeRange](#/schemas/timerange) type. Service implementations
-            MUST ignore this if given in a PUT request, and instead manage it internally.
-          $ref: '#/components/schemas/Timerange'
-        flow_collection:
-          description: List of Flows that are collected together by this Flow.
-          $ref: '#/components/schemas/FlowCollection'
-        collected_by:
-          type: array
-          description: Flows that reference this Flow to include it in a collection.
-            This attribute is intended to be read-only. Service implementations SHOULD
-            ignore this if given in a PUT request, and instead manage it internally
-          items:
-            $ref: '#/components/schemas/Uuid'
         container_mapping:
           description: Describes the mapping of the Flow essence from the this Flow's
             container
@@ -4541,7 +5066,7 @@ components:
       description: Describes a video Flow
       type: object
       allOf:
-      - $ref: '#/components/schemas/FlowCore'
+      - $ref: '#/components/schemas/FlowTechnical'
       - type: object
         required:
         - format
@@ -4719,6 +5244,12 @@ components:
                   of the Flow is fixed and `frame_rate` MUST be set.
                 type: boolean
                 default: false
+              init_segments:
+                description: Whether the Flow makes use of initialisation segments.
+                  This parameter MUST be set to `true` if Media Objects have `init_object`
+                  populated. If set to `true`, all Media Objects MUST have `init_object`
+                  populated. Assume `false` if omitted.
+                type: boolean
             if:
               properties:
                 vfr:
@@ -4737,7 +5268,7 @@ components:
       description: Describes an audio Flow
       type: object
       allOf:
-      - $ref: '#/components/schemas/FlowCore'
+      - $ref: '#/components/schemas/FlowTechnical'
       - type: object
         required:
         - format
@@ -4801,12 +5332,18 @@ components:
                     - interleaved
                     - planar
                     - pairs
+              init_segments:
+                description: Whether the Flow makes use of initialisation segments.
+                  This parameter MUST be set to `true` if Media Objects have `init_object`
+                  populated. If set to `true`, all Media Objects MUST have `init_object`
+                  populated. Assume `false` if omitted.
+                type: boolean
     FlowImage:
       title: Image Flow
       description: Describes a still image Flow, for use by thumbnail tracks etc
       type: object
       allOf:
-      - $ref: '#/components/schemas/FlowCore'
+      - $ref: '#/components/schemas/FlowTechnical'
       - type: object
         required:
         - format
@@ -4856,7 +5393,7 @@ components:
       description: Describes a data Flow
       type: object
       allOf:
-      - $ref: '#/components/schemas/FlowCore'
+      - $ref: '#/components/schemas/FlowTechnical'
       - type: object
         required:
         - format
@@ -4880,31 +5417,637 @@ components:
                   using a URN. e.g. The data_type may be urn:x-tams:data:bounding-box,
                   and the codec `application/json`.
                 type: string
+              init_segments:
+                description: Whether the Flow makes use of initialisation segments.
+                  This parameter MUST be set to `true` if Media Objects have `init_object`
+                  populated. If set to `true`, all Media Objects MUST have `init_object`
+                  populated. Assume `false` if omitted.
+                type: boolean
+    Profile:
+      type: object
+      description: Describes a Profile
+      title: Profile
+      required:
+      - id
+      - flow_metadata
+      properties:
+        id:
+          description: Profile identifier.
+          $ref: '#/components/schemas/Uuid'
+        label:
+          description: Freeform string label for the Profile.
+          type: string
+        description:
+          description: Freeform text describing the Profile.
+          type: string
+        created_by:
+          description: A string identifier for the entity that created the Profile.
+            Implementations SHOULD set suitable default values for `created_by` based
+            on the principal accessing the system, and MAY permit clients to edit
+            the value, subject to suitable permissions-based limitations.
+          type: string
+        created:
+          description: The date-time the Profile was created in a given context, e.g.
+            in the store. Implementations SHOULD ignore this if given in a PUT request,
+            and instead manage it internally.
+          type: string
+          format: date-time
+        tags:
+          description: Key value is a freeform string.  As Profiles are considered
+            immutable then this also applies to tags which cannot be updated after
+            a Profile has been created.
+          $ref: '#/components/schemas/Tags'
+        flow_metadata:
+          description: The technical characteristics of the Profile.  This section
+            will be mapped directly to all flows created using this Profile.
+          type: object
+          oneOf:
+          - title: Video Flow
+            description: The technical characteristics of the Profile.  This section
+              will be mapped directly to all flows created using this Profile.
+            $ref: '#/components/schemas/FlowVideo'
+          - title: Audio Flow
+            description: The technical characteristics of the Profile.  This section
+              will be mapped directly to all flows created using this Profile.
+            $ref: '#/components/schemas/FlowAudio'
+          - title: Image Flow
+            description: The technical characteristics of the Profile.  This section
+              will be mapped directly to all flows created using this Profile.
+            $ref: '#/components/schemas/FlowImage'
+          - title: Data Flow
+            description: The technical characteristics of the Profile.  This section
+              will be mapped directly to all flows created using this Profile.
+            $ref: '#/components/schemas/FlowData'
+    Webhook:
+      title: Register Webhook
+      description: Register to receive updates via webhook
+      type: object
+      required:
+      - url
+      - events
+      properties:
+        url:
+          description: The URL to which the service instance should make HTTP POST
+            requests with event data
+          type: string
+        api_key_name:
+          description: The HTTP header name that is added to the event POST
+          type: string
+        events:
+          description: List of event types to receive
+          type: array
+          items:
+            type: string
+            enum:
+            - flows/created
+            - flows/updated
+            - flows/deleted
+            - flows/segments_added
+            - flows/segments_deleted
+            - sources/created
+            - sources/updated
+            - sources/deleted
+        flow_ids:
+          description: Limit Flow and Flow Segment events to Flows in the given list
+            of Flow IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        source_ids:
+          description: Limit Flow, Flow Segment and Source events to Sources in the
+            given list of Source IDs
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        flow_collected_by_ids:
+          description: Limit Flow and Flow Segment events to those with a Flow that
+            is collected by a Flow Collection in the given list of Flow Collection
+            IDs. An empty array limits events to Flows that are not collected by any
+            Flow Collection.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        source_collected_by_ids:
+          description: Limit Flow, Flow Segment and Source events to those with a
+            Source that is collected by a Source Collection in the given list of Source
+            Collection IDs. An empty array limits events to Sources that are not collected
+            by any Source Collection.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        accept_get_urls:
+          description: List of labels of URLs to include in the `get_urls` property
+            in `flows/segments_added` events. Where multiple `get_urls` filter query
+            parameters are provided, the included `get_urls` will match all filters.
+            This option is the same as the `accept_get_urls` query parameter for the
+            [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API
+            endpoint, except that the labels are represented using a JSON array rather
+            than a (comma separated list) string.
+          type: array
+          items:
+            type: string
+        accept_storage_ids:
+          description: List of labels of `storage_id`s to include in the `get_urls`
+            property in `flows/segments_added` events. Where multiple `get_urls` filter
+            query parameters are provided, the included `get_urls` will match all
+            filters. This option is the same as the `accept_storage_ids` query parameter
+            for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint, except that the IDs are represented using a JSON array rather
+            than a (comma separated list) string.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        presigned:
+          description: Whether to include presigned/non-presigned URLs in the `get_urls`
+            property in `flows/segments_added` events. Where multiple `get_urls` filter
+            query parameters are provided, the included `get_urls` will match all
+            filters. This option is the same as the `presigned` query parameter for
+            the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint.
+          type: boolean
+        verbose_storage:
+          description: Whether to include storage metadata in the `get_urls` property
+            in `flows/segments_added` events. This option is the same as the `verbose_storage`
+            query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint.
+          type: boolean
+        include_object_timerange:
+          description: If set to `true`, the underlying object's timerange should
+            appear in `flows/segments_added` events. Assume `false` if omitted. This
+            option is the same as the `include_object_timerange` query parameter for
+            the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments)
+            API endpoint.
+          type: boolean
+        tags:
+          $ref: '#/components/schemas/Tags'
+    WebhookWithId:
+      title: Webhook Details
+      description: Details of an existing registered webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/Webhook'
+      - type: object
+        required:
+        - id
+        properties:
+          id:
+            description: Webhook identifier
+            $ref: '#/components/schemas/Uuid'
+    Error:
+      title: Error status metadata
+      description: Provides more information for an error status.
+      type: object
+      required:
+      - type
+      - summary
+      - time
+      properties:
+        type:
+          description: The error type name.
+          type: string
+        summary:
+          description: Summary description of the error and causes.
+          type: string
+        traceback:
+          description: Stack trace leading to error (as a list of strings)
+          type: array
+          items:
+            type: string
+        time:
+          description: Time at which the error ocurred, to aid in log correlation
+          type: string
+          format: date-time
+    WebhookGet:
+      title: Webhook Detail
+      description: Describes a Webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/WebhookWithId'
+      - type: object
+        required:
+        - status
+        properties:
+          error:
+            description: Provides more information for the error status, as described
+              by the [Error](#/schemas/error) type. Amongst other conditions, implementations
+              MAY use this field to indicate failure to deliver webhooks resulting
+              in return codes other than the 200 Success described in the the webhook
+              event schemas.
+            $ref: '#/components/schemas/Error'
+          status:
+            description: Status of the Webhook. `created` indicates the webhook has
+              been successfully registered but is yet to begin sending events or,
+              depending on the service implementation, the worker responsible for
+              sending the events has yet to start. `started` indicates the webhook
+              is active and sending events. `disabled` indicates the webhook has been
+              disabled by a client and is not currently sending events. `error` indicates
+              an error condition has been encountered and the webhook has been disabled
+              by the service instance. More information about the error condition
+              will be indicated by the service instance in the `error` parameter.
+              Service implementations SHOULD implement appropriate retries and only
+              enter the `error` state when absolutely necesary. A webhook in the `error`
+              or `disabled` state may be re-enabled by a client by setting the status
+              to `created`. A webhook in the `created` or `started` state may be disabled
+              by a client by setting the status to `disabled`. Attempting to transition
+              an `error` status to `disabled` SHOULD be rejected.
+            type: string
+            enum:
+            - created
+            - started
+            - disabled
+            - error
+    WebhookPost:
+      title: Register Webhook
+      description: Register to receive updates via webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/Webhook'
+      - type: object
+        properties:
+          api_key_value:
+            description: The value that the HTTP header 'api_key_name' will be set
+              to
+            type: string
+          status:
+            description: Status of the Webhook. `created` will register the webhook
+              in the created state and the service instance will attempt to start
+              sending events. `disabled` will register the webhook in a disabled state
+              and will not send events. Assumed to be `created` if not set.
+            type: string
+            enum:
+            - created
+            - disabled
+    WebhookPut:
+      title: Modify Webhook
+      description: Modify existing webhook
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/WebhookWithId'
+      - type: object
+        required:
+        - status
+        properties:
+          api_key_value:
+            description: The value that the HTTP header 'api_key_name' will be set
+              to
+            type: string
+          status:
+            description: Status of the Webhook. `created` indicates the webhook has
+              been successfully registered but is yet to begin sending events or,
+              depending on the service implementation, the worker responsible for
+              sending the events has yet to start. `started` indicates the webhook
+              is active and sending events. `disabled` indicates the webhook has been
+              disabled by a client and is not currently sending events. `error` indicates
+              an error condition has been encountered and the webhook has been disabled
+              by the service instance. More information about the error condition
+              will be indicated by the service instance in the `error` parameter.
+              Service implementations SHOULD implement appropriate retries and only
+              enter the `error` state when absolutely necesary. A webhook in the `error`
+              or `disabled` state may be re-enabled by a client by setting the status
+              to `created`. A webhook in the `created` or `started` state may be disabled
+              by a client by setting the status to `disabled`. Attempting to transition
+              an `error` status to `disabled` SHOULD be rejected.
+            type: string
+            enum:
+            - created
+            - disabled
+    UuidListEmpty:
+      title: Query String UUID list (optionally empty)
+      description: A list of Universally Unique Identifiers (UUIDs) as defined in
+        [RFC9562](https://www.rfc-editor.org/rfc/rfc9562), formatted for use in query
+        string parameters, or an empty string. An empty value selects resources that
+        are not in any collection.
+      type: string
+      pattern: ^(([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(,[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*)?$
+    CollectionItem:
+      title: Collection Item
+      description: Describes how an entity (Source or Flow) is collected into another
+        entity of the same type
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          description: Source or Flow Identifier of the member of this collection.
+            Sources MUST only collect Sources, and Flows MUST only collect Flows.
+            Must already be registered in this service instance
+          $ref: '#/components/schemas/Uuid'
+        role:
+          description: The purpose of this element in the collection, primarily intended
+            to be human-readable.
+          type: string
+    Source:
+      title: Source
+      description: 'Describes a Source: an abstract representation of a piece of media
+        as defined in <https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.2._Explanation_-_Source.html>
+
+
+        Sources may be elemental (and represented directly by a Flow), or may represent
+        a collection of other Sources, e.g. a Source collecting video and audio together.'
+      type: object
+      required:
+      - id
+      - format
+      properties:
+        id:
+          description: Source identifier
+          $ref: '#/components/schemas/Uuid'
+        format:
+          description: The primary content type URN for the Source.
+          $ref: '#/components/schemas/ContentFormat'
+        label:
+          description: Freeform string label for the Source. This should be a very
+            short, human-readable label that may be displayed in listings of Sources.
+          type: string
+        description:
+          description: Freeform text describing the Source. This should be a human-readable
+            description that may be showed in detailed views of Sources. The description
+            should be longer and more detailed than `label`.
+          type: string
+        created_by:
+          description: A string identifier for the entity that created the Source.
+            Service implementations SHOULD set suitable default values for `created_by`
+            based on the principal accessing the systems.
+          type: string
+        updated_by:
+          description: A string identifier for the entity that updated the Source
+            metadata most recently. Service implementations SHOULD set suitable default
+            values for `updated_by` based on the principal accessing the system.
+          type: string
+        created:
+          description: The date-time the Source was created in a given context, e.g.
+            in the service instance. Service implementations SHOULD ignore this if
+            given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        updated:
+          description: The date-time the Source metadata was last updated in a given
+            context, e.g. in the service instance. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        tags:
+          $ref: '#/components/schemas/Tags'
+        source_collection:
+          description: List of Sources that are collected together by this Source.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally.
+            Source collections can be inferred from Flow collection definitions.
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionItem'
+        collected_by:
+          description: Sources that reference this Source to include it in a collection.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally.
+            Source collections can be inferred from Flow collection definitions.
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+    Timerange:
+      title: TimeRange
+      description: "A timerange of timestamps. It is represented using one or two\
+        \ timestamps with inclusivity and exclusivity markers.\n\nE.g.\n* `[0:0_10:0)`\
+        \ represents 10 seconds of media starting at timestamp `0:0` and ending before\
+        \ `10:0`.\n* `(5:0_` represents a timerange starting after `5:0` and to eternity.\n\
+        * `_` without timestamps or inclusivity markers represents \"eternity\" (i.e.\
+        \ the entire timeline).\n* `()` without timestamps represents \"never\" (i.e.\
+        \ a range of zero length in no particular position).\n* `[1694429247:0_1694429248:0)`\
+        \ is a 1 second TAI timerange starting at 2023-09-11T10:46:50.0Z UTC.\n* `[1694429247:0]`\
+        \ is an instantaneous TAI timerange at 2023-09-11T10:46:50.0Z UTC.\n  This\
+        \ is equivalent to `[1694429247:0_1694429247:0]`.\n  The short syntax is preferred\
+        \ due to ease of identification as instantaneous.\n  Instantaneous TimeRanges\
+        \ cannot use exclusive markers (i.e. `(` or `)`).\n* A `[` or `]` indicates\
+        \ that bound is inclusive, and a `(` or `)` indicates that bound is exclusive.\n\
+        \nDetails of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md)\
+        \ application note.\n"
+      type: string
+      pattern: ^(\[|\()?(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?(_(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?)?(\]|\))?$
+    FlowStatus:
+      title: Flow Status
+      description: 'The current ingest status of a Flow. Available values are as follows.
+        `awaiting_content` - Flow is expecting, but not currently receiving content.
+        `ingesting` - Content is currently being ingested. `replication_in_progress`
+        - Content is currently being ingested to this Flow from another Service Instance
+        via a replication process. `closed_complete` - Flow is complete and will not
+        receive any more content. NOTE: Because this parameter is maintained/updated
+        by a Client, the value of this parameter is only indicative and not authoritative.
+        If the Client ingesting the content becomes unavailable, it may leave this
+        parameter in an incorrect state. Clients should aim to tidy up this state
+        appropriately once they recover. Service Implementers MAY consider adding
+        more active management of the `status` of Flows to mitigate Clients failing
+        to tidy up on completion/failure, as part of more general lifecycle management
+        capability, in line with the approach described for [retention management](https://github.com/bbc/tams/blob/main/docs/appnotes/0019-implementing-retention-management.md).
+        But Clients should not assume such capability.'
+      type: string
+      enum:
+      - awaiting_content
+      - ingesting
+      - replication_in_progress
+      - closed_complete
+    FlowCollection:
+      title: Flow Collection
+      description: Describes how Flows are collected into another Flow. Note that
+        this is an ordered list.
+      type: array
+      items:
+        type: object
+        title: Flow Collection Item
+        allOf:
+        - $ref: '#/components/schemas/CollectionItem'
+        - type: object
+          properties:
+            container_mapping:
+              description: Describes the mapping of the Flow essence from this Flow
+                collection's container
+              $ref: '#/components/schemas/ContainerMapping'
+    FlowCommon:
+      type: object
+      description: Describes the core fields of a Flow (common properties to all Flows,
+        imported by flow-get and flow-put specifications)
+      title: Flow Common
+      required:
+      - id
+      - source_id
+      properties:
+        id:
+          description: Flow identifier
+          $ref: '#/components/schemas/Uuid'
+        source_id:
+          description: Source identifier
+          $ref: '#/components/schemas/Uuid'
+        label:
+          description: Freeform string label for the Flow. This should be a very short,
+            human-readable label that may be displayed in listings of Flows.
+          type: string
+        description:
+          description: Freeform text describing the Flow. This should be a human-readable
+            description that may be showed in detailed views of Flows. The description
+            should be longer and more detailed than `label`.
+          type: string
+        created_by:
+          description: A string identifier for the entity that created the Flow. Service
+            implementations SHOULD set suitable default values for `created_by` based
+            on the principal accessing the system, and MAY permit clients to edit
+            the value, subject to suitable permissions-based limitations.
+          type: string
+        updated_by:
+          description: A string identifier for the entity that updated the Flow metadata
+            most recently. Service implementations SHOULD set suitable default values
+            for `updated_by` based on the principal accessing the system, and MAY
+            permit clients to edit the value, subject to suitable permissions-based
+            limitations.
+          type: string
+        tags:
+          description: 'Key value is a freeform string. WARNING: When updating a Flow
+            with `tags` set, `tags` will be replaced with the provided dictionary.
+            `tags` WILL NOT be merged with the provided values. When `tags` is not
+            set in the request, `tags` will be unset (i.e. set to `{}`). To update
+            individual tags, clients should use the [Create or Update Flow Tag](#/operations/PUT_flows-flowId-tags-name)
+            endpoint.'
+          $ref: '#/components/schemas/Tags'
+        metadata_version:
+          description: A change to the Flow metadata, not including metadata_version,
+            metadata_updated, segments_updated or Segments, results in a new version.
+            If the metadata_version for Flow instances is identical then the metadata
+            is identical. Service implementations SHOULD set suitable default values
+            for `metadata_version` whenever Flow metadata is changed and `metadata_version`
+            is either not set by the client, or set to it's existing value. Service
+            implementations MAY permit clients to edit the value, subject to suitable
+            permissions-based limitations. Where media is transfered between TAMS
+            service instances without changing the Flow metadata, clients SHOULD maintain
+            the `metadata_version`. To support this, service implementations SHOULD
+            always accept the setting of `metadata_version` by the client on initial
+            Flow creation. Service implementations SHOULD update this field where
+            metadata is updated via child endpoints. Note that this specification
+            places no requirements on incremental versioning. Service implementations
+            may, for example, choose to use hashes or date-time version identifiers.
+          type: string
+        generation:
+          description: An indication of how many lossy encodings the Flow content
+            has been through. This parameter provides a hint to clients as to which
+            is the "highest qualty" Flow available to them. A Flow with a higher generation
+            may contain less of the original information than a flow with a lower
+            generation. Where a Flow is captured straight from the orginating device
+            (e.g. camera/microphone) in its highest quality, and there is no possibility
+            of the content becoming available in a higher quality (e.g. via capture
+            from ST2110 or SDI), it SHOULD have a `generation` of `0`. Where the originating
+            device outputs multiple qualities of the Source, `generation` should represent
+            the encoding processes each has been through as accurately as possible.
+          type: integer
+          minimum: 0
+        created:
+          description: The date-time the Flow was created in a given context, e.g.
+            in the service instance. Service implementations SHOULD ignore this if
+            given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        metadata_updated:
+          description: The date-time the Flow metadata was updated in a given context,
+            e.g. in the service instance. Service implementations SHOULD ignore this
+            if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        segments_updated:
+          description: The date-time the Flow Segments were updated in a given context,
+            e.g. in the service instance. Service implementations SHOULD ignore this
+            if given in a PUT request, and instead manage it internally
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/FlowStatus'
+        read_only:
+          description: If set to 'true', service implementations SHOULD reject client
+            requests to update Flow metadata (other than the read_only property),
+            and Flow Segments. Service implementations should also reject requests
+            to the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage)
+            endpoint for the Flow, and requests to delete the Flow.
+          type: boolean
+        max_bit_rate:
+          description: The maximum bit rate of the Flow Segments in 1000 bits/second.
+            A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md)
+            AppNote.
+          type: integer
+          minimum: 0
+        timerange:
+          description: The timerange of samples available in the Flow, as described
+            by the [TimeRange](../schemas/timerange#top) type. Service implementations
+            MUST ignore this if given in a PUT request, and instead manage it internally.
+          $ref: '#/components/schemas/Timerange'
+        flow_collection:
+          description: List of Flows that are collected together by this Flow.
+          $ref: '#/components/schemas/FlowCollection'
+        collected_by:
+          type: array
+          description: Flows that reference this Flow to include it in a collection.
+            This attribute is intended to be read-only. Service implementations SHOULD
+            ignore this if given in a PUT request, and instead manage it internally
+          items:
+            $ref: '#/components/schemas/Uuid'
     FlowMulti:
       title: Multi-essence Flow
       description: Describes a multi-essence Flow
       type: object
-      allOf:
-      - $ref: '#/components/schemas/FlowCore'
-      - type: object
-        required:
-        - format
-        properties:
-          format:
-            description: The primary content type URN for the Flow.
-            type: string
-            enum:
-            - urn:x-nmos:format:multi
-    Flow:
+      required:
+      - format
+      properties:
+        format:
+          description: The primary content type URN for the flow.
+          type: string
+          enum:
+          - urn:x-nmos:format:multi
+        essence_parameters:
+          title: Multi Flow Essence Parameters
+          description: Describes the parameters of the essence inside this multi Flow
+          type: object
+          additionalProperties: false
+          properties:
+            init_segments:
+              description: Whether the Flow makes use of initialisation segments.
+                This parameter MUST be set to `true` if Media Objects have `init_object`
+                populated. If set to `true`, all Media Objects MUST have `init_object`
+                populated. Assume `false` if omitted.
+              type: boolean
+    FlowGet:
       title: Flow
       description: Describes a Flow
       type: object
-      oneOf:
-      - $ref: '#/components/schemas/FlowVideo'
-      - $ref: '#/components/schemas/FlowAudio'
-      - $ref: '#/components/schemas/FlowImage'
-      - $ref: '#/components/schemas/FlowData'
-      - $ref: '#/components/schemas/FlowMulti'
+      properties:
+        profile_id:
+          description: Profile identifier that was used to create the flow.
+          $ref: '#/components/schemas/Uuid'
+      allOf:
+      - $ref: '#/components/schemas/FlowCommon'
+      - oneOf:
+        - $ref: '#/components/schemas/FlowVideo'
+        - $ref: '#/components/schemas/FlowAudio'
+        - $ref: '#/components/schemas/FlowImage'
+        - $ref: '#/components/schemas/FlowData'
+        - $ref: '#/components/schemas/FlowMulti'
+    FlowPut:
+      type: object
+      description: Describes a Flow
+      title: Flow
+      allOf:
+      - $ref: '#/components/schemas/FlowCommon'
+      - oneOf:
+        - type: object
+          title: Flow Profile
+          required:
+          - profile_id
+          properties:
+            profile_id:
+              description: Profile identifier that was used to create the flow.  When
+                supplying a profile_id no metadata which can be contained in a Profile
+                should also be provided, doing so will result in a 400 validation
+                error.  Trying to create a Flow using a Profile ID that does not exist
+                should also provide a 400 validation error
+              $ref: '#/components/schemas/Uuid'
+        - $ref: '#/components/schemas/FlowVideo'
+        - $ref: '#/components/schemas/FlowAudio'
+        - $ref: '#/components/schemas/FlowImage'
+        - $ref: '#/components/schemas/FlowData'
+        - $ref: '#/components/schemas/FlowMulti'
     DeletionRequest:
       title: Deletion Request
       description: Describes an ongoing deletion request
@@ -4964,8 +6107,8 @@ components:
           $ref: '#/components/schemas/Error'
     UrlLabelList:
       title: Query String GET URL Label list
-      description: A list of Media Object GET URL Labels, formatted for use in query
-        string parameters
+      description: A list of Object GET URL Labels, formatted for use in query string
+        parameters
       type: string
       pattern: ^([^,]+(,[^,]+)*)?$
     UuidList:
@@ -4977,18 +6120,18 @@ components:
       pattern: ^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(,[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*$
     ObjectCore:
       type: object
-      description: Provides the location and metadata of the media files corresponding
-        to a Media Object.
+      description: Provides the location and metadata of the files corresponding to
+        a Object.
       title: Object
       properties:
         get_urls:
           description: A list of URLs to which a GET request can be made to directly
-            retrieve the contents of the Media Object. This is required by the `http_object_store`
+            retrieve the contents of the Object. This is required by the `http_object_store`
             Storage Backend type, which is the only one currently described. Clients
             may choose any URL in the list and treat the content returned as identical,
             however servers may sort the list such that the preferred URL is first.
             Storage Backend metadata for controlled URLs should be populated by the
-            TAMS instance based on the Storage Backend the Meda Object instance resides
+            TAMS instance based on the Storage Backend the Object instance resides
             in.
           type: array
           items:
@@ -5005,11 +6148,11 @@ components:
                   $ref: '#/components/schemas/Uuid'
                 url:
                   description: A URL to which a GET request can be made to directly
-                    retrieve the contents of the media object. Clients should include
-                    credentials if the provide URL is on the same origin as the API
-                    endpoint. This URL SHOULD support the inclusion of checksums in
-                    headers as supported by advertised Storage Backend product. See
-                    AppNote 0048 for more details.
+                    retrieve the contents of the Object. Clients should include credentials
+                    if the provide URL is on the same origin as the API endpoint.
+                    This URL SHOULD support the inclusion of checksums in headers
+                    as supported by advertised Storage Backend product. See AppNote
+                    0048 for more details.
                   type: string
                 presigned:
                   description: If `true`, this URL is pre-signed. If this parameter
@@ -5032,11 +6175,19 @@ components:
                     and does not have it's lifecycle managed by this instance. If
                     this parameter is unset, assume `true`.
                   type: boolean
-        key_frame_count:
-          description: The number of key frames in the Media Object. This should be
-            set greater than zero when the Media Object contains key frames that serve
-            as a stream access point
-          type: integer
+    ObjectMediaCore:
+      type: object
+      description: Provides the location and metadata of the media files corresponding
+        to a Media Object.
+      title: Object
+      allOf:
+      - properties:
+          key_frame_count:
+            description: The number of key frames in the Media Object. This should
+              be set greater than zero when the Media Object contains key frames that
+              serve as a stream access point
+            type: integer
+      - $ref: '#/components/schemas/ObjectCore'
     FlowSegment:
       type: object
       description: Provides the location and metadata of the media files corresponding
@@ -5095,7 +6246,21 @@ components:
               SHOULD continue to store and return it if set.'
             type: integer
             deprecated: true
-      - $ref: '#/components/schemas/ObjectCore'
+          init_object:
+            title: Initialisation Object
+            description: The Object containing the initialisation segment required
+              to decode the parent Media Object.
+            unevaluatedProperties: false
+            allOf:
+            - type: object
+              required:
+              - object_id
+              properties:
+                object_id:
+                  description: The identifier of the initialisation Object.
+                  type: string
+            - $ref: '#/components/schemas/ObjectCore'
+      - $ref: '#/components/schemas/ObjectMediaCore'
     FlowSegmentPost:
       title: Flow Segment Post
       description: Provides the location and metadata of the media files corresponding
@@ -5106,7 +6271,22 @@ components:
       - timerange
       properties:
         object_id:
-          description: The Object identifier for the Media Object.
+          description: The Object identifier for the Media Object. The `content-type`
+            of the Media Object MUST match the `container` mime-type of the Flow.
+            Service implementations SHOULD reject Objects IDs which have previously
+            been registered as an `init_object_id` on other Flow Segments. i.e. init
+            segments may not be used as media segments.
+          type: string
+        init_object_id:
+          description: The Object identifier for the initialisation segment Object
+            required to decode the Media Object. The `content-type` of the initialisation
+            segment Object MAY differ from the `container` mime-type of the Flow.
+            This parameter MUST only be set where the media format makes use of initialisation
+            segments. Initialisation Objects SHOULD be re-used where possible. This
+            parameter SHOULD be omitted where the Object `object_id` already exists
+            and is being re-used. Service implementations SHOULD reject Objects IDs
+            which have previously been registered as an `id` on other Flow Segments.
+            i.e. media segments may not be used as init segments.
           type: string
         ts_offset:
           description: The timestamp offset between the sample timestamps stored in,
@@ -5228,7 +6408,7 @@ components:
       type: object
       properties:
         limit:
-          description: Limit the number of Media Objects in each response page. Service
+          description: Limit the number of Objects in each response page. Service
             implementations may specify their own default and maximum for the limit
           type: integer
         object_ids:
@@ -5245,6 +6425,21 @@ components:
             endpoint, will be used if available. An invalid Storage Backend identifier
             will result in a 400 error.
           $ref: '#/components/schemas/Uuid'
+        content_type:
+          description: The `content_type` to use for the Objects. This parameter MUST
+            only be set where requesting storage for initialisation segments in media
+            formats which require them, and where the mime-type of those initialisation
+            segments differs to that of the media segments. Assumed to be the `container`
+            type of the Flow if not set.
+          $ref: '#/components/schemas/MimeType'
+        presigned:
+          description: If set to `true`, the `put_url`s in the response will be presigned.
+            If set to `false`, the `put_url`s in the response will not be presigned.
+            If `presigned` is set to `false`, the response from the service could
+            be substantially faster if it is not required to generate a large number
+            of pre-signed URLs. Services may choose their own default. If Clients
+            only support one mode of operation, they SHOULD specify this parameter.
+          type: boolean
       not:
         allOf:
         - required:
@@ -5280,28 +6475,36 @@ components:
     FlowStorage:
       type: object
       title: Media Bucket Object Store
-      description: Gives information on storage for Media Objects. This schema is
-        for the `http_object_store` Storage Backend type which provides URLs for storing
-        Media Objects in object store buckets, and is the only Storage Backend type
-        currently implemented.  URLs SHOULD support the inclusion of checksums in
-        headers as supported by advertised Storage Backend product. See AppNote 0048
-        for more details.
+      description: Gives information on storage for Objects. This schema is for the
+        `http_object_store` Storage Backend type which provides URLs for storing Objects
+        in object store buckets, and is the only Storage Backend type currently implemented.  URLs
+        SHOULD support the inclusion of checksums in headers as supported by advertised
+        Storage Backend product. See AppNote 0048 for more details. Where included
+        in the response, `content-type` MUST match the corresponding value in the
+        request.
       properties:
         media_objects:
           type: array
-          description: List of information for identifying and uploading Media Objects
+          description: List of information for identifying and uploading Objects
           items:
             type: object
-            description: Information for a Media Object
+            description: Information for a Object
             required:
             - object_id
             - put_url
             properties:
               object_id:
-                description: The object store identifier for the Media Object.
+                description: The object store identifier for the Object.
                 type: string
               put_url:
                 $ref: '#/components/schemas/HttpRequest'
+              presigned:
+                description: If `true`, this URL is pre-signed. If this parameter
+                  is unset, the URL is NOT pre-signed. The presigned URL SHALL remain
+                  valid for the timeframe advertised in [`min_presigned_url_timeout`
+                  at the `/service`](#/operations/GET_service) endpoint, which is
+                  subject to a specified minimum (see service endpoint schema).
+                type: boolean
       additionalProperties: false
     Object:
       title: Object
@@ -5311,35 +6514,52 @@ components:
         required:
         - id
         - referenced_by_flows
-        - timerange
         properties:
           id:
-            description: The Media Object identifier.
+            description: The Object identifier.
             type: string
           referenced_by_flows:
             type: array
-            description: List of Flows that reference this Media Object via Flow Segments
-              in this store instance.
+            description: List of Flows that reference this Object via Flow Segments
+              in this store instance. For init Objects, this reference is indirect
+              via Media Objects.
             items:
               $ref: '#/components/schemas/Uuid'
           first_referenced_by_flow:
-            description: The first Flow that had a Flow Segment reference the Media
-              Object in this store instance. This Flow is also present in 'referenced_by_flows'
+            description: The first Flow that had a Flow Segment reference the Object
+              in this store instance. For init Objects, this reference is indirect
+              via Media Objects. This Flow is also present in 'referenced_by_flows'
               if it is still referenced by the Flow. This property is optional and
               may in some implementations become unset if the Flow no longer references
-              the media object, e.g. because it was deleted.
+              the Object, e.g. because it was deleted.
             $ref: '#/components/schemas/Uuid'
           timerange:
             description: The timerange covering the sample timestamps embedded in
-              or derived from the Media Object itself, on the Media Object's timeline.
+              or derived from the Object itself, on the Media Object's timeline. This
+              parameter MUST be set where the Object contains media. It MUST NOT be
+              set where the Object contains an init segment.
             $ref: '#/components/schemas/Timerange'
-      - $ref: '#/components/schemas/ObjectCore'
+          init_object:
+            title: Initialisation Object
+            description: The Object containing the initialisation segment required
+              to decode the parent Media Object.
+            unevaluatedProperties: false
+            allOf:
+            - type: object
+              required:
+              - id
+              properties:
+                id:
+                  description: The identifier of the initialisation Object.
+                  type: string
+            - $ref: '#/components/schemas/ObjectCore'
+      - $ref: '#/components/schemas/ObjectMediaCore'
     ObjectsInstancesPost:
       type: object
-      description: Register a Media Object instance in the store.
-      title: Media object registration
+      description: Register a Object instance in the store.
+      title: Object registration
       oneOf:
-      - description: Request the duplication of a Media Object instance to a new Storage
+      - description: Request the duplication of a Object instance to a new Storage
           Backend, via it's `storage_id`.
         title: Controlled instance
         type: object
@@ -5349,7 +6569,7 @@ components:
           storage_id:
             description: Storage backend identifier
             $ref: '#/components/schemas/Uuid'
-      - description: Register an uncontrolled Media Object instance via its `url`.
+      - description: Register an uncontrolled Object instance via its `url`.
         title: Uncontrolled instance
         type: object
         required:
@@ -5358,11 +6578,11 @@ components:
         properties:
           url:
             description: A URL to which a GET request can be made to directly retrieve
-              the contents of the media object. Clients should include credentials
-              if the provide URL is on the same origin as the API endpoint
+              the contents of the Object. Clients should include credentials if the
+              provide URL is on the same origin as the API endpoint
             type: string
           label:
-            description: Label identifying this Media Object instance. Service implementations
+            description: Label identifying this Object instance. Service implementations
               should reject any requests using labels that are already associated
               with Storage Backends.
             type: string
@@ -5381,6 +6601,8 @@ tags:
     format.
 
     '
+- name: Profiles
+  description: Centralised management of the technical characteristics of a flow
   externalDocs:
     url: https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.3._Explanation_-_Flow.html
 - name: FlowSegments
@@ -5390,7 +6612,7 @@ tags:
 - name: Objects
   description: The Object in the Storage Backend(s) that contains the media essence.
 - name: MediaStorage
-  description: The system that stores the Media Objects referenced by Flow Segments.
+  description: The system that stores the Objects referenced by Flow Segments.
 - name: FlowDeleteRequests
   description: Resource for monitoring long running deletion of Flows and Flow Segments.
 - name: Webhooks

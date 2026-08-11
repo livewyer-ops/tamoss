@@ -149,7 +149,7 @@ def get_flow(
 )
 def put_flow(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    flow: contract_models.Flow,
+    flow: contract_models.FlowPut,
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:

@@ -32,6 +32,7 @@ export interface FlowEssenceParameters {
   sample_rate?: number;
   channels?: number;
   vfr?: boolean;
+  init_segments?: boolean;
 }
 
 export type FlowCollectionItem = Omit<
@@ -42,7 +43,7 @@ export type FlowCollectionItem = Omit<
 };
 
 export type Flow = Omit<
-  ApiSchemas["flow"],
+  ApiSchemas["flow-get"],
   | "format"
   | "tags"
   | "essence_parameters"
@@ -51,6 +52,10 @@ export type Flow = Omit<
   | "collected_by"
 > & {
   format?: string;
+  codec?: string;
+  container?: string;
+  avg_bit_rate?: number;
+  container_mapping?: ApiSchemas["container-mapping"];
   tags?: ApiTagMap;
   essence_parameters?: FlowEssenceParameters;
   segment_duration?: { numerator: number; denominator: number };

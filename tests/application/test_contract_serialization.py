@@ -24,7 +24,7 @@ def test_generated_contract_models_validate_representative_bbc_payloads() -> Non
     flow_id = uuid4()
     source_id = uuid4()
 
-    contract_models.Flow.model_validate(video_flow_payload(flow_id, source_id))
+    contract_models.FlowPut.model_validate(video_flow_payload(flow_id, source_id))
     contract_models.Source.model_validate(
         {
             "id": str(source_id),
