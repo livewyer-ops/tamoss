@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, Play, RefreshCw } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router";
 import {
   Button,
@@ -52,9 +52,17 @@ export default function FlowDetailPage() {
         title={flow.data?.label || "Flow"}
         description={flowId}
         actions={
-          <Link className={surfaceStyles.button} to="/flows">
-            <ArrowLeft size={14} aria-hidden="true" /> Flows
-          </Link>
+          <>
+            <Link className={surfaceStyles.button} to="/flows">
+              <ArrowLeft size={14} aria-hidden="true" /> Flows
+            </Link>
+            <Link
+              className={`${surfaceStyles.button} ${surfaceStyles.primary}`}
+              to={`/playback?flow=${encodeURIComponent(flowId)}`}
+            >
+              <Play size={14} aria-hidden="true" /> Preview
+            </Link>
+          </>
         }
       />
       {flow.isLoading ? (

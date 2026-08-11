@@ -4,7 +4,7 @@ import os
 import shlex
 import subprocess
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -49,20 +49,21 @@ class E2ETarget:
     api_url: str
     ui_url: str
     auth_url: str
+    s3_url: str | None
     namespace: str
     kubeconfig: str | None
     auth_namespace: str
     ui_auth_username: str
-    ui_auth_password: str
+    ui_auth_password: str = field(repr=False)
     ui_expected_statuses: set[int]
     verify_tls: bool
-    auth_headers: dict[str, str]
-    basic_auth: HTTPBasicAuth | None
+    auth_headers: dict[str, str] = field(repr=False)
+    basic_auth: HTTPBasicAuth | None = field(repr=False)
     certificate_refs: tuple[str, ...]
     oauth2_enabled: bool
     oauth_issuer_url: str
     oauth_client_id: str
-    oauth_client_secret: str | None
+    oauth_client_secret: str | None = field(repr=False)
     readiness_mode: str
     upload_checksum_header: bool
     timeout_seconds: float = 10.0
@@ -103,6 +104,7 @@ class E2ETarget:
             api_url=api_url.rstrip("/"),
             ui_url=ui_url.rstrip("/"),
             auth_url=auth_url.rstrip("/"),
+            s3_url=values.get("TEST_TAMOSS_S3", "").rstrip("/") or None,
             namespace=namespace,
             kubeconfig=kubeconfig,
             auth_namespace=auth_namespace,

@@ -184,8 +184,12 @@ export class TamossApiClient extends ApiTransport {
     return this.requestPaginated<Flow>("/flows", params, options);
   }
 
-  async getFlow(flowId: string, params?: FlowParams): Promise<Flow> {
-    return this.request<Flow>(`/flows/${flowId}`, {}, params);
+  async getFlow(
+    flowId: string,
+    params?: FlowParams,
+    options: ApiRequestOptions = {},
+  ): Promise<Flow> {
+    return this.request<Flow>(`/flows/${flowId}`, options, params);
   }
 
   async updateFlow(flowId: string, data: Partial<Flow>): Promise<Flow> {
@@ -269,9 +273,13 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async getFlowCollection(flowId: string): Promise<FlowCollectionItem[]> {
+  async getFlowCollection(
+    flowId: string,
+    options: ApiRequestOptions = {},
+  ): Promise<FlowCollectionItem[]> {
     return this.request<FlowCollectionItem[]>(
       `/flows/${flowId}/flow_collection`,
+      options,
     );
   }
 
@@ -295,10 +303,12 @@ export class TamossApiClient extends ApiTransport {
   async getFlowSegments(
     flowId: string,
     params?: FlowSegmentParams,
+    options?: ApiRequestOptions,
   ): Promise<PaginatedResponse<FlowSegment>> {
     return this.requestPaginated<FlowSegment>(
       `/flows/${flowId}/segments`,
       params,
+      options,
     );
   }
 

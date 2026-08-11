@@ -29,7 +29,7 @@ _E2E_CHECK_IDS = {
         "e2e auth.oauth2-client-default"
     ),
     "test_deployed_oidc_metadata_and_jwks_are_ready": "e2e auth.oidc-discovery",
-    "test_deployed_ui_ingest_uploads_and_registers_media": "e2e ui.ingest-upload",
+    "test_deployed_ui_ingest_run_history_is_read_only": "e2e ui.ingest-run-read-only",
     "test_deployed_ui_playback_preview_buffers_demo_media": "e2e ui.playback-preview",
     "test_operator_kind_zero_to_ready_api_ingest_and_ui_load": (
         "e2e operator.kind-install"

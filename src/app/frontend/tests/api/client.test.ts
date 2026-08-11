@@ -191,18 +191,26 @@ describe("TamossApiClient", () => {
 
     it("serializes single-flow include_timerange params", async () => {
       const flow = { id: "flow-1", source_id: "source-1" };
+      const controller = new AbortController();
       mockFetch.mockResolvedValueOnce(mockResponse(flow));
 
       const client = createClient();
-      await client.getFlow("flow-1", {
-        include_timerange: true,
-        timerange: "[0:0_10:0)",
-      });
+      await client.getFlow(
+        "flow-1",
+        {
+          include_timerange: true,
+          timerange: "[0:0_10:0)",
+        },
+        { signal: controller.signal },
+      );
 
       const url = lastCalledUrl();
       expect(url.pathname).toBe("/flows/flow-1");
       expect(url.searchParams.get("include_timerange")).toBe("true");
       expect(url.searchParams.get("timerange")).toBe("[0:0_10:0)");
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
   });
 
@@ -504,6 +512,7 @@ describe("TamossApiClient", () => {
 
   describe("getFlowSegments", () => {
     it("serializes playback segment discovery params", async () => {
+      const controller = new AbortController();
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -512,18 +521,22 @@ describe("TamossApiClient", () => {
       });
 
       const client = createClient();
-      await client.getFlowSegments("flow-1", {
-        accept_get_urls: ["preview", "external"],
-        accept_storage_ids: ["storage-a", "storage-b"],
-        include_object_timerange: true,
-        limit: 100,
-        object_id: "object-1",
-        page: "page-2",
-        presigned: true,
-        reverse_order: false,
-        timerange: "[0:0_60:0)",
-        verbose_storage: true,
-      });
+      await client.getFlowSegments(
+        "flow-1",
+        {
+          accept_get_urls: ["preview", "external"],
+          accept_storage_ids: ["storage-a", "storage-b"],
+          include_object_timerange: true,
+          limit: 100,
+          object_id: "object-1",
+          page: "page-2",
+          presigned: true,
+          reverse_order: false,
+          timerange: "[0:0_60:0)",
+          verbose_storage: true,
+        },
+        { signal: controller.signal },
+      );
 
       const url = lastCalledUrl();
       expect(url.pathname).toBe("/flows/flow-1/segments");
@@ -539,6 +552,9 @@ describe("TamossApiClient", () => {
       expect(url.searchParams.get("reverse_order")).toBe("false");
       expect(url.searchParams.get("timerange")).toBe("[0:0_60:0)");
       expect(url.searchParams.get("verbose_storage")).toBe("true");
+      expect(mockFetch.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
   });
 

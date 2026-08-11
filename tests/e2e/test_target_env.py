@@ -77,6 +77,9 @@ def test_target_env_loads_token_command_and_service_readiness(
     assert loaded.readiness_mode == "service"
     assert loaded.upload_checksum_header is False
     assert loaded.memory_budget_mib == 3500
+    target_repr = repr(loaded)
+    assert "command-token" not in target_repr
+    assert "unused" not in target_repr
 
 
 def test_target_env_rejects_non_positive_memory_budget(tmp_path: Path) -> None:

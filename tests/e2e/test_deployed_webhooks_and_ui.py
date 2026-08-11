@@ -4,7 +4,6 @@ import json
 import re
 import time
 from contextlib import suppress
-from pathlib import Path
 from string import Template
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
@@ -28,8 +27,6 @@ from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.e2e
 
-TINY_INGEST_MP4 = REPO_ROOT / "tests/fixtures/e2e/tiny-ingest.mp4"
-DEMO_FLOW_ID = "00000000-0000-4000-8000-000000000102"
 WEBHOOK_RECEIVER_MANIFEST = REPO_ROOT / "tests/fixtures/k8s/webhook-receiver.yaml.tpl"
 TAMOSS_API_SCOPES = (
     "tams-api/admin",
@@ -122,7 +119,7 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     try:
         _login_through_ui_ingress(page, e2e_target)
         runtime_config = page.evaluate("() => window.__TAMOSS_CONFIG__")
-        assert runtime_config["apiUrl"] == "/api"
+        assert runtime_config == {"controlApiUrl": "/ui-api/v1"}
 
         proxied = page.evaluate(
             """async () => {
@@ -324,54 +321,7 @@ def _assert_bearer_token_grants_service_access(
 
 
 @pytest.mark.smoke
-def test_deployed_ui_ingest_uploads_and_registers_media(
-    e2e_client: E2EClient,
-    e2e_target: E2ETarget,
-    e2e_browser: Browser,
-) -> None:
-    media_path = _tiny_ingest_mp4()
-    label = f"TAMOSS UI E2E {uuid4()}"
-    flow_id: str | None = None
-
-    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
-    page = context.new_page()
-    page.set_default_timeout(120_000)
-    try:
-        _login_through_ui_ingress(page, e2e_target)
-        page.goto(f"{e2e_target.ui_url}/ingest", wait_until="domcontentloaded")
-        page.get_by_role("button", name="Create source").click()
-        page.get_by_label(re.compile("New source label", re.I)).fill(label)
-        page.locator("#new-source-format").select_option("urn:x-nmos:format:video")
-        page.get_by_label(re.compile("Segment Duration", re.I)).fill("1")
-        page.locator("input[type='file']").set_input_files(str(media_path))
-
-        page.get_by_role("button", name="Create Source & Start Ingest").click()
-        page.get_by_text("Ingest Complete").wait_for()
-        flow_id = _flow_id_from_href(
-            page.get_by_role("link", name="Video flow").first.get_attribute("href")
-        )
-    finally:
-        context.close()
-
-    assert flow_id is not None
-    flow = e2e_client.request_json("GET", f"/flows/{flow_id}")
-    assert flow["format"] == "urn:x-nmos:format:video"
-    assert flow["label"] == f"{media_path.name} (video)"
-
-    segments = e2e_client.request_json("GET", f"/flows/{flow_id}/segments")
-    assert len(segments) == 1
-    object_id = segments[0]["object_id"]
-    media_object = e2e_client.request_json("GET", f"/objects/{object_id}")
-    assert media_object["id"] == object_id
-    assert media_object["referenced_by_flows"] == [flow_id]
-
-    accepted = e2e_client.request("DELETE", f"/flows/{flow_id}", expected={202, 204})
-    if accepted.status_code == 202:
-        e2e_client.poll_delete_request(accepted.json()["id"])
-
-
-@pytest.mark.smoke
-def test_deployed_ui_playback_preview_buffers_demo_media(
+def test_deployed_ui_ingest_run_history_is_read_only(
     e2e_target: E2ETarget,
     e2e_browser: Browser,
 ) -> None:
@@ -380,50 +330,249 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
     page.set_default_timeout(60_000)
     try:
         _login_through_ui_ingress(page, e2e_target)
-        page.goto(
-            f"{e2e_target.ui_url}/playback?flow={DEMO_FLOW_ID}",
-            wait_until="domcontentloaded",
-        )
-        page.get_by_text("Preview ready").wait_for()
-        play_result = page.evaluate(
+        page.goto(f"{e2e_target.ui_url}/ingest", wait_until="domcontentloaded")
+        page.get_by_role("heading", name="Ingest runs").wait_for()
+        page.get_by_role("heading", name="Run history").wait_for()
+        capabilities = page.evaluate(
             """async () => {
-                const video = document.querySelector('video');
-                if (!video) return {ok: false, error: 'no video element'};
-                video.muted = true;
-                video.currentTime = 0;
-                try {
-                    await video.play();
-                    return {ok: true};
-                } catch (err) {
-                    return {ok: false, error: String(err)};
-                }
-            }"""
-        )
-        page.wait_for_timeout(3_000)
-        state = page.evaluate(
-            """() => {
-                const video = document.querySelector('video');
-                if (!video) return null;
-                return {
-                    readyState: video.readyState,
-                    paused: video.paused,
-                    currentTime: video.currentTime,
-                    duration: video.duration,
-                    bufferedEnd: video.buffered.length
-                        ? video.buffered.end(video.buffered.length - 1)
-                        : 0,
-                };
+                const response = await fetch('/ui-api/v1/session', {
+                    headers: {Accept: 'application/json'},
+                });
+                return {status: response.status, body: await response.json()};
             }"""
         )
     finally:
         context.close()
 
-    assert play_result["ok"], play_result
+    assert capabilities["status"] == 200
+    ingest_capabilities = capabilities["body"]["capabilities"]["ingestRuns"]
+    assert ingest_capabilities["read"] == {"available": True, "allowed": True}
+    assert ingest_capabilities["create"]["available"] is False
+    assert ingest_capabilities["retry"]["available"] is False
+
+
+@pytest.mark.smoke
+def test_deployed_ui_playback_preview_buffers_demo_media(
+    e2e_client: E2EClient,
+    e2e_target: E2ETarget,
+    e2e_browser: Browser,
+) -> None:
+    split_flow_id, audio_flow_id = _split_preview_flow_ids(e2e_client)
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    page = context.new_page()
+    page.set_default_timeout(60_000)
+    media_requests: list[dict[str, object]] = []
+    media_responses: list[dict[str, object]] = []
+    signed_url_console_leak = False
+
+    def observe_request(request: Any) -> None:
+        if not _is_storage_url(request.url, e2e_target):
+            return
+        headers = {key.lower(): value for key, value in request.all_headers().items()}
+        media_requests.append(
+            {
+                "authorization": "authorization" in headers,
+                "cookie": "cookie" in headers,
+            }
+        )
+
+    def observe_response(response: Any) -> None:
+        if not _is_storage_url(response.url, e2e_target):
+            return
+        headers = {key.lower(): value for key, value in response.all_headers().items()}
+        media_responses.append(
+            {
+                "status": response.status,
+                "allow_origin": headers.get("access-control-allow-origin"),
+                "accept_ranges": headers.get("accept-ranges"),
+                "content_range": headers.get("content-range"),
+            }
+        )
+
+    def observe_console(message: Any) -> None:
+        nonlocal signed_url_console_leak
+        signed_url_console_leak |= _contains_signed_url_marker(message.text)
+
+    def observe_page_error(error: Exception) -> None:
+        nonlocal signed_url_console_leak
+        signed_url_console_leak |= _contains_signed_url_marker(str(error))
+
+    page.on("request", observe_request)
+    page.on("response", observe_response)
+    page.on("console", observe_console)
+    page.on("pageerror", observe_page_error)
+    try:
+        _login_through_ui_ingress(page, e2e_target)
+        _assert_preview_buffers(
+            page,
+            e2e_target,
+            split_flow_id,
+            expect_sidecar_audio=True,
+        )
+        page.get_by_role("link", name="Flows", exact=True).click()
+        page.wait_for_url(re.compile(r"/flows(?:[?#].*)?$"))
+        page.wait_for_function(
+            "() => document.querySelectorAll('video, audio').length === 0"
+        )
+
+        page.get_by_role("link", name="Preview", exact=True).click()
+        page.get_by_label("Flow ID").fill(audio_flow_id)
+        page.get_by_role("button", name="Load").click()
+        _assert_preview_buffers(
+            page,
+            e2e_target,
+            audio_flow_id,
+            expect_sidecar_audio=False,
+            navigate=False,
+        )
+    finally:
+        context.close()
+
+    assert media_requests, "Preview made no request to the configured storage origin"
+    assert not any(request["authorization"] for request in media_requests)
+    assert not any(request["cookie"] for request in media_requests)
+    assert media_responses, "Storage returned no media response"
+    assert all(response["status"] in {200, 206} for response in media_responses)
+    assert all(
+        response["allow_origin"] in {"*", e2e_target.ui_url}
+        for response in media_responses
+    )
+    assert all(
+        response["status"] == 206
+        or response["accept_ranges"] == "bytes"
+        or response["content_range"]
+        for response in media_responses
+    )
+    assert not signed_url_console_leak
+
+
+def _assert_preview_buffers(
+    page: Page,
+    target: E2ETarget,
+    flow_id: str,
+    *,
+    expect_sidecar_audio: bool,
+    navigate: bool = True,
+) -> None:
+    if navigate:
+        page.goto(
+            f"{target.ui_url}/playback?flow={flow_id}",
+            wait_until="domcontentloaded",
+        )
+    page.wait_for_function(
+        """() => Array.from(document.querySelectorAll('[role="status"]')).some(
+            (node) => ['Ready', 'Playback failed'].includes(
+                (node.textContent || '').trim()
+            )
+        )""",
+        timeout=30_000,
+    )
+    playback_status = page.locator("[role='status']").all_inner_texts()
+    playback_alerts = page.locator("[role='alert']").all_inner_texts()
+    assert "Ready" in playback_status, {
+        "statuses": playback_status,
+        "alerts": playback_alerts,
+    }
+    assert not _contains_signed_url_marker(page.locator("body").inner_text())
+    if expect_sidecar_audio:
+        page.wait_for_function(
+            "() => document.querySelectorAll('audio[hidden]').length > 0"
+        )
+    play_result = page.evaluate(
+        """async () => {
+            const media = document.querySelector(
+                'video:not([hidden]), audio:not([hidden])'
+            );
+            if (!media) return {ok: false, reason: 'missing-media'};
+            media.muted = true;
+            media.currentTime = 0;
+            try {
+                await media.play();
+                return {ok: true};
+            } catch (_) {
+                return {ok: false, reason: 'play-rejected'};
+            }
+        }"""
+    )
+    assert play_result == {"ok": True}
+    page.wait_for_function(
+        """() => {
+            const media = document.querySelector(
+                'video:not([hidden]), audio:not([hidden])'
+            );
+            return media && media.readyState >= 2 && media.duration > 0 &&
+                media.currentTime >= Math.min(0.75, media.duration);
+        }""",
+        timeout=30_000,
+    )
+    state = page.evaluate(
+        """() => {
+            const media = document.querySelector(
+                'video:not([hidden]), audio:not([hidden])'
+            );
+            return media ? {
+                readyState: media.readyState,
+                currentTime: media.currentTime,
+                duration: media.duration,
+                bufferedEnd: media.buffered.length
+                    ? media.buffered.end(media.buffered.length - 1)
+                    : 0,
+            } : null;
+        }"""
+    )
     assert state is not None
     assert state["readyState"] >= 2
     assert state["duration"] > 0
-    assert state["currentTime"] >= min(0.75, state["duration"])
     assert state["bufferedEnd"] >= state["currentTime"]
+
+
+def _split_preview_flow_ids(e2e_client: E2EClient) -> tuple[str, str]:
+    flows = e2e_client.request_json("GET", "/flows", params={"limit": 100})
+    assert isinstance(flows, list)
+    for candidate in flows:
+        if candidate.get("format") != "urn:x-nmos:format:multi":
+            continue
+        detail = e2e_client.request_json("GET", f"/flows/{candidate['id']}")
+        collection = detail.get("flow_collection") or []
+        children = [
+            e2e_client.request_json("GET", f"/flows/{member['id']}")
+            for member in collection
+        ]
+        video = next(
+            (
+                child
+                for child in children
+                if child.get("format") == "urn:x-nmos:format:video"
+                and child.get("container")
+            ),
+            None,
+        )
+        audio = next(
+            (
+                child
+                for child in children
+                if child.get("format") == "urn:x-nmos:format:audio"
+                and child.get("container")
+            ),
+            None,
+        )
+        if video and audio:
+            return detail["id"], audio["id"]
+    raise AssertionError(
+        "The deployed fixture has no split Multi-Flow with a playable audio child"
+    )
+
+
+def _is_storage_url(url: str, target: E2ETarget) -> bool:
+    return bool(target.s3_url and url.startswith(f"{target.s3_url}/"))
+
+
+def _contains_signed_url_marker(value: str) -> bool:
+    normalized = value.lower()
+    return any(
+        marker in normalized
+        for marker in ("x-amz-signature=", "awsaccesskeyid=", "signature=")
+    )
 
 
 def _poll_webhook_status(
@@ -635,15 +784,3 @@ def _kubectl_for_target(
         args=list(args),
         input_text=input_text,
     )
-
-
-def _flow_id_from_href(href: str | None) -> str:
-    assert href is not None
-    match = re.search(r"/flows/([^/?#]+)", href)
-    assert match is not None
-    return match.group(1)
-
-
-def _tiny_ingest_mp4() -> Path:
-    assert TINY_INGEST_MP4.exists()
-    return TINY_INGEST_MP4
