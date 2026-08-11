@@ -420,3 +420,28 @@ def test_profile_write_rejects_coerced_technical_scalars(
 
     response = client.post(f"/service/profiles/{profile_id}", json=payload)
     assert response.status_code == 400
+
+
+def test_all_flow_status_values_are_filterable_through_get_and_head(
+    client: TestClient,
+) -> None:
+    statuses = (
+        "awaiting_content",
+        "ingesting",
+        "replication_in_progress",
+        "closed_complete",
+    )
+    flow_ids: dict[str, UUID] = {}
+    for flow_status in statuses:
+        flow_id = uuid4()
+        flow_ids[flow_status] = flow_id
+        payload = video_flow_payload(flow_id, uuid4(), status=flow_status)
+        response = client.put(f"/flows/{flow_id}", json=payload)
+        assert response.status_code == 201, response.text
+
+    for flow_status in statuses:
+        listed = client.get("/flows", params={"status": flow_status})
+        headed = client.head("/flows", params={"status": flow_status})
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()] == [str(flow_ids[flow_status])]
+        assert headed.status_code == 200

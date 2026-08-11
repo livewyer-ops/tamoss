@@ -248,6 +248,7 @@ class FlowUseCases:
         timerange: str | None,
         format: str | None,
         profile_id: UUID | None,
+        status: contract_models.FlowStatus | None,
         codec: str | None,
         label: str | None,
         frame_width: int | None,
@@ -270,7 +271,7 @@ class FlowUseCases:
             timerange_is_point=requested_timerange.is_point,
             format=format,
             profile_id=profile_id,
-            status=None,
+            status=status.value if status is not None else None,
             init_segments=None,
             collected_by_ids=None,
             top_level_only=False,
@@ -638,6 +639,7 @@ class FlowUseCases:
                 format=format_value,
                 container=data.get("container"),
                 profile_id=_optional_uuid_value(data.get("profile_id")),
+                status=data.get("status"),
                 read_only=bool(data.get("read_only")),
                 tags=replacement_tags,
                 created=now,
@@ -671,6 +673,7 @@ class FlowUseCases:
                 format=format_value,
                 container=stored_data.get("container"),
                 profile_id=_optional_uuid_value(stored_data.get("profile_id")),
+                status=stored_data.get("status"),
                 read_only=bool(data.get("read_only"))
                 if data.get("read_only") is not None
                 else existing.read_only,
