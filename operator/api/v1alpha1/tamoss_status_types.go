@@ -41,9 +41,10 @@ type AuthStatus struct {
 }
 
 type ReplicaStatus struct {
-	API    ComponentReplicaStatus `json:"api,omitempty"`
-	Worker ComponentReplicaStatus `json:"worker,omitempty"`
-	UI     ComponentReplicaStatus `json:"ui,omitempty"`
+	API     ComponentReplicaStatus `json:"api,omitempty"`
+	Worker  ComponentReplicaStatus `json:"worker,omitempty"`
+	UI      ComponentReplicaStatus `json:"ui,omitempty"`
+	Console ComponentReplicaStatus `json:"console,omitempty"`
 }
 
 type ComponentReplicaStatus struct {
@@ -100,6 +101,7 @@ type ResolvedStatus struct {
 type ResolvedImageStatus struct {
 	API                           string `json:"api,omitempty"`
 	UI                            string `json:"ui,omitempty"`
+	Console                       string `json:"console,omitempty"`
 	Worker                        string `json:"worker,omitempty"`
 	SchemaMigrationPostgresClient string `json:"schemaMigrationPostgresClient,omitempty"`
 	CNPGPostgres                  string `json:"cnpgPostgres,omitempty"`
@@ -121,6 +123,7 @@ type ResolvedGeneratedSecretsStatus struct {
 type ResolvedResourceStatus struct {
 	API                   string `json:"api,omitempty"`
 	UI                    string `json:"ui,omitempty"`
+	Console               string `json:"console,omitempty"`
 	Worker                string `json:"worker,omitempty"`
 	DefaultStorageBackend string `json:"defaultStorageBackend,omitempty"`
 }

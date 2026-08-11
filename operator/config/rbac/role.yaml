@@ -19,6 +19,25 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - ingestruns
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - ingestruns/status
+  - storagebackends/status
+  - tamosses/status
+  - tamosshibernations/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
   - storagebackends
   - tamosshibernations
   verbs:
@@ -36,16 +55,6 @@ rules:
   - tamosses/finalizers
   - tamosshibernations/finalizers
   verbs:
-  - update
-- apiGroups:
-  - tamoss.livewyer.io
-  resources:
-  - storagebackends/status
-  - tamosses/status
-  - tamosshibernations/status
-  verbs:
-  - get
-  - patch
   - update
 - apiGroups:
   - tamoss.livewyer.io
@@ -118,6 +127,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - gateway.networking.k8s.io
   resources:
   - httproutes
@@ -170,6 +187,19 @@ rules:
   resources:
   - clusters
   - scheduledbackups
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
   verbs:
   - create
   - delete

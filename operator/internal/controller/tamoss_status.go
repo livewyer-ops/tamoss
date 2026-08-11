@@ -74,9 +74,10 @@ type tamossStatusObservation struct {
 
 func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, schemaResult SchemaResult, identityResult identityReconcileResult) error {
 	replicas := tamossv1alpha1.ReplicaStatus{
-		API:    r.componentReplicaStatus(ctx, tamoss, "api", tamoss.Spec.API.IsEnabled(), desiredReplicaCount(tamoss.Spec.API.WorkloadCommonSpec)),
-		UI:     r.componentReplicaStatus(ctx, tamoss, "ui", tamoss.Spec.UI.IsEnabled(), desiredReplicaCount(tamoss.Spec.UI.WorkloadCommonSpec)),
-		Worker: r.componentReplicaStatus(ctx, tamoss, "worker", tamoss.Spec.Worker.IsEnabled(), desiredReplicaCount(tamoss.Spec.Worker.WorkloadCommonSpec)),
+		API:     r.componentReplicaStatus(ctx, tamoss, "api", tamoss.Spec.API.IsEnabled(), desiredReplicaCount(tamoss.Spec.API.WorkloadCommonSpec)),
+		UI:      r.componentReplicaStatus(ctx, tamoss, "ui", tamoss.Spec.UI.IsEnabled(), desiredReplicaCount(tamoss.Spec.UI.WorkloadCommonSpec)),
+		Worker:  r.componentReplicaStatus(ctx, tamoss, "worker", tamoss.Spec.Worker.IsEnabled(), desiredReplicaCount(tamoss.Spec.Worker.WorkloadCommonSpec)),
+		Console: r.componentReplicaStatus(ctx, tamoss, "console", tamoss.Spec.ConsoleEnabled(), desiredReplicaCount(tamoss.Spec.Console.WorkloadCommonSpec)),
 	}
 	routingResult, err := r.routingStatus(ctx, tamoss)
 	if err != nil {
@@ -84,7 +85,7 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 	}
 
 	ready := !schemaResult.Degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
-		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker)
+		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker) && replicasReady(replicas.Console)
 	phase := operatorstatus.PhaseProgressing
 	if ready {
 		phase = operatorstatus.PhaseReady

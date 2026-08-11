@@ -50,6 +50,7 @@ jobs:
       - name: Check generated manifests
         run: |
           make -C operator generate manifests
+          make -C operator crd-size-budget
           task operator:install-manifest
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum deploy/operator/install.yaml
 

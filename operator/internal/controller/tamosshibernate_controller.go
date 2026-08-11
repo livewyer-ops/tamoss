@@ -535,7 +535,7 @@ func hibernateSecretKey(secretName, key string) *cnpgv1.SecretKeySelector {
 
 func (r *TamossHibernateReconciler) quiesceTamossWorkloads(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
 	quiesced := true
-	for _, component := range []string{"worker", "api", "ui"} {
+	for _, component := range []string{"worker", "api", "ui", "console"} {
 		autoscaler := &autoscalingv2.HorizontalPodAutoscaler{}
 		key := types.NamespacedName{Name: tamoss.ResourceName(component), Namespace: tamoss.Namespace}
 		if err := r.Client.Get(ctx, key, autoscaler); err == nil {

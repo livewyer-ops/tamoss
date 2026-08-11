@@ -46,7 +46,7 @@ func ingressFor(tamoss *tamossv1alpha1.Tamoss, component, serviceName string, sp
 			paths[i].Backend.Service = &networkingv1.IngressServiceBackend{
 				Name: serviceName,
 				Port: networkingv1.ServiceBackendPort{
-					Name: "http",
+					Name: httpPortName,
 				},
 			}
 		}

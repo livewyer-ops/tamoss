@@ -22,6 +22,9 @@ func renderNetworkPolicies(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if tamoss.Spec.Worker.IsEnabled() {
 		objects = append(objects, networkPolicyFor(tamoss, "worker", tamoss.Spec.NetworkPolicy.Worker))
 	}
+	if tamoss.Spec.ConsoleEnabled() {
+		objects = append(objects, networkPolicyFor(tamoss, "console", tamoss.Spec.NetworkPolicy.Console))
+	}
 	return objects
 }
 

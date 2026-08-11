@@ -31,19 +31,28 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	if got := tamoss.Spec.UI.DesiredReplicaCount(); got != 2 {
 		t.Fatalf("expected UI replicas 2, got %d", got)
 	}
-	if !tamoss.Spec.API.PDB.IsEnabled() || !tamoss.Spec.Worker.PDB.IsEnabled() || !tamoss.Spec.UI.PDB.IsEnabled() {
+	if got := tamoss.Spec.Console.DesiredReplicaCount(); got != 2 {
+		t.Fatalf("expected Console replicas 2, got %d", got)
+	}
+	if !tamoss.Spec.API.PDB.IsEnabled() || !tamoss.Spec.Worker.PDB.IsEnabled() || !tamoss.Spec.UI.PDB.IsEnabled() || !tamoss.Spec.Console.PDB.IsEnabled() {
 		t.Fatalf("expected multi-server PDB defaults to be enabled")
 	}
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
+	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Console.WorkloadCommonSpec)
+	if tamoss.Spec.Console.SecurityContext.ReadOnlyRootFilesystem == nil || !*tamoss.Spec.Console.SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatalf("expected Console read-only root filesystem default, got %#v", tamoss.Spec.Console.SecurityContext)
+	}
 	if !tamoss.Spec.NetworkPolicy.IsEnabled() {
 		t.Fatalf("expected multi-server NetworkPolicy default enabled")
 	}
 	assertAPIHTTPProbes(t, tamoss.Spec.API.WorkloadCommonSpec)
+	assertConsoleHTTPProbes(t, tamoss.Spec.Console.WorkloadCommonSpec)
 	if len(tamoss.Spec.NetworkPolicy.API.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.API.Egress) == 0 ||
 		len(tamoss.Spec.NetworkPolicy.UI.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 ||
-		len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
+		len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 ||
+		len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
 		t.Fatalf("expected multi-server NetworkPolicy rules, got %#v", tamoss.Spec.NetworkPolicy)
 	}
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[0], 8000)
@@ -55,6 +64,14 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[2], 8053, corev1.ProtocolTCP)
 	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[3], 8053, corev1.ProtocolUDP)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[0], 8000)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Ingress[0].Ports[0], 8080)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[0], 443)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Egress[1].Ports[1], 6443)
+	consoleIngressLabels := tamoss.Spec.NetworkPolicy.Console.Ingress[0].From[0].PodSelector.MatchLabels
+	if consoleIngressLabels["app.kubernetes.io/component"] != "ui" ||
+		consoleIngressLabels["app.kubernetes.io/instance"] != tamoss.Name {
+		t.Fatalf("expected Console ingress restricted to this instance UI, got %#v", consoleIngressLabels)
+	}
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Egress[1].Ports[4], 8080)
 	if tamoss.Spec.API.Affinity == nil || tamoss.Spec.API.Affinity.PodAntiAffinity == nil {
 		t.Fatalf("expected API pod anti-affinity default")
@@ -68,6 +85,9 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		labels["app.kubernetes.io/instance"] != "tamoss-multi-server" ||
 		labels["app.kubernetes.io/name"] != "tamoss" {
 		t.Fatalf("unexpected anti-affinity labels: %#v", labels)
+	}
+	if tamoss.Spec.Console.Affinity == nil || tamoss.Spec.Console.Affinity.PodAntiAffinity == nil {
+		t.Fatalf("expected Console pod anti-affinity default")
 	}
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
@@ -94,6 +114,53 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	if pool.Servers != 4 || pool.VolumesPerServer != 4 || pool.Storage.Size != "100Gi" {
 		t.Fatalf("unexpected multi-server RustFS pool default: %#v", pool)
 	}
+}
+
+func TestApplyMultiServerAllowsUIToReachOptInConsole(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Enabled: ptr.To(true),
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
+	if len(ports) != 2 {
+		t.Fatalf("expected UI egress to API and Console, got %#v", ports)
+	}
+	assertNetworkPolicyPort(t, ports[1], 8080)
+}
+
+func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+			Service: tamossv1alpha1.ServiceSpec{
+				Console: tamossv1alpha1.ServicePortsSpec{
+					Ports: []corev1.ServicePort{{Name: "http", Port: 8181}},
+				},
+			},
+		},
+	}
+
+	Apply(tamoss)
+
+	ports := tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports
+	if len(ports) != 3 {
+		t.Fatalf("expected UI egress to API plus Console service and target ports, got %#v", ports)
+	}
+	assertNetworkPolicyPort(t, ports[0], 8000)
+	assertNetworkPolicyPort(t, ports[1], 8181)
+	assertNetworkPolicyPort(t, ports[2], 8080)
 }
 
 func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
@@ -177,6 +244,33 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	}
 	if got := tamoss.Spec.Worker.Env["TAMOSS_WEBHOOK_ALLOWED_HOSTS"]; got != ".svc.cluster.local" {
 		t.Fatalf("expected local worker webhook host allow-list, got %q", got)
+	}
+}
+
+func TestApplyConsoleEnablementIsExplicit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		ui      *bool
+		console *bool
+		want    bool
+	}{
+		{name: "default", want: false},
+		{name: "UI disabled", ui: ptr.To(false), want: false},
+		{name: "Console disabled", console: ptr.To(false), want: false},
+		{name: "Console explicitly enabled", ui: ptr.To(false), console: ptr.To(true), want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{
+				UI:      tamossv1alpha1.UIComponentSpec{Enabled: test.ui},
+				Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: test.console},
+			}}
+			Apply(tamoss)
+			if got := tamoss.Spec.ConsoleEnabled(); got != test.want {
+				t.Fatalf("ConsoleEnabled() = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 
@@ -864,6 +958,24 @@ func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
+func assertConsoleHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
+	t.Helper()
+	checks := []struct {
+		name string
+		got  *corev1.Probe
+		path string
+	}{
+		{name: "readiness", got: spec.ReadinessProbe, path: "/ui-api/v1/readyz"},
+		{name: "liveness", got: spec.LivenessProbe, path: "/ui-api/v1/healthz"},
+		{name: "startup", got: spec.StartupProbe, path: "/ui-api/v1/healthz"},
+	}
+	for _, check := range checks {
+		if check.got == nil || check.got.HTTPGet == nil || check.got.HTTPGet.Path != check.path || check.got.HTTPGet.Port.StrVal != "http" {
+			t.Fatalf("unexpected Console %s probe: %#v", check.name, check.got)
+		}
+	}
+}
+
 func assertWorkerHTTPProbe(t *testing.T, name string, probe *corev1.Probe, path string, periodSeconds, failureThreshold int32) {
 	t.Helper()
 	if probe == nil || probe.HTTPGet == nil {
@@ -905,6 +1017,9 @@ func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
 			if got := tamoss.Spec.UI.Image.Tag; got != DefaultOperandTag {
 				t.Fatalf("expected UI image tag %q for %s, got %q", DefaultOperandTag, profile, got)
 			}
+			if got := tamoss.Spec.Console.Image.Tag; got != DefaultOperandTag {
+				t.Fatalf("expected Console image tag %q for %s, got %q", DefaultOperandTag, profile, got)
+			}
 		})
 	}
 }
@@ -929,6 +1044,9 @@ func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
 	if got := tamoss.Spec.UI.Image.Tag; got != "8.1.0-test" {
 		t.Fatalf("expected UI image tag to follow the build version, got %q", got)
 	}
+	if got := tamoss.Spec.Console.Image.Tag; got != "8.1.0-test" {
+		t.Fatalf("expected Console image tag to follow the build version, got %q", got)
+	}
 }
 
 func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
@@ -942,6 +1060,9 @@ func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
 			UI: tamossv1alpha1.UIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-ui"},
 			},
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-console"},
+			},
 		},
 	}
 
@@ -952,6 +1073,9 @@ func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
 	}
 	if got := tamoss.Spec.UI.Image.Tag; got != "pinned-ui" {
 		t.Fatalf("expected explicit UI image tag preserved, got %q", got)
+	}
+	if got := tamoss.Spec.Console.Image.Tag; got != "pinned-console" {
+		t.Fatalf("expected explicit Console image tag preserved, got %q", got)
 	}
 }
 

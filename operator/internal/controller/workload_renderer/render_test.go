@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -34,6 +35,7 @@ func TestRenderToggles(t *testing.T) {
 			name: "worker disabled by default",
 			want: []string{
 				"Deployment/example-api",
+				"Deployment/example-console",
 				"Deployment/example-ui",
 			},
 			wantNot: []string{"Deployment/example-worker"},
@@ -69,6 +71,7 @@ func TestRenderToggles(t *testing.T) {
 			},
 			want: []string{
 				"NetworkPolicy/example-api",
+				"NetworkPolicy/example-console",
 				"NetworkPolicy/example-ui",
 				"NetworkPolicy/example-worker",
 			},
@@ -80,8 +83,10 @@ func TestRenderToggles(t *testing.T) {
 				tamoss.Spec.API.Autoscaling.TargetCPUUtilizationPercentage = &cpuTarget
 				tamoss.Spec.UI.Autoscaling.Enabled = true
 				tamoss.Spec.UI.Autoscaling.TargetCPUUtilizationPercentage = &cpuTarget
+				tamoss.Spec.Console.Autoscaling.Enabled = true
+				tamoss.Spec.Console.Autoscaling.TargetCPUUtilizationPercentage = &cpuTarget
 			},
-			want: []string{"HorizontalPodAutoscaler/example-api", "HorizontalPodAutoscaler/example-ui"},
+			want: []string{"HorizontalPodAutoscaler/example-api", "HorizontalPodAutoscaler/example-ui", "HorizontalPodAutoscaler/example-console"},
 		},
 		{
 			name: "pdb enabled",
@@ -93,9 +98,12 @@ func TestRenderToggles(t *testing.T) {
 				tamoss.Spec.UI.PDB.MaxUnavailable = &maxUnavailable
 				tamoss.Spec.Worker.PDB.Enabled = ptr.To(true)
 				tamoss.Spec.Worker.PDB.MaxUnavailable = &maxUnavailable
+				tamoss.Spec.Console.PDB.Enabled = ptr.To(true)
+				tamoss.Spec.Console.PDB.MaxUnavailable = &maxUnavailable
 			},
 			want: []string{
 				"PodDisruptionBudget/example-api",
+				"PodDisruptionBudget/example-console",
 				"PodDisruptionBudget/example-ui",
 				"PodDisruptionBudget/example-worker",
 			},
@@ -343,7 +351,7 @@ func TestRenderAPICORSAllowedOrigins(t *testing.T) {
 		t.Fatalf("expected API CORS origin regex env, got %q", got)
 	}
 
-	for _, name := range []string{"example-ui", "example-worker"} {
+	for _, name := range []string{"example-ui", "example-worker", "example-console"} {
 		deployment := deploymentByName(t, objects, name)
 		if hasEnv(deployment.Spec.Template.Spec.Containers[0].Env, "TAMOSS_CORS_ALLOWED_ORIGINS") {
 			t.Fatalf("%s should not receive API CORS origins env", name)
@@ -360,7 +368,7 @@ func TestRenderMultiServerSecurityDefaults(t *testing.T) {
 	profiledefaults.Apply(tamoss)
 
 	objects := Render(tamoss)
-	for _, name := range []string{"example-api", "example-ui", "example-worker"} {
+	for _, name := range []string{"example-api", "example-ui", "example-worker", "example-console"} {
 		deployment := deploymentByName(t, objects, name)
 		podSecurityContext := deployment.Spec.Template.Spec.SecurityContext
 		if podSecurityContext == nil || podSecurityContext.RunAsNonRoot == nil || !*podSecurityContext.RunAsNonRoot {
@@ -457,6 +465,132 @@ func TestRenderUsesDedicatedWorkloadServiceAccount(t *testing.T) {
 	}
 	if apiDeployment == nil || apiDeployment.Spec.Template.Spec.ServiceAccountName != "example-workload" {
 		t.Fatalf("expected API deployment to use example-workload ServiceAccount")
+	}
+}
+
+func TestRenderConsoleUsesIsolatedReadOnlyIdentity(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Service.Type = corev1.ServiceTypeLoadBalancer
+	tamoss.Spec.Service.Console.Ports = []corev1.ServicePort{{
+		Name:       "http",
+		Port:       8181,
+		TargetPort: intstr.FromInt32(9999),
+		Protocol:   corev1.ProtocolUDP,
+		NodePort:   32000,
+	}}
+	tamoss.Spec.UI.Env = map[string]string{consoleUpstreamEnv: "http://untrusted.invalid"}
+	profiledefaults.Apply(tamoss)
+	objects := Render(tamoss)
+
+	console := deploymentByName(t, objects, "example-console")
+	if console.Spec.Template.Spec.ServiceAccountName != "example-console" ||
+		console.Spec.Template.Spec.ServiceAccountName == serviceAccountName(tamoss) {
+		t.Fatalf("Console must use its isolated ServiceAccount, got %q", console.Spec.Template.Spec.ServiceAccountName)
+	}
+	if console.Spec.Template.Spec.AutomountServiceAccountToken == nil || !*console.Spec.Template.Spec.AutomountServiceAccountToken {
+		t.Fatalf("Console must mount its scoped Kubernetes token")
+	}
+	container := console.Spec.Template.Spec.Containers[0]
+	if container.Image != "livewyer/tamoss-console-api:1.0.0" || len(container.Ports) != 1 || container.Ports[0].ContainerPort != 8080 {
+		t.Fatalf("unexpected Console image or port: %#v", container)
+	}
+	if envValue(container.Env, consoleInstanceEnv) != "example" || envValue(container.Env, consoleBindEnv) != ":8080" {
+		t.Fatalf("unexpected Console scope env: %#v", container.Env)
+	}
+	if len(container.EnvFrom) != 0 {
+		t.Fatalf("default Console must not consume Secrets via envFrom: %#v", container.EnvFrom)
+	}
+	if container.ReadinessProbe == nil || container.ReadinessProbe.HTTPGet == nil || container.ReadinessProbe.HTTPGet.Path != "/ui-api/v1/readyz" ||
+		container.LivenessProbe == nil || container.LivenessProbe.HTTPGet == nil || container.LivenessProbe.HTTPGet.Path != "/ui-api/v1/healthz" {
+		t.Fatalf("unexpected Console probes: readiness=%#v liveness=%#v", container.ReadinessProbe, container.LivenessProbe)
+	}
+	if container.SecurityContext == nil || container.SecurityContext.ReadOnlyRootFilesystem == nil || !*container.SecurityContext.ReadOnlyRootFilesystem ||
+		container.SecurityContext.AllowPrivilegeEscalation == nil || *container.SecurityContext.AllowPrivilegeEscalation {
+		t.Fatalf("unexpected Console security context: %#v", container.SecurityContext)
+	}
+
+	service := serviceByName(t, objects, "example-console")
+	if service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.Selector["app.kubernetes.io/component"] != "console" {
+		t.Fatalf("Console Service must remain an internal ClusterIP: %#v", service.Spec)
+	}
+	if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Port != 8181 || service.Spec.Ports[0].TargetPort.StrVal != "http" ||
+		service.Spec.Ports[0].Protocol != corev1.ProtocolTCP || service.Spec.Ports[0].NodePort != 0 {
+		t.Fatalf("custom Console Service port must target the Console HTTP container port: %#v", service.Spec.Ports)
+	}
+	ui := deploymentByName(t, objects, "example-ui")
+	uiEnv := ui.Spec.Template.Spec.Containers[0].Env
+	if got := envValue(uiEnv, consoleUpstreamEnv); got != "http://example-console:8181" || envCount(uiEnv, consoleUpstreamEnv) != 1 {
+		t.Fatalf("expected one operator-owned Console upstream, got %#v", uiEnv)
+	}
+
+	var account *corev1.ServiceAccount
+	var role *rbacv1.Role
+	var binding *rbacv1.RoleBinding
+	for _, object := range objects {
+		switch object := object.(type) {
+		case *corev1.ServiceAccount:
+			if object.Name == "example-console" {
+				account = object
+			}
+		case *rbacv1.Role:
+			if object.Name == "example-console" {
+				role = object
+			}
+		case *rbacv1.RoleBinding:
+			if object.Name == "example-console" {
+				binding = object
+			}
+		}
+	}
+	if account == nil || account.AutomountServiceAccountToken == nil || !*account.AutomountServiceAccountToken {
+		t.Fatalf("expected token-mounting Console ServiceAccount")
+	}
+	if role == nil || binding == nil || binding.RoleRef.Name != "example-console" ||
+		len(binding.Subjects) != 1 || binding.Subjects[0].Name != "example-console" {
+		t.Fatalf("unexpected Console RoleBinding: role=%#v binding=%#v", role, binding)
+	}
+	for _, rule := range role.Rules {
+		for _, resource := range rule.Resources {
+			if resource == "secrets" || resource == "pods/log" || resource == "pods/exec" || resource == "services/proxy" {
+				t.Fatalf("Console Role exposes forbidden resource %q", resource)
+			}
+			if resource == "tamosses" && (len(rule.ResourceNames) != 1 || rule.ResourceNames[0] != "example") {
+				t.Fatalf("Console Tamoss access is not instance-scoped: %#v", rule)
+			}
+		}
+		for _, verb := range rule.Verbs {
+			if verb != "get" && verb != "list" && verb != "watch" {
+				t.Fatalf("Console Role contains mutating verb %q", verb)
+			}
+		}
+	}
+}
+
+func TestRenderConsoleCanBeDisabled(t *testing.T) {
+	tamoss := rendererFixture()
+	tamoss.Spec.Console.Enabled = ptr.To(false)
+	objects := Render(tamoss)
+	for _, id := range []string{
+		"Deployment/example-console",
+		"Service/example-console",
+		"ServiceAccount/example-console",
+		"Role/example-console",
+		"RoleBinding/example-console",
+	} {
+		if hasObject(objects, id) {
+			t.Fatalf("did not expect disabled Console object %s in %v", id, renderedIDs(objects))
+		}
+	}
+}
+
+func TestRenderConsoleIsOmittedByDefault(t *testing.T) {
+	t.Parallel()
+	tamoss := rendererFixture()
+	tamoss.Spec.Console = tamossv1alpha1.ConsoleComponentSpec{}
+	profiledefaults.Apply(tamoss)
+	objects := Render(tamoss)
+	if hasObject(objects, "Deployment/example-console") || hasObject(objects, "Role/example-console") {
+		t.Fatalf("did not expect opt-in Console resources in %v", renderedIDs(objects))
 	}
 }
 
@@ -917,6 +1051,15 @@ func rendererFixture() *tamossv1alpha1.Tamoss {
 				},
 				WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)},
 			},
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Enabled: ptr.To(true),
+				Image: tamossv1alpha1.ImageSpec{
+					Repository: "livewyer/tamoss-console-api",
+					Tag:        "1.0.0",
+					PullPolicy: corev1.PullIfNotPresent,
+				},
+				WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)},
+			},
 			Backends: tamossv1alpha1.BackendsSpec{
 				DB: tamossv1alpha1.DBBackendSpec{
 					ProvidedBy: tamossv1alpha1.BackendProvidedByExternal,
@@ -1166,6 +1309,10 @@ func objectID(obj client.Object) string {
 		return "NetworkPolicy/" + obj.GetName()
 	case *policyv1.PodDisruptionBudget:
 		return "PodDisruptionBudget/" + obj.GetName()
+	case *rbacv1.Role:
+		return "Role/" + obj.GetName()
+	case *rbacv1.RoleBinding:
+		return "RoleBinding/" + obj.GetName()
 	case *gatewayv1.HTTPRoute:
 		return "HTTPRoute/" + obj.GetName()
 	case *unstructured.Unstructured:

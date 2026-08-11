@@ -18,9 +18,11 @@ const (
 	prometheusPathAnnotation         = "prometheus.io/path"
 	prometheusPortAnnotation         = "prometheus.io/port"
 	metricsPortName                  = "metrics"
+	httpPortName                     = "http"
 	apiMetricsPath                   = "/metrics"
 	defaultAPIServicePort      int32 = 8000
 	defaultUIServicePort       int32 = 3000
+	defaultConsoleServicePort  int32 = 8080
 	apiMetricsPort             int32 = 9090
 )
 
@@ -61,6 +63,17 @@ func renderServices(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			nil,
 		))
 	}
+	if tamoss.Spec.ConsoleEnabled() {
+		objects = append(objects, serviceForSelector(
+			tamoss,
+			"console",
+			"console",
+			tamoss.ResourceName("console"),
+			consoleServicePorts(tamoss.Spec.Service.Console.Ports),
+			corev1.ServiceTypeClusterIP,
+			nil,
+		))
+	}
 	return objects
 }
 
@@ -98,14 +111,29 @@ func serviceForSelector(
 	}
 }
 
+func consoleServicePorts(ports []corev1.ServicePort) []corev1.ServicePort {
+	if len(ports) == 0 {
+		return servicePorts(nil, defaultConsoleServicePort)
+	}
+	result := append([]corev1.ServicePort(nil), ports...)
+	// Console has one fixed named HTTP/TCP container port and is always an
+	// internal ClusterIP, regardless of the shared Service settings.
+	for i := range result {
+		result[i].TargetPort = intstr.FromString(httpPortName)
+		result[i].Protocol = corev1.ProtocolTCP
+		result[i].NodePort = 0
+	}
+	return result
+}
+
 func servicePorts(ports []corev1.ServicePort, defaultPort int32) []corev1.ServicePort {
 	if len(ports) > 0 {
 		return ports
 	}
 	return []corev1.ServicePort{{
-		Name:       "http",
+		Name:       httpPortName,
 		Port:       defaultPort,
-		TargetPort: intstr.FromString("http"),
+		TargetPort: intstr.FromString(httpPortName),
 		Protocol:   corev1.ProtocolTCP,
 	}}
 }

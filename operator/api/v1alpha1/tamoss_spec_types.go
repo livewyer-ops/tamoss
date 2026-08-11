@@ -30,6 +30,10 @@ type TamossSpec struct {
 	Worker WorkerComponentSpec `json:"worker,omitempty"`
 	//+kubebuilder:default={image:{repository:livewyer/tamoss-ui,pullPolicy:IfNotPresent}}
 	UI UIComponentSpec `json:"ui,omitempty"`
+	// Console exposes the namespace- and instance-scoped Kubernetes runtime API
+	// used by the UI. It remains opt-in until end-user authorization is enforced.
+	//+kubebuilder:default={image:{repository:livewyer/tamoss-console-api,pullPolicy:IfNotPresent}}
+	Console ConsoleComponentSpec `json:"console,omitempty"`
 
 	Images ComponentImagesSpec `json:"images,omitempty"`
 
@@ -176,6 +180,14 @@ type UIComponentSpec struct {
 	//+kubebuilder:default={repository:livewyer/tamoss-ui,pullPolicy:IfNotPresent}
 	Image              ImageSpec              `json:"image,omitempty"`
 	Ports              []corev1.ContainerPort `json:"ports,omitempty"`
+	WorkloadCommonSpec `json:",inline"`
+}
+
+type ConsoleComponentSpec struct {
+	//+kubebuilder:default=false
+	Enabled *bool `json:"enabled,omitempty"`
+	//+kubebuilder:default={repository:livewyer/tamoss-console-api,pullPolicy:IfNotPresent}
+	Image              ImageSpec `json:"image,omitempty"`
 	WorkloadCommonSpec `json:",inline"`
 }
 

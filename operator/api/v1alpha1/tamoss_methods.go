@@ -51,6 +51,14 @@ func (u UIComponentSpec) IsEnabled() bool {
 	return boolValue(u.Enabled, true)
 }
 
+func (c ConsoleComponentSpec) IsEnabled() bool {
+	return boolValue(c.Enabled, false)
+}
+
+func (s TamossSpec) ConsoleEnabled() bool {
+	return s.Console.IsEnabled()
+}
+
 func (w WorkloadCommonSpec) DesiredReplicaCount() int32 {
 	return int32Value(w.ReplicaCount, 1)
 }

@@ -114,11 +114,12 @@ func setupControllers(
 	dependencyDiscovery *operatordiscovery.Manager,
 	dependencyProbeInterval time.Duration,
 ) error {
+	watchScope := controller.WatchNamespaceSet(watchNamespaces)
 	tamossReconciler := &controller.TamossReconciler{
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
-		WatchNamespaces:             watchNamespaces,
+		WatchNamespaces:             watchScope,
 		Discovery:                   dependencyDiscovery,
 		DependencyProbeInterval:     dependencyProbeInterval,
 		AuthentikPlatformNamespaces: authentik.NewPlatformNamespacePolicy(os.Getenv("TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES")),
@@ -132,7 +133,15 @@ func setupControllers(
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "tamosshibernate-controller"),
-		WatchNamespaces: watchNamespaces,
+		WatchNamespaces: watchScope,
+	}).SetupWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&controller.IngestRunReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		WatchNamespaces: watchScope,
+		TamsinImage:     strings.TrimSpace(os.Getenv("TAMOSS_TAMSIN_IMAGE")),
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -147,7 +156,7 @@ func setupControllers(
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
-		WatchNamespaces: watchNamespaces,
+		WatchNamespaces: watchScope,
 	}).SetupWithManager(mgr)
 }
 

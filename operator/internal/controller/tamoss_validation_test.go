@@ -63,6 +63,29 @@ var _ = Describe("Tamoss API validation", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		It("requires an IngestRun Tamoss reference name", func() {
+			run := testIngestRun()
+			run.Name = "missing-ingest-tamoss-ref"
+			run.Namespace = "default"
+			run.Spec.TamossRef.Name = ""
+
+			err := k8sClient.Create(ctx, run)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("requires an IngestRun spec", func() {
+			run := &unstructured.Unstructured{}
+			run.SetAPIVersion(tamossv1alpha1.SchemeGroupVersion.String())
+			run.SetKind("IngestRun")
+			run.SetName("missing-ingest-spec")
+			run.SetNamespace("default")
+
+			err := k8sClient.Create(ctx, run)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
 		It("rejects StorageBackend durable identity updates", func() {
 			tests := []struct {
 				name   string

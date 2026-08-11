@@ -10,3 +10,5 @@ metadata:
   namespace: tams
 spec:
   profile: local-kind
+  console:
+    enabled: true

@@ -47,7 +47,7 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			env,
 			envFromSecrets(tamoss, tamoss.Spec.Secrets.APIToken.Generate, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, oauth2CredentialsSecretName(tamoss), tamoss.Spec.API.EnvFrom),
 			[]corev1.ContainerPort{
-				{Name: "http", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
+				{Name: httpPortName, ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
 				{Name: metricsPortName, ContainerPort: apiMetricsPort, Protocol: corev1.ProtocolTCP},
 			},
 		),

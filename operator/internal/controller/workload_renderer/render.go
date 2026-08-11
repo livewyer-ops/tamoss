@@ -20,11 +20,13 @@ const (
 func Render(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	return slices.Concat(
 		renderServiceAccount(tamoss),
+		renderConsoleRBAC(tamoss),
 		renderSecrets(tamoss),
 		renderServices(tamoss),
 		renderAPIDeployment(tamoss),
 		renderWorkerDeployment(tamoss),
 		renderUIDeployment(tamoss),
+		renderConsoleDeployment(tamoss),
 		renderIngresses(tamoss),
 		renderHTTPRoutes(tamoss),
 		renderNetworkPolicies(tamoss),
@@ -94,6 +96,13 @@ func image(repository, tag string) string {
 func uiImage(repository, tag string) string {
 	if repository == "" {
 		repository = defaults.DefaultUIRepository
+	}
+	return image(repository, tag)
+}
+
+func consoleImage(repository, tag string) string {
+	if repository == "" {
+		repository = defaults.DefaultConsoleRepository
 	}
 	return image(repository, tag)
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
@@ -38,6 +39,9 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Images.UI != "livewyer/tamoss-ui:dev" {
 		t.Fatalf("expected default UI image, got %q", tamoss.Status.Resolved.Images.UI)
 	}
+	if tamoss.Status.Resolved.Images.Console != "livewyer/tamoss-console-api:dev" {
+		t.Fatalf("expected default Console image, got %q", tamoss.Status.Resolved.Images.Console)
+	}
 	if tamoss.Status.Resolved.Images.Worker != "livewyer/tamoss-api:dev" {
 		t.Fatalf("expected worker to use API image, got %q", tamoss.Status.Resolved.Images.Worker)
 	}
@@ -65,6 +69,9 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 		tamoss.Status.Resolved.Resources.Worker != "example-worker" {
 		t.Fatalf("expected workload resource names, got %#v", tamoss.Status.Resolved.Resources)
 	}
+	if tamoss.Status.Resolved.Resources.Console != "" {
+		t.Fatalf("did not expect an opt-in Console resource, got %q", tamoss.Status.Resolved.Resources.Console)
+	}
 	if tamoss.Status.Resolved.Resources.DefaultStorageBackend != "example-storage-default" {
 		t.Fatalf("expected default StorageBackend resource name, got %q", tamoss.Status.Resolved.Resources.DefaultStorageBackend)
 	}
@@ -89,6 +96,10 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 			},
 			UI: tamossv1alpha1.UIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-ui", Tag: "v1.2.4"},
+			},
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Enabled: ptr.To(true),
+				Image:   tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-console-api", Tag: "v1.2.5"},
 			},
 			Images: tamossv1alpha1.ComponentImagesSpec{
 				SchemaMigrationPostgresClient: "registry.example.com/postgres-client:v16.4",
@@ -121,6 +132,9 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	}
 	if status.Images.UI != "registry.example.com/tamoss-ui:v1.2.4" {
 		t.Fatalf("expected overridden UI image, got %q", status.Images.UI)
+	}
+	if status.Images.Console != "registry.example.com/tamoss-console-api:v1.2.5" || status.Resources.Console != "custom-console" {
+		t.Fatalf("expected overridden Console status, got image=%q resource=%q", status.Images.Console, status.Resources.Console)
 	}
 	if status.Images.SchemaMigrationPostgresClient != "registry.example.com/postgres-client:v16.4" {
 		t.Fatalf("expected overridden schema migration image, got %q", status.Images.SchemaMigrationPostgresClient)

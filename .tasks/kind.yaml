@@ -14,6 +14,7 @@ vars:
   OPERAND_VERSION: '{{default "dev" (default (env "OPERAND_VERSION") .OPERAND_VERSION)}}'
   API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
   UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  CONSOLE_IMAGE: '{{default "livewyer/tamoss-console-api:dev" (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
   OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
@@ -45,6 +46,7 @@ tasks:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
 
   delete:
@@ -71,12 +73,14 @@ tasks:
         vars:
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - task: image:load
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
 
   image:build:
@@ -87,6 +91,7 @@ tasks:
         . .tasks/lib/kind.sh
         task_kind_build_image "TAMOSS API" "{{.API_IMAGE}}" "src/app/tamoss/Dockerfile" "."
         task_kind_build_image "TAMOSS UI" "{{.UI_IMAGE}}" "" "src/app/frontend"
+        task_kind_build_image "TAMOSS Console API" "{{.CONSOLE_IMAGE}}" "operator/Dockerfile.console-api" "."
       - task: :operator:image:build
         vars:
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
@@ -105,6 +110,7 @@ tasks:
         . .tasks/lib/kind.sh
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS API" "{{.API_IMAGE}}"
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS UI" "{{.UI_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS Console API" "{{.CONSOLE_IMAGE}}"
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
 
   operator:reload:
@@ -150,6 +156,7 @@ tasks:
           KUBECONFIG: "{{.KUBECONFIG}}"
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - |
         set -euo pipefail

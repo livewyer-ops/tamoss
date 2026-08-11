@@ -20,9 +20,10 @@ type ServiceSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 	//+kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer;ExternalName
 	//+kubebuilder:default=ClusterIP
-	Type corev1.ServiceType `json:"type,omitempty"`
-	API  ServicePortsSpec   `json:"api,omitempty"`
-	UI   ServicePortsSpec   `json:"ui,omitempty"`
+	Type    corev1.ServiceType `json:"type,omitempty"`
+	API     ServicePortsSpec   `json:"api,omitempty"`
+	UI      ServicePortsSpec   `json:"ui,omitempty"`
+	Console ServicePortsSpec   `json:"console,omitempty"`
 }
 
 type ServicePortsSpec struct {
@@ -34,6 +35,7 @@ type NetworkPolicySpec struct {
 	API     NetworkPolicyRulesSpec `json:"api,omitempty"`
 	UI      NetworkPolicyRulesSpec `json:"ui,omitempty"`
 	Worker  NetworkPolicyRulesSpec `json:"worker,omitempty"`
+	Console NetworkPolicyRulesSpec `json:"console,omitempty"`
 }
 
 type NetworkPolicyRulesSpec struct {

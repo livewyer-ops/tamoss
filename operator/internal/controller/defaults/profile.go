@@ -67,6 +67,15 @@ func applyImageDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	if tamoss.Spec.UI.Image.PullPolicy == "" {
 		tamoss.Spec.UI.Image.PullPolicy = corev1.PullIfNotPresent
 	}
+	if tamoss.Spec.Console.Image.Repository == "" {
+		tamoss.Spec.Console.Image.Repository = DefaultConsoleRepository
+	}
+	if tamoss.Spec.Console.Image.Tag == "" {
+		tamoss.Spec.Console.Image.Tag = DefaultOperandTag
+	}
+	if tamoss.Spec.Console.Image.PullPolicy == "" {
+		tamoss.Spec.Console.Image.PullPolicy = corev1.PullIfNotPresent
+	}
 	if tamoss.Spec.Images.SchemaMigrationPostgresClient == "" {
 		tamoss.Spec.Images.SchemaMigrationPostgresClient = DefaultPostgresClientImage
 	}
@@ -76,11 +85,16 @@ func applyBaseComponentDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	setBool(&tamoss.Spec.API.Enabled, true)
 	setBool(&tamoss.Spec.Worker.Enabled, false)
 	setBool(&tamoss.Spec.UI.Enabled, true)
+	setBool(&tamoss.Spec.Console.Enabled, false)
 	setReplicas(&tamoss.Spec.API.WorkloadCommonSpec, 1)
 	setReplicas(&tamoss.Spec.Worker.WorkloadCommonSpec, 1)
 	setReplicas(&tamoss.Spec.UI.WorkloadCommonSpec, 1)
+	setReplicas(&tamoss.Spec.Console.WorkloadCommonSpec, 1)
 	defaultAPIProbes(&tamoss.Spec.API.WorkloadCommonSpec)
 	defaultWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultConsoleProbes(&tamoss.Spec.Console.WorkloadCommonSpec)
+	defaultWorkloadResources(&tamoss.Spec.Console.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
+	defaultConsoleSecurity(&tamoss.Spec.Console.WorkloadCommonSpec)
 }
 
 func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
@@ -174,9 +188,11 @@ func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	setReplicas(&tamoss.Spec.API.WorkloadCommonSpec, 2)
 	setReplicas(&tamoss.Spec.Worker.WorkloadCommonSpec, 2)
 	setReplicas(&tamoss.Spec.UI.WorkloadCommonSpec, 2)
+	setReplicas(&tamoss.Spec.Console.WorkloadCommonSpec, 2)
 	setBool(&tamoss.Spec.API.PDB.Enabled, true)
 	setBool(&tamoss.Spec.Worker.PDB.Enabled, true)
 	setBool(&tamoss.Spec.UI.PDB.Enabled, true)
+	setBool(&tamoss.Spec.Console.PDB.Enabled, true)
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "250m", "384Mi", "1", "768Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
@@ -187,6 +203,7 @@ func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	defaultAffinity(tamoss, &tamoss.Spec.API.WorkloadCommonSpec, "api")
 	defaultAffinity(tamoss, &tamoss.Spec.Worker.WorkloadCommonSpec, "worker")
 	defaultAffinity(tamoss, &tamoss.Spec.UI.WorkloadCommonSpec, "ui")
+	defaultAffinity(tamoss, &tamoss.Spec.Console.WorkloadCommonSpec, "console")
 	defaultMultiServerNetworkPolicy(tamoss)
 
 	defaultCNPG(tamoss, 3, "100Gi", false, true)
@@ -493,6 +510,18 @@ func defaultAPIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
+func defaultConsoleProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	if spec.ReadinessProbe == nil {
+		spec.ReadinessProbe = httpProbe("/ui-api/v1/readyz", 10, 5, 3)
+	}
+	if spec.LivenessProbe == nil {
+		spec.LivenessProbe = httpProbe("/ui-api/v1/healthz", 30, 5, 3)
+	}
+	if spec.StartupProbe == nil {
+		spec.StartupProbe = httpProbe("/ui-api/v1/healthz", 10, 5, 12)
+	}
+}
+
 func httpProbe(path string, periodSeconds, timeoutSeconds, failureThreshold int32) *corev1.Probe {
 	return httpProbeOnPort(path, "http", periodSeconds, timeoutSeconds, failureThreshold)
 }
@@ -538,6 +567,13 @@ func defaultRestrictedWorkloadSecurity(spec *tamossv1alpha1.WorkloadCommonSpec) 
 	}
 }
 
+func defaultConsoleSecurity(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	defaultRestrictedWorkloadSecurity(spec)
+	if spec.SecurityContext.ReadOnlyRootFilesystem == nil {
+		spec.SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
+	}
+}
+
 func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 	setBool(&tamoss.Spec.NetworkPolicy.Enabled, true)
 	if !tamoss.Spec.NetworkPolicy.IsEnabled() {
@@ -555,7 +591,12 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		tamoss.Spec.NetworkPolicy.UI.Ingress = serviceIngressRules(firstContainerPort(tamoss.Spec.UI.Ports, 8080))
 	}
 	if len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 {
-		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(firstServicePort(tamoss.Spec.Service.API.Ports, 8000))
+		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(
+			firstServicePort(tamoss.Spec.Service.API.Ports, 8000),
+			firstServicePort(tamoss.Spec.Service.Console.Ports, 8080),
+			8080,
+			tamoss.Spec.ConsoleEnabled(),
+		)
 	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 {
 		// The worker has no inbound traffic of its own, but the rendered
@@ -566,6 +607,12 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
 		tamoss.Spec.NetworkPolicy.Worker.Egress = appEgressRules()
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Ingress = consoleIngressRules(tamoss, 8080)
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules()
 	}
 }
 
@@ -592,12 +639,52 @@ func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	}
 }
 
-func uiEgressRules(apiPort int32) []networkingv1.NetworkPolicyEgressRule {
+func uiEgressRules(apiPort, consoleServicePort, consoleTargetPort int32, consoleEnabled bool) []networkingv1.NetworkPolicyEgressRule {
+	portNumbers := []int32{apiPort}
+	if consoleEnabled {
+		portNumbers = append(portNumbers, consoleServicePort, consoleTargetPort)
+	}
+	ports := make([]networkingv1.NetworkPolicyPort, 0, len(portNumbers))
+	seen := make(map[int32]struct{}, len(portNumbers))
+	for _, port := range portNumbers {
+		if _, found := seen[port]; found {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, networkPolicyTCPPort(port))
+	}
+	return []networkingv1.NetworkPolicyEgressRule{
+		dnsEgressRule(),
+		{Ports: ports},
+	}
+}
+
+func consoleIngressRules(tamoss *tamossv1alpha1.Tamoss, port int32) []networkingv1.NetworkPolicyIngressRule {
+	appName := defaultAppName
+	if tamoss.Spec.NameOverride != "" {
+		appName = tamoss.Spec.NameOverride
+	}
+	return []networkingv1.NetworkPolicyIngressRule{{
+		From: []networkingv1.NetworkPolicyPeer{{
+			PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/name":      appName,
+				"app.kubernetes.io/instance":  tamoss.Name,
+				"app.kubernetes.io/component": "ui",
+			}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{networkPolicyTCPPort(port)},
+	}}
+}
+
+func consoleEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	return []networkingv1.NetworkPolicyEgressRule{
 		dnsEgressRule(),
 		{
+			// CNIs may enforce egress policy before or after kubernetes.default.svc
+			// rewrites the Service port to the API server target port.
 			Ports: []networkingv1.NetworkPolicyPort{
-				networkPolicyTCPPort(apiPort),
+				networkPolicyTCPPort(443),
+				networkPolicyTCPPort(6443),
 			},
 		},
 	}

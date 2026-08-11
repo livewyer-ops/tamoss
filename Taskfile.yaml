@@ -9,6 +9,7 @@ vars:
   SECRETS_DIR: ".local"
   API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
   UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  CONSOLE_IMAGE: '{{default "livewyer/tamoss-console-api:dev" (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
   OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
@@ -98,6 +99,7 @@ tasks:
           KIND_SUMMARY: "{{.KIND_SUMMARY}}"
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - |
         set -euo pipefail

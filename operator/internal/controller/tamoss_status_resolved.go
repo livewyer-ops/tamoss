@@ -70,6 +70,7 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			UI:                            resolvedImageRef(tamoss.Spec.UI.Image, defaults.DefaultUIRepository),
+			Console:                       resolvedImageRef(tamoss.Spec.Console.Image, defaults.DefaultConsoleRepository),
 			Worker:                        resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			SchemaMigrationPostgresClient: schemaMigrationPostgresClientImage(tamoss),
 		},
@@ -93,6 +94,9 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 	}
 	if tamoss.Spec.Worker.IsEnabled() {
 		status.Resources.Worker = tamossResourceName(tamoss, "worker")
+	}
+	if tamoss.Spec.ConsoleEnabled() {
+		status.Resources.Console = tamossResourceName(tamoss, "console")
 	}
 	if tamossUsesManagedS3(tamoss) {
 		status.Resources.DefaultStorageBackend = defaultStorageBackendName(tamoss)
