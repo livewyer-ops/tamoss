@@ -5013,6 +5013,15 @@ spec:
                                 type: string
                             type: object
                         type: object
+                      tags:
+                        additionalProperties:
+                          items:
+                            type: string
+                          type: array
+                        description: Tags are advertised on the operator-managed default
+                          TAMS storage backend.
+                        maxProperties: 64
+                        type: object
                     type: object
                     x-kubernetes-validations:
                     - message: only external and rustfs-operator S3 backend modes

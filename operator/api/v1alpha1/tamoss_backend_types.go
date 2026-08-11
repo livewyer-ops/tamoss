@@ -168,6 +168,9 @@ type S3BackendSpec struct {
 	External       *S3ExternalSpec       `json:"external,omitempty"`
 	Bundled        *S3BundledSpec        `json:"bundled,omitempty"`
 	RustFSOperator *S3RustFSOperatorSpec `json:"rustfsOperator,omitempty"`
+	// Tags are advertised on the operator-managed default TAMS storage backend.
+	//+kubebuilder:validation:MaxProperties=64
+	Tags map[string][]string `json:"tags,omitempty"`
 }
 
 type S3ExternalSpec struct {

@@ -155,6 +155,15 @@ spec:
                 default: http_object_store
                 minLength: 1
                 type: string
+              tags:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                description: Tags are read-only TAMS metadata clients can use for
+                  storage selection.
+                maxProperties: 64
+                type: object
               tamossRef:
                 description: TamossRef identifies the Tamoss instance that owns the
                   TAMS database registration.
@@ -5313,6 +5322,15 @@ spec:
                                 minLength: 1
                                 type: string
                             type: object
+                        type: object
+                      tags:
+                        additionalProperties:
+                          items:
+                            type: string
+                          type: array
+                        description: Tags are advertised on the operator-managed default
+                          TAMS storage backend.
+                        maxProperties: 64
                         type: object
                     type: object
                     x-kubernetes-validations:

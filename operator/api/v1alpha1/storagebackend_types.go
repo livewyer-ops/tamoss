@@ -76,6 +76,10 @@ type StorageBackendSpec struct {
 	//+kubebuilder:validation:MinLength=1
 	StoreType string `json:"storeType,omitempty"`
 
+	// Tags are read-only TAMS metadata clients can use for storage selection.
+	//+kubebuilder:validation:MaxProperties=64
+	Tags map[string][]string `json:"tags,omitempty"`
+
 	//+kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName,omitempty"`
 

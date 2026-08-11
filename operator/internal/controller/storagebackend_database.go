@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -149,6 +150,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 
 func storageBackendRegistrationEnv(tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) []corev1.EnvVar {
 	db := tamoss.DBConnection()
+	tagsJSON := storageBackendTagsJSON(spec.Tags)
 	return []corev1.EnvVar{
 		{Name: "POSTGRES_HOST", Value: db.Host},
 		{Name: "POSTGRES_PORT", Value: db.Port},
@@ -173,6 +175,7 @@ func storageBackendRegistrationEnv(tamoss *tamossv1alpha1.Tamoss, spec tamossv1a
 		{Name: "TAMOSS_STORAGE_REGION", Value: spec.Region},
 		{Name: "TAMOSS_STORAGE_PRODUCT", Value: spec.StoreProduct},
 		{Name: "TAMOSS_STORAGE_TYPE", Value: spec.StoreType},
+		{Name: "TAMOSS_STORAGE_BACKEND_TAGS", Value: tagsJSON},
 		{Name: "TAMOSS_STORAGE_DEFAULT", Value: fmt.Sprintf("%t", spec.DefaultStorage)},
 		{Name: "TAMOSS_STORAGE_BUCKET", Value: spec.BucketName},
 		{Name: "TAMOSS_STORAGE_ENDPOINT", Value: spec.Endpoint.Default.URL},
@@ -234,6 +237,7 @@ func storageBackendDBRegistered(state *corev1.ConfigMap, spec tamossv1alpha1.Sto
 }
 
 func storageBackendRegistrationHash(spec tamossv1alpha1.StorageBackendSpec) string {
+	tagsJSON := storageBackendTagsJSON(spec.Tags)
 	return storageBackendHash(
 		spec.ID,
 		spec.Label,
@@ -241,11 +245,23 @@ func storageBackendRegistrationHash(spec tamossv1alpha1.StorageBackendSpec) stri
 		spec.Region,
 		spec.StoreProduct,
 		spec.StoreType,
+		tagsJSON,
 		fmt.Sprintf("%t", spec.DefaultStorage),
 		spec.BucketName,
 		spec.Endpoint.Default.URL,
 		spec.Endpoint.Public.URL,
 	)
+}
+
+func storageBackendTagsJSON(tags map[string][]string) string {
+	if tags == nil {
+		tags = map[string][]string{}
+	}
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func storageBackendDeregistrationHash(spec tamossv1alpha1.StorageBackendSpec) string {

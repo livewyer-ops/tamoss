@@ -270,6 +270,7 @@ func defaultStorageBackend(tamoss *tamossv1alpha1.Tamoss) *tamossv1alpha1.Storag
 		Region:         s3.Region,
 		StoreProduct:   "s3",
 		StoreType:      "http_object_store",
+		Tags:           tamoss.Spec.Backends.S3.Tags,
 		BucketName:     s3.Bucket,
 		Endpoint:       s3.Endpoint,
 		Credentials:    s3.Auth,

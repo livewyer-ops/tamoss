@@ -30,6 +30,9 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 			Backends: tamossv1alpha1.BackendsSpec{
 				S3: tamossv1alpha1.S3BackendSpec{
 					ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator,
+					Tags: map[string][]string{
+						"access": {"archive", "programme"},
+					},
 					RustFSOperator: &tamossv1alpha1.S3RustFSOperatorSpec{
 						PublicEndpoint: tamossv1alpha1.S3PublicEndpointSpec{URL: "https://s3.example.test"},
 						Bucket:         tamossv1alpha1.S3RustFSOperatorBucketSpec{Name: "media"},
@@ -58,6 +61,9 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 	}
 	if storageBackend.Spec.Credentials.ExistingSecret != "example-s3-creds" {
 		t.Fatalf("expected generated RustFS credentials secret, got %q", storageBackend.Spec.Credentials.ExistingSecret)
+	}
+	if got := storageBackend.Spec.Tags["access"]; len(got) != 2 || got[0] != "archive" || got[1] != "programme" {
+		t.Fatalf("expected default backend tags to flow through, got %#v", storageBackend.Spec.Tags)
 	}
 }
 
@@ -131,6 +137,7 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 		BucketName:     "archive",
 		Endpoint:       tamossv1alpha1.S3EndpointSpec{Default: tamossv1alpha1.EndpointURLSpec{URL: "http://example-s3:9000"}},
 		DefaultStorage: false,
+		Tags:           map[string][]string{"access": {"archive", "programme"}},
 	}
 
 	job := storageBackendRegistrationJob(storageBackend, tamoss, spec, "desired")
@@ -148,16 +155,35 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 	if envValue(container.Env, "TAMOSS_STORAGE_BACKEND_ID") != spec.ID {
 		t.Fatalf("expected backend ID env, got %#v", container.Env)
 	}
+	if got := envValue(container.Env, "TAMOSS_STORAGE_BACKEND_TAGS"); got != `{"access":["archive","programme"]}` {
+		t.Fatalf("expected deterministic backend tags env, got %q", got)
+	}
 	script := container.Command[2]
 	for _, expected := range []string{
 		"INSERT INTO tamoss_storage_backends",
 		"ON CONFLICT (id) DO UPDATE",
 		"jsonb_build_object",
+		"'tags', :'tags'::jsonb",
+		"tags = EXCLUDED.tags",
 		"record = jsonb_set(record, '{default_storage}', 'false'::jsonb, true)",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("expected registration script to contain %q, got %s", expected, script)
 		}
+	}
+}
+
+func TestStorageBackendRegistrationHashIncludesTags(t *testing.T) {
+	spec := storageBackendSpecFixture()
+	withoutTags := storageBackendRegistrationHash(spec)
+	spec.Tags = map[string][]string{"access": {"programme"}}
+	withTags := storageBackendRegistrationHash(spec)
+
+	if withoutTags == withTags {
+		t.Fatal("expected storage backend tags to change the registration hash")
+	}
+	if got := storageBackendTagsJSON(map[string][]string{"z": {"last"}, "a": {"first"}}); got != `{"a":["first"],"z":["last"]}` {
+		t.Fatalf("expected stable sorted tag JSON, got %q", got)
 	}
 }
 
