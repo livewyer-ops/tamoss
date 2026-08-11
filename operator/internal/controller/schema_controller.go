@@ -82,13 +82,13 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 	if err != nil {
 		return SchemaResult{}, err
 	}
-	if result, done, err := s.reconcileSucceededSchemaJob(ctx, tamoss, state, managed, includeFixtures, liveJob, jobFound); err != nil || done {
-		return result, err
-	}
 	if result, done, err := s.reconcileSchemaRetryStage(ctx, tamoss, state, managed, liveJob, jobFound); err != nil || done {
 		return result, err
 	}
-	if result, done, err := s.reconcileStaleSchemaJob(ctx, tamoss, state, managed, liveJob, jobFound, job); err != nil || done {
+	if result, done, err := s.reconcileStaleSchemaJob(ctx, tamoss, managed, liveJob, jobFound, job); err != nil || done {
+		return result, err
+	}
+	if result, done, err := s.reconcileSucceededSchemaJob(ctx, tamoss, state, managed, includeFixtures, liveJob, jobFound); err != nil || done {
 		return result, err
 	}
 	if result, done, err := s.reconcileFailedSchemaJob(ctx, tamoss, state, managed, liveJob, jobFound); err != nil || done {
@@ -182,10 +182,12 @@ func (s *SchemaController) reconcileSchemaRetryStage(ctx context.Context, tamoss
 // longer matches the desired render. Job templates are immutable, so applying
 // the new template over the old Job is rejected and the controller would
 // otherwise wait forever on a Job built from superseded configuration, such as
-// a corrected image reference. Terminal failures are excluded: they keep
-// requiring the explicit retry annotation.
-func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, state *corev1.ConfigMap, managed []client.Object, liveJob *batchv1.Job, jobFound bool, desired *batchv1.Job) (SchemaResult, bool, error) {
-	if !jobFound || jobSucceeded(liveJob) || terminalSchemaFailure(state, tamoss) {
+// a corrected image reference. This check must run before accepting a completed
+// Job so a stale migration runtime cannot stamp the current schema version.
+// Template drift also supersedes terminal failure state: explicit retry remains
+// required only while the failed Job still matches the desired render.
+func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, managed []client.Object, liveJob *batchv1.Job, jobFound bool, desired *batchv1.Job) (SchemaResult, bool, error) {
+	if !jobFound {
 		return SchemaResult{}, false, nil
 	}
 	if !schemaJobTemplateDrifted(liveJob, desired) {
@@ -611,7 +613,7 @@ func schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) *ba
 }
 
 func schemaMigrationArgs(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) []string {
-	args := []string{"run", "tamoss-db", "migrate"}
+	args := []string{"run", "tamoss-db", "migrate", "--revision", schemabundle.CurrentDatabaseRevision}
 	if includeFixtures {
 		args = append(args, "--apply-fixtures")
 	}

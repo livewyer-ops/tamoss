@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
+
 from tests.support.paths import REPO_ROOT
 
 SCRIPT = REPO_ROOT / ".github/scripts/release-metadata.py"
@@ -76,9 +78,22 @@ def test_local_operator_builds_forward_release_metadata() -> None:
         assert "PREVIOUS_SCHEMA_VERSION" in content
         assert "OPERAND_VERSION" in content
 
+    assert 'PREVIOUS_SCHEMA_VERSION: \'{{default "0.0.1"' in kind_taskfile
+
     for content in (taskfile, chainsaw):
         assert "docker-build" in content
     assert ":operator:image:build" in kind_taskfile
+
+
+def test_operator_migration_target_matches_api_database_head() -> None:
+    operator_schema = (REPO_ROOT / "operator/internal/schema/verify.go").read_text(
+        encoding="utf-8"
+    )
+    kind_taskfile = (REPO_ROOT / ".tasks/kind.yaml").read_text(encoding="utf-8")
+
+    assert f'CurrentDatabaseRevision = "{CURRENT_SCHEMA_REVISION}"' in operator_schema
+    kind_revision = CURRENT_SCHEMA_REVISION.replace("_", "-")
+    assert f'default "dev-{kind_revision}"' in kind_taskfile
 
 
 def test_release_metadata_rejects_multiple_previous_schema_revisions(
