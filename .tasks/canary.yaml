@@ -1,0 +1,136 @@
+# https://taskfile.dev
+#
+# Preview image publishing.
+#
+# TAMOSS 8.2 cannot ship artifacts until BBC TAMS API 8.2 is published upstream,
+# so preview builds must never reach Docker Hub. They go to a private Artifact
+# Registry in the same GCP project as the test cluster, which can therefore pull
+# them through its node service account without an image pull secret.
+#
+# The tag shape follows what the registry already holds:
+#   <base version>-<topic>-<short sha>, e.g. 8.1.0-oss3-authfix-177a0699
+version: "3"
+
+set: [errexit, nounset, pipefail]
+
+vars:
+  CANARY_REGISTRY: '{{default "europe-west2-docker.pkg.dev/tamoss/tamoss-canary" (default (env "CANARY_REGISTRY") .CANARY_REGISTRY)}}'
+  CANARY_BASE_VERSION: '{{default "8.2.0" (default (env "CANARY_BASE_VERSION") .CANARY_BASE_VERSION)}}'
+  CANARY_TOPIC: '{{default "preview" (default (env "CANARY_TOPIC") .CANARY_TOPIC)}}'
+  CANARY_PLATFORMS: '{{default "linux/amd64,linux/arm64" (default (env "CANARY_PLATFORMS") .CANARY_PLATFORMS)}}'
+  CANARY_SHA:
+    sh: git rev-parse --short=8 HEAD
+  CANARY_TAG: '{{default (printf "%s-%s-%s" .CANARY_BASE_VERSION .CANARY_TOPIC .CANARY_SHA) (env "CANARY_TAG")}}'
+  # Take the schema revision from the newest compatibility release rather than
+  # the "dev" marker the publishing workflow stamps on branch builds. "dev" is
+  # only safe on a fresh database: IsSupportedStartingVersion accepts an empty
+  # or exactly-matching revision, so an operator claiming "dev" declares every
+  # existing instance's applied revision unsupported and marks it Degraded.
+  # A canary deployed onto a live cluster must therefore claim the revision
+  # those databases already carry. Override only when a preview genuinely
+  # changes the schema, and then supply CANARY_PREVIOUS_SCHEMA_REVISION too.
+  CANARY_SCHEMA_REVISION:
+    sh: python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["schemaRevision"])'
+  CANARY_PREVIOUS_SCHEMA_REVISION: '{{default "" (default (env "CANARY_PREVIOUS_SCHEMA_REVISION") .CANARY_PREVIOUS_SCHEMA_REVISION)}}'
+  CANARY_TAMS_API:
+    sh: python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])'
+
+tasks:
+  tag:
+    desc: "Canary: print the image tag that canary:publish would use"
+    silent: true
+    cmds:
+      - printf '%s\n' "{{.CANARY_TAG}}"
+
+  publish:
+    desc: "Canary: build and push preview images to the private canary registry"
+    silent: true
+    preconditions:
+      - sh: command -v docker
+        msg: "docker is required"
+      - sh: docker buildx version >/dev/null 2>&1
+        msg: "docker buildx is required for multi-architecture builds"
+      - sh: command -v gcloud
+        msg: "gcloud is required to authenticate to Artifact Registry"
+    cmds:
+      - task: guard
+      - |
+        set -euo pipefail
+        . .tasks/lib/progress.sh
+
+        registry="{{.CANARY_REGISTRY}}"
+        tag="{{.CANARY_TAG}}"
+        platforms="{{.CANARY_PLATFORMS}}"
+
+        build() {
+          label="$1"; image="$2"; dockerfile="$3"; context="$4"; shift 4
+          args=""
+          for build_arg in "$@"; do
+            args="${args} --build-arg ${build_arg}"
+          done
+          file_arg=""
+          if [ -n "${dockerfile}" ]; then
+            file_arg="--file ${dockerfile}"
+          fi
+          # shellcheck disable=SC2086
+          task_step "Canary: publish ${label}" \
+            docker buildx build \
+              --platform "${platforms}" \
+              ${file_arg} \
+              --tag "${registry}/${image}:${tag}" \
+              --provenance mode=max \
+              --sbom true \
+              --push \
+              ${args} \
+              "${context}"
+        }
+
+        build "TAMOSS API" "tamoss-api" "src/app/tamoss/Dockerfile" "." \
+          "VERSION=${tag}" "TAMS_API_VERSION={{.CANARY_TAMS_API}}"
+        build "TAMOSS UI" "tamoss-ui" "src/app/frontend/Dockerfile" "src/app/frontend"
+        build "TAMOSS Console API" "tamoss-console-api" "operator/Dockerfile.console-api" "."
+        # OPERAND_VERSION stamps DefaultOperandTag, but the operand
+        # *repositories* still default to livewyer/*. A canary instance must
+        # therefore pin spec.<component>.image.repository as well as .tag; see
+        # deploy/instances/preview/tamoss.yaml.
+        build "TAMOSS operator" "tamoss-operator" "operator/Dockerfile" "." \
+          "VERSION=${tag}" "SCHEMA_VERSION={{.CANARY_SCHEMA_REVISION}}" \
+          "PREVIOUS_SCHEMA_VERSION={{.CANARY_PREVIOUS_SCHEMA_REVISION}}" \
+          "TAMS_API_VERSION={{.CANARY_TAMS_API}}" "OPERAND_VERSION=${tag}"
+
+        printf '\nPublished %s/{tamoss-api,tamoss-ui,tamoss-console-api,tamoss-operator}:%s\n' "${registry}" "${tag}"
+
+  guard:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        case "{{.CANARY_REGISTRY}}" in
+          *docker.io*|index.docker.io*|livewyer/*)
+            echo "refusing to publish preview images to Docker Hub: 8.2 artifacts are withheld until BBC TAMS API 8.2 is published" >&2
+            exit 1
+            ;;
+        esac
+        case "{{.CANARY_REGISTRY}}" in
+          */*) ;;
+          *)
+            echo "CANARY_REGISTRY must be a full registry path" >&2
+            exit 1
+            ;;
+        esac
+
+  login:
+    desc: "Canary: configure docker credentials for the canary registry host"
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        host="$(printf '%s' "{{.CANARY_REGISTRY}}" | cut -d/ -f1)"
+        gcloud auth configure-docker "${host}" --quiet
+
+  list:
+    desc: "Canary: list images currently in the canary registry"
+    silent: true
+    cmds:
+      - gcloud artifacts docker images list "{{.CANARY_REGISTRY}}" --include-tags --format='table(package,tags,createTime)'

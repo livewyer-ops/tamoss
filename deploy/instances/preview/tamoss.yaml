@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: preview-tams
+---
+# An 8.2 preview instance running canary images.
+#
+# Only the repositories are pinned. Each component's tag is left unset so the
+# operator fills it from DefaultOperandTag, which the canary build stamps with
+# the tag it just pushed (see .tasks/canary.yaml). That keeps this file stable
+# across builds rather than carrying a short SHA that changes every time.
+#
+# It deliberately uses its own namespace so a preview never rolls over a live
+# released instance.
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-preview
+  namespace: preview-tams
+spec:
+  profile: multi-server
+  console:
+    enabled: true
+    image:
+      repository: europe-west2-docker.pkg.dev/tamoss/tamoss-canary/tamoss-console-api
+  api:
+    image:
+      repository: europe-west2-docker.pkg.dev/tamoss/tamoss-canary/tamoss-api
+  ui:
+    image:
+      repository: europe-west2-docker.pkg.dev/tamoss/tamoss-canary/tamoss-ui
