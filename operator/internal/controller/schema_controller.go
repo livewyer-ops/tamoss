@@ -36,6 +36,7 @@ const (
 	schemaStateFailedVersion     = "failedVersion"
 	schemaStateFailedJobUID      = "failedJobUID"
 	schemaStateFailedAtKey       = "failedAt"
+	schemaJobCleanupRequeueAfter = 2 * time.Second
 )
 
 type SchemaResult struct {
@@ -47,6 +48,7 @@ type SchemaResult struct {
 	Message         string
 	SchemaMigration tamossv1alpha1.SchemaMigrationStatus
 	RecoveryEvent   *recoveryActionEvent
+	RequeueAfter    time.Duration
 }
 
 type SchemaController struct {
@@ -75,9 +77,12 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 		return result, nil
 	}
 
-	includeFixtures := tamoss.Spec.Backends.DB.ShouldApplyFixtures() && !stateFound
+	includeFixtures := tamoss.Spec.Backends.DB.ShouldApplyFixtures() && !schemaStateHasAppliedVersion(state)
 	job := schemaMigrationJob(tamoss, includeFixtures)
 	managed = append(managed, job)
+	if result, done, err := s.reconcileObsoleteSchemaJobs(ctx, tamoss, managed, job); err != nil || done {
+		return result, err
+	}
 	liveJob, jobFound, err := s.getSchemaJob(ctx, job)
 	if err != nil {
 		return SchemaResult{}, err
@@ -97,7 +102,14 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 	if result, done := runningSchemaJobResult(managed, liveJob, jobFound); done {
 		return result, nil
 	}
+	if result, done, err := s.reconcileSchemaJobPodCleanup(ctx, managed, job); err != nil || done {
+		return result, err
+	}
 	return s.launchSchemaJob(ctx, tamoss, managed, job)
+}
+
+func schemaStateHasAppliedVersion(state *corev1.ConfigMap) bool {
+	return state != nil && strings.TrimSpace(state.Data[schemaStateAppliedVersionKey]) != ""
 }
 
 func schemaManagedObjects(state *corev1.ConfigMap, stateFound bool) []client.Object {
@@ -193,7 +205,7 @@ func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *
 	if !schemaJobTemplateDrifted(liveJob, desired) {
 		return SchemaResult{}, false, nil
 	}
-	propagation := metav1.DeletePropagationBackground
+	propagation := metav1.DeletePropagationForeground
 	if err := s.Client.Delete(ctx, liveJob, &client.DeleteOptions{PropagationPolicy: &propagation}); err != nil && !apierrors.IsNotFound(err) {
 		return SchemaResult{}, true, err
 	}
@@ -210,6 +222,96 @@ func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *
 			Message: "Schema migration job template changed; the stale job was deleted so the next reconcile recreates it",
 		},
 	}, true, nil
+}
+
+func (s *SchemaController) reconcileObsoleteSchemaJobs(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, managed []client.Object, desired *batchv1.Job) (SchemaResult, bool, error) {
+	jobs := &batchv1.JobList{}
+	if err := s.Client.List(
+		ctx,
+		jobs,
+		client.InNamespace(desired.Namespace),
+		client.MatchingLabels(schemaLabels(tamoss)),
+	); err != nil {
+		return SchemaResult{}, true, err
+	}
+
+	waiting := false
+	cleanupManaged := append([]client.Object(nil), managed...)
+	propagation := metav1.DeletePropagationForeground
+	for index := range jobs.Items {
+		job := &jobs.Items[index]
+		if job.Name == desired.Name || !metav1.IsControlledBy(job, tamoss) {
+			continue
+		}
+		waiting = true
+		cleanupManaged = append(cleanupManaged, job)
+		if !job.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := s.Client.Delete(
+			ctx,
+			job,
+			&client.DeleteOptions{PropagationPolicy: &propagation},
+		); err != nil && !apierrors.IsNotFound(err) {
+			return SchemaResult{}, true, err
+		}
+	}
+	if !waiting {
+		return SchemaResult{}, false, nil
+	}
+	return schemaJobCleanupResult(
+		cleanupManaged,
+		desired,
+		"Waiting for obsolete schema migration Jobs to terminate before launching the current revision",
+	), true, nil
+}
+
+// reconcileSchemaJobPodCleanup keeps the fixed-name migration Job vacant until
+// pods owned by its previous incarnation are gone. Foreground deletion provides
+// this ordering in Kubernetes; the explicit check also closes the gap if a pod
+// outlives the Job object during cache convergence.
+func (s *SchemaController) reconcileSchemaJobPodCleanup(ctx context.Context, managed []client.Object, desired *batchv1.Job) (SchemaResult, bool, error) {
+	pods := &corev1.PodList{}
+	if err := s.Client.List(
+		ctx,
+		pods,
+		client.InNamespace(desired.Namespace),
+		client.MatchingLabels(desired.Labels),
+	); err != nil {
+		return SchemaResult{}, true, err
+	}
+	for index := range pods.Items {
+		if !schemaJobPodOwned(&pods.Items[index]) {
+			continue
+		}
+		return schemaJobCleanupResult(
+			managed,
+			desired,
+			"Waiting for stale schema migration Job pods to terminate before launching a replacement",
+		), true, nil
+	}
+	return SchemaResult{}, false, nil
+}
+
+func schemaJobCleanupResult(managed []client.Object, desired *batchv1.Job, message string) SchemaResult {
+	return SchemaResult{
+		Ready:           false,
+		Version:         schemabundle.SchemaVersion,
+		ManagedObjects:  managed,
+		Reason:          operatorstatus.ReasonMigrationInProgress,
+		Message:         message,
+		SchemaMigration: schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		RequeueAfter:    schemaJobCleanupRequeueAfter,
+	}
+}
+
+func schemaJobPodOwned(pod *corev1.Pod) bool {
+	for _, owner := range pod.OwnerReferences {
+		if owner.APIVersion == batchv1.SchemeGroupVersion.String() && owner.Kind == "Job" && owner.Controller != nil && *owner.Controller {
+			return true
+		}
+	}
+	return false
 }
 
 // schemaJobTemplateDrifted reports whether the fields the operator renders

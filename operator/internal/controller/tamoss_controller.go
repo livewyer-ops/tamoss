@@ -161,7 +161,12 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	}
 	recordPhase(tamoss.Status.Phase)
 
-	completion := tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval())
+	completion := tamossCompletionResult(
+		tamoss,
+		r.authentikProbeInterval(),
+		r.dependencyProbeInterval(),
+		schemaResult.RequeueAfter,
+	)
 	if retention.RequeueAfter > 0 && (completion.RequeueAfter == 0 || retention.RequeueAfter < completion.RequeueAfter) {
 		completion.RequeueAfter = retention.RequeueAfter
 	}
@@ -423,8 +428,8 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 	return nil
 }
 
-func tamossCompletionResult(tamoss *tamossv1alpha1.Tamoss, authentikProbeInterval, dependencyProbeInterval time.Duration) ctrl.Result {
-	requeueAfter := time.Duration(0)
+func tamossCompletionResult(tamoss *tamossv1alpha1.Tamoss, authentikProbeInterval, dependencyProbeInterval, schemaRequeueAfter time.Duration) ctrl.Result {
+	requeueAfter := schemaRequeueAfter
 	if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 		requeueAfter = shortestPositiveDuration(requeueAfter, authentikProbeInterval)
 	}
