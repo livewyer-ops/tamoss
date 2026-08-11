@@ -15,5 +15,3 @@ diagnosis for operator-led TAMOSS deployments.
 - [Secret Rotation](secret-rotation.md) - runtime secret classes and rotation.
 - [Troubleshooting](troubleshooting.md) - readiness and runtime diagnostics.
 - [Upgrades](upgrades.md) - upgrade sequence, checks, and rollback.
-- [Publish and Deploy Preview Images](preview-images.md) - private branch-image
-  publishing outside the normal Docker Hub workflow.

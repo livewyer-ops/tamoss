@@ -35,7 +35,6 @@ env:
 
 includes:
   openapi: { taskfile: .tasks/openapi.yaml }
-  canary:  { taskfile: .tasks/canary.yaml }
   dev:     { taskfile: .tasks/dev.yaml }
   docker:  { taskfile: .tasks/docker.yaml }
   env:     { taskfile: .tasks/env.yaml }
