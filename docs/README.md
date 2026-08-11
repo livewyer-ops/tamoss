@@ -86,10 +86,6 @@ then stay on the matching install, configuration, usage, and operations path.
 - [Development Workflow](development/contributing.md) - local product
   development.
 - [Testing](development/testing.md) - local, operator, and deployed gates.
-- [Documentation Structure](development/documentation.md) - Diataxis page
-  types and authoring rules.
-- [UI Overhaul Design Records](development/ui-overhaul/README.md) - internal
-  architecture decisions and unresolved release gates.
 
 Docs are maintained as raw Markdown. Revisit a static site generator only if the
 documentation set grows beyond roughly 50 maintained pages or Markdown

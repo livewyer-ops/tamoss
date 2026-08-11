@@ -41,8 +41,8 @@ type NetworkPolicySpec struct {
 	// tightening: when the list is empty the Console's Kubernetes API egress
 	// rule is still rendered but permits any destination on those ports, because
 	// the addresses are cluster-specific and cannot be derived from a Tamoss
-	// spec. Destination-scoped egress is otherwise deferred; see
-	// docs/development/ui-overhaul/0002-console-api-and-kubernetes.md.
+	// spec. Destination-scoped egress remains an optional deployment-specific
+	// tightening.
 	//+kubebuilder:validation:MaxItems=16
 	KubernetesAPIIPBlocks []networkingv1.IPBlock `json:"kubernetesAPIIPBlocks,omitempty"`
 }

@@ -17,26 +17,6 @@ For local validation, `task kind:e2e PROFILE=local-kind` creates a fresh
 cluster with the current operator image and runs the deployed TAMS API and UI
 checks.
 
-## Upgrading to 8.2
-
-Two 8.2 operator defaults change the rendered output of an unchanged `Tamoss`
-resource. Review them before upgrading a production instance.
-
-**Browser authentication is reported on its own condition.** Enabled UI or
-Console surfaces without a supported trusted authentication path now set
-`BrowserAuthenticationReady=False` with reason
-`BrowserAuthenticationUnavailable`. The instance is no longer marked `Degraded`
-or held back from `Ready` for this reason alone, because the API and worker data
-plane are unaffected and the browser surfaces already refuse browser API
-requests in that state. Alerting that keys on `Degraded` should add a check on
-`BrowserAuthenticationReady`. The 8.1 shared UI-to-TAMS API token is removed, so
-an instance using external OIDC reports this condition until same-origin browser
-identity ships.
-
-**The UI readiness probe targets `/healthz`.** `/readyz` exists only from 8.2
-onwards and reports 503 while browser authentication is unconfigured, so it is
-not used for readiness. A pinned pre-8.2 UI image continues to pass its probes.
-
 ## Sequence
 
 1. Update the source-controlled platform, operator, or environment overlay

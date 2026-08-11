@@ -83,5 +83,3 @@ CR permissions must create those resources.
 
 See [Manage ingest runs](../operations/manage-ingest-runs.md) for operational
 commands and [IngestRun CR](../reference/ingestrun-cr.md) for the exact fields.
-The internal [TAMSin ingest design record](../development/ui-overhaul/0005-tamsin-ingest-runs.md)
-preserves architecture decisions and future work.

@@ -40,9 +40,7 @@ read by the Vite process and is never exposed through `import.meta.env`.
 Required authentication without the managed Authentik proxy renders
 `TAMOSS_UI_AUTH_MODE=unavailable`; nginx returns `503` for both browser backend
 paths and never opens a credential-free proxy. External OIDC needs a
-same-origin browser session before that mode can be enabled; the proposed
-boundary is recorded in
-[`0006-external-browser-identity.md`](../../../docs/development/ui-overhaul/0006-external-browser-identity.md).
+same-origin browser session before that mode can be enabled.
 
 ## Browser response boundary
 
