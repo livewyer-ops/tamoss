@@ -38,9 +38,24 @@ class StorageUseCases:
         ensure_flow_writable(flow)
         if not flow.container:
             raise BadRequest("Bad request. The Flow 'container' is not set.")
+        if "content-type" in request:
+            raise BadRequest(
+                "Bad request. Use content_type instead of the unsupported "
+                "content-type field."
+            )
         limit = request.get("limit")
         object_ids = request.get("object_ids")
         storage_id = request.get("storage_id")
+        requested_content_type = request.get("content_type")
+        if requested_content_type is not None and (
+            not flow.init_segments or str(requested_content_type) == flow.container
+        ):
+            raise BadRequest(
+                "Bad request. content_type is only valid for init Objects "
+                "whose type differs from the Flow container."
+            )
+        content_type = str(requested_content_type or flow.container)
+        presigned = request.get("presigned") is not False
         if limit is not None and object_ids is not None:
             raise BadRequest("Specify either limit or object_ids, not both.")
         if (limit or 1) > self.settings.storage_allocation_max_objects:
@@ -75,6 +90,7 @@ class StorageUseCases:
                             object_id=object_id,
                             backend=backend,
                             flow_id=flow_id,
+                            content_type=content_type,
                         )
                         for object_id in batch_ids
                     )
@@ -87,6 +103,7 @@ class StorageUseCases:
                         object_id=object_id,
                         backend=backend,
                         flow_id=flow_id,
+                        content_type=content_type,
                     )
                     for object_id in object_ids
                 )
@@ -102,18 +119,29 @@ class StorageUseCases:
                 "storage_id": str(backend.id),
                 "put_url": self.object_storage.build_put_request(
                     object_id=object_id,
-                    flow_container=flow.container,
+                    content_type=content_type,
                     backend=backend,
+                    presigned=presigned,
                 ),
+                "presigned": presigned,
             }
             for object_id in object_ids
         ]
 
     def _allocated_object(
-        self, *, object_id: str, backend: StorageBackend, flow_id: UUID
+        self,
+        *,
+        object_id: str,
+        backend: StorageBackend,
+        flow_id: UUID,
+        content_type: str,
     ) -> MediaObjectRecord:
         self._validate_storage_object_id(object_id)
-        media_object = MediaObjectRecord(id=object_id, allocated_by_flow=flow_id)
+        media_object = MediaObjectRecord(
+            id=object_id,
+            allocated_by_flow=flow_id,
+            content_type=content_type,
+        )
         media_object.instances.append(
             ObjectInstance(
                 storage_backend=backend,

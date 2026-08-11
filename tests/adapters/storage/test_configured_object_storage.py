@@ -63,8 +63,9 @@ def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
 
     put_request = object_storage.build_put_request(
         object_id=object_id,
-        flow_container="video/mp2t",
+        content_type="video/mp2t",
         backend=s3_backend,
+        presigned=True,
     )
     assert put_request["headers"] == {"Content-Type": "video/mp2t"}
 

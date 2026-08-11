@@ -35,17 +35,26 @@ class ConfiguredObjectStorage:
         self._lock = RLock()
 
     def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
+        self,
+        *,
+        object_id: str,
+        content_type: str,
+        backend: StorageBackend,
+        presigned: bool,
     ) -> dict[str, object]:
         backend = self._resolve_backend(backend)
         return {
-            "url": self._presign_put_url(
-                backend=backend,
-                object_id=object_id,
-                content_type=flow_container,
+            "url": (
+                self._presign_put_url(
+                    backend=backend,
+                    object_id=object_id,
+                    content_type=content_type,
+                )
+                if presigned
+                else _public_object_url(backend=backend, object_id=object_id)
             ),
-            "content-type": flow_container,
-            "headers": {"Content-Type": flow_container},
+            "content-type": content_type,
+            "headers": {"Content-Type": content_type},
         }
 
     def build_get_urls(

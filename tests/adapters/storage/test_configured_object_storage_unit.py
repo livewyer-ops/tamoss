@@ -62,8 +62,9 @@ def test_s3_clients_are_reused_and_configured_with_connection_pool(
     for _ in range(2):
         storage.build_put_request(
             object_id="media/object.ts",
-            flow_container="video/mp2t",
+            content_type="video/mp2t",
             backend=backend,
+            presigned=True,
         )
         storage.write("media/object.ts", b"body", backend=backend)
 
@@ -108,8 +109,9 @@ def test_runtime_credentials_file_supplies_non_default_backend_credentials(
 
     request = storage.build_put_request(
         object_id="media/object.ts",
-        flow_container="video/mp2t",
+        content_type="video/mp2t",
         backend=backend,
+        presigned=True,
     )
 
     assert request["url"] == "https://storage.example.test/presigned"
@@ -140,8 +142,9 @@ def test_build_put_request_uses_flow_container_as_content_type(monkeypatch) -> N
 
     request = storage.build_put_request(
         object_id="media/subtitles.ttml",
-        flow_container="application/ttml+xml",
+        content_type="application/ttml+xml",
         backend=backend,
+        presigned=True,
     )
 
     assert request["content-type"] == "application/ttml+xml"
@@ -153,6 +156,39 @@ def test_build_put_request_uses_flow_container_as_content_type(monkeypatch) -> N
             "ContentType": "application/ttml+xml",
         }
     ]
+
+
+def test_build_put_request_can_return_direct_public_url_without_presigning(
+    monkeypatch,
+) -> None:
+    def unexpected_client(*_args, **_kwargs):
+        raise AssertionError("non-presigned PUT must not construct an S3 client")
+
+    monkeypatch.setattr(
+        "tamoss.adapters.object_storage.boto3.client", unexpected_client
+    )
+    backend = _s3_backend()
+    storage = ConfiguredObjectStorage(
+        Settings(
+            auth_required=False,
+            storage_backend=_settings_backend(backend),
+        )
+    )
+
+    request = storage.build_put_request(
+        object_id="media/segment 01.m4s",
+        content_type="video/iso.segment",
+        backend=backend,
+        presigned=False,
+    )
+
+    assert request == {
+        "url": (
+            "https://storage.public.example.test/tamoss-test/media/segment%2001.m4s"
+        ),
+        "content-type": "video/iso.segment",
+        "headers": {"Content-Type": "video/iso.segment"},
+    }
 
 
 def test_presigned_put_urls_do_not_outlive_allocated_object_timeout(
@@ -183,8 +219,9 @@ def test_presigned_put_urls_do_not_outlive_allocated_object_timeout(
 
     storage.build_put_request(
         object_id="media/object.ts",
-        flow_container="video/mp2t",
+        content_type="video/mp2t",
         backend=backend,
+        presigned=True,
     )
     storage.build_get_urls(object_id="media/object.ts", backend=backend)
 

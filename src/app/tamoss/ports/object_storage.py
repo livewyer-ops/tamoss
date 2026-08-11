@@ -16,8 +16,9 @@ class ObjectStorage(Protocol):
         self,
         *,
         object_id: str,
-        flow_container: str,
+        content_type: str,
         backend: StorageBackend,
+        presigned: bool,
     ) -> dict[str, object]: ...
 
     def build_get_urls_batch(
