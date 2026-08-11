@@ -22,7 +22,7 @@ env:
 
 jobs:
   tamoss-api:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # id-token: write is required for cosign keyless signing (Fulcio OIDC).
     permissions:
@@ -132,7 +132,7 @@ jobs:
           done
 
   tamoss-ui:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -210,7 +210,7 @@ jobs:
           done
 
   tamoss-console-api:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -287,7 +287,7 @@ jobs:
           done
 
   tamoss-operator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read

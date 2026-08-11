@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   python-fast:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
@@ -56,7 +56,7 @@ jobs:
           paths: reports/junit-py-fast.xml
 
   tams-contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -97,7 +97,7 @@ jobs:
           paths: reports/junit-*.xml
 
   tams-semantics:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Git Checkout
@@ -137,49 +137,8 @@ jobs:
         with:
           paths: reports/junit-*.xml
 
-  tams-traceability:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Git Checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - name: Install Task
-        uses: ./.github/actions/setup-task
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install the project
-        run: uv sync --project src --locked --all-extras --dev
-
-      - name: Run TAMS release traceability tests
-        run: task test:tams:traceability
-
-      - name: Upload TAMS traceability reports
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: tams-traceability-reports-${{ github.run_id }}
-          path: reports/**
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: TAMS traceability summary
-        uses: test-summary/action@v2
-        if: always()
-        with:
-          paths: reports/junit-py-tams-traceability.xml
-
   workers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -220,7 +179,7 @@ jobs:
           paths: reports/junit-*.xml
 
   adapters:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
@@ -268,7 +227,7 @@ jobs:
           paths: reports/junit-*.xml
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -302,7 +261,7 @@ jobs:
           paths: reports/junit-frontend-unit.xml
 
   media-fixtures:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout

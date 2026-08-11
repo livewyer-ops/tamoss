@@ -13,7 +13,6 @@ vars:
   TAMS_CONFORMANCE_DIR: tests/tams/conformance
   TAMS_INTEGRATION_DIR: tests/tams/integration
   TAMS_DEPLOYED_DIR: tests/tams/deployed
-  TAMS_TRACEABILITY_DIR: tests/tams/traceability
   TAMS_CONFORMANCE_MARK: "tams_conformance and not tamoss_extension and not tamoss_security"
   TAMS_CONTRACT_MARK: "tams_contract and tams_conformance and not tamoss_extension and not tamoss_security"
   TAMS_SEMANTICS_MARK: "tams_semantics and tams_conformance and not tamoss_extension and not tamoss_security"
@@ -35,14 +34,6 @@ tasks:
       - mkdir -p reports
       - printf 'test py.tams.semantics\n'
       - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_SEMANTICS_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
-
-  tams:traceability:
-    silent: true
-    cmds:
-      - task: :dev:submodules
-      - mkdir -p reports
-      - printf 'test py.tams.traceability\n'
-      - "{{.PYTEST}} {{.TAMS_TRACEABILITY_DIR}} -ra --junitxml=reports/junit-py-tams-traceability.xml"
 
   tams:integration:
     silent: true
@@ -86,7 +77,6 @@ tasks:
     cmds:
       - task: tams:contract
       - task: tams:semantics
-      - task: tams:traceability
       - task: tams:integration
 
   tams:
@@ -124,14 +114,12 @@ tasks:
           printf '%s\n\n' '- `{{.TAMS_CONFORMANCE_DIR}}`'
           printf '%s\n\n' '- `{{.TAMS_INTEGRATION_DIR}}`'
           printf '%s\n\n' '- `{{.TAMS_DEPLOYED_DIR}}`'
-          printf '%s\n\n' '- `{{.TAMS_TRACEABILITY_DIR}}`'
           printf '## Test Files\n\n'
-          find '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' '{{.TAMS_TRACEABILITY_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
+          find '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -maxdepth 1 -type f -name 'test_*.py' \
             | sort \
             | sed 's#^#- `#; s#$#`#'
           printf '\n## Collected Tests\n\n```text\n'
           {{.PYTEST_COLLECT}} '{{.TAMS_CONFORMANCE_DIR}}' '{{.TAMS_INTEGRATION_DIR}}' '{{.TAMS_DEPLOYED_DIR}}' -m '{{.TAMS_CONFORMANCE_MARK}}' --collect-only -q
-          {{.PYTEST_COLLECT}} '{{.TAMS_TRACEABILITY_DIR}}' --collect-only -q
           printf '```\n'
         } > reports/tams-conformance-inventory.md
 

@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   operator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Git Checkout
@@ -79,7 +79,7 @@ jobs:
         run: kubeconform -strict -ignore-missing-schemas -summary operator/config/crd/bases/*.yaml
 
   operator-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -107,7 +107,7 @@ jobs:
         run: task operator:security-lint
 
   operator-chainsaw-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       CHAINSAW_CLUSTER_NAME: tamoss-chainsaw-ci

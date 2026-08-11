@@ -84,11 +84,10 @@ before touching the operator so `go`, `kubeconform`, and
 
 ## Documentation
 
-Use the [documentation structure](docs/development/documentation.md) before
-adding or substantially rewriting a page. Documentation follows Diataxis:
-getting-started tutorials, operations how-to guides, reference contracts, and
-conceptual explanations remain distinct and link to one another. Public docs
-describe current behaviour; unresolved designs stay in development records.
+Documentation follows Diataxis: getting-started tutorials, operations how-to
+guides, reference contracts, and conceptual explanations remain distinct and
+link to one another. Public docs describe current behaviour; unresolved designs
+do not belong in user-facing documentation.
 
 Write prose and commit messages in British English. Preserve literal API field
 names, commands, error codes, and upstream product names exactly.
@@ -102,8 +101,6 @@ Test code lives under `tests/`, organised by what it tests:
   S3/[RustFS](https://github.com/rustfs/rustfs).
 - `tests/tams/deployed/` — deployed TAMS conformance checks against Kind or a
   remote target file.
-- `tests/tams/traceability/` — stable requirement evidence and immutable
-  per-release upstream delta mappings.
 - `tests/e2e/` — deployed product API/UI checks against Kind or a remote target
   file.
 
@@ -116,8 +113,7 @@ task test:tams # local TAMS conformance, including real Postgres/RustFS checks
 
 Run `task deps` before `task test:tams` when local Postgres and RustFS are not
 already running. Use `task test:tams:contract`, `task test:tams:semantics`, or
-`task test:tams:traceability`, or `task test:tams:integration` only when you
-need a narrower CI-style slice.
+`task test:tams:integration` only when you need a narrower CI-style slice.
 
 Other focused suites:
 
@@ -127,7 +123,6 @@ task test:adapters:postgres # Postgres repository persistence checks
 task test:adapters:storage  # configured object-storage checks
 task test:workers           # asynchronous deletion and webhook workers
 task test:frontend # frontend unit/component suite
-task test:tams:traceability # requirement evidence and upstream release deltas
 task test:tams:coverage # backend coverage report over the TAMS gates
 ```
 
@@ -160,10 +155,8 @@ Prefer adding new TAMS-facing behaviour coverage under the contract or semantic
 task that matches the failure mode. Add deployed checks only when the behaviour
 requires a real ingress, browser, object store, or worker deployment.
 
-Use capability-oriented names for enduring tests and requirement IDs. Record
-the version that introduced a requirement in `tests/tams/traceability/`, and use
-versioned test names only when a release or upgrade boundary is the behaviour
-under test.
+Use capability-oriented names for enduring tests. Use versioned test names only
+when a release or upgrade boundary is the behaviour under test.
 
 ## Code organisation
 
@@ -173,10 +166,8 @@ under test.
   Runtime implementation lives under `src/app/tamoss/`.
 - **Tests**: maintained TAMS conformance tests live under
   `tests/tams/conformance/`, focused DB/S3 conformance tests under
-  `tests/tams/integration/`, stable requirements and release provenance under
-  `tests/tams/traceability/`, deployed TAMS checks under
-  `tests/tams/deployed/`, and deployed product API/UI checks under
-  `tests/e2e/`.
+  `tests/tams/integration/`, deployed TAMS checks under `tests/tams/deployed/`,
+  and deployed product API/UI checks under `tests/e2e/`.
 - **Database**: canonical SQL assets live under
   `src/app/tamoss/db/migrations/assets/`; Alembic applies those files at
   runtime.
