@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, status
+from fastapi import APIRouter, Body, Depends, Path, Request, status
 
 from tamoss.api.dependencies import get_storage_use_cases
 from tamoss.application.contexts.storage import StorageUseCases
@@ -13,6 +13,11 @@ from tamoss.contract.validation import strict_contract_model
 from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["MediaStorage"])
+
+
+async def _reject_explicit_null_storage_body(request: Request) -> None:
+    if (await request.body()).strip() == b"null":
+        raise BadRequest("Bad request. Invalid storage request.")
 
 
 @router.post(
@@ -28,6 +33,7 @@ router = APIRouter(tags=["MediaStorage"])
 def allocate_flow_storage(
     flow_id: Annotated[UUID, Path(alias="flowId")],
     storage_request: dict[str, Any] | None = Body(default=None),
+    _null_body: None = Depends(_reject_explicit_null_storage_body),
     storage: StorageUseCases = Depends(get_storage_use_cases),
 ) -> Any:
     try:
@@ -35,7 +41,9 @@ def allocate_flow_storage(
             strict_contract_model(
                 contract_models.FlowStoragePost,
                 storage_request,
-                non_nullable_fields=contract_models.FlowStoragePost.model_fields,
+                recursive_non_nullable_fields=(
+                    contract_models.FlowStoragePost.model_fields
+                ),
             )
             if storage_request is not None
             else None

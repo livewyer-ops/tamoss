@@ -28,7 +28,7 @@ def _validated_webhook_payload(
         webhook = strict_contract_model(
             model_type,
             payload,
-            non_nullable_fields=model_type.model_fields,
+            recursive_non_nullable_fields=model_type.model_fields,
         )
     except (TypeError, ValueError) as exc:
         raise BadRequest("Bad request. Invalid Webhook JSON.") from exc

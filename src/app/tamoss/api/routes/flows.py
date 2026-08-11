@@ -23,6 +23,7 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.listings import FlowSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
@@ -245,14 +246,24 @@ def get_flow_collection(
 )
 def put_flow_collection(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    collection: list[contract_models.FlowCollectionItem],
     request: Request,
+    collection: object = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
+    try:
+        validated_collection = strict_contract_model(
+            contract_models.FlowCollection,
+            collection,
+            recursive_non_nullable_fields=(
+                contract_models.FlowCollectionItem.model_fields
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Flow collection.") from exc
     identity = identify_request(request)
     flows.set_flow_collection(
         flow_id=flow_id,
-        collection=[contract_dump(item) for item in collection],
+        collection=contract_dump(validated_collection),
         identity=identity,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

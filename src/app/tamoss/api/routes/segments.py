@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from mediatimestamp import TimeRange, Timestamp
 
@@ -26,6 +26,7 @@ from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.model import SegmentRecord
 from tamoss.domain.timeranges import finite_normalized_timerange_bounds
 from tamoss.errors import BadRequest, NotFound, error_payload
@@ -156,18 +157,45 @@ def list_segments(
 )
 def post_segments(
     flow_id_path: Annotated[str, Path(alias="flowId")],
-    body: contract_models.FlowSegmentPost | list[contract_models.FlowSegmentPost],
+    body: object = Body(...),
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
     flow_id = _flow_id_or_404(flow_id_path, "The requested Flow does not exist.")
+    try:
+        validated_body = (
+            [
+                strict_contract_model(
+                    contract_models.FlowSegmentPost,
+                    item,
+                    recursive_non_nullable_fields=(
+                        contract_models.FlowSegmentPost.model_fields
+                    ),
+                )
+                for item in body
+            ]
+            if isinstance(body, list)
+            else strict_contract_model(
+                contract_models.FlowSegmentPost,
+                body,
+                recursive_non_nullable_fields=(
+                    contract_models.FlowSegmentPost.model_fields
+                ),
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Flow Segment JSON.") from exc
+
     # The validated models are handed to the use case directly so the payload
     # is not re-validated against the contract a second time.
-    if isinstance(body, list):
-        metrics.observe_segment_ingest_batch(len(body))
+    if isinstance(validated_body, list):
+        metrics.observe_segment_ingest_batch(len(validated_body))
         failed: list[contract_models.FailedSegment] = []
         for segment, result in zip(
-            body,
-            segments.register_segments(flow_id=flow_id, segment_posts=body),
+            validated_body,
+            segments.register_segments(
+                flow_id=flow_id,
+                segment_posts=validated_body,
+            ),
             strict=True,
         ):
             if result.error:
@@ -179,7 +207,7 @@ def post_segments(
                     )
                 )
         metrics.record_segment_ingest_failures(len(failed))
-        metrics.record_segments_ingested(len(body) - len(failed))
+        metrics.record_segments_ingested(len(validated_body) - len(failed))
         if failed:
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
@@ -190,7 +218,7 @@ def post_segments(
         return Response(status_code=status.HTTP_201_CREATED)
 
     metrics.observe_segment_ingest_batch(1)
-    result = segments.register_segment(flow_id=flow_id, segment_post=body)
+    result = segments.register_segment(flow_id=flow_id, segment_post=validated_body)
     if result.error:
         metrics.record_segment_ingest_failures(1)
         raise BadRequest(result.error)

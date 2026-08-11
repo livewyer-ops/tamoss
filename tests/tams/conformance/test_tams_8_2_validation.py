@@ -212,6 +212,149 @@ def test_flow_status_and_init_segments_reject_explicit_null(
     )
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: payload.update(container=None),
+        lambda payload: payload.update(
+            segment_duration={"numerator": 1, "denominator": None}
+        ),
+        lambda payload: payload["essence_parameters"].update(
+            frame_rate={"numerator": 25, "denominator": None}
+        ),
+    ],
+    ids=("container", "segment-duration", "frame-rate"),
+)
+def test_flow_nested_contract_fields_reject_explicit_null(
+    client: TestClient,
+    mutate: Any,
+) -> None:
+    payload = _direct_flow_payload(VIDEO_FORMAT)
+    mutate(payload)
+
+    response = client.put(f"/flows/{payload['id']}", json=payload)
+
+    assert response.status_code == 400
+
+
+def test_profile_nested_technical_fields_reject_explicit_null(
+    client: TestClient,
+) -> None:
+    payload = _profile_payload(VIDEO_FORMAT)
+    payload["flow_metadata"]["segment_duration"] = {
+        "numerator": 1,
+        "denominator": None,
+    }
+
+    response = client.post(f"/service/profiles/{payload['id']}", json=payload)
+
+    assert response.status_code == 400
+
+
+def test_open_technical_objects_preserve_null_extensions(
+    client: TestClient,
+) -> None:
+    payload = _direct_flow_payload(VIDEO_FORMAT)
+    payload["vendor_extension"] = None
+    payload["segment_duration"] = {
+        "numerator": 1,
+        "vendor_extension": None,
+    }
+    payload["container_mapping"] = {
+        "track_index": 0,
+        "vendor_extension": None,
+    }
+    payload["essence_parameters"]["frame_rate"] = {
+        "numerator": 25,
+        "vendor_extension": None,
+    }
+
+    response = client.put(f"/flows/{payload['id']}", json=payload)
+
+    assert response.status_code == 201
+    flow = client.get(f"/flows/{payload['id']}").json()
+    assert flow["vendor_extension"] is None
+    assert flow["segment_duration"]["vendor_extension"] is None
+    assert flow["container_mapping"]["vendor_extension"] is None
+    assert flow["essence_parameters"]["frame_rate"]["vendor_extension"] is None
+
+
+def test_profile_open_technical_objects_preserve_null_extensions(
+    client: TestClient,
+) -> None:
+    payload = _profile_payload(VIDEO_FORMAT)
+    payload["flow_metadata"]["vendor_extension"] = None
+    payload["flow_metadata"]["segment_duration"] = {
+        "numerator": 1,
+        "vendor_extension": None,
+    }
+    payload["flow_metadata"]["essence_parameters"]["frame_rate"] = {
+        "numerator": 25,
+        "vendor_extension": None,
+    }
+
+    response = client.post(f"/service/profiles/{payload['id']}", json=payload)
+
+    assert response.status_code == 201
+    profile = client.get(f"/service/profiles/{payload['id']}").json()
+    assert profile["flow_metadata"]["vendor_extension"] is None
+    assert profile["flow_metadata"]["segment_duration"]["vendor_extension"] is None
+    assert (
+        profile["flow_metadata"]["essence_parameters"]["frame_rate"]["vendor_extension"]
+        is None
+    )
+
+    flow_id = uuid4()
+    derived = client.put(
+        f"/flows/{flow_id}",
+        json={
+            "id": str(flow_id),
+            "source_id": str(uuid4()),
+            "profile_id": payload["id"],
+        },
+    )
+    assert derived.status_code == 201
+    flow = client.get(f"/flows/{flow_id}").json()
+    assert flow["vendor_extension"] is None
+    assert flow["segment_duration"]["vendor_extension"] is None
+    assert flow["essence_parameters"]["frame_rate"]["vendor_extension"] is None
+
+
+def test_flow_collection_rejects_explicit_null_role(client: TestClient) -> None:
+    parent_id, _, _ = create_video_flow(client)
+    child_id, _, _ = create_video_flow(client)
+
+    response = client.put(
+        f"/flows/{parent_id}/flow_collection",
+        json=[{"id": str(child_id), "role": None}],
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("bulk", [False, True], ids=("single", "bulk"))
+def test_segment_posts_reject_explicit_null_init_object_id(
+    client: TestClient,
+    bulk: bool,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    object_id = f"validation/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [object_id])
+    upload_allocated_object(client, object_id)
+    segment = {
+        "object_id": object_id,
+        "timerange": "[0:0_10:0)",
+        "init_object_id": None,
+    }
+
+    response = client.post(
+        f"/flows/{flow_id}/segments",
+        json=[segment] if bulk else segment,
+    )
+
+    assert response.status_code == 400
+
+
 @pytest.mark.parametrize("invalid_value", [0, 1, None, "false"])
 def test_storage_presigned_rejects_non_boolean_json_values(
     client: TestClient,
@@ -225,6 +368,23 @@ def test_storage_presigned_rejects_non_boolean_json_values(
     )
 
     assert response.status_code == 400
+
+
+def test_storage_distinguishes_omitted_body_from_explicit_null(
+    client: TestClient,
+) -> None:
+    omitted_flow_id, _, _ = create_video_flow(client)
+    null_flow_id, _, _ = create_video_flow(client)
+
+    omitted = client.post(f"/flows/{omitted_flow_id}/storage")
+    explicit_null = client.post(
+        f"/flows/{null_flow_id}/storage",
+        content=b"null",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert omitted.status_code == 201
+    assert explicit_null.status_code == 400
 
 
 @pytest.mark.parametrize(

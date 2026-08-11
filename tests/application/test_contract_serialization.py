@@ -58,3 +58,24 @@ def test_contract_dump_uses_public_json_model_options() -> None:
         "timerange": "[0:0_1:0)",
         "get_urls": [],
     }
+
+
+def test_contract_dump_preserves_only_explicit_null_extensions() -> None:
+    flow = contract_models.FlowGet.model_validate(
+        {
+            **video_flow_payload(uuid4(), uuid4()),
+            "description": None,
+            "x-top-level": None,
+            "segment_duration": {
+                "numerator": 1,
+                "denominator": 1,
+                "x-duration": None,
+            },
+        }
+    )
+
+    payload = contract_dump(flow, exclude_unset=True)
+
+    assert "description" not in payload
+    assert payload["x-top-level"] is None
+    assert payload["segment_duration"]["x-duration"] is None

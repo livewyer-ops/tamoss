@@ -7,13 +7,17 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from mediatimestamp import TimeRange
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from tamoss.application import webhooks as webhooking
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
-from tamoss.contract.validation import strict_contract_model
+from tamoss.contract.validation import (
+    reject_explicit_nulls,
+    reject_model_explicit_nulls,
+    strict_contract_model,
+)
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_aware_flow_timeranges,
@@ -80,6 +84,13 @@ _CLOSED_ESSENCE_FIELDS = {
     "urn:x-nmos:format:multi": frozenset(
         contract_models.EssenceParameters4.model_fields
     ),
+}
+_FLOW_TECHNICAL_MODELS: dict[str, type[BaseModel]] = {
+    "urn:x-nmos:format:video": contract_models.FlowVideo,
+    "urn:x-nmos:format:audio": contract_models.FlowAudio,
+    "urn:x-tam:format:image": contract_models.FlowImage,
+    "urn:x-nmos:format:data": contract_models.FlowData,
+    "urn:x-nmos:format:multi": contract_models.FlowMulti,
 }
 
 
@@ -152,6 +163,11 @@ _TECHNICAL_FLOW_FIELDS = {
     "container_mapping",
     "essence_parameters",
 }
+_FLOW_CONTRACT_FIELDS = (
+    frozenset(contract_models.FlowCommon.model_fields)
+    | _TECHNICAL_FLOW_FIELDS
+    | {"profile_id"}
+)
 
 
 def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -160,7 +176,7 @@ def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
         flow = strict_contract_model(
             contract_models.FlowGet,
             payload,
-            non_nullable_fields=("status",),
+            recursive_non_nullable_fields=_FLOW_CONTRACT_FIELDS,
         )
     except (TypeError, ValidationError) as exc:
         raise ValueError("flow payload does not match the BBC TAMS contract") from exc
@@ -168,7 +184,19 @@ def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
+    reject_explicit_nulls(payload, _TECHNICAL_FLOW_FIELDS)
     format_value = payload.get("format")
+    technical_model = (
+        _FLOW_TECHNICAL_MODELS.get(format_value)
+        if isinstance(format_value, str)
+        else None
+    )
+    if technical_model is not None:
+        reject_model_explicit_nulls(
+            technical_model,
+            payload,
+            field_names=_TECHNICAL_FLOW_FIELDS,
+        )
     allowed_fields = (
         _CLOSED_ESSENCE_FIELDS.get(format_value)
         if isinstance(format_value, str)
