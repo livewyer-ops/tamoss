@@ -3,12 +3,14 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Body, Depends, Path, status
 
 from tamoss.api.dependencies import get_storage_use_cases
 from tamoss.application.contexts.storage import StorageUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
+from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["MediaStorage"])
 
@@ -25,12 +27,26 @@ router = APIRouter(tags=["MediaStorage"])
 )
 def allocate_flow_storage(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    storage_request: contract_models.FlowStoragePost | None = None,
+    storage_request: dict[str, Any] | None = Body(default=None),
     storage: StorageUseCases = Depends(get_storage_use_cases),
 ) -> Any:
+    try:
+        validated_request = (
+            strict_contract_model(
+                contract_models.FlowStoragePost,
+                storage_request,
+                non_nullable_fields=contract_models.FlowStoragePost.model_fields,
+            )
+            if storage_request is not None
+            else None
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid storage request.") from exc
     allocations = storage.allocate_flow_storage(
         flow_id=flow_id,
-        request=contract_dump(storage_request) if storage_request is not None else {},
+        request=contract_dump(validated_request)
+        if validated_request is not None
+        else {},
     )
     return contract_dump(
         contract_models.FlowStorage(media_objects=allocations),

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import Query, Request
 
-from tamoss.domain.tags import parse_bool_filter
+from tamoss.domain.tags import parse_bool_filter, parse_tag_value_list
 from tamoss.errors import BadRequest
 
 
@@ -47,16 +47,14 @@ def parse_flow_tag_filters(
 ) -> tuple[dict[str, set[str]], dict[str, bool]]:
     values: dict[str, set[str]] = {}
     exists: dict[str, bool] = {}
-    for key, value in request.query_params.items():
-        if key.startswith("flow_tag."):
-            values[key.removeprefix("flow_tag.")] = {
-                part for part in value.split(",") if part
-            }
-        elif key.startswith("flow_tag_exists."):
-            try:
+    try:
+        for key, value in request.query_params.items():
+            if key.startswith("flow_tag."):
+                values[key.removeprefix("flow_tag.")] = parse_tag_value_list(value)
+            elif key.startswith("flow_tag_exists."):
                 exists[key.removeprefix("flow_tag_exists.")] = parse_bool_filter(value)
-            except ValueError as exc:
-                raise BadRequest("Bad request. Invalid query options.") from exc
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
     return values, exists
 
 
@@ -65,18 +63,18 @@ def parse_storage_backend_tag_filters(
 ) -> tuple[dict[str, set[str]], dict[str, bool]]:
     values: dict[str, set[str]] = {}
     exists: dict[str, bool] = {}
-    for key, value in request.query_params.items():
-        if key.startswith("storage_backend_tag."):
-            values[key.removeprefix("storage_backend_tag.")] = {
-                part for part in value.split(",") if part
-            }
-        elif key.startswith("storage_backend_tag_exists."):
-            try:
+    try:
+        for key, value in request.query_params.items():
+            if key.startswith("storage_backend_tag."):
+                values[key.removeprefix("storage_backend_tag.")] = parse_tag_value_list(
+                    value
+                )
+            elif key.startswith("storage_backend_tag_exists."):
                 exists[key.removeprefix("storage_backend_tag_exists.")] = (
                     parse_bool_filter(value)
                 )
-            except ValueError as exc:
-                raise BadRequest("Bad request. Invalid query options.") from exc
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid query options.") from exc
     return values, exists
 
 

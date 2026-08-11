@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +13,7 @@ from tamoss.application import webhooks as webhooking
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_aware_flow_timeranges,
@@ -63,6 +63,23 @@ INIT_SEGMENTS_FLOW_FORMATS = {
     "urn:x-nmos:format:audio",
     "urn:x-nmos:format:data",
     "urn:x-nmos:format:multi",
+}
+_CLOSED_ESSENCE_FIELDS = {
+    "urn:x-nmos:format:video": frozenset(
+        contract_models.EssenceParameters.model_fields
+    ),
+    "urn:x-nmos:format:audio": frozenset(
+        contract_models.EssenceParameters1.model_fields
+    ),
+    "urn:x-tam:format:image": frozenset(
+        contract_models.EssenceParameters2.model_fields
+    ),
+    "urn:x-nmos:format:data": frozenset(
+        contract_models.EssenceParameters3.model_fields
+    ),
+    "urn:x-nmos:format:multi": frozenset(
+        contract_models.EssenceParameters4.model_fields
+    ),
 }
 
 
@@ -138,40 +155,53 @@ _TECHNICAL_FLOW_FIELDS = {
 
 
 def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    validate_init_segments_capability(payload)
+    validate_flow_technical_metadata(payload)
     try:
-        # Validate as JSON so strict mode still accepts contract encodings such
-        # as UUID and datetime strings while rejecting scalar coercion.
-        flow = contract_models.FlowGet.model_validate_json(
-            json.dumps(payload),
-            strict=True,
+        flow = strict_contract_model(
+            contract_models.FlowGet,
+            payload,
+            non_nullable_fields=("status",),
         )
     except (TypeError, ValidationError) as exc:
         raise ValueError("flow payload does not match the BBC TAMS contract") from exc
-
-    if isinstance(flow.root, contract_models.FlowVideo):
-        _validate_video_frame_rate(flow.root.essence_parameters)
     return contract_dump(flow, exclude_unset=True)
 
 
-def validate_init_segments_capability(payload: dict[str, Any]) -> None:
+def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
+    format_value = payload.get("format")
+    allowed_fields = (
+        _CLOSED_ESSENCE_FIELDS.get(format_value)
+        if isinstance(format_value, str)
+        else None
+    )
     essence_parameters = payload.get("essence_parameters")
     if (
-        isinstance(essence_parameters, dict)
-        and "init_segments" in essence_parameters
-        and payload.get("format") not in INIT_SEGMENTS_FLOW_FORMATS
+        "essence_parameters" in payload
+        and essence_parameters is None
+        and allowed_fields is not None
+    ):
+        raise ValueError("essence_parameters must not be null")
+    if not isinstance(essence_parameters, dict):
+        return
+
+    if allowed_fields is not None and not essence_parameters.keys() <= allowed_fields:
+        raise ValueError("essence_parameters contains unsupported fields")
+
+    if any(value is None for value in essence_parameters.values()):
+        raise ValueError("essence_parameters fields must not be null")
+    if "init_segments" in essence_parameters and (
+        not isinstance(format_value, str)
+        or format_value not in INIT_SEGMENTS_FLOW_FORMATS
     ):
         raise ValueError("init_segments is not supported by this Flow format")
 
-
-def _validate_video_frame_rate(
-    essence: contract_models.EssenceParameters,
-) -> None:
-    if essence.vfr:
-        if essence.frame_rate is not None:
+    if format_value == "urn:x-nmos:format:video":
+        variable_frame_rate = essence_parameters.get("vfr", False)
+        has_frame_rate = "frame_rate" in essence_parameters
+        if variable_frame_rate is True and has_frame_rate:
             raise ValueError("frame_rate must not be set when vfr is true")
-    elif essence.frame_rate is None:
-        raise ValueError("frame_rate is required when vfr is false or omitted")
+        if variable_frame_rate is not True and not has_frame_rate:
+            raise ValueError("frame_rate is required when vfr is false or omitted")
 
 
 def ensure_flow_writable(flow: FlowRecord) -> None:

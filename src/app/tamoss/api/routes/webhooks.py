@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
@@ -11,10 +11,28 @@ from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.application.contexts.webhooks import WebhookUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.tags import parse_tag_filters
 from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Webhooks"])
+
+
+def _validated_webhook_payload(
+    payload: dict[str, Any],
+    *,
+    update: bool,
+) -> dict[str, Any]:
+    model_type = contract_models.WebhookPut if update else contract_models.WebhookPost
+    try:
+        webhook = strict_contract_model(
+            model_type,
+            payload,
+            non_nullable_fields=model_type.model_fields,
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Webhook JSON.") from exc
+    return cast(dict[str, Any], contract_dump(webhook))
 
 
 @router.get(
@@ -66,10 +84,12 @@ def list_webhooks(
     },
 )
 def post_webhook(
-    webhook: contract_models.WebhookPost,
+    webhook: dict[str, Any],
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
-    return webhook_response(webhooks.create_webhook(contract_dump(webhook)))
+    return webhook_response(
+        webhooks.create_webhook(_validated_webhook_payload(webhook, update=False))
+    )
 
 
 @router.get(
@@ -103,13 +123,13 @@ def get_webhook(
 )
 def put_webhook(
     webhook_id: Annotated[UUID, Path(alias="webhookId")],
-    webhook: contract_models.WebhookPut,
+    webhook: dict[str, Any],
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     return webhook_response(
         webhooks.put_webhook(
             webhook_id=webhook_id,
-            webhook=contract_dump(webhook),
+            webhook=_validated_webhook_payload(webhook, update=True),
         )
     )
 

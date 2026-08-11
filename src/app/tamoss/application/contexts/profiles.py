@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
 
-from tamoss.application.contexts.flows import validate_init_segments_capability
+from tamoss.application.contexts.flows import validate_flow_technical_metadata
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.model import ProfileRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.errors import BadRequest, NotFound
@@ -77,10 +77,11 @@ class ProfileUseCases:
             raise BadRequest("Bad request. Invalid Profile JSON.")
         try:
             if isinstance(raw_flow_metadata, dict):
-                validate_init_segments_capability(raw_flow_metadata)
-            profile = contract_models.Profile.model_validate_json(
-                json.dumps(payload),
-                strict=True,
+                validate_flow_technical_metadata(raw_flow_metadata)
+            profile = strict_contract_model(
+                contract_models.Profile,
+                payload,
+                non_nullable_fields=contract_models.Profile.model_fields,
             )
         except (TypeError, ValidationError, ValueError) as exc:
             raise BadRequest("Bad request. Invalid Profile JSON.") from exc

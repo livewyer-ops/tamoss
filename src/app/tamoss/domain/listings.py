@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from tamoss.errors import BadRequest
+
+_UUID_LIST_EMPTY_PATTERN = re.compile(
+    r"^(([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-"
+    r"[0-9a-f]{12})(,[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12})*)?$"
+)
 
 
 class ListingSortBy(StrEnum):
@@ -39,13 +46,9 @@ def parse_collected_by_ids(raw: str | None) -> tuple[set[UUID] | None, bool]:
         return None, False
     if raw == "":
         return set(), True
-    try:
-        values = {UUID(value) for value in raw.split(",") if value}
-    except ValueError as exc:
-        raise BadRequest("Bad request. Invalid query options.") from exc
-    if not values:
+    if _UUID_LIST_EMPTY_PATTERN.fullmatch(raw) is None:
         raise BadRequest("Bad request. Invalid query options.")
-    return values, False
+    return {UUID(value) for value in raw.split(",")}, False
 
 
 def sorted_listing[T](
