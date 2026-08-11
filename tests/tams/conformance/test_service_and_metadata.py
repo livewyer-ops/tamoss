@@ -31,7 +31,7 @@ def test_service_root_and_metadata_follow_bbc_service_shape(
     assert service.status_code == 200
     payload = service.json()
     assert payload["type"] == "urn:x-tams:service.tamoss"
-    assert payload["api_version"] == "8.1"
+    assert payload["api_version"] == "8.2"
     assert payload["service_version"] == "tamoss-bbc-parity"
     assert payload["min_object_timeout"] == "300:0"
     assert payload["min_presigned_url_timeout"] == "30:0"

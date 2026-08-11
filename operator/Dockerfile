@@ -6,7 +6,7 @@ ARG TARGETARCH
 ARG VERSION=0.0.1
 ARG SCHEMA_VERSION
 ARG PREVIOUS_SCHEMA_VERSION
-ARG TAMS_API_VERSION=8.1
+ARG TAMS_API_VERSION=8.2
 # Operand image tag the operator defaults to when a Tamoss spec omits one.
 # CI passes the image tag it publishes for the build (release version, :main,
 # or :pr-N); plain local builds fall back to "dev".

@@ -13,7 +13,7 @@ IMG ?= livewyer/tamoss-operator:v$(VERSION)
 ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
-TAMS_API_VERSION ?= 8.1
+TAMS_API_VERSION ?= 8.2
 # OPERAND_VERSION sets the operand image tag the operator defaults to when a
 # Tamoss spec omits one. Release builds pass the release version; development
 # builds keep the "dev" fallback.

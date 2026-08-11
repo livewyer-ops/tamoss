@@ -134,9 +134,9 @@ def test_runtime_openapi_distinguishes_tamoss_and_tams_versions(
     schema = tamoss_app.openapi()
 
     assert schema["info"]["version"] != "0.0.0"
-    assert schema["info"]["version"] != "8.1"
+    assert schema["info"]["version"] != "8.2"
     assert schema["info"]["x-tamoss-version"] == schema["info"]["version"]
-    assert schema["info"]["x-bbc-tams-api-version"] == "8.1"
+    assert schema["info"]["x-bbc-tams-api-version"] == "8.2"
 
 
 def _load_openapi_parity_module() -> ModuleType:

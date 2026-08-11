@@ -207,7 +207,7 @@ def test_default_versions_are_not_placeholders() -> None:
 
     assert settings.tamoss_version != "0.0.0"
     assert settings.service_version != "0.0.0"
-    assert settings.api_version == "8.1"
+    assert settings.api_version == "8.2"
 
 
 def test_runtime_secret_files_are_reloaded(tmp_path) -> None:

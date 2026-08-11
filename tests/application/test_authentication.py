@@ -69,7 +69,7 @@ def test_bbc_bearer_token_authentication() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["api_version"] == "8.1"
+    assert response.json()["api_version"] == "8.2"
 
 
 def test_bbc_url_token_authentication() -> None:
@@ -77,7 +77,7 @@ def test_bbc_url_token_authentication() -> None:
         response = client.get("/service", params={"access_token": API_TOKEN})
 
     assert response.status_code == 200
-    assert response.json()["api_version"] == "8.1"
+    assert response.json()["api_version"] == "8.2"
 
 
 def test_bbc_basic_authentication() -> None:
@@ -92,7 +92,7 @@ def test_bbc_basic_authentication() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["api_version"] == "8.1"
+    assert response.json()["api_version"] == "8.2"
 
 
 def test_bbc_basic_authentication_does_not_use_static_token_as_password() -> None:
@@ -155,7 +155,7 @@ def test_forward_auth_accepts_identity_headers_with_matching_proof() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["api_version"] == "8.1"
+    assert response.json()["api_version"] == "8.2"
 
 
 def test_bbc_authentication_rejects_invalid_credentials() -> None:

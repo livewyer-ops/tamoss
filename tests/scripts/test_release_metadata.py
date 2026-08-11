@@ -50,6 +50,37 @@ def test_release_metadata_emits_corrected_80_release_metadata() -> None:
     assert metadata["upgrade_from"] == "8.0.0-oss1"
 
 
+def test_release_metadata_emits_tams_82_schema_upgrade() -> None:
+    result = run_metadata("8.2.0-oss1")
+
+    assert result.returncode == 0, result.stderr
+    metadata = parse_output(result.stdout)
+    assert metadata == {
+        "version": "8.2.0-oss1",
+        "schema_revision": "8.2.0-oss1",
+        "previous_schema_revision": "8.1.0-oss2",
+        "tams_api": "8.2",
+        "upgrade_class": "SchemaAndAPI",
+        "upgrade_from": "8.1.0-oss6",
+    }
+
+
+def test_local_operator_builds_forward_release_metadata() -> None:
+    taskfile = (REPO_ROOT / ".tasks/operator.yaml").read_text(encoding="utf-8")
+    chainsaw = (REPO_ROOT / ".tasks/lib/operator_chainsaw.sh").read_text(
+        encoding="utf-8"
+    )
+    kind_taskfile = (REPO_ROOT / ".tasks/kind.yaml").read_text(encoding="utf-8")
+
+    for content in (taskfile, chainsaw, kind_taskfile):
+        assert "PREVIOUS_SCHEMA_VERSION" in content
+        assert "OPERAND_VERSION" in content
+
+    for content in (taskfile, chainsaw):
+        assert "docker-build" in content
+    assert ":operator:image:build" in kind_taskfile
+
+
 def test_release_metadata_rejects_multiple_previous_schema_revisions(
     tmp_path: Path,
 ) -> None:
