@@ -12,11 +12,13 @@ from tamoss.application.contexts.flows import (
     unlink_flow_collection_references,
 )
 from tamoss.auth import Identity
+from tamoss.domain.listings import DeleteRequestSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     MediaObjectRecord,
     utc_now,
 )
+from tamoss.domain.pagination import Page
 from tamoss.domain.segments import segment_delete_filter
 from tamoss.errors import BadRequest, NotFound
 from tamoss.ports.object_storage import ObjectStorage
@@ -51,6 +53,22 @@ class DeletionUseCases:
         requests = self.repository.list_delete_requests()
         requests.sort(key=lambda request: str(request.id))
         return requests
+
+    def list_delete_requests_page(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy,
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[DeletionRequestRecord]:
+        return self.repository.list_delete_requests_page(
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            retention_seconds=self.settings.worker_queue_retention_seconds,
+            page=page,
+            limit=limit,
+        )
 
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord:
         request = self.repository.get_delete_request(request_id)

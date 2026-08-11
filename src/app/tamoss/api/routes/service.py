@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from tamoss.api.dependencies import get_service_use_cases
-from tamoss.api.presenters import head_response, storage_backend_response
+from tamoss.api.presenters import (
+    head_response,
+    storage_backend_response,
+    with_page_headers,
+)
 from tamoss.api.query_params import validate_query_params
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.contract.generated import contract_models
@@ -55,11 +59,22 @@ def post_service(
 @router.get("/service/storage-backends")
 @router.head("/service/storage-backends")
 def storage_backends(
-    request: Request, service: ServiceUseCases = Depends(get_service_use_cases)
+    request: Request,
+    response: Response,
+    reverse_order: bool = False,
+    page: str | None = None,
+    limit: int | None = Query(default=None, gt=0),
+    service: ServiceUseCases = Depends(get_service_use_cases),
 ) -> Any:
-    validate_query_params(request, set())
-    if head := head_response(request):
+    validate_query_params(request, {"reverse_order", "page", "limit"})
+    backend_page = service.list_storage_backends_page(
+        tag_values={},
+        tag_exists={},
+        reverse_order=reverse_order,
+        page=page,
+        limit=limit,
+    )
+    with_page_headers(response, request, backend_page, reverse_order=reverse_order)
+    if head := head_response(request, response):
         return head
-    return [
-        storage_backend_response(backend) for backend in service.list_storage_backends()
-    ]
+    return [storage_backend_response(backend) for backend in backend_page.items]

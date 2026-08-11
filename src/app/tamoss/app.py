@@ -52,6 +52,7 @@ CORS_EXPOSE_HEADERS = [
     "X-Paging-Count",
     "X-Paging-Limit",
     "X-Paging-NextKey",
+    "X-Paging-Reverse-Order",
 ]
 
 

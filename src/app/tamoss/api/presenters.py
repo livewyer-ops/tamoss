@@ -25,9 +25,17 @@ from tamoss.errors import normalize_error_payload
 JsonPayload = dict[str, object]
 
 
-def with_page_headers(response: Response, request: Request, page: Page[object]) -> None:
+def with_page_headers(
+    response: Response,
+    request: Request,
+    page: Page[object],
+    *,
+    reverse_order: bool | None = None,
+) -> None:
     response.headers["X-Paging-Limit"] = str(page.limit)
     response.headers["X-Paging-Count"] = str(len(page.items))
+    if reverse_order is not None:
+        response.headers["X-Paging-Reverse-Order"] = str(reverse_order).lower()
     if page.next_page is not None:
         response.headers["X-Paging-NextKey"] = page.next_page
         response.headers["Link"] = (

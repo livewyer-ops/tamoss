@@ -445,3 +445,67 @@ def test_all_flow_status_values_are_filterable_through_get_and_head(
         assert listed.status_code == 200
         assert [item["id"] for item in listed.json()] == [str(flow_ids[flow_status])]
         assert headed.status_code == 200
+
+
+def test_flow_and_source_created_and_updated_sorting_defaults_and_reversal(
+    client: TestClient,
+) -> None:
+    first_flow_id = uuid4()
+    first_source_id = uuid4()
+    second_flow_id = uuid4()
+    second_source_id = uuid4()
+    first_payload = video_flow_payload(first_flow_id, first_source_id, label="First")
+    second_payload = video_flow_payload(
+        second_flow_id, second_source_id, label="Second"
+    )
+    assert client.put(f"/flows/{first_flow_id}", json=first_payload).status_code == 201
+    assert (
+        client.put(f"/flows/{second_flow_id}", json=second_payload).status_code == 201
+    )
+
+    def ids(path: str, **params: str) -> list[str]:
+        response = client.get(path, params=params)
+        assert response.status_code == 200
+        assert response.headers["x-paging-reverse-order"] == params.get(
+            "reverse_order", "false"
+        )
+        return [item["id"] for item in response.json()]
+
+    assert ids("/flows") == [str(second_flow_id), str(first_flow_id)]
+    assert ids("/flows", sort_by="created") == [
+        str(second_flow_id),
+        str(first_flow_id),
+    ]
+    assert ids("/flows", sort_by="created", reverse_order="true") == [
+        str(first_flow_id),
+        str(second_flow_id),
+    ]
+    assert ids("/sources") == [str(second_source_id), str(first_source_id)]
+    assert ids("/sources", sort_by="created") == [
+        str(second_source_id),
+        str(first_source_id),
+    ]
+    assert ids("/sources", sort_by="created", reverse_order="true") == [
+        str(first_source_id),
+        str(second_source_id),
+    ]
+
+    first_payload["label"] = "First updated"
+    assert client.put(f"/flows/{first_flow_id}", json=first_payload).status_code == 204
+    assert ids("/flows", sort_by="metadata_updated") == [
+        str(first_flow_id),
+        str(second_flow_id),
+    ]
+    assert ids(
+        "/flows",
+        sort_by="metadata_updated",
+        reverse_order="true",
+    ) == [str(second_flow_id), str(first_flow_id)]
+    assert ids("/sources", sort_by="updated") == [
+        str(first_source_id),
+        str(second_source_id),
+    ]
+    assert ids("/sources", sort_by="updated", reverse_order="true") == [
+        str(second_source_id),
+        str(first_source_id),
+    ]

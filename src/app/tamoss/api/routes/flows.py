@@ -23,6 +23,7 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -52,6 +53,8 @@ def list_flows(
     codec: str | None = None,
     profile_id: UUID | None = None,
     label: str | None = None,
+    reverse_order: bool = False,
+    sort_by: FlowSortBy = FlowSortBy.CREATED,
     status: contract_models.FlowStatus | None = None,
     frame_width: int | None = None,
     frame_height: int | None = None,
@@ -69,6 +72,8 @@ def list_flows(
             "codec",
             "profile_id",
             "label",
+            "reverse_order",
+            "sort_by",
             "status",
             "frame_width",
             "frame_height",
@@ -88,6 +93,8 @@ def list_flows(
         profile_id=profile_id,
         status=status,
         codec=codec,
+        sort_by=sort_by,
+        reverse_order=reverse_order,
         label=label,
         frame_width=frame_width,
         frame_height=frame_height,
@@ -96,7 +103,7 @@ def list_flows(
         page=page,
         limit=limit,
     )
-    with_page_headers(response, request, flow_page)
+    with_page_headers(response, request, flow_page, reverse_order=reverse_order)
     if head := head_response(request, response):
         return head
     timeranges = (
