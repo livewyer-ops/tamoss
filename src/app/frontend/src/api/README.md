@@ -27,7 +27,19 @@ All page code should call `TamossApiClient`, which inherits the shared
 `src/types/tams.ts` are derived from the generated contract and keep local
 typing choices close to the API boundary.
 
-Data loading should use `useApiQuery` or a focused workflow hook. The hook is
-backed by TanStack Query with the shared `apiQueryPolicy` in `src/api/query.ts`;
-mutations should invalidate `apiQueryKeys.all` or a narrower key from that
-module rather than scattering cache-key strings in page components.
+Data loading goes through TanStack Query directly — there is no wrapper hook.
+Pages call `useQuery` with the client from `useApi()`
+(`src/contexts/ApiContext.tsx`). Shared defaults for retry, `staleTime` and
+`refetchOnWindowFocus` are set once on the `apiQueryClient` in
+`src/api/query.ts` and apply to every query, so page code supplies only
+`queryKey` and `queryFn`.
+
+Query keys are arrays scoped by their first element: `["api", ...]` for the TAMS
+API and `["control", ...]` for the Console API. Console keys are named constants
+in the `src/control/` hooks because mutations invalidate them; TAMS keys are
+written at the call site. A mutation that changes a resource should invalidate
+the narrowest key covering it.
+
+Catalog routes page through `useCursorPage` (`src/hooks/useCursorPage.ts`),
+which holds cursor state and request cancellation itself rather than through
+TanStack Query.
