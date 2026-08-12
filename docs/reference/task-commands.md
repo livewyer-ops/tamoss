@@ -74,6 +74,7 @@ use stable `reports/junit-*.xml` names.
 | `task test:tams:conformance` | Alias for the complete local TAMS conformance gate. |
 | `task test:tams:inventory` | Generate the current TAMS conformance inventory report. |
 | `task test:tams:coverage` | Generate backend coverage over the TAMS conformance tests. |
+| `task test:tamsin:release` | Exercise the exact TAMSin release image, treatment catalogue, managed fixture plans, and event protocol. |
 | `task lint:mypy` | Run Python mypy checks. |
 | `task lint:ruff:lint` | Check Python import order and formatting. |
 | `task lint:ruff:fix` | Fix Python import order and formatting. |

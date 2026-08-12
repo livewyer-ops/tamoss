@@ -61,8 +61,8 @@ func sessionResponse(identity Identity, cancellationAvailable bool) SessionRespo
 			},
 			Create: Capability{
 				Available: false,
-				Allowed:   identity.HasRole(RoleIngestRunner),
-				Reason:    "ingest_creation_unavailable",
+				Allowed:   false,
+				Reason:    "ingest_creation_kubernetes_only",
 			},
 			Cancel: Capability{
 				Available: cancellationAvailable,

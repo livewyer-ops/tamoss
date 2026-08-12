@@ -12,6 +12,201 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+  name: flowprofiles.tamoss.livewyer.io
+spec:
+  group: tamoss.livewyer.io
+  names:
+    kind: FlowProfile
+    listKind: FlowProfileList
+    plural: flowprofiles
+    shortNames:
+    - fp
+    singular: flowprofile
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tamossRef.name
+      name: Tamoss
+      type: string
+    - jsonPath: .status.profileID
+      name: Profile ID
+      type: string
+    - jsonPath: .status.resolved.format
+      name: Format
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: FlowProfile declaratively registers an immutable TAMS Flow Profile.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              description:
+                type: string
+              flowMetadata:
+                description: |-
+                  FlowMetadata is copied to the TAMS flow_metadata object. The operator
+                  preserves extensions and the TAMOSS registration command applies the full
+                  TAMS contract validation before writing anything.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              id:
+                description: |-
+                  ID is the immutable TAMS Profile UUID. Empty derives a deterministic UUID
+                  from the FlowProfile namespace and name.
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                type: string
+              label:
+                type: string
+              tags:
+                additionalProperties:
+                  x-kubernetes-preserve-unknown-fields: true
+                description: Tags use the TAMS string-or-string-array value union.
+                type: object
+              tamossRef:
+                description: TamossRef identifies the same-namespace Tamoss instance
+                  receiving the Profile.
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                type: object
+            required:
+            - flowMetadata
+            - tamossRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec.id is immutable
+              rule: has(self.id) == has(oldSelf.id) && (!has(self.id) || self.id ==
+                oldSelf.id)
+            - message: spec.tamossRef is immutable
+              rule: self.tamossRef == oldSelf.tamossRef
+            - message: spec.label is immutable
+              rule: has(self.label) == has(oldSelf.label) && (!has(self.label) ||
+                self.label == oldSelf.label)
+            - message: spec.description is immutable
+              rule: has(self.description) == has(oldSelf.description) && (!has(self.description)
+                || self.description == oldSelf.description)
+          status:
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - Progressing
+                - Ready
+                - Degraded
+                - Deleting
+                type: string
+              profileID:
+                type: string
+              resolved:
+                properties:
+                  codec:
+                    type: string
+                  format:
+                    type: string
+                  tamossName:
+                    type: string
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: ingestruns.tamoss.livewyer.io
 spec:
   group: tamoss.livewyer.io
@@ -45,7 +240,7 @@ spec:
       openAPIV3Schema:
         description: |-
           IngestRun is a durable request to ingest media through an operator-owned
-          Tamsin Job template.
+          TAMSin Job template.
         properties:
           apiVersion:
             description: |-
@@ -66,18 +261,6 @@ spec:
             type: object
           spec:
             properties:
-              credentialProfileRef:
-                properties:
-                  name:
-                    description: |-
-                      Name selects an operator-approved profile belonging to the target
-                      Tamoss. It does not name a Kubernetes Secret directly.
-                    maxLength: 63
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                type: object
               desiredState:
                 default: Running
                 description: |-
@@ -87,27 +270,33 @@ spec:
                 - Running
                 - Cancelled
                 type: string
-              inputRef:
-                description: InputRef is resolved through the approved server-side
-                  input boundary.
+              input:
+                description: |-
+                  Input is validated against the target Tamoss source policy immediately
+                  before the operator creates the TAMSin Job.
                 properties:
-                  id:
-                    description: ID is opaque outside the Console API and operator
-                      input resolver.
-                    maxLength: 128
-                    minLength: 1
-                    pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
-                    type: string
                   kind:
                     enum:
-                    - StagedObject
-                    - Manifest
-                    - ApprovedS3
-                    - ApprovedHTTP
+                    - HTTP
+                    - S3
+                    type: string
+                  sourceRef:
+                    properties:
+                      name:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  uri:
+                    maxLength: 2048
+                    minLength: 1
                     type: string
                 required:
-                - id
                 - kind
+                - uri
                 type: object
               options:
                 properties:
@@ -126,7 +315,7 @@ spec:
                     type: boolean
                   maxInputs:
                     default: 1000
-                    description: MaxInputs bounds manifest and approved-prefix expansion.
+                    description: MaxInputs bounds manifest and source-prefix expansion.
                     format: int32
                     maximum: 10000
                     minimum: 1
@@ -145,18 +334,116 @@ spec:
                     required:
                     - name
                     type: object
+                  tamsFlowProfiles:
+                    description: |-
+                      TAMSFlowProfiles assigns service-owned TAMS 8.2 Flow Profiles to the
+                      essence streams produced by TAMSin.
+                    items:
+                      description: |-
+                        IngestRunTAMSFlowProfile assigns an immutable TAMS 8.2 Flow Profile to one
+                        essence stream produced by TAMSin. It is separate from the TAMSin treatment
+                        selected by spec.profile.
+                      properties:
+                        format:
+                          enum:
+                          - video
+                          - audio
+                          - image
+                          - data
+                          type: string
+                        index:
+                          default: 0
+                          description: Index selects the zero-based stream of the
+                            requested essence format.
+                          format: int32
+                          maximum: 255
+                          minimum: 0
+                          type: integer
+                        profileID:
+                          description: ProfileID is the canonical UUID of an externally
+                            managed TAMS Flow Profile.
+                          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                          type: string
+                        profileRef:
+                          description: |-
+                            ProfileRef selects an operator-managed FlowProfile. The controller resolves
+                            the Ready resource to an immutable TAMS UUID before creating the TAMSin Job.
+                          properties:
+                            name:
+                              description: Name selects a Ready FlowProfile in the
+                                IngestRun namespace.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
+                      required:
+                      - format
+                      - index
+                      type: object
+                      x-kubernetes-validations:
+                      - message: exactly one of profileID or profileRef is required
+                        rule: has(self.profileID) != has(self.profileRef)
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - format
+                    - index
+                    x-kubernetes-list-type: map
                   verify:
                     default: true
                     description: Verify downloads and verifies uploaded Object bytes.
                     type: boolean
                 type: object
+              output:
+                description: |-
+                  Output is optional human-facing metadata for the Flow graph produced from
+                  one input. It is immutable and requires options.maxInputs=1 so one intent
+                  cannot ambiguously name several input graphs.
+                properties:
+                  flowMetadata:
+                    description: |-
+                      IngestRunFlowMetadata is a deliberately constrained subset of TAMS Flow
+                      metadata. TAMSin applies it to every Flow in the generated graph without
+                      exposing its general JSON override or technical media fields through the
+                      Kubernetes API.
+                    properties:
+                      description:
+                        description: |-
+                          Description is the longer human-readable description applied to generated
+                          Flows.
+                        maxLength: 4096
+                        minLength: 1
+                        type: string
+                      label:
+                        description: Label is the short human-readable name applied
+                          to generated Flows.
+                        maxLength: 256
+                        minLength: 1
+                        type: string
+                      tags:
+                        additionalProperties:
+                          x-kubernetes-preserve-unknown-fields: true
+                        description: |-
+                          Tags accepts the TAMS string-or-string-array value union. The controller
+                          rejects reserved _tamsin_ keys and values outside that union before it
+                          creates a Job.
+                        maxProperties: 32
+                        type: object
+                    type: object
+                required:
+                - flowMetadata
+                type: object
               profile:
-                default: editorial@1
-                description: Profile is a versioned Tamsin ingest profile.
+                default: essence-segments@1
+                description: Profile is a versioned TAMSin ingest profile.
                 enum:
                 - preserve@1
-                - editorial@1
-                - streaming-ts@1
+                - demux@1
+                - muxed-segments@1
+                - essence-segments@1
+                - mpegts-segments@1
                 type: string
               retryOf:
                 properties:
@@ -192,7 +479,7 @@ spec:
                     type: string
                 type: object
             required:
-            - inputRef
+            - input
             - tamossRef
             type: object
             x-kubernetes-validations:
@@ -201,8 +488,8 @@ spec:
                 > 0
             - message: spec.tamossRef.name is immutable
               rule: self.tamossRef.name == oldSelf.tamossRef.name
-            - message: spec.inputRef is immutable
-              rule: self.inputRef == oldSelf.inputRef
+            - message: spec.input is immutable
+              rule: self.input == oldSelf.input
             - message: spec.profile is immutable
               rule: self.profile == oldSelf.profile
             - message: spec.sizeClass is immutable
@@ -210,10 +497,12 @@ spec:
             - message: spec.options is immutable
               rule: has(self.options) == has(oldSelf.options) && (!has(self.options)
                 || self.options == oldSelf.options)
-            - message: spec.credentialProfileRef is immutable
-              rule: has(self.credentialProfileRef) == has(oldSelf.credentialProfileRef)
-                && (!has(self.credentialProfileRef) || self.credentialProfileRef ==
-                oldSelf.credentialProfileRef)
+            - message: spec.output is immutable
+              rule: has(self.output) == has(oldSelf.output) && (!has(self.output)
+                || self.output == oldSelf.output)
+            - message: spec.output requires spec.options.maxInputs to equal 1
+              rule: '!has(self.output) || (has(self.options) && self.options.maxInputs
+                == 1)'
             - message: spec.retryOf is immutable
               rule: has(self.retryOf) == has(oldSelf.retryOf) && (!has(self.retryOf)
                 || self.retryOf == oldSelf.retryOf)
@@ -304,6 +593,40 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              output:
+                description: |-
+                  IngestRunOutputStatus contains only identities from TAMSin's validated event
+                  stream. It never discovers results by listing TAMS resources after a run.
+                properties:
+                  memberFlows:
+                    items:
+                      properties:
+                        format:
+                          maxLength: 128
+                          type: string
+                        id:
+                          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                          type: string
+                        role:
+                          maxLength: 64
+                          type: string
+                      required:
+                      - id
+                      type: object
+                    maxItems: 16
+                    type: array
+                  memberFlowsTruncated:
+                    type: boolean
+                  rootFlowID:
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                    type: string
+                  sourceID:
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                    type: string
+                required:
+                - rootFlowID
+                - sourceID
+                type: object
               phase:
                 enum:
                 - Pending
@@ -332,6 +655,48 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              resolvedSource:
+                properties:
+                  name:
+                    type: string
+                  policyDigest:
+                    description: |-
+                      PolicyDigest identifies the immutable operator validation snapshot which
+                      admitted the Job without exposing selectors, endpoints or credentials.
+                    pattern: ^[a-f0-9]{64}$
+                    type: string
+                type: object
+              resolvedTamsFlowProfiles:
+                items:
+                  properties:
+                    format:
+                      enum:
+                      - video
+                      - audio
+                      - image
+                      - data
+                      type: string
+                    index:
+                      format: int32
+                      maximum: 255
+                      minimum: 0
+                      type: integer
+                    profileID:
+                      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                      type: string
+                    profileRef:
+                      type: string
+                  required:
+                  - format
+                  - index
+                  - profileID
+                  type: object
+                maxItems: 64
+                type: array
+                x-kubernetes-list-map-keys:
+                - format
+                - index
+                x-kubernetes-list-type: map
               resultRef:
                 properties:
                   key:
@@ -9988,50 +10353,139 @@ spec:
                 type: object
               ingest:
                 description: |-
-                  Ingest approves the media an IngestRun may read. An empty list resolves
-                  no input at all, which is the safe default.
+                  Ingest defines reusable source trust boundaries for IngestRuns. Omitted
+                  configuration defaults to Disabled outside the local-kind profile.
                 properties:
-                  approvedInputs:
+                  sourcePolicy:
+                    properties:
+                      mode:
+                        description: |-
+                          Mode defaults to Disabled when omitted. The local-kind profile explicitly
+                          defaults it to PublicHTTPS for the development ingest workflow.
+                        enum:
+                        - Disabled
+                        - PublicHTTPS
+                        - Restricted
+                        type: string
+                    type: object
+                  sources:
                     description: |-
-                      ApprovedInputs are the media locations an IngestRun may name by id. An
-                      IngestRun carries an opaque id and never a media locator, so this list is
-                      the boundary between what a run asks for and what it can reach.
+                      Sources are reusable, named trust boundaries. Credentials belong to a
+                      source and cannot be selected independently by an IngestRun.
                     items:
-                      description: ApprovedIngestInputSpec binds one opaque input
-                        id to fixed media locations.
                       properties:
-                        id:
-                          description: ID is the value an IngestRun's spec.inputRef.id
-                            must carry.
-                          maxLength: 128
-                          minLength: 1
-                          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
-                          type: string
+                        http:
+                          properties:
+                            allowPrivateAddresses:
+                              description: |-
+                                AllowPrivateAddresses permits private, loopback and link-local resolved
+                                addresses for this explicitly named source.
+                              type: boolean
+                            credentialSecretRef:
+                              description: |-
+                                CredentialSecretRef names a source-bound Secret. The Secret must contain
+                                TAMSIN_SOURCE_HTTP_HEADERS as a JSON array of HTTP header values.
+                              properties:
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            origin:
+                              description: |-
+                                Origin is an exact HTTPS scheme and authority. User information, paths,
+                                queries and fragments are rejected by the controller.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                            pathPrefixes:
+                              description: PathPrefixes restrict URL paths within
+                                Origin. Empty allows every path.
+                              items:
+                                maxLength: 1024
+                                minLength: 1
+                                type: string
+                              maxItems: 32
+                              type: array
+                          required:
+                          - origin
+                          type: object
                         kind:
-                          description: |-
-                            Kind must match the referencing run. Only ApprovedHTTP resolves today;
-                            staged objects, manifests, and S3 prefixes need a credential boundary
-                            that does not exist yet.
                           enum:
-                          - ApprovedHTTP
+                          - HTTP
+                          - S3
                           type: string
-                        urls:
-                          description: |-
-                            URLs are absolute HTTPS media locations. Credentials, query strings, and
-                            fragments are rejected so an approved input cannot smuggle a signed URL.
-                          items:
-                            maxLength: 2048
-                            pattern: ^https://[^/?#@]+(/[^?#]*)?$
-                            type: string
-                          maxItems: 16
-                          minItems: 1
-                          type: array
+                        name:
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                        s3:
+                          properties:
+                            allowPrivateAddresses:
+                              type: boolean
+                            bucket:
+                              maxLength: 255
+                              minLength: 1
+                              type: string
+                            credentialSecretRef:
+                              description: |-
+                                CredentialSecretRef names a source-bound Secret containing
+                                AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. AWS_SESSION_TOKEN is optional.
+                              properties:
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            endpoint:
+                              description: Endpoint is the exact HTTPS endpoint TAMSin
+                                may contact.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                            keyPrefixes:
+                              description: KeyPrefixes restrict object keys within
+                                Bucket. Empty allows every key.
+                              items:
+                                maxLength: 1024
+                                minLength: 1
+                                type: string
+                              maxItems: 32
+                              type: array
+                            pathStyle:
+                              type: boolean
+                            region:
+                              maxLength: 128
+                              minLength: 1
+                              type: string
+                          required:
+                          - bucket
+                          - endpoint
+                          - region
+                          type: object
                       required:
-                      - id
                       - kind
-                      - urls
+                      - name
                       type: object
-                    maxItems: 16
+                      x-kubernetes-validations:
+                      - message: HTTP sources require http only; S3 sources require
+                          s3 only
+                        rule: 'self.kind == ''HTTP'' ? has(self.http) && !has(self.s3)
+                          : has(self.s3) && !has(self.http)'
+                    maxItems: 32
                     type: array
                 type: object
               ingress:
@@ -20711,6 +21165,8 @@ spec:
                         type: string
                       schemaMigrationPostgresClient:
                         type: string
+                      tamsin:
+                        type: string
                       ui:
                         type: string
                       worker:
@@ -21442,26 +21898,7 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
-  - ingestruns
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
-  - tamoss.livewyer.io
-  resources:
-  - ingestruns/status
-  - storagebackends/status
-  - tamosses/status
-  - tamosshibernations/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - tamoss.livewyer.io
-  resources:
+  - flowprofiles
   - storagebackends
   - tamosshibernations
   verbs:
@@ -21475,11 +21912,33 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - flowprofiles/finalizers
   - storagebackends/finalizers
   - tamosses/finalizers
   - tamosshibernations/finalizers
   verbs:
   - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - flowprofiles/status
+  - ingestruns/status
+  - storagebackends/status
+  - tamosses/status
+  - tamosshibernations/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - ingestruns
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
 - apiGroups:
   - tamoss.livewyer.io
   resources:
@@ -21730,7 +22189,7 @@ spec:
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
         - name: TAMOSS_TAMSIN_IMAGE
-          value: ghcr.io/livewyer-ops/tamsin@sha256:c67222bc5d4a51770d4add021c3129bf364c92f166c899f9330959b7ec9509f3
+          value: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
@@ -21892,6 +22351,29 @@ webhooks:
     - DELETE
     resources:
     - storagebackends
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: operator-webhook-service
+      namespace: tamoss-system
+      path: /validate-tamoss-livewyer-io-v1alpha1-flowprofile-delete
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: vflowprofile.tamoss.livewyer.io
+  rules:
+  - apiGroups:
+    - tamoss.livewyer.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - DELETE
+    - UPDATE
+    resources:
+    - flowprofiles
     scope: Namespaced
   sideEffects: None
   timeoutSeconds: 10

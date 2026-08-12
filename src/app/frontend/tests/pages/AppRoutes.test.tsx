@@ -349,10 +349,36 @@ function ingestRunDetail(name = "ingest-20260809") {
       dryRun: false,
       maxInputs: 1000,
       concurrency: 4,
+      tamsFlowProfiles: [
+        {
+          format: "video",
+          index: 0,
+          profileRef: "hd-avc",
+          resolvedProfileID: "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28",
+        },
+      ],
+    },
+    outputIntent: {
+      flowMetadata: {
+        label: "8.2 ingest test",
+        description: "Acceptance ingest",
+        tags: { editorial_purpose: ["testing"] },
+      },
     },
     job: { name: `${name}-job`, uid: `${name}-job-uid` },
     tamsinRunId: "tamsin-run-1",
     result: { present: false, verified: false },
+    output: {
+      rootFlowID: "713d391c-828a-513e-9929-65e1bab9c35b",
+      sourceID: "6148f737-4536-5442-8897-c20b647e8836",
+      memberFlows: [
+        {
+          id: "69d2a402-b8db-5faa-a970-0aed4f2acfc2",
+          format: "urn:x-nmos:format:video",
+          role: "video",
+        },
+      ],
+    },
     conditions: [
       {
         type: "Ready",
@@ -379,7 +405,7 @@ function consoleSession(cancelAllowed: boolean) {
         create: {
           available: false,
           allowed: false,
-          reason: "ingest_creation_unavailable",
+          reason: "ingest_creation_kubernetes_only",
         },
         cancel: { available: true, allowed: cancelAllowed },
         retry: {
@@ -762,6 +788,19 @@ describe("operational routes", () => {
         name: "DatabaseUnavailable",
       }),
     ).toBeVisible();
+    expect(screen.getByText("Current")).toBeVisible();
+    expect(
+      screen.getByRole("columnheader", { name: "Replicas" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("columnheader", { name: "Diagnostic" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("columnheader", { name: "Generation" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Updated" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("cell", {
         name: /MinimumReplicasUnavailable/,
@@ -786,6 +825,25 @@ describe("operational routes", () => {
     ).toBeVisible();
     expect(screen.getByText("0/1 ready")).toBeVisible();
     expect(screen.getByRole("cell", { name: "1 not ready" })).toBeVisible();
+  });
+
+  it("shows reconciliation and rollout detail without permanent raw columns", async () => {
+    const snapshot = diagnosticRuntimeSnapshot();
+    snapshot.instance.generation = 4;
+    snapshot.workloads[0].generation = 4;
+    snapshot.workloads[0].updatedReplicas = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(snapshot),
+      }),
+    );
+
+    renderRoute("/system");
+    expect(await screen.findByText("Reconciling")).toBeVisible();
+    expect(screen.getByText("0 updated")).toBeVisible();
+    expect(screen.getAllByText("Details").length).toBeGreaterThan(0);
   });
 
   it("makes bounded ingest job projection visible", async () => {
@@ -886,6 +944,21 @@ describe("operational routes", () => {
     const cancelTrigger = await screen.findByRole("button", {
       name: "Cancel run",
     });
+    expect(
+      screen.getByText(
+        "video:0 FlowProfile hd-avc -> 60d9df18-6d9d-4b86-84bf-d1dcf14b3a28",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("8.2 ingest test")).toBeVisible();
+    expect(
+      screen.getByRole("link", {
+        name: "713d391c-828a-513e-9929-65e1bab9c35b",
+      }),
+    ).toHaveAttribute("href", "/flows/713d391c-828a-513e-9929-65e1bab9c35b");
+    expect(screen.getByRole("link", { name: "video" })).toHaveAttribute(
+      "href",
+      "/flows/69d2a402-b8db-5faa-a970-0aed4f2acfc2",
+    );
     expect(screen.queryByText("Retry run")).not.toBeInTheDocument();
     fireEvent.click(cancelTrigger);
 

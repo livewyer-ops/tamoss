@@ -23,6 +23,7 @@ and operator-cluster tests by marker.
 task test
 task test:tams
 task test:tams:deployed
+task test:tamsin:release
 task test:media:fixtures
 task openapi:check
 ```
@@ -35,6 +36,10 @@ semantics, and focused real Postgres/S3 checks.
 file.
 `task test:media:fixtures` validates the small managed-ingest media fixture with
 containerised `ffprobe`, so developers do not need unmanaged local media tools.
+`task test:tamsin:release` pulls the exact TAMSin release image, checks its
+version and five-profile catalogue, runs every treatment against the managed
+fixture in exact dry-run mode, and validates each 2.1 event stream with the
+published reducer.
 
 Validation tasks print compact suite labels before runner output. Common labels
 include `test py.tams.contract`, `test py.tams.semantics`, `test frontend.unit`,
@@ -53,6 +58,7 @@ The report names identify the affected quality area:
 | Python application | `junit-py-application.xml`, `junit-py-workers.xml` |
 | Frontend | `junit-frontend-unit.xml` |
 | Media fixtures | `junit-media-fixtures.xml` |
+| TAMSin release asset | `tamsin-release-events/` artefact bundle |
 | Deployed product | `junit-e2e-deployed-<profile>.xml` |
 | Operator | `junit-operator-*.xml`, `junit-e2e-operator-*.xml` |
 

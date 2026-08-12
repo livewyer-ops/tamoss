@@ -174,6 +174,26 @@ def test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_field
     assert client.put(f"/flows/{flow_id}", json=direct_payload).status_code == 400
 
 
+def test_profile_reads_preserve_omitted_optional_technical_defaults(
+    client: TestClient,
+) -> None:
+    profile_id = uuid4()
+    payload = _video_profile_payload(profile_id)
+    payload["flow_metadata"]["segment_duration"].pop("denominator")
+    payload["flow_metadata"]["essence_parameters"]["frame_rate"].pop("denominator")
+
+    created = client.post(f"/service/profiles/{profile_id}", json=payload)
+    fetched = client.get(f"/service/profiles/{profile_id}")
+
+    assert created.status_code == 201, created.text
+    assert fetched.status_code == 200, fetched.text
+    for response in (created.json(), fetched.json()):
+        metadata = response["flow_metadata"]
+        assert metadata["segment_duration"] == {"numerator": 2}
+        assert metadata["essence_parameters"]["frame_rate"] == {"numerator": 25}
+        assert "vfr" not in metadata["essence_parameters"]
+
+
 def test_profile_id_rejects_malformed_empty_attach_and_repoint(
     client: TestClient,
 ) -> None:

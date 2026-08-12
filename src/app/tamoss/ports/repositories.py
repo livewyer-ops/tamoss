@@ -54,7 +54,7 @@ class ServiceRepository(StorageBackendRepository, Protocol):
     def save_service_metadata(self, metadata: ServiceMetadata) -> None: ...
 
 
-class ProfileRepository(Protocol):
+class ProfileRepository(TransactionalRepository, Protocol):
     def list_profiles_page(
         self,
         *,
@@ -68,6 +68,12 @@ class ProfileRepository(Protocol):
     def get_profile(self, profile_id: UUID) -> ProfileRecord | None: ...
 
     def create_profile(self, profile: ProfileRecord) -> bool: ...
+
+    def lock_profile(self, profile_id: UUID) -> None: ...
+
+    def count_flows_by_profile(self, profile_id: UUID) -> int: ...
+
+    def delete_profile(self, profile_id: UUID) -> bool: ...
 
 
 class FlowLookupRepository(Protocol):

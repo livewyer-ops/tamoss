@@ -17,11 +17,12 @@
   Console API and must declare session capabilities and produce audit records.
 - `player/MediaPreview.tsx` is the lazy integration boundary for the exact-pinned
   Omakase core. Its descriptor, URL policy, manifest compiler, DOM fallback,
-  dependency budget, and cleanup rules stay independent of catalog routes.
-- Runtime reports Tamsin Jobs as ephemeral execution telemetry. `/ingest` uses
+  dependency budget, and cleanup rules stay independent of catalogue routes.
+- Runtime reports TAMSin Jobs as ephemeral execution telemetry. `/ingest` uses
   cursor-paginated `IngestRun` resources for durable history and exposes only
-  the currently supported cancel command. Create and retry stay absent until
-  the Tamsin image, resolvers, collector, and artifact contract are complete.
+  the currently supported cancel command. Create and retry remain deliberately
+  absent from the browser boundary; authorised Kubernetes clients own those
+  commands.
 
 ## Proxy authentication
 

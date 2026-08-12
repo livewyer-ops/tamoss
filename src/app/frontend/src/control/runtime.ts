@@ -9,6 +9,7 @@ import type { components, operations } from "@/control/generated/openapi";
 
 export type RuntimeResourceCondition =
   components["schemas"]["RuntimeResourceCondition"];
+export type RuntimeWorkload = components["schemas"]["RuntimeWorkload"];
 export type RuntimeServicePort = components["schemas"]["RuntimeServicePort"];
 export type RuntimeEndpointSlicePort =
   components["schemas"]["RuntimeEndpointSlicePort"];

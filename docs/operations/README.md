@@ -10,6 +10,8 @@ diagnosis for operator-led TAMOSS deployments.
   hibernation artefacts and recovery.
 - [Manage Ingest Runs](manage-ingest-runs.md) - inspect durable history, follow
   operator-owned Jobs, and cancel active runs.
+- [Manage Flow Profiles](manage-flow-profiles.md) - register, reference,
+  replace, and safely delete immutable Profiles.
 - [Deletion Protection](deletion-protection.md) - finalizers and confirmation
   annotations.
 - [Secret Rotation](secret-rotation.md) - runtime secret classes and rotation.

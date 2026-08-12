@@ -18,6 +18,59 @@ vars:
   TAMS_SEMANTICS_MARK: "tams_semantics and tams_conformance and not tamoss_extension and not tamoss_security"
 
 tasks:
+  tamsin:release:
+    desc: "Validation: exercise the pinned TAMSin release asset and event contract"
+    silent: true
+    vars:
+      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41
+      EVENT_DIR: '{{.ROOT_DIR}}/reports/tamsin-release-events'
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+      - sh: command -v go
+        msg: "go binary not found"
+    cmds:
+      - rm -rf '{{.EVENT_DIR}}'
+      - mkdir -p '{{.EVENT_DIR}}'
+      - docker pull '{{.TAMSIN_IMAGE}}'
+      - |
+        version="$(docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --version)"
+        test "$version" = "tamsin version 1.0.0-rc.1 (d3cb68388ce02bf64c1dae899a1a2c2cfb4a5ac7, 2026-08-12T02:26:12Z)"
+        printf '%s\n' "$version" > '{{.EVENT_DIR}}/version.txt'
+      - |
+        docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --format json profiles > '{{.EVENT_DIR}}/profiles.json'
+        python3 - '{{.EVENT_DIR}}/profiles.json' <<'PY'
+        import json
+        import sys
+
+        report = json.load(open(sys.argv[1], encoding="utf-8"))
+        assert report["schema_version"] == "1.0"
+        assert report["profile_policy_version"] == "1"
+        assert [profile["selection"] for profile in report["profiles"]] == [
+            "preserve@1",
+            "demux@1",
+            "muxed-segments@1",
+            "essence-segments@1",
+            "mpegts-segments@1",
+        ]
+        PY
+      - |
+        for profile in preserve demux muxed-segments essence-segments mpegts-segments; do
+          docker run --rm --pull=never \
+            -v '{{.ROOT_DIR}}/tests/fixtures/e2e:/fixtures:ro' \
+            '{{.TAMSIN_IMAGE}}' ingest \
+            --profile "${profile}@1" \
+            --format json \
+            --log-format json \
+            --progress none \
+            --dry-run=exact \
+            --verify=none \
+            --input /fixtures/tiny-ingest.mp4 \
+            > "{{.EVENT_DIR}}/${profile}.ndjson" \
+            2> "{{.EVENT_DIR}}/${profile}.log"
+        done
+      - TAMOSS_TAMSIN_EVENT_DIR='{{.EVENT_DIR}}' go -C operator test ./test/tamsinrelease -count=1
+
   # TAMS gates validate the contract separately from TAMOSS extensions.
   tams:contract:
     silent: true

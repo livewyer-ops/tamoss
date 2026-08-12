@@ -11,7 +11,13 @@ import psycopg
 import pytest
 from psycopg import sql
 from tamoss.adapters.postgres import PostgresRepository
-from tamoss.domain.model import FlowRecord, MediaObjectRecord, SegmentRecord
+from tamoss.application.contexts.profiles import ProfileInUse
+from tamoss.domain.model import (
+    FlowRecord,
+    MediaObjectRecord,
+    ProfileRecord,
+    SegmentRecord,
+)
 from tamoss.errors import BadRequest
 
 from tests.adapters.postgres.support import (
@@ -120,6 +126,34 @@ def _seed_flow_and_allocated_object(
     postgres_repo.object_repository.save_object(
         MediaObjectRecord(id=object_id, allocated_by_flow=flow_id)
     )
+
+
+def _profile_record(profile_id: UUID) -> ProfileRecord:
+    return ProfileRecord(
+        id=profile_id,
+        label="Operator-managed Profile",
+        flow_metadata={
+            "format": "urn:x-nmos:format:video",
+            "codec": "video/h264",
+            "container": "video/mp4",
+            "essence_parameters": {
+                "frame_rate": {"numerator": 25, "denominator": 1},
+                "frame_width": 1920,
+                "frame_height": 1080,
+            },
+        },
+    )
+
+
+def _profile_flow_payload(
+    flow_id: UUID, source_id: UUID, profile_id: UUID
+) -> dict[str, Any]:
+    return {
+        "id": str(flow_id),
+        "source_id": str(source_id),
+        "profile_id": str(profile_id),
+        "label": "Profile-backed Flow",
+    }
 
 
 def test_flow_repository_has_segments_reports_persisted_existence(
@@ -317,3 +351,89 @@ def test_init_segments_change_serializes_before_incompatible_first_segment(
     assert stored_flow is not None
     assert stored_flow.init_segments is True
     assert postgres_repo.segment_repository.list_segments(flow_id) == []
+
+
+def test_profile_deletion_rejects_a_persisted_flow_reference(
+    postgres_repo: PostgresRepository,
+) -> None:
+    profile_id = uuid4()
+    flow_id = uuid4()
+    assert postgres_repo.profile_repository.create_profile(_profile_record(profile_id))
+    _, created = use_cases(postgres_repo).flows.put_flow(
+        flow_id=flow_id,
+        flow=_profile_flow_payload(flow_id, uuid4(), profile_id),
+        identity=identity(),
+    )
+    assert created is True
+
+    with pytest.raises(ProfileInUse, match="1 Flow"):
+        use_cases(postgres_repo).profiles.delete_profile_if_unused(profile_id)
+    assert postgres_repo.profile_repository.get_profile(profile_id) is not None
+
+
+def test_profile_delete_serializes_with_profile_backed_flow_creation(
+    postgres_connection: psycopg.Connection,
+    postgres_repo: PostgresRepository,
+    concurrent_postgres_repos: ConcurrentPostgresRepos,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (delete_repo, delete_pid), (flow_repo, flow_pid) = concurrent_postgres_repos
+    profile_id = uuid4()
+    flow_id = uuid4()
+    assert postgres_repo.profile_repository.create_profile(_profile_record(profile_id))
+
+    delete_has_lock = Event()
+    release_delete = Event()
+    flow_attempted_lock = Event()
+    original_delete_lock = delete_repo.profile_repository.lock_profile
+    original_flow_lock = flow_repo.profile_repository.lock_profile
+
+    def hold_delete_lock(requested_profile_id: UUID) -> None:
+        original_delete_lock(requested_profile_id)
+        delete_has_lock.set()
+        if not release_delete.wait(timeout=10):
+            raise AssertionError("timed out holding the Profile transaction lock")
+
+    def track_flow_lock(requested_profile_id: UUID) -> None:
+        flow_attempted_lock.set()
+        original_flow_lock(requested_profile_id)
+
+    monkeypatch.setattr(
+        delete_repo.profile_repository,
+        "lock_profile",
+        hold_delete_lock,
+    )
+    monkeypatch.setattr(
+        flow_repo.profile_repository,
+        "lock_profile",
+        track_flow_lock,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        delete_future = executor.submit(
+            use_cases(delete_repo).profiles.delete_profile_if_unused,
+            profile_id,
+        )
+        assert delete_has_lock.wait(timeout=5)
+        flow_future = executor.submit(
+            use_cases(flow_repo).flows.put_flow,
+            flow_id=flow_id,
+            flow=_profile_flow_payload(flow_id, uuid4(), profile_id),
+            identity=identity(),
+        )
+        assert flow_attempted_lock.wait(timeout=5)
+        try:
+            _wait_for_ungranted_advisory_lock(
+                postgres_connection,
+                waiter_pid=flow_pid,
+                blocker_pid=delete_pid,
+            )
+        finally:
+            release_delete.set()
+
+        assert delete_future.result(timeout=5) is True
+        with pytest.raises(BadRequest, match="Profile does not exist"):
+            flow_future.result(timeout=5)
+
+    assert postgres_repo.profile_repository.get_profile(profile_id) is None
+    assert postgres_repo.flow_repository.get_flow(flow_id) is None

@@ -19,26 +19,7 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
-  - ingestruns
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
-  - tamoss.livewyer.io
-  resources:
-  - ingestruns/status
-  - storagebackends/status
-  - tamosses/status
-  - tamosshibernations/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - tamoss.livewyer.io
-  resources:
+  - flowprofiles
   - storagebackends
   - tamosshibernations
   verbs:
@@ -52,11 +33,33 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - flowprofiles/finalizers
   - storagebackends/finalizers
   - tamosses/finalizers
   - tamosshibernations/finalizers
   verbs:
   - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - flowprofiles/status
+  - ingestruns/status
+  - storagebackends/status
+  - tamosses/status
+  - tamosshibernations/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - ingestruns
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
 - apiGroups:
   - tamoss.livewyer.io
   resources:

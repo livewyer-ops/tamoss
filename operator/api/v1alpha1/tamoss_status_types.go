@@ -106,6 +106,7 @@ type ResolvedImageStatus struct {
 	SchemaMigrationPostgresClient string `json:"schemaMigrationPostgresClient,omitempty"`
 	CNPGPostgres                  string `json:"cnpgPostgres,omitempty"`
 	RustFS                        string `json:"rustfs,omitempty"`
+	TAMSin                        string `json:"tamsin,omitempty"`
 }
 
 type ResolvedVersionStatus struct {

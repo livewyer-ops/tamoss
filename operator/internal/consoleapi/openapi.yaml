@@ -855,6 +855,59 @@ components:
         concurrency:
           type: integer
           format: int32
+        tamsFlowProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngestRunTAMSFlowProfile"
+    IngestRunTAMSFlowProfile:
+      type: object
+      additionalProperties: false
+      required: [format, index]
+      properties:
+        format:
+          type: string
+          enum: [video, audio, image, data]
+        index:
+          type: integer
+          format: int32
+          minimum: 0
+        profileID:
+          type: string
+          format: uuid
+        profileRef:
+          type: string
+          maxLength: 253
+        resolvedProfileID:
+          type: string
+          format: uuid
+    IngestRunTagValue:
+      oneOf:
+        - type: string
+        - type: array
+          items:
+            type: string
+    IngestRunFlowMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 4096
+        tags:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            $ref: "#/components/schemas/IngestRunTagValue"
+    IngestRunOutputIntent:
+      type: object
+      additionalProperties: false
+      required: [flowMetadata]
+      properties:
+        flowMetadata:
+          $ref: "#/components/schemas/IngestRunFlowMetadata"
     IngestRunObjectReference:
       type: object
       additionalProperties: false
@@ -877,6 +930,36 @@ components:
         mediaType:
           type: string
         verified:
+          type: boolean
+    IngestRunOutputFlow:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        format:
+          type: string
+        role:
+          type: string
+    IngestRunOutput:
+      type: object
+      additionalProperties: false
+      required: [rootFlowID, sourceID]
+      properties:
+        rootFlowID:
+          type: string
+          format: uuid
+        sourceID:
+          type: string
+          format: uuid
+        memberFlows:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/IngestRunOutputFlow"
+        memberFlowsTruncated:
           type: boolean
     IngestRunDetail:
       type: object
@@ -940,6 +1023,8 @@ components:
           type: string
         options:
           $ref: "#/components/schemas/IngestRunOptions"
+        outputIntent:
+          $ref: "#/components/schemas/IngestRunOutputIntent"
         job:
           $ref: "#/components/schemas/IngestRunObjectReference"
         tamsinRunId:
@@ -948,6 +1033,8 @@ components:
           $ref: "#/components/schemas/IngestRunObjectReference"
         result:
           $ref: "#/components/schemas/IngestRunResult"
+        output:
+          $ref: "#/components/schemas/IngestRunOutput"
         conditions:
           type: array
           maxItems: 16

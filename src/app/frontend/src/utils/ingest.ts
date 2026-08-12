@@ -16,7 +16,7 @@ export function ingestPhaseDescription(phase: IngestRunPhase) {
   const descriptions: Record<IngestRunPhase, string> = {
     Pending: "Waiting for the target instance or ingest prerequisites.",
     Queued: "The ingest workload is waiting to start.",
-    Running: "Tamsin is processing the run.",
+    Running: "TAMSin is processing the run.",
     Succeeded: "Every input completed successfully.",
     PartiallySucceeded: "Processing completed with one or more input failures.",
     Failed: "The run stopped without completing its inputs.",
@@ -50,11 +50,11 @@ const conditionExplanations: Record<string, string> = {
     "The target ingest endpoint could not be resolved.",
   IngestEndpointResolverUnavailable:
     "Endpoint resolution is not available on this installation.",
-  IngestFailed: "Tamsin reported a run-wide failure.",
+  IngestFailed: "TAMSin reported a run-wide failure.",
   IngestJobMissing: "The recorded ingest workload no longer exists.",
   IngestPartiallySucceeded:
     "One or more inputs failed after processing completed.",
-  IngestRunning: "Tamsin is processing media.",
+  IngestRunning: "TAMSin is processing media.",
   IngestStorageBackendIdentityPending:
     "The selected storage backend is waiting for registration.",
   IngestStorageBackendNotFound: "The selected storage backend was not found.",
@@ -63,8 +63,15 @@ const conditionExplanations: Record<string, string> = {
     "The selected storage backend belongs to another instance.",
   IngestStorageBackendUsageInvalid:
     "The selected storage backend cannot store media.",
-  IngestSucceeded: "Tamsin completed every input successfully.",
-  InputResolutionFailed: "The approved input reference could not be resolved.",
+  IngestSucceeded: "TAMSin completed every input successfully.",
+
+  IngestInterrupted: "TAMSin was interrupted before the ingest completed.",
+  IngestProtocolInvalid: "TAMSin produced an invalid terminal event stream.",
+  IngestResultPending: "The terminal TAMSin result is not yet available.",
+  IngestResultUnavailable:
+    "The terminal TAMSin result was not available before its deadline.",
+  InputPolicyRejected:
+    "The input is not permitted by this instance's source policy.",
   InputResolverUnavailable:
     "Input resolution is not available on this installation.",
   InvalidResolvedInput: "The resolved input plan did not pass validation.",
@@ -84,9 +91,9 @@ const conditionExplanations: Record<string, string> = {
     "The retry parent belongs to another target instance.",
   TamossNotFound: "The target TAMOSS instance was not found.",
   TamossNotReady: "The target TAMOSS instance is not ready.",
-  TamsinImageNotImmutable: "The configured Tamsin image is not immutable.",
+  TamsinImageNotImmutable: "The configured TAMSin image is not immutable.",
   TamsinRuntimeUnavailable:
-    "A Tamsin runtime is not configured on this installation.",
+    "A TAMSin runtime is not configured on this installation.",
 };
 
 export function ingestConditionExplanation(reason?: string) {

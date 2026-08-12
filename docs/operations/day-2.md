@@ -43,6 +43,17 @@ kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system logs deploy/operator-control
 | `DatabaseReady` | The backend registration row exists in the TAMOSS database. |
 | `ExternalS3DiagnosticReady` | Best-effort external S3 browser-upload diagnostics have completed, skipped, or reported a warning reason. |
 
+`FlowProfile` conditions:
+
+| Condition | Meaning |
+| --- | --- |
+| `Ready` | The exact immutable definition is registered or adopted. |
+| `Registered` | The operator has confirmed the desired TAMS Profile registration. |
+| `DeletionBlocked` | A Flow still references the Profile, or another live resource claims the UUID. |
+
+Use `kubectl describe flowprofile <name>` to inspect stable reasons such as
+`InvalidProfile`, `ProfileConflict`, `DuplicateProfileID`, and `ProfileInUse`.
+
 Inspect schema migration attempts without reading Jobs first:
 
 ```bash

@@ -147,6 +147,9 @@ class FakeTamossRepository:
     def lock_flow_segments(self, flow_id: UUID) -> None:
         return None
 
+    def lock_profile(self, profile_id: UUID) -> None:
+        return None
+
     def lock_objects(self, object_ids: Iterable[str]) -> None:
         return None
 
@@ -185,6 +188,16 @@ class FakeTamossRepository:
                 return False
             self._profiles[profile.id] = deepcopy(profile)
             return True
+
+    def count_flows_by_profile(self, profile_id: UUID) -> int:
+        with self._lock:
+            return sum(
+                1 for flow in self._flows.values() if flow.profile_id == profile_id
+            )
+
+    def delete_profile(self, profile_id: UUID) -> bool:
+        with self._lock:
+            return self._profiles.pop(profile_id, None) is not None
 
     def get_service_metadata(self) -> ServiceMetadata | None:
         with self._lock:

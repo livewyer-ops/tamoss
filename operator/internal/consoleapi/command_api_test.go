@@ -68,6 +68,9 @@ func TestCommandAPISessionReportsAuthorizationAndExecutionGates(t *testing.T) {
 	if capabilities.Create.Available || capabilities.Retry.Available || capabilities.Create.Reason == "" || capabilities.Retry.Reason == "" {
 		t.Fatalf("create/retry gates were not explicit: %#v", capabilities)
 	}
+	if capabilities.Create.Allowed || capabilities.Create.Reason != "ingest_creation_kubernetes_only" {
+		t.Fatalf("browser creation must remain unavailable and unauthorised: %#v", capabilities.Create)
+	}
 }
 
 func TestCommandAPICancelsActiveRunAndAuditsOnce(t *testing.T) {

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"net"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +34,7 @@ func TestDesiredIngestJobUsesFixedSecureTemplate(t *testing.T) {
 	tamoss := testIngestTamoss()
 	image := "registry.example/tamsin@sha256:" + strings.Repeat("a", 64)
 
-	job := desiredIngestJob(run, spec, tamoss, testIngestEndpoint, image, "", []string{"s3://staging/run/input.mp4"})
+	job := desiredIngestJob(run, spec, tamoss, testIngestEndpoint, image, "", "", testResolvedIngestInputs())
 	if job.Spec.Template.Spec.AutomountServiceAccountToken == nil || *job.Spec.Template.Spec.AutomountServiceAccountToken {
 		t.Fatal("expected service account token automount to be disabled")
 	}
@@ -66,7 +68,7 @@ func TestDesiredIngestJobUsesFixedSecureTemplate(t *testing.T) {
 		t.Fatalf("args do not contain the approved HTTPS endpoint: %#v", container.Args)
 	}
 	if !slices.Contains(container.Args, "none") || slices.Contains(container.Args, "never") {
-		t.Fatalf("args do not use Tamsin's supported non-interactive progress mode: %#v", container.Args)
+		t.Fatalf("args do not use TAMSin's supported non-interactive progress mode: %#v", container.Args)
 	}
 	if slices.Contains(container.Args, "--insecure-skip-verify") {
 		t.Fatalf("non-local profile disables TLS verification: %#v", container.Args)
@@ -88,6 +90,148 @@ func TestDesiredIngestJobUsesFixedSecureTemplate(t *testing.T) {
 	if got := tokenEnv.ValueFrom.SecretKeyRef.Name; got != "example-api-token" {
 		t.Fatalf("token Secret = %q, want example-api-token", got)
 	}
+	if job.Annotations[ingestSourceAnnotation] != "test-source" || job.Annotations[ingestSourcePolicyAnnotation] != strings.Repeat("a", 64) {
+		t.Fatalf("Job omitted its source-policy identity: %#v", job.Annotations)
+	}
+	if slices.Contains(container.Args, "--source-policy") {
+		t.Fatalf("unsupported source-policy argument reached TAMSin: %#v", container.Args)
+	}
+	if !slices.Contains(container.Args, "--verify=auto") {
+		t.Fatalf("Job omitted TAMSin's verification mode: %#v", container.Args)
+	}
+}
+
+func TestDesiredIngestJobUsesOnlySourceBoundCredentialReferences(t *testing.T) {
+	run := testIngestRun()
+	resolved := testResolvedIngestInputs()
+	resolved.CredentialSecretName = "archive-reader"
+	resolved.CredentialKind = tamossv1alpha1.IngestSourceKindS3
+	resolved.S3Endpoint = "https://objects.example.test"
+	resolved.S3Region = "eu-west-2"
+	resolved.S3PathStyle = true
+	job := desiredIngestJob(run, defaultIngestRunSpec(run.Spec), testIngestTamoss(), testIngestEndpoint,
+		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64), "", "", resolved)
+	container := job.Spec.Template.Spec.Containers[0]
+	for _, key := range []string{s3AccessKeySecretKey, s3SecretKeySecretKey, s3SessionTokenSecretKey} {
+		var found *corev1.SecretKeySelector
+		for _, env := range container.Env {
+			if env.Name == key && env.ValueFrom != nil {
+				found = env.ValueFrom.SecretKeyRef
+			}
+		}
+		if found == nil || found.Name != "archive-reader" || found.Key != key {
+			t.Fatalf("%s reference = %#v", key, found)
+		}
+	}
+	if !slices.Contains(container.Args, "--s3-path-style") || !slices.Contains(container.Args, resolved.S3Endpoint) {
+		t.Fatalf("S3 source settings missing from args: %#v", container.Args)
+	}
+}
+
+func TestDesiredIngestJobMapsReleasedTAMSinOptions(t *testing.T) {
+	run := testIngestRun()
+	verify := false
+	run.Spec.Profile = tamossv1alpha1.IngestRunProfileMPEGTSegments
+	run.Spec.Options.Verify = &verify
+	run.Spec.Options.DryRun = true
+	run.Spec.Options.TAMSFlowProfiles = []tamossv1alpha1.IngestRunTAMSFlowProfile{
+		{Format: "audio", Index: 1, ProfileID: "8d5a25eb-35cb-423b-8e80-72258195ac2c"},
+		{Format: "video", Index: 0, ProfileID: "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28"},
+		{Format: "audio", Index: 0, ProfileID: "73b13cf7-719a-448d-9852-7c4d5e1bb522"},
+	}
+	job := desiredIngestJob(run, defaultIngestRunSpec(run.Spec), testIngestTamoss(), testIngestEndpoint,
+		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64), "", "", testResolvedIngestInputs())
+	args := job.Spec.Template.Spec.Containers[0].Args
+	for _, expected := range []string{"mpegts-segments@1", "--verify=none", "--dry-run=exact"} {
+		if !slices.Contains(args, expected) {
+			t.Fatalf("args omit %q: %#v", expected, args)
+		}
+	}
+	var assignments []string
+	for index, arg := range args {
+		if arg == "--tams-flow-profile" && index+1 < len(args) {
+			assignments = append(assignments, args[index+1])
+		}
+	}
+	want := []string{
+		"video:0=60d9df18-6d9d-4b86-84bf-d1dcf14b3a28",
+		"audio:0=73b13cf7-719a-448d-9852-7c4d5e1bb522",
+		"audio:1=8d5a25eb-35cb-423b-8e80-72258195ac2c",
+	}
+	if !slices.Equal(assignments, want) {
+		t.Fatalf("TAMS Flow Profile args = %#v, want %#v", assignments, want)
+	}
+}
+
+func TestDesiredIngestJobRendersConstrainedFlowMetadata(t *testing.T) {
+	run := testIngestRun()
+	run.Spec.Options.MaxInputs = 1
+	run.Spec.Output = &tamossv1alpha1.IngestRunOutputIntent{FlowMetadata: tamossv1alpha1.IngestRunFlowMetadata{
+		Label: "8.2 ingest test",
+		Tags: map[string]apiextensionsv1.JSON{
+			"editorial_purpose": {Raw: []byte(`["testing"]`)},
+		},
+	}}
+	metadata, err := tamossv1alpha1.IngestRunFlowMetadataJSON(run.Spec.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := desiredIngestJob(run, defaultIngestRunSpec(run.Spec), testIngestTamoss(), testIngestEndpoint,
+		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64), "", metadata, testResolvedIngestInputs())
+	args := job.Spec.Template.Spec.Containers[0].Args
+	index := slices.Index(args, "--flow-metadata")
+	if index == -1 || index+1 >= len(args) {
+		t.Fatalf("args omit --flow-metadata: %#v", args)
+	}
+	want := `{"label":"8.2 ingest test","tags":{"editorial_purpose":["testing"]}}`
+	if args[index+1] != ingestFlowMetadataFile {
+		t.Fatalf("flow metadata path = %q, want %q", args[index+1], ingestFlowMetadataFile)
+	}
+	if job.Spec.Template.Annotations[ingestFlowMetadataAnnotation] != want {
+		t.Fatalf("flow metadata annotation = %q, want %q", job.Spec.Template.Annotations[ingestFlowMetadataAnnotation], want)
+	}
+	container := job.Spec.Template.Spec.Containers[0]
+	if len(container.VolumeMounts) != 2 || container.VolumeMounts[1].Name != ingestFlowMetadataVolume ||
+		container.VolumeMounts[1].MountPath != ingestFlowMetadataMountPath || !container.VolumeMounts[1].ReadOnly {
+		t.Fatalf("flow metadata mount = %#v", container.VolumeMounts)
+	}
+	if len(job.Spec.Template.Spec.Volumes) != 2 || job.Spec.Template.Spec.Volumes[1].DownwardAPI == nil {
+		t.Fatalf("flow metadata volume = %#v", job.Spec.Template.Spec.Volumes)
+	}
+	item := job.Spec.Template.Spec.Volumes[1].DownwardAPI.Items[0]
+	wantFieldPath := "metadata.annotations['" + ingestFlowMetadataAnnotation + "']"
+	if item.Path != "flow-metadata.json" || item.FieldRef == nil || item.FieldRef.FieldPath != wantFieldPath {
+		t.Fatalf("flow metadata item = %#v, want field path %q", item, wantFieldPath)
+	}
+}
+
+func TestIngestRunRejectsInvalidOutputIntentBeforeCreatingJob(t *testing.T) {
+	ctx := context.Background()
+	scheme := ingestRunTestScheme(t)
+	run := testIngestRun()
+	run.Spec.Options.MaxInputs = 1
+	run.Spec.Output = &tamossv1alpha1.IngestRunOutputIntent{FlowMetadata: tamossv1alpha1.IngestRunFlowMetadata{
+		Label: "test",
+		Tags:  map[string]apiextensionsv1.JSON{"_tamsin_source": {Raw: []byte(`"spoofed"`)}},
+	}}
+	tamoss := testIngestTamoss()
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
+		WithObjects(run, tamoss).
+		Build()
+	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme}
+
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := reloadIngestRun(t, ctx, k8sClient, run)
+	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhasePending || conditionReason(reloaded.Status.Conditions, ingestRunReadyCondition) != "InvalidOutputIntent" {
+		t.Fatalf("status = %+v", reloaded.Status)
+	}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: ingestJobName(run.Name)}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("invalid intent created a Job: %v", err)
+	}
 }
 
 func TestDesiredIngestJobAcceptsLocalKindSelfSignedTLS(t *testing.T) {
@@ -101,7 +245,8 @@ func TestDesiredIngestJobAcceptsLocalKindSelfSignedTLS(t *testing.T) {
 		testIngestEndpoint,
 		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64),
 		"",
-		[]string{"s3://staging/run/input.mp4"},
+		"",
+		testResolvedIngestInputs(),
 	)
 
 	if !slices.Contains(job.Spec.Template.Spec.Containers[0].Args, "--insecure-skip-verify") {
@@ -120,7 +265,8 @@ func TestDesiredIngestJobBoundsLongRunLabel(t *testing.T) {
 		testIngestEndpoint,
 		"registry.example/tamsin@sha256:"+strings.Repeat("a", 64),
 		"",
-		[]string{"s3://staging/run/input.mp4"},
+		"",
+		testResolvedIngestInputs(),
 	)
 	label := job.Labels[ingestRunLabel]
 	if len(label) > 63 {
@@ -158,7 +304,7 @@ func TestIngestRunReconcileCreatesJobAndReportsRunning(t *testing.T) {
 	}
 	job := &batchv1.Job{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: ingestJobName(run.Name)}, job); err != nil {
-		t.Fatalf("expected Tamsin Job: %v", err)
+		t.Fatalf("expected TAMSin Job: %v", err)
 	}
 	if len(job.OwnerReferences) != 1 || job.OwnerReferences[0].Name != run.Name {
 		t.Fatalf("unexpected Job owner references: %#v", job.OwnerReferences)
@@ -181,6 +327,9 @@ func TestIngestRunReconcileCreatesJobAndReportsRunning(t *testing.T) {
 	}
 	if updated.Status.JobRef.Name != job.Name {
 		t.Fatalf("status job = %q, want %q", updated.Status.JobRef.Name, job.Name)
+	}
+	if updated.Status.ResolvedSource.Name != "test-source" || updated.Status.ResolvedSource.PolicyDigest != strings.Repeat("a", 64) {
+		t.Fatalf("resolved source status = %#v", updated.Status.ResolvedSource)
 	}
 }
 
@@ -222,7 +371,7 @@ func TestIngestRunWithoutConfiguredImageStaysPending(t *testing.T) {
 	}
 }
 
-func TestIngestRunWithoutApprovedInputResolverStaysPending(t *testing.T) {
+func TestIngestRunWithoutSourcePolicyResolverStaysPending(t *testing.T) {
 	ctx := context.Background()
 	scheme := ingestRunTestScheme(t)
 	run := testIngestRun()
@@ -258,6 +407,68 @@ func TestIngestRunWithoutApprovedInputResolverStaysPending(t *testing.T) {
 	}
 	if len(jobs.Items) != 0 {
 		t.Fatalf("expected no Jobs, got %d", len(jobs.Items))
+	}
+}
+
+func TestIngestRunRevalidatesPendingInputAfterPolicyChange(t *testing.T) {
+	ctx := context.Background()
+	scheme := ingestRunTestScheme(t)
+	run := testIngestRun()
+	run.Spec.Input = tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP,
+		URI:  "https://media.example.test/programme.mp4",
+	}
+	tamoss := testIngestTamoss()
+	tamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyDisabled
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}, &batchv1.Job{}).
+		WithObjects(run, tamoss).
+		Build()
+	reconciler := &IngestRunReconciler{
+		Client: k8sClient, Scheme: scheme,
+		TamsinImage: "registry.example/tamsin@sha256:" + strings.Repeat("c", 64),
+		InputResolver: SourcePolicyResolver{
+			Client: k8sClient,
+			HostResolver: staticIngestHostResolver{
+				"media.example.test": {{IP: net.ParseIP("93.184.216.34")}},
+			},
+		},
+		EndpointResolver: staticIngestEndpointResolver{},
+	}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}
+	result, err := reconciler.Reconcile(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequeueAfter != ingestRunRequeuePending {
+		t.Fatalf("disabled policy requeue = %s", result.RequeueAfter)
+	}
+	updatedRun := &tamossv1alpha1.IngestRun{}
+	if err := k8sClient.Get(ctx, request.NamespacedName, updatedRun); err != nil {
+		t.Fatal(err)
+	}
+	condition := conditionByType(updatedRun.Status.Conditions, ingestRunReadyCondition)
+	if condition == nil || condition.Reason != "InputPolicyRejected" {
+		t.Fatalf("disabled policy condition = %#v", condition)
+	}
+	updatedTamoss := &tamossv1alpha1.Tamoss{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(tamoss), updatedTamoss); err != nil {
+		t.Fatal(err)
+	}
+	updatedTamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyPublicHTTPS
+	if err := k8sClient.Update(ctx, updatedTamoss); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	job := &batchv1.Job{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: ingestJobName(run.Name)}, job); err != nil {
+		t.Fatalf("policy update did not admit Job: %v", err)
+	}
+	if job.Annotations[ingestSourceAnnotation] != "public-https" {
+		t.Fatalf("Job source annotation = %#v", job.Annotations)
 	}
 }
 
@@ -643,7 +854,7 @@ func TestIngestPhaseRecognisesPartialBatchExit(t *testing.T) {
 	}
 	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, pod).Build()
 
-	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
+	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), partialIngestSummary())
 	if err != nil {
 		t.Fatalf("resolve Job phase: %v", err)
 	}
@@ -667,7 +878,7 @@ func TestIngestPhaseWaitsForOwnedTerminalPod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve phase before Pod observation: %v", err)
 	}
-	if phase != tamossv1alpha1.IngestRunPhaseRunning || reason != "ExitCodePending" || progressing {
+	if phase != tamossv1alpha1.IngestRunPhaseRunning || reason != "IngestResultPending" || progressing {
 		t.Fatalf("before Pod observation got phase=%q reason=%q progressing=%t", phase, reason, progressing)
 	}
 
@@ -691,8 +902,8 @@ func TestIngestPhaseWaitsForOwnedTerminalPod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve phase after Pod observation: %v", err)
 	}
-	if phase != tamossv1alpha1.IngestRunPhaseFailed || reason != "IngestFailed" || progressing {
-		t.Fatalf("after Pod observation got phase=%q reason=%q progressing=%t", phase, reason, progressing)
+	if phase != tamossv1alpha1.IngestRunPhaseRunning || reason != "IngestResultPending" || progressing {
+		t.Fatalf("without a validated stream got phase=%q reason=%q progressing=%t", phase, reason, progressing)
 	}
 }
 
@@ -703,9 +914,9 @@ func TestIngestPhasePropagatesTerminalPodListErrors(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "tamsin-run", Namespace: "media", UID: types.UID("job-uid")},
 		Status:     batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}},
 	}
-	reader := failingPodListReader{Reader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()}
+	reader := failingPodListReader{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()}
 
-	_, _, _, _, err := ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
+	_, _, _, err := terminalIngestPodResult(ctx, reader, job)
 	if err == nil || !strings.Contains(err.Error(), "list terminal Pods") {
 		t.Fatalf("expected Pod list error, got %v", err)
 	}
@@ -727,7 +938,7 @@ func TestIngestPhaseWaitsForDigestVerifiedResult(t *testing.T) {
 	// the run claim success on it.
 	unverified := verifiedIngestResult()
 	unverified.Verified = false
-	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, unverified, time.Now(), nil)
+	phase, reason, _, progressing, err := ingestPhaseFromJob(ctx, reader, job, unverified, time.Now(), succeededIngestSummary())
 	if err != nil {
 		t.Fatalf("resolve Job phase with an unverified result: %v", err)
 	}
@@ -735,10 +946,9 @@ func TestIngestPhaseWaitsForDigestVerifiedResult(t *testing.T) {
 		t.Fatalf("with an unverified result got phase=%q reason=%q progressing=%t", phase, reason, progressing)
 	}
 
-	// Tamsin 0.1.0-rc.2 publishes no digest for its journal, so a run that
-	// records no durable result succeeds on the Job's own terminal state
-	// rather than waiting for evidence that never arrives.
-	phase, reason, _, _, err = ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{}, time.Now(), nil)
+	// TAMSin publishes a complete terminal event stream rather than a separate
+	// durable result artefact, so a run without one succeeds from that stream.
+	phase, reason, _, _, err = ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{}, time.Now(), succeededIngestSummary())
 	if err != nil {
 		t.Fatalf("resolve Job phase without a recorded result: %v", err)
 	}
@@ -746,7 +956,7 @@ func TestIngestPhaseWaitsForDigestVerifiedResult(t *testing.T) {
 		t.Fatalf("without a recorded result got phase=%q reason=%q, want Succeeded", phase, reason)
 	}
 
-	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), nil)
+	phase, reason, _, progressing, err = ingestPhaseFromJob(ctx, reader, job, verifiedIngestResult(), time.Now(), succeededIngestSummary())
 	if err != nil {
 		t.Fatalf("resolve Job phase with result: %v", err)
 	}
@@ -760,7 +970,7 @@ func TestIngestRunCancellationDeletesJobAndRetainsRun(t *testing.T) {
 	scheme := ingestRunTestScheme(t)
 	run := testIngestRun()
 	run.Spec.DesiredState = tamossv1alpha1.IngestRunDesiredStateCancelled
-	job := desiredIngestJob(run, defaultIngestRunSpec(run.Spec), testIngestTamoss(), testIngestEndpoint, "tamsin:test", "", []string{"s3://staging/run/input.mp4"})
+	job := desiredIngestJob(run, defaultIngestRunSpec(run.Spec), testIngestTamoss(), testIngestEndpoint, "tamsin:test", "", "", testResolvedIngestInputs())
 	job.OwnerReferences = []metav1.OwnerReference{{APIVersion: tamossv1alpha1.GroupVersion.String(), Kind: "IngestRun", Name: run.Name, UID: run.UID, Controller: ptr.To(true)}}
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -891,8 +1101,8 @@ func testIngestRun() *tamossv1alpha1.IngestRun {
 		ObjectMeta: metav1.ObjectMeta{Name: "daily-news", Namespace: "media", UID: types.UID("run-uid"), Generation: 1},
 		Spec: tamossv1alpha1.IngestRunSpec{
 			TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
-			InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
-			Profile:   tamossv1alpha1.IngestRunProfileEditorial,
+			Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://staging/run/input.mp4"},
+			Profile:   tamossv1alpha1.IngestRunProfileEssenceSegments,
 			SizeClass: tamossv1alpha1.IngestRunSizeClassSmall,
 			Options: tamossv1alpha1.IngestRunOptions{
 				Verify:    ptr.To(true),
@@ -953,8 +1163,18 @@ type staticIngestInputResolver struct {
 	selectors []string
 }
 
-func (r staticIngestInputResolver) Resolve(context.Context, string, string, tamossv1alpha1.IngestInputReference, int32) (ResolvedIngestInputs, error) {
-	return ResolvedIngestInputs{Selectors: r.selectors, ExpectedInputs: int32(len(r.selectors))}, nil
+func testResolvedIngestInputs() ResolvedIngestInputs {
+	return ResolvedIngestInputs{
+		Selectors: []string{"s3://staging/run/input.mp4"}, ExpectedInputs: 1, SourceName: "test-source",
+		PolicyDigest: strings.Repeat("a", 64),
+	}
+}
+
+func (r staticIngestInputResolver) Resolve(context.Context, *tamossv1alpha1.Tamoss, tamossv1alpha1.IngestRunInput, int32) (ResolvedIngestInputs, error) {
+	return ResolvedIngestInputs{
+		Selectors: r.selectors, ExpectedInputs: int32(len(r.selectors)), SourceName: "test-source",
+		PolicyDigest: strings.Repeat("a", 64),
+	}, nil
 }
 
 type staticIngestEndpointResolver struct {
@@ -962,14 +1182,14 @@ type staticIngestEndpointResolver struct {
 }
 
 type failingPodListReader struct {
-	client.Reader
+	client.Client
 }
 
 func (r failingPodListReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	if _, ok := list.(*corev1.PodList); ok {
 		return errors.New("temporary Pod cache failure")
 	}
-	return r.Reader.List(ctx, list, opts...)
+	return r.Client.List(ctx, list, opts...)
 }
 
 func (r staticIngestEndpointResolver) Resolve(context.Context, string, string) (string, error) {

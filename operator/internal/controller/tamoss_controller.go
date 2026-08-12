@@ -63,6 +63,7 @@ type TamossReconciler struct {
 	AuthentikHTTPClient         *http.Client
 	ManifestReader              HibernationManifestReader
 	ArtifactCleaner             HibernationArtifactCleaner
+	TAMSinImage                 string
 	WarningEvents               operatorstatus.WarningEventDeduper
 	optionalWatches             *optionalWatchRegistrar
 }

@@ -1,7 +1,8 @@
 # CRD Versioning
 
-TAMOSS currently serves `tamoss.livewyer.io/v1alpha1` for both `Tamoss` and
-`StorageBackend`. This API is still alpha: field names, enum values, defaults,
+TAMOSS currently serves `tamoss.livewyer.io/v1alpha1` for `Tamoss`,
+`StorageBackend`, `FlowProfile`, and operational resources. This API is still
+alpha: field names, enum values, defaults,
 and status details may change while the operator moves towards a public beta API.
 
 This page defines the promotion plan. It does not introduce a new CRD version.
@@ -12,6 +13,8 @@ This page defines the promotion plan. It does not introduce a new CRD version.
 | --- | --- | --- | --- |
 | `Tamoss` | `v1alpha1` | Namespaced | Alpha, served and stored |
 | `StorageBackend` | `v1alpha1` | Namespaced | Alpha, served and stored |
+| `FlowProfile` | `v1alpha1` | Namespaced | Alpha, served and stored |
+| `IngestRun` | `v1alpha1` | Namespaced | Alpha, served and stored |
 
 CRD API stability is tracked in this document and release notes until the
 project needs a separate served version with conversion.
@@ -41,7 +44,7 @@ Direct `v1beta1` promotion is appropriate only when all of these are true:
 - release notes include migration guidance for deprecated or removed alpha
   fields
 
-`Tamoss` and `StorageBackend` may promote on different timelines. For example,
+The resource kinds may promote on different timelines. For example,
 `StorageBackend` can become beta first if its identity and provider model is
 stable while the larger `Tamoss` profile and routing API still need cleanup.
 
@@ -53,6 +56,8 @@ complete schema:
 
 - [Tamoss CR](tamoss-cr.md)
 - [StorageBackend CR](storagebackend-cr.md)
+- [FlowProfile CR](flowprofile-cr.md)
+- [IngestRun CR](ingestrun-cr.md)
 
 ### Tamoss Spec
 
@@ -172,7 +177,8 @@ When `v1beta1` is introduced:
   practical
 - make `v1beta1` the storage version only after conversion tests pass
 - provide a conversion webhook when served versions have non-identical schemas
-- test round trips with real `Tamoss` and `StorageBackend` fixtures
+- test round trips with real `Tamoss`, `StorageBackend`, `FlowProfile`, and
+  `IngestRun` fixtures
 - include downgrade and rollback notes in the release documentation
 
 Conversion tests should cover defaulting, immutable fields, provider unions,

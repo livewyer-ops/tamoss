@@ -201,7 +201,7 @@ func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamos
 
 func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, observation tamossStatusObservation) error {
 	original := tamoss.DeepCopy()
-	setCommonTamossStatus(tamoss)
+	setCommonTamossStatus(tamoss, r.TAMSinImage)
 	if observation.RefreshBackupPolicy {
 		if err := r.refreshObservedBackupPolicyCondition(ctx, tamoss); err != nil {
 			return err
@@ -311,14 +311,14 @@ func (r *TamossReconciler) recordTamossLifecycleEvents(original, tamoss *tamossv
 	}
 }
 
-func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss) {
+func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) {
 	tamoss.Status.ObservedGeneration = tamoss.Generation
 	tamoss.Status.Backends.DB.Provider = tamoss.Spec.Backends.DB.Provider()
 	tamoss.Status.Backends.S3.Provider = tamoss.Spec.Backends.S3.Provider()
 	tamoss.Status.Auth = authStatus(tamoss)
 	tamoss.Status.Endpoints = endpointStatus(tamoss)
 	tamoss.Status.Providers = providerStatus(tamoss)
-	tamoss.Status.Resolved = resolvedTamossStatus(tamoss)
+	tamoss.Status.Resolved = resolvedTamossStatus(tamoss, tamsinImage...)
 	setBackupPolicyCondition(&tamoss.Status.Conditions, tamoss)
 	setUpgradeUnknown(tamoss, operatorstatus.ReasonUpgradeNotEvaluated, "Upgrade readiness has not been evaluated in this reconcile")
 }

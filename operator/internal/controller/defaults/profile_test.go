@@ -240,6 +240,9 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	}
 
 	Apply(tamoss)
+	if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyPublicHTTPS {
+		t.Fatalf("local-kind ingest source policy = %q, want PublicHTTPS", got)
+	}
 
 	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.localtest.me" {
 		t.Fatalf("expected local base domain, got %q", got)
@@ -316,6 +319,22 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	}
 	if got := tamoss.Spec.Worker.Env["TAMOSS_WEBHOOK_ALLOWED_HOSTS"]; got != ".svc.cluster.local" {
 		t.Fatalf("expected local worker webhook host allow-list, got %q", got)
+	}
+}
+
+func TestProductionProfilesDefaultIngestSourcePolicyToDisabled(t *testing.T) {
+	for _, profile := range []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
+	} {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Profile: profile}}
+			Apply(tamoss)
+			if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyDisabled {
+				t.Fatalf("production ingest source policy = %q, want Disabled", got)
+			}
+		})
 	}
 }
 

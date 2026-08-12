@@ -401,6 +401,29 @@ export interface components {
             maxInputs: number;
             /** Format: int32 */
             concurrency: number;
+            tamsFlowProfiles?: components["schemas"]["IngestRunTAMSFlowProfile"][];
+        };
+        IngestRunTAMSFlowProfile: {
+            /** @enum {string} */
+            format: "video" | "audio" | "image" | "data";
+            /** Format: int32 */
+            index: number;
+            /** Format: uuid */
+            profileID?: string;
+            profileRef?: string;
+            /** Format: uuid */
+            resolvedProfileID?: string;
+        };
+        IngestRunTagValue: string | string[];
+        IngestRunFlowMetadata: {
+            label?: string;
+            description?: string;
+            tags?: {
+                [key: string]: components["schemas"]["IngestRunTagValue"];
+            };
+        };
+        IngestRunOutputIntent: {
+            flowMetadata: components["schemas"]["IngestRunFlowMetadata"];
         };
         IngestRunObjectReference: {
             name: string;
@@ -412,6 +435,20 @@ export interface components {
             size?: number;
             mediaType?: string;
             verified: boolean;
+        };
+        IngestRunOutputFlow: {
+            /** Format: uuid */
+            id: string;
+            format?: string;
+            role?: string;
+        };
+        IngestRunOutput: {
+            /** Format: uuid */
+            rootFlowID: string;
+            /** Format: uuid */
+            sourceID: string;
+            memberFlows?: components["schemas"]["IngestRunOutputFlow"][];
+            memberFlowsTruncated?: boolean;
         };
         IngestRunDetail: {
             name: string;
@@ -438,10 +475,12 @@ export interface components {
             observedGeneration: number;
             inputKind: string;
             options: components["schemas"]["IngestRunOptions"];
+            outputIntent?: components["schemas"]["IngestRunOutputIntent"];
             job?: components["schemas"]["IngestRunObjectReference"];
             tamsinRunId?: string;
             retryOf?: components["schemas"]["IngestRunObjectReference"];
             result?: components["schemas"]["IngestRunResult"];
+            output?: components["schemas"]["IngestRunOutput"];
             conditions: components["schemas"]["IngestRunCondition"][];
         };
         IngestRunPageInformation: {

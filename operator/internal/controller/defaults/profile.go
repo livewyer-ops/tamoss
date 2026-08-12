@@ -46,6 +46,9 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 	case tamossv1alpha1.TamossProfileEdge:
 		applyEdge(tamoss)
 	}
+	if tamoss.Spec.Ingest.SourcePolicy.Mode == "" {
+		tamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyDisabled
+	}
 	defaultAuthentikGroupBindings(tamoss)
 	applyPublicEndpointDefaults(tamoss)
 	applyBaseComponentDefaults(tamoss)
@@ -120,6 +123,9 @@ func defaultConsoleNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 }
 
 func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
+	if tamoss.Spec.Ingest.SourcePolicy.Mode == "" {
+		tamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyPublicHTTPS
+	}
 	defaultPlatformPublicEndpoint(tamoss, publicEndpointProfileDefaults{
 		BaseDomain:      "tamoss.localtest.me",
 		IssuerName:      defaultLocalKindIssuerName,

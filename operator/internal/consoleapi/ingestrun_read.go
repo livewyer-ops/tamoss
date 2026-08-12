@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +40,12 @@ const (
 	maxProjectedConditionTypeLength = 128
 	maxProjectedConditionReason     = 256
 	maxProjectedMediaTypeLength     = 255
+	maxProjectedOutputLabelLength   = 256
+	maxProjectedOutputDescription   = 4096
+	maxProjectedOutputTagName       = 256
+	maxProjectedOutputTagValue      = 4096
+	maxProjectedOutputTags          = 32
+	maxProjectedOutputMemberFlows   = 16
 )
 
 var (
@@ -111,19 +119,40 @@ type IngestRunDetail struct {
 	ObservedGeneration int64                     `json:"observedGeneration"`
 	InputKind          string                    `json:"inputKind"`
 	Options            IngestRunOptions          `json:"options"`
+	OutputIntent       *IngestRunOutputIntent    `json:"outputIntent,omitempty"`
 	Job                *IngestRunObjectReference `json:"job,omitempty"`
 	TamsinRunID        string                    `json:"tamsinRunId,omitempty"`
 	RetryOf            *IngestRunObjectReference `json:"retryOf,omitempty"`
 	Result             *IngestRunResult          `json:"result,omitempty"`
+	Output             *IngestRunOutput          `json:"output,omitempty"`
 	Conditions         []IngestRunCondition      `json:"conditions"`
 }
 
 type IngestRunOptions struct {
-	StorageBackend string `json:"storageBackend,omitempty"`
-	Verify         bool   `json:"verify"`
-	DryRun         bool   `json:"dryRun"`
-	MaxInputs      int32  `json:"maxInputs"`
-	Concurrency    int32  `json:"concurrency"`
+	StorageBackend   string                     `json:"storageBackend,omitempty"`
+	Verify           bool                       `json:"verify"`
+	DryRun           bool                       `json:"dryRun"`
+	MaxInputs        int32                      `json:"maxInputs"`
+	Concurrency      int32                      `json:"concurrency"`
+	TAMSFlowProfiles []IngestRunTAMSFlowProfile `json:"tamsFlowProfiles,omitempty"`
+}
+
+type IngestRunTAMSFlowProfile struct {
+	Format            string `json:"format"`
+	Index             int32  `json:"index"`
+	ProfileID         string `json:"profileID,omitempty"`
+	ProfileRef        string `json:"profileRef,omitempty"`
+	ResolvedProfileID string `json:"resolvedProfileID,omitempty"`
+}
+
+type IngestRunOutputIntent struct {
+	FlowMetadata IngestRunFlowMetadata `json:"flowMetadata"`
+}
+
+type IngestRunFlowMetadata struct {
+	Label       string         `json:"label,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Tags        map[string]any `json:"tags,omitempty"`
 }
 
 type IngestRunObjectReference struct {
@@ -136,6 +165,19 @@ type IngestRunResult struct {
 	Size      int64  `json:"size,omitempty"`
 	MediaType string `json:"mediaType,omitempty"`
 	Verified  bool   `json:"verified"`
+}
+
+type IngestRunOutputFlow struct {
+	ID     string `json:"id"`
+	Format string `json:"format,omitempty"`
+	Role   string `json:"role,omitempty"`
+}
+
+type IngestRunOutput struct {
+	RootFlowID           string                `json:"rootFlowID"`
+	SourceID             string                `json:"sourceID"`
+	MemberFlows          []IngestRunOutputFlow `json:"memberFlows,omitempty"`
+	MemberFlowsTruncated bool                  `json:"memberFlowsTruncated,omitempty"`
 }
 
 type IngestRunCondition struct {
@@ -454,16 +496,24 @@ func ProjectIngestRunDetail(run *tamossv1alpha1.IngestRun) IngestRunDetail {
 		IngestRunSummary:   ProjectIngestRunSummary(run),
 		Generation:         run.Generation,
 		ObservedGeneration: run.Status.ObservedGeneration,
-		InputKind:          run.Spec.InputRef.Kind,
+		InputKind:          string(run.Spec.Input.Kind),
 		Options: IngestRunOptions{
-			StorageBackend: storageBackend,
-			Verify:         verify,
-			DryRun:         run.Spec.Options.DryRun,
-			MaxInputs:      maxInputs,
-			Concurrency:    run.Spec.Options.Concurrency,
+			StorageBackend:   storageBackend,
+			Verify:           verify,
+			DryRun:           run.Spec.Options.DryRun,
+			MaxInputs:        maxInputs,
+			Concurrency:      run.Spec.Options.Concurrency,
+			TAMSFlowProfiles: projectTAMSFlowProfiles(run.Spec.Options.TAMSFlowProfiles, run.Status.ResolvedTAMSFlowProfiles),
 		},
 		TamsinRunID: boundedProjectedString(run.Status.TamsinRunID, maxProjectedTamsinRunIDLength),
 		Conditions:  make([]IngestRunCondition, 0, min(len(run.Status.Conditions), maxProjectedConditions)),
+	}
+	if run.Spec.Output != nil {
+		detail.OutputIntent = &IngestRunOutputIntent{FlowMetadata: IngestRunFlowMetadata{
+			Label:       boundedProjectedString(run.Spec.Output.FlowMetadata.Label, maxProjectedOutputLabelLength),
+			Description: boundedProjectedString(run.Spec.Output.FlowMetadata.Description, maxProjectedOutputDescription),
+			Tags:        projectIngestOutputTags(run.Spec.Output.FlowMetadata.Tags),
+		}}
 	}
 	if run.Status.JobRef.Name != "" {
 		detail.Job = &IngestRunObjectReference{Name: run.Status.JobRef.Name, UID: string(run.Status.JobRef.UID)}
@@ -478,6 +528,25 @@ func ProjectIngestRunDetail(run *tamossv1alpha1.IngestRun) IngestRunDetail {
 			Size:      result.Size,
 			MediaType: boundedProjectedString(result.MediaType, maxProjectedMediaTypeLength),
 			Verified:  result.Verified,
+		}
+	}
+	if run.Status.Output != nil && run.Status.Output.RootFlowID != "" && run.Status.Output.SourceID != "" {
+		detail.Output = &IngestRunOutput{
+			RootFlowID:           run.Status.Output.RootFlowID,
+			SourceID:             run.Status.Output.SourceID,
+			MemberFlowsTruncated: run.Status.Output.MemberFlowsTruncated,
+			MemberFlows:          make([]IngestRunOutputFlow, 0, min(len(run.Status.Output.MemberFlows), maxProjectedOutputMemberFlows)),
+		}
+		for index := range min(len(run.Status.Output.MemberFlows), maxProjectedOutputMemberFlows) {
+			member := run.Status.Output.MemberFlows[index]
+			detail.Output.MemberFlows = append(detail.Output.MemberFlows, IngestRunOutputFlow{
+				ID:     member.ID,
+				Format: boundedProjectedString(member.Format, 128),
+				Role:   boundedProjectedString(member.Role, 64),
+			})
+		}
+		if len(run.Status.Output.MemberFlows) > maxProjectedOutputMemberFlows {
+			detail.Output.MemberFlowsTruncated = true
 		}
 	}
 	for index := range min(len(run.Status.Conditions), maxProjectedConditions) {
@@ -515,9 +584,64 @@ func effectiveIngestRunPhase(run *tamossv1alpha1.IngestRun) tamossv1alpha1.Inges
 
 func effectiveIngestRunProfile(run *tamossv1alpha1.IngestRun) tamossv1alpha1.IngestRunProfile {
 	if run.Spec.Profile == "" {
-		return tamossv1alpha1.IngestRunProfileEditorial
+		return tamossv1alpha1.IngestRunProfileEssenceSegments
 	}
 	return run.Spec.Profile
+}
+
+func projectTAMSFlowProfiles(assignments []tamossv1alpha1.IngestRunTAMSFlowProfile, resolved []tamossv1alpha1.IngestRunResolvedFlowProfileStatus) []IngestRunTAMSFlowProfile {
+	resolvedByStream := make(map[string]tamossv1alpha1.IngestRunResolvedFlowProfileStatus, len(resolved))
+	for _, item := range resolved {
+		resolvedByStream[fmt.Sprintf("%s:%d", item.Format, item.Index)] = item
+	}
+	result := make([]IngestRunTAMSFlowProfile, 0, len(assignments))
+	for _, assignment := range assignments {
+		item := IngestRunTAMSFlowProfile{Format: assignment.Format, Index: assignment.Index, ProfileID: assignment.ProfileID}
+		if assignment.ProfileRef != nil {
+			item.ProfileRef = boundedProjectedString(assignment.ProfileRef.Name, 253)
+		}
+		if resolvedItem, ok := resolvedByStream[fmt.Sprintf("%s:%d", assignment.Format, assignment.Index)]; ok {
+			item.ResolvedProfileID = resolvedItem.ProfileID
+		} else if assignment.ProfileID != "" {
+			item.ResolvedProfileID = assignment.ProfileID
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func projectIngestOutputTags(tags map[string]apiextensionsv1.JSON) map[string]any {
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make(map[string]any, min(len(keys), maxProjectedOutputTags))
+	for _, key := range keys[:min(len(keys), maxProjectedOutputTags)] {
+		var value any
+		if err := json.Unmarshal(tags[key].Raw, &value); err != nil {
+			continue
+		}
+		name := boundedProjectedString(key, maxProjectedOutputTagName)
+		switch typed := value.(type) {
+		case string:
+			result[name] = boundedProjectedString(typed, maxProjectedOutputTagValue)
+		case []any:
+			values := make([]string, 0, len(typed))
+			for _, item := range typed {
+				text, ok := item.(string)
+				if !ok {
+					values = nil
+					break
+				}
+				values = append(values, boundedProjectedString(text, maxProjectedOutputTagValue))
+			}
+			if values != nil {
+				result[name] = values
+			}
+		}
+	}
+	return result
 }
 
 func effectiveIngestRunSizeClass(run *tamossv1alpha1.IngestRun) tamossv1alpha1.IngestRunSizeClass {

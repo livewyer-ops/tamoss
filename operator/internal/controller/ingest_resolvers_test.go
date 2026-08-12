@@ -2,153 +2,233 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
-const testApprovedMediaURL = "https://media.example.test/sintel_trailer-480p.mp4"
+type staticIngestHostResolver map[string][]net.IPAddr
 
-func tamossWithApprovedInput(input tamossv1alpha1.ApprovedIngestInputSpec) *tamossv1alpha1.Tamoss {
-	tamoss := testIngestTamoss()
-	tamoss.Spec.Ingest.ApprovedInputs = []tamossv1alpha1.ApprovedIngestInputSpec{input}
-	return tamoss
+func (r staticIngestHostResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	addresses, found := r[host]
+	if !found {
+		return nil, fmt.Errorf("unexpected DNS lookup for %s", host)
+	}
+	return addresses, nil
 }
 
-func TestApprovedInputResolverReturnsOwnerApprovedLocations(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := tamossWithApprovedInput(tamossv1alpha1.ApprovedIngestInputSpec{
-		ID:   "staged-123",
-		Kind: "ApprovedHTTP",
-		URLs: []string{testApprovedMediaURL},
-	})
-	resolver := ApprovedInputResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
+func sourcePolicyResolverFor(t *testing.T, objects ...runtime.Object) SourcePolicyResolver {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := tamossv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	return SourcePolicyResolver{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build(),
+		HostResolver: staticIngestHostResolver{
+			"media.example.test":   {{IP: net.ParseIP("93.184.216.34")}},
+			"objects.example.test": {{IP: net.ParseIP("93.184.216.35")}},
+		},
+	}
+}
 
-	resolved, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name,
-		tamossv1alpha1.IngestInputReference{Kind: "ApprovedHTTP", ID: "staged-123"}, 1000)
+func sourcePolicyTamoss(mode tamossv1alpha1.IngestSourcePolicyMode, sources ...tamossv1alpha1.IngestSourceSpec) *tamossv1alpha1.Tamoss {
+	return &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{Ingest: tamossv1alpha1.IngestSpec{
+			SourcePolicy: tamossv1alpha1.IngestSourcePolicySpec{Mode: mode}, Sources: sources,
+		}},
+	}
+}
+
+func TestSourcePolicyResolverDefaultsToDisabled(t *testing.T) {
+	tamoss := sourcePolicyTamoss("")
+	_, err := sourcePolicyResolverFor(t).Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/clip.mp4",
+	}, 1000)
+	if err == nil || !strings.Contains(err.Error(), "Disabled") {
+		t.Fatalf("Resolve() error = %v, want disabled policy", err)
+	}
+}
+
+func TestSourcePolicyResolverAllowsUnnamedPublicHTTPS(t *testing.T) {
+	tamoss := sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyPublicHTTPS)
+	resolved, err := sourcePolicyResolverFor(t).Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/library/clip.mp4",
+	}, 1000)
 	if err != nil {
-		t.Fatalf("resolve approved input: %v", err)
+		t.Fatal(err)
 	}
-	if len(resolved.Selectors) != 1 || resolved.Selectors[0] != testApprovedMediaURL {
-		t.Fatalf("selectors = %#v, want the approved location", resolved.Selectors)
+	if resolved.SourceName != "public-https" || resolved.ExpectedInputs != 1 || resolved.Selectors[0] != "https://media.example.test/library/clip.mp4" {
+		t.Fatalf("resolved = %#v", resolved)
 	}
-	if resolved.ExpectedInputs != 1 {
-		t.Fatalf("expectedInputs = %d, want 1", resolved.ExpectedInputs)
-	}
-	// The controller revalidates whatever a resolver returns, so an approval
-	// can never introduce a selector the ingest boundary would refuse.
-	if err := validateResolvedIngestInputs(resolved, 1000); err != nil {
-		t.Fatalf("approved locations must satisfy the ingest boundary: %v", err)
+	if len(resolved.PolicyDigest) != 64 {
+		t.Fatalf("policy digest = %q", resolved.PolicyDigest)
 	}
 }
 
-// An unapproved id is the ordinary case for a forged or stale reference.
-func TestApprovedInputResolverRefusesUnapprovedIdentifiers(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := tamossWithApprovedInput(tamossv1alpha1.ApprovedIngestInputSpec{
-		ID:   "staged-123",
-		Kind: "ApprovedHTTP",
-		URLs: []string{testApprovedMediaURL},
-	})
-	resolver := ApprovedInputResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
-
-	if _, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name,
-		tamossv1alpha1.IngestInputReference{Kind: "ApprovedHTTP", ID: "not-approved"}, 1000); err == nil {
-		t.Fatal("expected an unapproved input reference to be refused")
+func TestSourcePolicyResolverRejectsUnsafePublicHTTPS(t *testing.T) {
+	tamoss := sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyPublicHTTPS)
+	for _, uri := range []string{
+		"http://media.example.test/clip.mp4",
+		"https://user@media.example.test/clip.mp4",
+		"https://media.example.test:8443/clip.mp4",
+		"https://127.0.0.1/clip.mp4",
+		"https://media.example.test/clip.mp4?token=secret",
+	} {
+		t.Run(uri, func(t *testing.T) {
+			_, err := sourcePolicyResolverFor(t).Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+				Kind: tamossv1alpha1.IngestInputKindHTTP, URI: uri,
+			}, 1000)
+			if err == nil {
+				t.Fatalf("Resolve(%q) succeeded", uri)
+			}
+		})
 	}
 }
 
-// One approval must not satisfy a reference of a different kind.
-func TestApprovedInputResolverRefusesKindMismatch(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := tamossWithApprovedInput(tamossv1alpha1.ApprovedIngestInputSpec{
-		ID:   "staged-123",
-		Kind: "ApprovedHTTP",
-		URLs: []string{testApprovedMediaURL},
-	})
-	resolver := ApprovedInputResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
+func TestSourcePolicyResolverRejectsPrivateDNSUnlessNamedSourceAllowsIt(t *testing.T) {
+	resolver := sourcePolicyResolverFor(t)
+	resolver.HostResolver = staticIngestHostResolver{
+		"private.example.test": {{IP: net.ParseIP("10.0.0.8")}},
+	}
+	public := sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyPublicHTTPS)
+	input := tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://private.example.test/clip.mp4",
+	}
+	if _, err := resolver.Resolve(context.Background(), public, input, 1000); err == nil || !strings.Contains(err.Error(), "non-public") {
+		t.Fatalf("public Resolve() error = %v, want non-public address rejection", err)
+	}
 
-	_, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name,
-		tamossv1alpha1.IngestInputReference{Kind: "ApprovedS3", ID: "staged-123"}, 1000)
-	if err == nil || !strings.Contains(err.Error(), "kind") {
-		t.Fatalf("expected a kind mismatch to be refused, got %v", err)
+	source := tamossv1alpha1.IngestSourceSpec{
+		Name: "private", Kind: tamossv1alpha1.IngestSourceKindHTTP,
+		HTTP: &tamossv1alpha1.HTTPIngestSourceSpec{
+			Origin: "https://private.example.test", AllowPrivateAddresses: true,
+		},
+	}
+	input.SourceRef = &tamossv1alpha1.IngestSourceReference{Name: source.Name}
+	if _, err := resolver.Resolve(context.Background(), sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyRestricted, source), input, 1000); err != nil {
+		t.Fatalf("private named source Resolve() error = %v", err)
 	}
 }
 
-func TestApprovedInputResolverHonoursTheRunInputLimit(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := tamossWithApprovedInput(tamossv1alpha1.ApprovedIngestInputSpec{
-		ID:   "staged-123",
-		Kind: "ApprovedHTTP",
-		URLs: []string{testApprovedMediaURL, "https://media.example.test/second.mp4"},
-	})
-	resolver := ApprovedInputResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
-
-	if _, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name,
-		tamossv1alpha1.IngestInputReference{Kind: "ApprovedHTTP", ID: "staged-123"}, 1); err == nil {
-		t.Fatal("expected an approval wider than the run's limit to be refused")
+func TestSourcePolicyResolverRestrictsNamedHTTPSourceAndCredentials(t *testing.T) {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "review-http", Namespace: "tams"}, Data: map[string][]byte{
+		httpCredentialSecretKey: []byte(`["Authorization: Bearer redacted"]`),
+	}}
+	source := tamossv1alpha1.IngestSourceSpec{
+		Name: "review", Kind: tamossv1alpha1.IngestSourceKindHTTP,
+		HTTP: &tamossv1alpha1.HTTPIngestSourceSpec{
+			Origin: "https://media.example.test", PathPrefixes: []string{"/approved/"}, AllowPrivateAddresses: true,
+			CredentialSecretRef: &corev1.LocalObjectReference{Name: secret.Name},
+		},
 	}
-}
-
-// An instance with no approvals must resolve nothing at all.
-func TestApprovedInputResolverFailsClosedWithoutApprovals(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := testIngestTamoss()
-	resolver := ApprovedInputResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
-
-	if _, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name,
-		tamossv1alpha1.IngestInputReference{Kind: "ApprovedHTTP", ID: "staged-123"}, 1000); err == nil {
-		t.Fatal("expected an instance with no approved inputs to resolve nothing")
-	}
-}
-
-func TestPublishedEndpointResolverReturnsThePublishedEndpoint(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := testIngestTamoss()
-	tamoss.Status.Endpoints.API = "https://api.example.test"
-	resolver := PublishedEndpointResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
-
-	endpoint, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name)
+	tamoss := sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyRestricted, source)
+	resolver := sourcePolicyResolverFor(t, secret)
+	resolved, err := resolver.Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/approved/clip.mp4",
+		SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name},
+	}, 1000)
 	if err != nil {
-		t.Fatalf("resolve endpoint: %v", err)
+		t.Fatal(err)
 	}
-	if endpoint != "https://api.example.test" {
-		t.Fatalf("endpoint = %q, want the published API endpoint", endpoint)
+	if resolved.CredentialSecretName != secret.Name || resolved.CredentialKind != tamossv1alpha1.IngestSourceKindHTTP {
+		t.Fatalf("credential handoff = %#v", resolved)
 	}
-	if _, err := validateIngestEndpoint(endpoint); err != nil {
-		t.Fatalf("published endpoint must satisfy the ingest boundary: %v", err)
+	if len(resolved.PolicyDigest) != 64 {
+		t.Fatalf("policy digest = %q", resolved.PolicyDigest)
+	}
+
+	for _, uri := range []string{
+		"https://other.example.test/approved/clip.mp4",
+		"https://media.example.test/private/clip.mp4",
+		"https://media.example.test/approved/%2e%2e/private/clip.mp4",
+	} {
+		_, err := resolver.Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+			Kind: tamossv1alpha1.IngestInputKindHTTP, URI: uri, SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name},
+		}, 1000)
+		if err == nil {
+			t.Fatalf("Resolve(%q) succeeded outside policy", uri)
+		}
 	}
 }
 
-// Tamsin carries a full-access bearer token, so a plaintext route must not be
-// silently upgraded to https by the resolver; it has to fail the boundary.
-func TestPublishedEndpointResolverDoesNotUpgradePlaintextRoutes(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := testIngestTamoss()
-	tamoss.Status.Endpoints.API = "http://api.example.test"
-	resolver := PublishedEndpointResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
-
-	endpoint, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name)
+func TestSourcePolicyResolverRequiresNamedS3SourceAndBoundsPrefix(t *testing.T) {
+	source := tamossv1alpha1.IngestSourceSpec{
+		Name: "archive", Kind: tamossv1alpha1.IngestSourceKindS3,
+		S3: &tamossv1alpha1.S3IngestSourceSpec{
+			Endpoint: "https://objects.example.test", Region: "eu-west-2", Bucket: "archive",
+			KeyPrefixes: []string{"incoming/"}, PathStyle: true,
+		},
+	}
+	tamoss := sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyPublicHTTPS, source)
+	resolver := sourcePolicyResolverFor(t)
+	resolved, err := resolver.Resolve(context.Background(), tamoss, tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://archive/incoming/day-1/",
+		SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name},
+	}, 1000)
 	if err != nil {
-		t.Fatalf("resolve endpoint: %v", err)
+		t.Fatal(err)
 	}
-	if endpoint != "http://api.example.test" {
-		t.Fatalf("endpoint = %q, want the published value verbatim", endpoint)
+	if resolved.ExpectedInputs != 0 || resolved.S3Endpoint != source.S3.Endpoint || resolved.S3Region != source.S3.Region || !resolved.S3PathStyle {
+		t.Fatalf("resolved = %#v", resolved)
 	}
-	if _, err := validateIngestEndpoint(endpoint); err == nil {
-		t.Fatal("a plaintext endpoint must be refused by the ingest boundary")
+
+	for _, input := range []tamossv1alpha1.IngestRunInput{
+		{Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://archive/incoming/day-1/"},
+		{Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://archive/private/day-1/", SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name}},
+		{Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://other/incoming/day-1/", SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name}},
+	} {
+		if _, err := resolver.Resolve(context.Background(), tamoss, input, 1000); err == nil {
+			t.Fatalf("Resolve(%#v) succeeded", input)
+		}
 	}
 }
 
-func TestPublishedEndpointResolverFailsWithoutAPublishedEndpoint(t *testing.T) {
-	scheme := ingestRunTestScheme(t)
-	tamoss := testIngestTamoss()
-	resolver := PublishedEndpointResolver{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tamoss).Build()}
+func TestSourcePolicyResolverRejectsMissingCredentialKeys(t *testing.T) {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "archive", Namespace: "tams"}, Data: map[string][]byte{
+		s3AccessKeySecretKey: []byte("access"),
+	}}
+	source := tamossv1alpha1.IngestSourceSpec{
+		Name: "archive", Kind: tamossv1alpha1.IngestSourceKindS3,
+		S3: &tamossv1alpha1.S3IngestSourceSpec{
+			Endpoint: "https://objects.example.test", Region: "eu-west-2", Bucket: "archive",
+			CredentialSecretRef: &corev1.LocalObjectReference{Name: secret.Name},
+		},
+	}
+	_, err := sourcePolicyResolverFor(t, secret).Resolve(context.Background(), sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyRestricted, source), tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindS3, URI: "s3://archive/object.ts", SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name},
+	}, 1000)
+	if err == nil || !strings.Contains(err.Error(), s3SecretKeySecretKey) {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+}
 
-	if _, err := resolver.Resolve(context.Background(), tamoss.Namespace, tamoss.Name); err == nil {
-		t.Fatal("expected an instance with no published endpoint to fail")
+func TestSourcePolicyResolverRejectsMalformedHTTPCredentialHeaders(t *testing.T) {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "review", Namespace: "tams"}, Data: map[string][]byte{
+		httpCredentialSecretKey: []byte(`["missing-colon"]`),
+	}}
+	source := tamossv1alpha1.IngestSourceSpec{
+		Name: "review", Kind: tamossv1alpha1.IngestSourceKindHTTP,
+		HTTP: &tamossv1alpha1.HTTPIngestSourceSpec{
+			Origin: "https://media.example.test", CredentialSecretRef: &corev1.LocalObjectReference{Name: secret.Name},
+		},
+	}
+	_, err := sourcePolicyResolverFor(t, secret).Resolve(context.Background(), sourcePolicyTamoss(tamossv1alpha1.IngestSourcePolicyRestricted, source), tamossv1alpha1.IngestRunInput{
+		Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/clip.mp4", SourceRef: &tamossv1alpha1.IngestSourceReference{Name: source.Name},
+	}, 1000)
+	if err == nil || !strings.Contains(err.Error(), "invalid HTTP header") {
+		t.Fatalf("Resolve() error = %v", err)
 	}
 }

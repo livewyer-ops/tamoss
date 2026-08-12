@@ -1,8 +1,8 @@
 # Deletion Protection
 
-`Tamoss`, `StorageBackend`, and `TamossHibernate` resources are protected by
-admission webhooks. The webhooks reject Kubernetes delete requests until the
-confirmation annotation is present.
+`Tamoss`, `StorageBackend`, `FlowProfile`, and `TamossHibernate` resources are
+protected by admission webhooks. The webhooks reject Kubernetes delete
+requests until the confirmation annotation is present.
 
 ## Tamoss
 
@@ -32,6 +32,18 @@ registration when its finalizer runs.
 For `external-s3`, deletion removes only TAMOSS database registration and
 operator state. The external bucket, credentials, lifecycle rules, CORS rules,
 backups, and provider configuration remain outside TAMOSS.
+
+## FlowProfile
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" -n tams annotate flowprofile hd-avc \
+  confirmation.tamoss.livewyer.io/deletion=true --overwrite
+kubectl --kubeconfig "$KUBECONFIG" -n tams delete flowprofile hd-avc
+```
+
+The operator removes the TAMS Profile only when no Flow references it. An
+in-use resource remains terminating with `DeletionBlocked=True`; do not remove
+its finaliser manually. See [Manage Flow Profiles](manage-flow-profiles.md).
 
 ## TamossHibernate
 

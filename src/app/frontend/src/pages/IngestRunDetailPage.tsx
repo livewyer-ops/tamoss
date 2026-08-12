@@ -1,5 +1,5 @@
 import { ArrowLeft, CircleStop, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import {
   Button,
@@ -258,6 +258,52 @@ export default function IngestRunDetailPage() {
                 <dd>{detail.options.maxInputs}</dd>
                 <dt>Concurrency</dt>
                 <dd>{detail.options.concurrency || "Managed default"}</dd>
+                <dt>TAMS Flow Profiles</dt>
+                <dd className={surfaceStyles.mono}>
+                  {detail.options.tamsFlowProfiles
+                    ?.map(
+                      ({
+                        format,
+                        index,
+                        profileID,
+                        profileRef,
+                        resolvedProfileID,
+                      }) => {
+                        const selector = profileRef
+                          ? `FlowProfile ${profileRef}`
+                          : profileID;
+                        const resolved =
+                          resolvedProfileID && resolvedProfileID !== profileID
+                            ? ` -> ${resolvedProfileID}`
+                            : "";
+                        return `${format}:${index} ${selector}${resolved}`;
+                      },
+                    )
+                    .join(", ") || "None"}
+                </dd>
+                <dt>Output label</dt>
+                <dd>
+                  {detail.outputIntent?.flowMetadata.label || "Managed default"}
+                </dd>
+                <dt>Output description</dt>
+                <dd>
+                  {detail.outputIntent?.flowMetadata.description || "Not set"}
+                </dd>
+                <dt>Output tags</dt>
+                <dd>
+                  {Object.keys(detail.outputIntent?.flowMetadata.tags ?? {})
+                    .length
+                    ? Object.entries(
+                        detail.outputIntent?.flowMetadata.tags ?? {},
+                      ).map(([name, value], index) => (
+                        <Fragment key={name}>
+                          {index ? ", " : ""}
+                          <span className={surfaceStyles.mono}>{name}</span>
+                          {`=${Array.isArray(value) ? value.join("|") : value}`}
+                        </Fragment>
+                      ))
+                    : "None"}
+                </dd>
               </dl>
             </Panel>
             <Panel title="Runtime references">
@@ -266,7 +312,7 @@ export default function IngestRunDetailPage() {
                 <dd className={surfaceStyles.mono}>
                   {detail.job?.name || "-"}
                 </dd>
-                <dt>Tamsin run</dt>
+                <dt>TAMSin run</dt>
                 <dd className={surfaceStyles.mono}>
                   {detail.tamsinRunId || "-"}
                 </dd>
@@ -292,6 +338,49 @@ export default function IngestRunDetailPage() {
                   {detail.result?.size !== undefined
                     ? formatIngestBytes(detail.result.size)
                     : "-"}
+                </dd>
+                <dt>Root Flow</dt>
+                <dd>
+                  {detail.output ? (
+                    <Link
+                      className={surfaceStyles.mono}
+                      to={`/flows/${encodeURIComponent(detail.output.rootFlowID)}`}
+                    >
+                      {detail.output.rootFlowID}
+                    </Link>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+                <dt>Source</dt>
+                <dd>
+                  {detail.output ? (
+                    <Link
+                      className={surfaceStyles.mono}
+                      to={`/sources/${encodeURIComponent(detail.output.sourceID)}`}
+                    >
+                      {detail.output.sourceID}
+                    </Link>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+                <dt>Member Flows</dt>
+                <dd>
+                  {detail.output?.memberFlows?.length
+                    ? detail.output.memberFlows.map((member, index) => (
+                        <Fragment key={member.id}>
+                          {index ? ", " : ""}
+                          <Link
+                            className={surfaceStyles.mono}
+                            to={`/flows/${encodeURIComponent(member.id)}`}
+                          >
+                            {member.role || member.format || member.id}
+                          </Link>
+                        </Fragment>
+                      ))
+                    : "-"}
+                  {detail.output?.memberFlowsTruncated ? " (partial)" : ""}
                 </dd>
               </dl>
             </Panel>

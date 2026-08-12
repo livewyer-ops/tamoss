@@ -60,7 +60,8 @@ spec:
 | `.spec.networkPolicy` | Profile default NetworkPolicy settings, component overrides, and destination-scoped Kubernetes API IP blocks for Console. |
 | `.spec.secrets.apiToken` | Generated or explicit API token configuration. |
 | `.spec.images` | Shared helper images that are not owned by one component. |
-| `.spec.ingest.approvedInputs` | Fail-closed mapping from opaque `IngestRun` input IDs to approved HTTPS media locations. See [IngestRun CR](ingestrun-cr.md). |
+| `.spec.ingest.sourcePolicy.mode` | Ingest source mode: `Disabled`, `PublicHTTPS`, or `Restricted`. Production profiles default to `Disabled`; `local-kind` defaults to `PublicHTTPS`. |
+| `.spec.ingest.sources` | Reusable named HTTP and S3 source boundaries, including optional source-owned credential Secret references. See [IngestRun CR](ingestrun-cr.md). |
 | `.spec.advanced` | Advanced resource patches and additional resources for provider fields that do not have first-class TAMOSS fields. |
 | `.spec.paused` | Stops reconcile writes while still allowing status updates. |
 
@@ -127,7 +128,7 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | `.status.conditions` | Readiness, backend, identity, routing, schema, upgrade, and degraded conditions. |
 | `.status.endpoints` | Effective API and UI URLs after profile defaults and endpoint overrides. |
 | `.status.providers` | Selected provider and ownership model for database, S3, authentication, and routing. |
-| `.status.resolved.images` | Effective API, UI, worker, schema helper, CNPG Postgres, and RustFS image references where rendered. |
+| `.status.resolved.images` | Effective API, UI, worker, TAMSin, schema helper, CNPG Postgres, and RustFS image references where rendered. |
 | `.status.resolved.versions` | Effective TAMOSS schema, runtime, and BBC TAMS API compatibility versions. |
 | `.status.resolved.generatedSecrets` | Generated Secret names only. Secret values are never exposed. |
 | `.status.resolved.resources` | Generated workload and default StorageBackend resource names. |

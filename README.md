@@ -13,9 +13,10 @@ TAMOSS is a Kubernetes-native implementation of the
 an operator-driven product with four supported infrastructure profiles:
 `local-kind`, `edge`, `single-server`, and `multi-server`.
 
-The operator reconciles `Tamoss` and `StorageBackend` custom resources into the
-API, worker, UI, schema migration, generated Secrets, routing, and selected
-backend integrations.
+The operator reconciles `Tamoss`, `StorageBackend`, `FlowProfile`, and
+`IngestRun` custom resources into the API, worker, UI, schema migration,
+generated Secrets, routing, Profile registration, and selected backend
+integrations.
 
 ## Features
 

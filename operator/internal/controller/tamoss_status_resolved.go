@@ -66,7 +66,11 @@ func routingProviderStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Provide
 	return providerDomainStatus("external", tamossv1alpha1.ProviderOwnershipExternal)
 }
 
-func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.ResolvedStatus {
+func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) tamossv1alpha1.ResolvedStatus {
+	resolvedTAMSinImage := defaults.DefaultTAMSinImage
+	if len(tamsinImage) > 0 && strings.TrimSpace(tamsinImage[0]) != "" {
+		resolvedTAMSinImage = strings.TrimSpace(tamsinImage[0])
+	}
 	status := tamossv1alpha1.ResolvedStatus{
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
@@ -74,6 +78,7 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 			Console:                       resolvedImageRef(tamoss.Spec.Console.Image, defaults.DefaultConsoleRepository),
 			Worker:                        resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			SchemaMigrationPostgresClient: schemaMigrationPostgresClientImage(tamoss),
+			TAMSin:                        resolvedTAMSinImage,
 		},
 		Versions: tamossv1alpha1.ResolvedVersionStatus{
 			Schema:  schemabundle.SchemaVersion,

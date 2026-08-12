@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -16,78 +18,183 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamsin/ingestevent"
 )
 
-// sintelStream is a compressed replica of the stream a real run produced:
-// same protocol, envelope, and terminal payload shape.
-const sintelStream = `{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"hello","seq":0,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:12Z","elapsed_ms":0,"payload":{"tool_version":"0.1.0-rc.2"}}
-{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"run.started","seq":1,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:12Z","elapsed_ms":1,"payload":{}}
-{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"input.declared","seq":2,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:12Z","elapsed_ms":2,"payload":{"input":"https://media.example.test/sintel.mp4"}}
-{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"object.result","seq":9,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:16Z","elapsed_ms":4000,"scope":{"input_index":0},"payload":{"object_id":"o1","timerange":"[0:0_14:0)","bytes":847158,"status":"ingested"}}
-{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"input.finished","seq":22,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:18Z","elapsed_ms":5800,"scope":{"input_index":0},"payload":{"input":"https://media.example.test/sintel.mp4","profile":"editorial","profile_version":"1","status":"ingested","verification":"verified","flow_count":3,"object_count":11}}
-{"protocol":"tamsin.ingest.events","protocol_version":"1.0","type":"run.finished","seq":23,"run_id":"313c7f9a-7249-4c39-a55d-2f1de6b0b0aa","emitted_at":"2026-08-10T18:42:18Z","elapsed_ms":5883,"payload":{"outcome":"succeeded","exit_code":0,"total":1,"succeeded":1,"failed":0,"elapsed_ms":5883,"bytes_staged":4372373,"bytes_uploaded":4367815,"bytes_verified":4367815,"retries":0,"objects_verified":11,"objects_retracted":0,"objects_stranded":0}}`
+const testTAMSinRunID = "313c7f9a-7249-4c39-a55d-2f1de6b0b0aa"
 
-func TestDecodeIngestStreamReducesTheRealProtocol(t *testing.T) {
-	summary := decodeIngestStream(strings.NewReader(sintelStream))
-	if summary.RunID != "313c7f9a-7249-4c39-a55d-2f1de6b0b0aa" {
-		t.Fatalf("runID = %q", summary.RunID)
+const (
+	testRootFlowID   = "713d391c-828a-513e-9929-65e1bab9c35b"
+	testMemberFlowID = "69d2a402-b8db-5faa-a970-0aed4f2acfc2"
+	testSourceID     = "6148f737-4536-5442-8897-c20b647e8836"
+)
+
+func succeededIngestSummary() *ingestStreamSummary {
+	return &ingestStreamSummary{
+		RunID: testTAMSinRunID, LastSequence: 6, Outcome: ingestevent.RunSucceeded,
+		ExitCode: 0, RunFinished: true, Total: 1, Succeeded: 1, InputsCompleted: 1,
 	}
-	if !summary.RunFinished || summary.LastSequence != 23 {
-		t.Fatalf("finished=%t lastSeq=%d, want true/23", summary.RunFinished, summary.LastSequence)
+}
+
+func partialIngestSummary() *ingestStreamSummary {
+	return &ingestStreamSummary{
+		RunID: testTAMSinRunID, LastSequence: 9, Outcome: ingestevent.RunPartial,
+		ExitCode: 4, RunFinished: true, Total: 2, Succeeded: 1, Failed: 1, InputsCompleted: 2,
+	}
+}
+
+func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string {
+	t.Helper()
+	var sink bytes.Buffer
+	encoder, err := ingestevent.NewEncoder(&sink, testTAMSinRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emit := func(scope *ingestevent.Scope, event ingestevent.Event) {
+		t.Helper()
+		if _, err := encoder.Emit(scope, event); err != nil {
+			t.Fatalf("emit %s: %v", event.EventType(), err)
+		}
+	}
+	emit(nil, ingestevent.Hello{
+		ToolVersion: "1.0.0-rc.1", ToolCommit: "d3cb6838", ResultSchemaVersion: "2.1",
+		ProfilePolicyVersion: "1", MaxEventBytes: ingestevent.DefaultMaxEventBytes,
+		Capabilities: []string{"terminal_results", "tams_flow_profiles"},
+	})
+	total := 1
+	if outcome == ingestevent.RunPartial {
+		total = 2
+	}
+	emit(nil, ingestevent.RunStarted{
+		StartedAt: time.Now().UTC(), Profile: "essence-segments", ProfileVersion: "1",
+		DryRunMode: "off", VerificationMode: "auto", RequestedInputs: ingestevent.KnownInputCount(uint64(total)),
+	})
+	sink.WriteString("{\"time\":\"2026-08-12T09:58:01Z\",\"level\":\"INFO\",\"msg\":\"preparing input\"}\n")
+	for index := range total {
+		emit(ingestevent.InputScope(index), ingestevent.InputDeclared{Input: "https://media.example.test/input.mp4"})
+	}
+	emit(nil, ingestevent.ManifestFinished{TotalInputs: uint64(total)})
+	succeeded, failed := uint64(0), uint64(0)
+	for index := range total {
+		emit(ingestevent.InputScope(index), ingestevent.InputStarted{StartedAt: time.Now().UTC()})
+		input := ingestevent.InputFinished{
+			Input: "https://media.example.test/input.mp4", Profile: "essence-segments", ProfileVersion: "1",
+			Verification: ingestevent.VerificationNotRequested,
+		}
+		if outcome == ingestevent.RunFailed || outcome == ingestevent.RunInterrupted || (outcome == ingestevent.RunPartial && index == total-1) {
+			input.Status = ingestevent.InputFailed
+			input.Verification = ingestevent.VerificationNotReached
+			input.ErrorCode = ingestevent.DiagnosticCodeConfigInvalid
+			input.Message = "Input failed."
+			if outcome == ingestevent.RunInterrupted {
+				input.ErrorCode = ingestevent.InputErrorCodeRunInterrupted
+			}
+			failed++
+		} else {
+			emit(ingestevent.FlowScope(index, testRootFlowID), ingestevent.FlowPlanned{
+				FlowID: testRootFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindCollection,
+				Root: true, Format: "urn:x-nmos:format:multi",
+			})
+			emit(ingestevent.FlowScope(index, testMemberFlowID), ingestevent.FlowPlanned{
+				FlowID: testMemberFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindEssence,
+				Role: "video", ParentFlowID: testRootFlowID, Format: "urn:x-nmos:format:video", Container: "video/mp2t",
+			})
+			emit(ingestevent.FlowScope(index, testRootFlowID), ingestevent.FlowResult{
+				FlowID: testRootFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindCollection,
+				Disposition: ingestevent.FlowWritten,
+			})
+			emit(ingestevent.FlowScope(index, testMemberFlowID), ingestevent.FlowResult{
+				FlowID: testMemberFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindEssence,
+				Role: "video", Disposition: ingestevent.FlowWritten,
+			})
+			input.Status = ingestevent.InputIngested
+			input.RootFlowID = testRootFlowID
+			input.FlowCount = 2
+			succeeded++
+		}
+		emit(ingestevent.InputScope(index), input)
+	}
+	exitCode := 0
+	if outcome == ingestevent.RunPartial || outcome == ingestevent.RunFailed {
+		exitCode = 4
+	}
+	if outcome == ingestevent.RunInterrupted {
+		emit(nil, ingestevent.RunCancellationRequested{Reason: ingestevent.CancellationSignal})
+		exitCode = 8
+	}
+	emit(nil, ingestevent.RunFinished{
+		Outcome: outcome, ExitCode: exitCode, Total: uint64(total), Succeeded: succeeded, Failed: failed,
+		BytesUploaded: 4367815,
+	})
+	if err := encoder.Finalize(); err != nil {
+		t.Fatal(err)
+	}
+	return sink.String()
+}
+
+func TestDecodeIngestStreamUsesPublishedProtocolReducer(t *testing.T) {
+	summary, err := decodeIngestStream(strings.NewReader(testIngestEventStream(t, ingestevent.RunSucceeded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RunID != testTAMSinRunID || !summary.RunFinished || summary.Outcome != ingestevent.RunSucceeded {
+		t.Fatalf("summary = %+v", summary)
 	}
 	if summary.Total != 1 || summary.Succeeded != 1 || summary.Failed != 0 || summary.InputsCompleted != 1 {
 		t.Fatalf("counters = %+v", summary)
 	}
-	if summary.BytesUploaded != 4367815 {
-		t.Fatalf("bytesUploaded = %d, want 4367815", summary.BytesUploaded)
+	if summary.BytesUploaded != 4367815 || summary.LastSequence <= 0 {
+		t.Fatalf("terminal facts = %+v", summary)
+	}
+	if summary.Output == nil || summary.Output.RootFlowID != testRootFlowID || summary.Output.SourceID != testSourceID {
+		t.Fatalf("output = %+v", summary.Output)
+	}
+	if len(summary.Output.MemberFlows) != 1 || summary.Output.MemberFlows[0].ID != testMemberFlowID ||
+		summary.Output.MemberFlows[0].Role != "video" || summary.Output.MemberFlows[0].Format != "urn:x-nmos:format:video" {
+		t.Fatalf("member Flows = %+v", summary.Output.MemberFlows)
 	}
 }
 
-// The protocol requires consumers to ignore unknown types and fields, and the
-// operator must not choke on garbage lines from a corrupted stream.
-func TestDecodeIngestStreamIgnoresUnknownAndMalformedLines(t *testing.T) {
-	stream := `not json at all
-{"protocol":"other.protocol","type":"run.finished","seq":9,"payload":{"succeeded":5}}
-{"protocol":"tamsin.ingest.events","type":"future.event","seq":3,"run_id":"r","payload":{"new_field":true}}
-{"protocol":"tamsin.ingest.events","type":"run.finished","seq":4,"run_id":"r","payload":{"outcome":"failed","exit_code":4,"total":2,"succeeded":0,"failed":2,"bytes_uploaded":0}}`
-	summary := decodeIngestStream(strings.NewReader(stream))
-	if summary.LastSequence != 4 || !summary.RunFinished {
-		t.Fatalf("summary = %+v", summary)
+func TestIngestOutputProjectionIsDeterministicAndBounded(t *testing.T) {
+	input := &ingestevent.InputState{
+		Finished: &ingestevent.InputFinished{RootFlowID: testRootFlowID},
+		PlannedFlows: map[string]ingestevent.FlowPlanned{
+			testRootFlowID: {FlowID: testRootFlowID, SourceID: testSourceID, Root: true},
+		},
+		FlowResults: map[string]ingestevent.FlowResult{
+			testRootFlowID: {FlowID: testRootFlowID, SourceID: testSourceID},
+		},
 	}
-	if summary.Succeeded != 0 || summary.Failed != 2 || summary.Total != 2 {
-		t.Fatalf("counters = %+v, foreign protocol must not contribute", summary)
+	for index := range maxIngestOutputMemberFlows + 2 {
+		flowID := fmt.Sprintf("00000000-0000-4000-8000-%012x", index+1)
+		input.PlannedFlows[flowID] = ingestevent.FlowPlanned{FlowID: flowID, Format: "urn:x-nmos:format:video", Role: "video"}
+		input.FlowResults[flowID] = ingestevent.FlowResult{FlowID: flowID, Role: "video"}
+	}
+	output := ingestOutputFromState(ingestevent.State{Inputs: map[int]*ingestevent.InputState{0: input}})
+	if output == nil || !output.MemberFlowsTruncated || len(output.MemberFlows) != maxIngestOutputMemberFlows {
+		t.Fatalf("output = %+v", output)
+	}
+	if output.MemberFlows[0].ID != "00000000-0000-4000-8000-000000000001" ||
+		output.MemberFlows[len(output.MemberFlows)-1].ID != "00000000-0000-4000-8000-000000000010" {
+		t.Fatalf("member order = %+v", output.MemberFlows)
+	}
+	if got := ingestOutputFromState(ingestevent.State{Inputs: map[int]*ingestevent.InputState{0: input, 1: {}}}); got != nil {
+		t.Fatalf("multi-input output = %+v, want nil", got)
 	}
 }
 
-// Exit code 4 means at least one input failed; only the stream can say whether
-// any succeeded. All-failed must be Failed, mixed must stay PartiallySucceeded.
-func TestIngestPhaseUsesStreamToDisambiguateExitFour(t *testing.T) {
-	ctx := context.Background()
-	scheme := ingestRunTestScheme(t)
-	run := testIngestRun()
-	job := ownedIngestJob(run)
-	job.Status.Conditions = []batchv1.JobCondition{{
-		Type: batchv1.JobFailed, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Now(),
-	}}
-	pod := terminatedIngestPod(job, 4)
-	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, pod).Build()
-
-	allFailed := &ingestStreamSummary{RunFinished: true, Total: 2, Succeeded: 0, Failed: 2}
-	phase, reason, _, _, err := ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{}, time.Now(), allFailed)
-	if err != nil {
-		t.Fatalf("phase evaluation failed: %v", err)
-	}
-	if phase != tamossv1alpha1.IngestRunPhaseFailed || reason != "IngestFailed" {
-		t.Fatalf("all-failed run got %q/%q, want Failed/IngestFailed", phase, reason)
-	}
-
-	mixed := &ingestStreamSummary{RunFinished: true, Total: 2, Succeeded: 1, Failed: 1}
-	phase, reason, _, _, err = ingestPhaseFromJob(ctx, reader, job, tamossv1alpha1.IngestRunResultStatus{}, time.Now(), mixed)
-	if err != nil {
-		t.Fatalf("phase evaluation failed: %v", err)
-	}
-	if phase != tamossv1alpha1.IngestRunPhasePartiallySucceeded {
-		t.Fatalf("mixed run got %q/%q, want PartiallySucceeded", phase, reason)
+func TestDecodeIngestStreamRejectsIncompleteAndMalformedStreams(t *testing.T) {
+	complete := testIngestEventStream(t, ingestevent.RunSucceeded)
+	lastRecord := strings.LastIndex(strings.TrimSuffix(complete, "\n"), "\n")
+	for name, stream := range map[string]string{
+		"incomplete": complete[:lastRecord+1],
+		"malformed":  "not-json\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeIngestStream(strings.NewReader(stream)); !errors.Is(err, errIngestStreamInvalid) {
+				t.Fatalf("error = %v, want invalid stream", err)
+			}
+		})
 	}
 }
 
@@ -106,100 +213,115 @@ func (r staticPodLogReader) PodLogs(context.Context, string, string, string) (io
 func terminatedIngestPod(job *batchv1.Job, exitCode int32) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      job.Name + "-pod",
-			Namespace: job.Namespace,
-			Labels:    map[string]string{"job-name": job.Name},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID,
-			}},
+			Name: job.Name + "-pod", Namespace: job.Namespace, Labels: map[string]string{"job-name": job.Name},
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID}},
 		},
 		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
-			Name: "tamsin",
-			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Name: "tamsin", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
 				ExitCode: exitCode, FinishedAt: metav1.Now(),
 			}},
 		}}},
 	}
 }
 
-// A completed Job's reconcile must record the stream's counters and identity
-// on status, which is what the console's ingest page renders.
-func TestIngestRunRecordsStreamOutcomeOnStatus(t *testing.T) {
-	ctx := context.Background()
-	scheme := ingestRunTestScheme(t)
+func terminalIngestFixture(t *testing.T, exitCode int32) (*tamossv1alpha1.IngestRun, *batchv1.Job, *corev1.Pod) {
+	t.Helper()
 	run := ingestRunWithRecordedJob(testIngestRun())
 	job := ownedIngestJob(run)
-	job.Status.Conditions = []batchv1.JobCondition{{
-		Type: batchv1.JobComplete, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Now(),
-	}}
+	conditionType := batchv1.JobComplete
+	if exitCode != 0 {
+		conditionType = batchv1.JobFailed
+	}
+	job.Status.Conditions = []batchv1.JobCondition{{Type: conditionType, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Now()}}
 	job.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	pod := terminatedIngestPod(job, 0)
-	k8sClient := fake.NewClientBuilder().
-		WithScheme(scheme).
+	return run, job, terminatedIngestPod(job, exitCode)
+}
+
+func TestIngestRunRecordsProtocolConfirmedOutcomeOnStatus(t *testing.T) {
+	ctx := context.Background()
+	scheme := ingestRunTestScheme(t)
+	run, job, pod := terminalIngestFixture(t, 0)
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
-		WithObjects(run, testIngestTamoss(), job, pod).
-		Build()
+		WithObjects(run, testIngestTamoss(), job, pod).Build()
 	reconciler := &IngestRunReconciler{
-		Client:    k8sClient,
-		Scheme:    scheme,
-		APIReader: k8sClient,
-		PodLogs:   staticPodLogReader{stream: sintelStream},
+		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		PodLogs: staticPodLogReader{stream: testIngestEventStream(t, ingestevent.RunSucceeded)},
 	}
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
-		t.Fatalf("reconcile failed: %v", err)
+		t.Fatal(err)
 	}
 	reloaded := reloadIngestRun(t, ctx, k8sClient, run)
-	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseSucceeded {
-		t.Fatalf("phase = %q, want Succeeded", reloaded.Status.Phase)
+	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseSucceeded || reloaded.Status.TamsinRunID != testTAMSinRunID {
+		t.Fatalf("status = %+v", reloaded.Status)
 	}
-	progress := reloaded.Status.Progress
-	if progress.InputsTotal != 1 || progress.InputsCompleted != 1 || progress.InputsSucceeded != 1 || progress.InputsFailed != 0 {
-		t.Fatalf("progress = %+v, want 1/1 succeeded", progress)
+	if reloaded.Status.Progress.InputsSucceeded != 1 || reloaded.Status.Progress.BytesUploaded != 4367815 {
+		t.Fatalf("progress = %+v", reloaded.Status.Progress)
 	}
-	if progress.BytesUploaded != 4367815 {
-		t.Fatalf("bytesUploaded = %d, want 4367815", progress.BytesUploaded)
-	}
-	if reloaded.Status.TamsinRunID != "313c7f9a-7249-4c39-a55d-2f1de6b0b0aa" {
-		t.Fatalf("tamsinRunId = %q", reloaded.Status.TamsinRunID)
-	}
-	if reloaded.Status.LastEventSequence != 23 {
-		t.Fatalf("lastEventSequence = %d, want 23", reloaded.Status.LastEventSequence)
+	if reloaded.Status.Output == nil || reloaded.Status.Output.RootFlowID != testRootFlowID || len(reloaded.Status.Output.MemberFlows) != 1 {
+		t.Fatalf("output = %+v", reloaded.Status.Output)
 	}
 }
 
-// Collection is enrichment, never a gate: a garbage-collected Pod or an
-// unreadable stream must not stop the run reaching its terminal phase.
-func TestIngestRunTerminatesWhenStreamCollectionFails(t *testing.T) {
+func TestIngestRunRejectsExitCodeMismatch(t *testing.T) {
 	ctx := context.Background()
 	scheme := ingestRunTestScheme(t)
-	run := ingestRunWithRecordedJob(testIngestRun())
-	job := ownedIngestJob(run)
-	job.Status.Conditions = []batchv1.JobCondition{{
-		Type: batchv1.JobComplete, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Now(),
-	}}
-	job.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	pod := terminatedIngestPod(job, 0)
-	k8sClient := fake.NewClientBuilder().
-		WithScheme(scheme).
+	run, job, pod := terminalIngestFixture(t, 4)
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
-		WithObjects(run, testIngestTamoss(), job, pod).
-		Build()
+		WithObjects(run, testIngestTamoss(), job, pod).Build()
 	reconciler := &IngestRunReconciler{
-		Client:    k8sClient,
-		Scheme:    scheme,
-		APIReader: k8sClient,
-		PodLogs:   staticPodLogReader{err: errors.New("logs rotated away")},
+		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		PodLogs: staticPodLogReader{stream: testIngestEventStream(t, ingestevent.RunSucceeded)},
 	}
-
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
-		t.Fatalf("reconcile failed: %v", err)
+		t.Fatal(err)
 	}
 	reloaded := reloadIngestRun(t, ctx, k8sClient, run)
-	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseSucceeded {
-		t.Fatalf("phase = %q, want Succeeded despite failed collection", reloaded.Status.Phase)
+	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseFailed || conditionReason(reloaded.Status.Conditions, ingestRunReadyCondition) != "IngestProtocolInvalid" {
+		t.Fatalf("status = %+v", reloaded.Status)
 	}
-	if reloaded.Status.TamsinRunID != "" || reloaded.Status.Progress.BytesUploaded != 0 {
-		t.Fatalf("status must stay unenriched when collection fails: %+v", reloaded.Status)
+}
+
+func TestIngestRunWaitsForUnavailableStreamThenFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	scheme := ingestRunTestScheme(t)
+	run, job, pod := terminalIngestFixture(t, 0)
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
+		WithObjects(run, testIngestTamoss(), job, pod).Build()
+	reconciler := &IngestRunReconciler{
+		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		PodLogs: staticPodLogReader{err: errors.New("logs not ready")},
 	}
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := reloadIngestRun(t, ctx, k8sClient, run)
+	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseRunning || conditionReason(reloaded.Status.Conditions, ingestRunReadyCondition) != "IngestResultPending" {
+		t.Fatalf("pending status = %+v", reloaded.Status)
+	}
+
+	job.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-2 * ingestTerminalObservationDeadline)}
+	if err := k8sClient.Status().Update(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	reconciler.now = func() time.Time { return time.Now() }
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded = reloadIngestRun(t, ctx, k8sClient, run)
+	if reloaded.Status.Phase != tamossv1alpha1.IngestRunPhaseFailed || conditionReason(reloaded.Status.Conditions, ingestRunReadyCondition) != "IngestResultUnavailable" {
+		t.Fatalf("terminal status = %+v", reloaded.Status)
+	}
+}
+
+func conditionReason(conditions []metav1.Condition, conditionType string) string {
+	for _, condition := range conditions {
+		if condition.Type == conditionType {
+			return condition.Reason
+		}
+	}
+	return ""
 }

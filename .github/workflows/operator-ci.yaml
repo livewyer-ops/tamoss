@@ -44,6 +44,18 @@ jobs:
       - name: Test operator
         run: task operator:test
 
+      - name: Validate the pinned TAMSin release asset
+        run: task test:tamsin:release
+
+      - name: Upload TAMSin release reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tamsin-release-reports-${{ github.run_id }}
+          path: reports/tamsin-release-events/**
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Validate operator compatibility metadata
         run: python3 .github/scripts/release-metadata.py --validate
 

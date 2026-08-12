@@ -8,9 +8,9 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
-// ValidateStorageBackendTags enforces the TAMS string-or-string-array tag
-// union after Kubernetes has preserved each value as arbitrary JSON.
-func ValidateStorageBackendTags(tags map[string]apiextensionsv1.JSON) error {
+// ValidateTAMSTags enforces the TAMS string-or-string-array tag union after
+// Kubernetes has preserved each value as arbitrary JSON.
+func ValidateTAMSTags(tags map[string]apiextensionsv1.JSON) error {
 	keys := make([]string, 0, len(tags))
 	for key := range tags {
 		keys = append(keys, key)
@@ -36,4 +36,8 @@ func ValidateStorageBackendTags(tags map[string]apiextensionsv1.JSON) error {
 		}
 	}
 	return nil
+}
+
+func ValidateStorageBackendTags(tags map[string]apiextensionsv1.JSON) error {
+	return ValidateTAMSTags(tags)
 }

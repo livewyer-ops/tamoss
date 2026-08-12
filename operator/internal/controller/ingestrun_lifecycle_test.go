@@ -132,7 +132,7 @@ func TestIngestRunWaitsForResultVerificationBeforeDeadline(t *testing.T) {
 		completedIngestJob(time.Now().Add(-time.Minute)),
 		unverifiedIngestResult(),
 		time.Now(),
-		nil,
+		succeededIngestSummary(),
 	)
 	if err != nil {
 		t.Fatalf("phase evaluation failed: %v", err)
@@ -152,7 +152,7 @@ func TestIngestRunFailsWhenResultVerificationExceedsDeadline(t *testing.T) {
 		completedIngestJob(finished),
 		unverifiedIngestResult(),
 		time.Now(),
-		nil,
+		succeededIngestSummary(),
 	)
 	if err != nil {
 		t.Fatalf("phase evaluation failed: %v", err)
@@ -168,8 +168,8 @@ func TestIngestRunFailsWhenResultVerificationExceedsDeadline(t *testing.T) {
 	}
 }
 
-// The Pod carrying the exit code can be garbage collected before it is seen.
-func TestIngestRunFailsWhenExitCodeIsUnobservableAfterDeadline(t *testing.T) {
+// The Pod carrying the event stream can be garbage collected before it is seen.
+func TestIngestRunFailsWhenTerminalStreamIsUnobservableAfterDeadline(t *testing.T) {
 	failed := time.Now().Add(-2 * ingestTerminalObservationDeadline)
 	job := ownedIngestJob(testIngestRun())
 	job.Status.Conditions = []batchv1.JobCondition{{
@@ -178,22 +178,9 @@ func TestIngestRunFailsWhenExitCodeIsUnobservableAfterDeadline(t *testing.T) {
 		Message:            "BackoffLimitExceeded",
 		LastTransitionTime: metav1.NewTime(failed),
 	}}
-	phase, reason, message, _, err := ingestPhaseFromJob(
-		context.Background(),
-		fake.NewClientBuilder().WithScheme(ingestRunTestScheme(t)).Build(),
-		job,
-		tamossv1alpha1.IngestRunResultStatus{},
-		time.Now(),
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("phase evaluation failed: %v", err)
-	}
-	if phase != tamossv1alpha1.IngestRunPhaseFailed || reason != "IngestFailed" {
-		t.Fatalf("phase/reason = %q/%q, want Failed/IngestFailed", phase, reason)
-	}
-	if message != "BackoffLimitExceeded" {
-		t.Fatalf("message = %q, want the Job's own failure message", message)
+	phase, reason, _ := ingestStreamFailurePhase(job, time.Now(), errIngestStreamUnavailable)
+	if phase != tamossv1alpha1.IngestRunPhaseFailed || reason != "IngestResultUnavailable" {
+		t.Fatalf("phase/reason = %q/%q, want Failed/IngestResultUnavailable", phase, reason)
 	}
 }
 
@@ -249,7 +236,7 @@ func TestIngestRunStopsJobWhenTargetTamossIsDeleted(t *testing.T) {
 	remaining := &batchv1.Job{}
 	err := k8sClient.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: ingestJobName(run.Name)}, remaining)
 	if err == nil {
-		t.Fatal("expected the orphaned Tamsin Job to be deleted")
+		t.Fatal("expected the orphaned TAMSin Job to be deleted")
 	}
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("unexpected Job read error: %v", err)
@@ -270,7 +257,7 @@ func TestResolveIngestStorageBackendAcceptsUnsetReference(t *testing.T) {
 	reconciler := &IngestRunReconciler{}
 	spec := defaultIngestRunSpec(tamossv1alpha1.IngestRunSpec{
 		TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
-		InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
+		Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/staged-123"},
 	})
 	if spec.Options.StorageBackendRef != nil {
 		t.Fatal("an unset storage backend reference must stay nil so it is omitted from the wire form")
@@ -282,16 +269,16 @@ func TestResolveIngestStorageBackendAcceptsUnsetReference(t *testing.T) {
 }
 
 // unverifiedIngestResult is a durable result that was recorded but has not
-// passed digest verification. Verification only applies once something records
-// a result: Tamsin publishes no digest for its own journal.
+// passed digest verification. Verification applies only when a separate
+// durable result artefact has been recorded.
 func unverifiedIngestResult() tamossv1alpha1.IngestRunResultStatus {
 	result := verifiedIngestResult()
 	result.Verified = false
 	return result
 }
 
-// A run that records no durable result must still reach a terminal phase on the
-// Job's own outcome, because Tamsin 0.1.0-rc.2 offers nothing to verify.
+// A run that records no durable result must still reach a terminal phase from
+// the validated terminal TAMSin event stream.
 func TestIngestRunSucceedsWithoutARecordedDurableResult(t *testing.T) {
 	phase, reason, _, _, err := ingestPhaseFromJob(
 		context.Background(),
@@ -299,7 +286,7 @@ func TestIngestRunSucceedsWithoutARecordedDurableResult(t *testing.T) {
 		completedIngestJob(time.Now().Add(-time.Minute)),
 		tamossv1alpha1.IngestRunResultStatus{},
 		time.Now(),
-		nil,
+		succeededIngestSummary(),
 	)
 	if err != nil {
 		t.Fatalf("phase evaluation failed: %v", err)

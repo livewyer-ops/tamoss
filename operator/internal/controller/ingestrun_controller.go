@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,23 +24,34 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
+	"github.com/livewyer-ops/tamsin/ingestevent"
 )
 
 const (
 	ingestRunReadyCondition       = operatorstatus.ConditionReady
 	ingestRunProgressingCondition = operatorstatus.ConditionProgressing
 
-	ingestRunLabel       = "tamoss.livewyer.io/ingest-run"
-	ingestRunTargetLabel = "tamoss.livewyer.io/tamoss"
+	ingestRunLabel               = "tamoss.livewyer.io/ingest-run"
+	ingestRunTargetLabel         = "tamoss.livewyer.io/tamoss"
+	ingestSourceAnnotation       = "tamoss.livewyer.io/ingest-source"
+	ingestSourcePolicyAnnotation = "tamoss.livewyer.io/ingest-source-policy-digest"
+	ingestFlowMetadataAnnotation = "tamoss.livewyer.io/flow-metadata"
+	ingestFlowMetadataVolume     = "flow-metadata"
+	ingestFlowMetadataMountPath  = "/etc/tamsin/flow-metadata"
+	ingestFlowMetadataFile       = ingestFlowMetadataMountPath + "/flow-metadata.json"
+	ingestFlowFormatVideo        = "video"
 
-	ingestRunRequeuePending = 15 * time.Second
-	ingestRunRequeueCancel  = 2 * time.Second
-	maxIngestSelectors      = 32
-	maxIngestSelectorBytes  = 32 * 1024
+	ingestRunRequeuePending   = 15 * time.Second
+	ingestRunRequeueCancel    = 2 * time.Second
+	maxIngestSelectors        = 32
+	maxIngestSelectorBytes    = 32 * 1024
+	ingestFlowProfileRefIndex = ".spec.options.tamsFlowProfiles.profileRef.name"
 
 	// ingestTerminalObservationDeadline bounds how long a finished Job may stay
 	// non-terminal while the operator waits for evidence it cannot yet see: a
@@ -59,9 +72,8 @@ type IngestRunReconciler struct {
 	APIReader        client.Reader
 	InputResolver    IngestInputResolver
 	EndpointResolver IngestEndpointResolver
-	// PodLogs reads the finished Tamsin Pod's event stream so status carries
-	// real outcome counters. Nil disables collection; runs still terminate on
-	// the Job's own outcome.
+	// PodLogs reads the finished TAMSin Pod's event stream. A terminal run must
+	// have a valid complete stream whose exit code matches the container.
 	PodLogs IngestPodLogReader
 
 	// now is overridden by tests that exercise observation deadlines.
@@ -76,23 +88,29 @@ func (r *IngestRunReconciler) currentTime() time.Time {
 }
 
 // ResolvedIngestInputs is the private handoff from an approved input service to
-// the fixed Tamsin Job template. Selectors are bounded top-level Tamsin inputs,
+// the fixed TAMSin Job template. Selectors are bounded top-level TAMSin inputs,
 // such as one staged object, manifest, or S3 prefix. The resolver must not
 // expand a large batch into Job arguments.
 type ResolvedIngestInputs struct {
-	Selectors      []string
-	ExpectedInputs int32
+	Selectors            []string
+	ExpectedInputs       int32
+	SourceName           string
+	PolicyDigest         string
+	CredentialSecretName string
+	CredentialKind       tamossv1alpha1.IngestSourceKind
+	S3Endpoint           string
+	S3Region             string
+	S3PathStyle          bool
 }
 
-// IngestInputResolver is the security boundary between an opaque IngestRun
-// inputRef and concrete media locations. The manager deliberately leaves this
-// unset until a server-owned staging and credential-profile resolver exists.
+// IngestInputResolver validates an immutable run selector against the target
+// instance's source policy and records a digest of that validation decision.
 type IngestInputResolver interface {
-	Resolve(context.Context, string, string, tamossv1alpha1.IngestInputReference, int32) (ResolvedIngestInputs, error)
+	Resolve(context.Context, *tamossv1alpha1.Tamoss, tamossv1alpha1.IngestRunInput, int32) (ResolvedIngestInputs, error)
 }
 
 // IngestEndpointResolver selects an operator-approved TLS endpoint for a
-// Tamoss instance. Tamsin deliberately rejects bearer credentials over a
+// Tamoss instance. TAMSin deliberately rejects bearer credentials over a
 // cluster-private plaintext HTTP service.
 type IngestEndpointResolver interface {
 	Resolve(context.Context, string, string) (string, error)
@@ -103,9 +121,13 @@ type IngestEndpointResolver interface {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=ingestruns,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=ingestruns/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses,verbs=get;list;watch
+//+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=flowprofiles,verbs=get;list;watch
+// Source-bound credentials are read only to validate the required keys and
+// shape. The Job receives SecretKeyRefs; values are never copied or logged.
+//+kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups="",namespace=system,resources=pods,verbs=get;list;watch
-// The operator reads a finished Tamsin Pod's stdout to record run outcome
+// The operator reads a finished TAMSin Pod's stdout to record run outcome
 // counters. The Console service account deliberately never receives this.
 //+kubebuilder:rbac:groups="",namespace=system,resources=pods/log,verbs=get
 
@@ -120,6 +142,13 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	spec := defaultIngestRunSpec(run.Spec)
+	if spec.Output != nil && spec.Options.MaxInputs != 1 {
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InvalidOutputIntent", "Root Flow output metadata requires maxInputs to equal 1", false)
+	}
+	if err := tamossv1alpha1.ValidateIngestRunOutput(spec.Output); err != nil {
+		log.FromContext(ctx).Error(err, "IngestRun output intent is invalid", "namespace", run.Namespace, "ingestRun", run.Name)
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InvalidOutputIntent", "The Flow output metadata is invalid", false)
+	}
 	job, err := r.loadIngestJob(ctx, run)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -152,8 +181,13 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// ignore the Job's own completion while that gate stayed shut.
 	if job != nil {
 		var stream *ingestStreamSummary
-		if ingestJobFinished(job) && run.Status.LastEventSequence == 0 {
-			stream = r.collectIngestStream(ctx, run, job)
+		if ingestJobFinished(job) {
+			var streamErr error
+			stream, streamErr = r.collectIngestStream(ctx, job)
+			if streamErr != nil {
+				phase, reason, message := ingestStreamFailurePhase(job, r.currentTime(), streamErr)
+				return r.setIngestRunJobPhase(ctx, run, job, phase, reason, message, false, 0, 0)
+			}
 		}
 		phase, reason, message, progressing, phaseErr := ingestPhaseFromJob(ctx, r.Client, job, run.Status.ResultRef, r.currentTime(), stream)
 		if phaseErr != nil {
@@ -169,7 +203,7 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamossNotReady", "The target Tamoss instance is not Ready", false)
 	}
 	if strings.TrimSpace(r.TamsinImage) == "" {
-		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinRuntimeUnavailable", "The operator has no immutable Tamsin image configured", false)
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinRuntimeUnavailable", "The operator has no immutable TAMSin image configured", false)
 	}
 	if !isImmutableImageReference(r.TamsinImage) {
 		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinImageNotImmutable", "TAMOSS_TAMSIN_IMAGE must use an immutable sha256 digest", false)
@@ -185,11 +219,8 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if retryReason != "" {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, retryReason, retryMessage, false)
 	}
-	if spec.CredentialProfileRef != nil {
-		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "CredentialProfileResolverUnavailable", "Credential profiles are not enabled until the approved server-side resolver is configured", false)
-	}
 	if r.InputResolver == nil {
-		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InputResolverUnavailable", "The approved server-side input resolver is not configured", false)
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InputResolverUnavailable", "The ingest source-policy resolver is not configured", false)
 	}
 	storageID, storageReason, storageMessage, err := r.resolveIngestStorageBackend(ctx, run, spec)
 	if err != nil {
@@ -198,30 +229,42 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if storageReason != "" {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, storageReason, storageMessage, false)
 	}
-	resolved, resolveErr := r.InputResolver.Resolve(ctx, run.Namespace, spec.TamossRef.Name, spec.InputRef, spec.Options.MaxInputs)
+	resolvedProfiles, control, stop, err := r.resolveIngestFlowProfilesStage(ctx, run, spec)
+	if err != nil || stop {
+		return control, err
+	}
+	for i := range spec.Options.TAMSFlowProfiles {
+		spec.Options.TAMSFlowProfiles[i].ProfileID = resolvedProfiles[i].ProfileID
+		spec.Options.TAMSFlowProfiles[i].ProfileRef = nil
+	}
+	resolved, resolveErr := r.InputResolver.Resolve(ctx, tamoss, spec.Input, spec.Options.MaxInputs)
 	if resolveErr != nil {
-		log.FromContext(ctx).Error(resolveErr, "unable to resolve IngestRun input reference", "namespace", run.Namespace, "ingestRun", run.Name, "inputKind", spec.InputRef.Kind, "inputID", spec.InputRef.ID)
-		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InputResolutionFailed", "The approved input reference could not be resolved", false)
+		log.FromContext(ctx).Error(resolveErr, "IngestRun input was rejected by source policy", "namespace", run.Namespace, "ingestRun", run.Name, "inputKind", spec.Input.Kind)
+		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InputPolicyRejected", "The input is not permitted by the target Tamoss source policy", false)
 	}
 	if err := validateResolvedIngestInputs(resolved, spec.Options.MaxInputs); err != nil {
 		log.FromContext(ctx).Error(err, "input resolver returned an invalid ingest plan", "namespace", run.Namespace, "ingestRun", run.Name)
-		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InvalidResolvedInput", "The approved input resolver returned an invalid ingest plan", false)
+		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "InvalidResolvedInput", "The source-policy resolver returned an invalid ingest plan", false)
 	}
 	if r.EndpointResolver == nil {
 		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestEndpointResolverUnavailable", "The approved TLS ingest endpoint resolver is not configured", false)
 	}
 	endpoint, resolveEndpointErr := r.EndpointResolver.Resolve(ctx, run.Namespace, spec.TamossRef.Name)
 	if resolveEndpointErr != nil {
-		log.FromContext(ctx).Error(resolveEndpointErr, "unable to resolve the Tamsin endpoint", "namespace", run.Namespace, "ingestRun", run.Name)
-		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestEndpointResolutionFailed", "The approved Tamsin endpoint could not be resolved", false)
+		log.FromContext(ctx).Error(resolveEndpointErr, "unable to resolve the TAMSin endpoint", "namespace", run.Namespace, "ingestRun", run.Name)
+		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestEndpointResolutionFailed", "The approved TAMSin endpoint could not be resolved", false)
 	}
 	endpoint, endpointErr := validateIngestEndpoint(endpoint)
 	if endpointErr != nil {
 		log.FromContext(ctx).Error(endpointErr, "ingest endpoint resolver returned an invalid endpoint", "namespace", run.Namespace, "ingestRun", run.Name)
-		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestEndpointInvalid", "The approved Tamsin endpoint must be an HTTPS URL without embedded credentials", false)
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestEndpointInvalid", "The approved TAMSin endpoint must be an HTTPS URL without embedded credentials", false)
 	}
 
-	desired := desiredIngestJob(run, spec, tamoss, endpoint, r.TamsinImage, storageID, resolved.Selectors)
+	flowMetadata, err := tamossv1alpha1.IngestRunFlowMetadataJSON(spec.Output)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	desired := desiredIngestJob(run, spec, tamoss, endpoint, r.TamsinImage, storageID, flowMetadata, resolved)
 	if err := controllerutil.SetControllerReference(run, desired, r.Scheme); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -231,11 +274,52 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
-	return r.setIngestRunJobPhase(ctx, run, desired, tamossv1alpha1.IngestRunPhaseQueued, "JobCreated", "The Tamsin Job was created", true, resolved.ExpectedInputs, attempt)
+	return r.setIngestRunJobPhase(ctx, run, desired, tamossv1alpha1.IngestRunPhaseQueued, "JobCreated", "The TAMSin Job was created", true, resolved.ExpectedInputs, attempt)
+}
+
+func (r *IngestRunReconciler) resolveIngestFlowProfilesStage(ctx context.Context, run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestRunSpec) ([]tamossv1alpha1.IngestRunResolvedFlowProfileStatus, ctrl.Result, bool, error) {
+	resolved, reason, message, err := r.resolveIngestFlowProfiles(ctx, run, spec)
+	if err != nil {
+		return nil, ctrl.Result{}, true, err
+	}
+	if reason != "" {
+		changed, err := r.persistResolvedIngestFlowProfiles(ctx, run, nil)
+		if err != nil {
+			return nil, ctrl.Result{}, true, err
+		}
+		if changed {
+			return nil, ctrl.Result{Requeue: true}, true, nil
+		}
+		result, err := r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, reason, message, false)
+		return nil, result, true, err
+	}
+	changed, err := r.persistResolvedIngestFlowProfiles(ctx, run, resolved)
+	if err != nil {
+		return nil, ctrl.Result{}, true, err
+	}
+	if changed {
+		return nil, ctrl.Result{Requeue: true}, true, nil
+	}
+	return resolved, ctrl.Result{}, false, nil
+}
+
+func (r *IngestRunReconciler) persistResolvedIngestFlowProfiles(ctx context.Context, run *tamossv1alpha1.IngestRun, resolved []tamossv1alpha1.IngestRunResolvedFlowProfileStatus) (bool, error) {
+	if len(resolved) == 0 {
+		resolved = nil
+	}
+	if reflect.DeepEqual(run.Status.ResolvedTAMSFlowProfiles, resolved) {
+		return false, nil
+	}
+	original := run.DeepCopy()
+	run.Status.ResolvedTAMSFlowProfiles = append([]tamossv1alpha1.IngestRunResolvedFlowProfileStatus(nil), resolved...)
+	if err := r.Client.Status().Patch(ctx, run, client.MergeFrom(original)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // reconcileMissingIngestJob records a terminal outcome for a run whose recorded
-// Job has gone. Tamsin ingest is not idempotent, so the operator never replays
+// Job has gone. TAMSin ingest is not idempotent, so the operator never replays
 // it; leaving the run non-terminal instead wedged it Pending forever, blocked
 // retries, and kept it in the console's active set.
 func (r *IngestRunReconciler) reconcileMissingIngestJob(ctx context.Context, run *tamossv1alpha1.IngestRun) (ctrl.Result, error) {
@@ -251,7 +335,7 @@ func (r *IngestRunReconciler) reconcileMissingIngestJob(ctx context.Context, run
 		run,
 		tamossv1alpha1.IngestRunPhaseFailed,
 		"IngestJobMissing",
-		"The recorded Tamsin Job no longer exists, so the run outcome cannot be confirmed; the operator does not replay ingest automatically",
+		"The recorded TAMSin Job no longer exists, so the run outcome cannot be confirmed; the operator does not replay ingest automatically",
 		false,
 	)
 }
@@ -281,7 +365,7 @@ func (r *IngestRunReconciler) abandonIngestRunForDeletedTamoss(ctx context.Conte
 		job,
 		tamossv1alpha1.IngestRunPhaseFailed,
 		operatorstatus.ReasonTamossNotFound,
-		fmt.Sprintf("Tamoss %s/%s was deleted while the Tamsin Job was running", tamossKey.Namespace, tamossKey.Name),
+		fmt.Sprintf("Tamoss %s/%s was deleted while the TAMSin Job was running", tamossKey.Namespace, tamossKey.Name),
 		false,
 		0,
 		0,
@@ -306,15 +390,43 @@ func (r *IngestRunReconciler) ingestJobPresentLive(ctx context.Context, run *tam
 }
 
 func (r *IngestRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &tamossv1alpha1.IngestRun{}, ingestFlowProfileRefIndex, func(obj client.Object) []string {
+		run, ok := obj.(*tamossv1alpha1.IngestRun)
+		if !ok {
+			return nil
+		}
+		values := make([]string, 0, len(run.Spec.Options.TAMSFlowProfiles))
+		for _, assignment := range run.Spec.Options.TAMSFlowProfiles {
+			if assignment.ProfileRef != nil && strings.TrimSpace(assignment.ProfileRef.Name) != "" {
+				values = append(values, assignment.ProfileRef.Name)
+			}
+		}
+		return values
+	}); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tamossv1alpha1.IngestRun{}).
 		Owns(&batchv1.Job{}).
+		Watches(&tamossv1alpha1.FlowProfile{}, handler.EnqueueRequestsFromMapFunc(r.ingestRunsForFlowProfile)).
 		Complete(r)
+}
+
+func (r *IngestRunReconciler) ingestRunsForFlowProfile(ctx context.Context, obj client.Object) []reconcile.Request {
+	list := &tamossv1alpha1.IngestRunList{}
+	if err := r.Client.List(ctx, list, client.InNamespace(obj.GetNamespace()), client.MatchingFields{ingestFlowProfileRefIndex: obj.GetName()}); err != nil {
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+	}
+	return requests
 }
 
 func defaultIngestRunSpec(spec tamossv1alpha1.IngestRunSpec) tamossv1alpha1.IngestRunSpec {
 	if spec.Profile == "" {
-		spec.Profile = tamossv1alpha1.IngestRunProfileEditorial
+		spec.Profile = tamossv1alpha1.IngestRunProfileEssenceSegments
 	}
 	if spec.SizeClass == "" {
 		spec.SizeClass = tamossv1alpha1.IngestRunSizeClassStandard
@@ -359,7 +471,7 @@ func (r *IngestRunReconciler) validateRetryParent(ctx context.Context, run *tamo
 		return 0, "RetryParentTargetMismatch", "The retry parent belongs to a different Tamoss instance", nil
 	}
 	if !ingestRetryConfigurationMatches(defaultIngestRunSpec(parent.Spec), spec) {
-		return 0, "RetryParentConfigurationMismatch", "A retry must preserve the parent's input, profile, size class, options, and credential profile", nil
+		return 0, "RetryParentConfigurationMismatch", "A retry must preserve the parent's input, profile, size class, options, and output intent", nil
 	}
 	if !isIngestRunTerminal(parent.Status.Phase) {
 		return 0, "RetryParentNotComplete", "The retry parent has not reached a terminal phase", nil
@@ -419,6 +531,54 @@ func (r *IngestRunReconciler) resolveIngestStorageBackend(ctx context.Context, r
 	return backendSpec.ID, "", "", nil
 }
 
+func (r *IngestRunReconciler) resolveIngestFlowProfiles(ctx context.Context, run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestRunSpec) ([]tamossv1alpha1.IngestRunResolvedFlowProfileStatus, string, string, error) {
+	resolved := make([]tamossv1alpha1.IngestRunResolvedFlowProfileStatus, 0, len(spec.Options.TAMSFlowProfiles))
+	for _, assignment := range spec.Options.TAMSFlowProfiles {
+		item := tamossv1alpha1.IngestRunResolvedFlowProfileStatus{Format: assignment.Format, Index: assignment.Index, ProfileID: assignment.ProfileID}
+		if assignment.ProfileRef == nil {
+			resolved = append(resolved, item)
+			continue
+		}
+		name := assignment.ProfileRef.Name
+		profile := &tamossv1alpha1.FlowProfile{}
+		key := client.ObjectKey{Namespace: run.Namespace, Name: name}
+		if err := r.Client.Get(ctx, key, profile); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, "IngestFlowProfileNotFound", fmt.Sprintf("FlowProfile %s/%s does not exist", run.Namespace, name), nil
+			}
+			return nil, "", "", err
+		}
+		if profile.Spec.TamossRef.Name != spec.TamossRef.Name {
+			return nil, "IngestFlowProfileTargetMismatch", "The selected FlowProfile belongs to a different Tamoss instance", nil
+		}
+		if !profile.DeletionTimestamp.IsZero() || !flowProfileReady(profile) || profile.Status.ProfileID == "" {
+			return nil, "IngestFlowProfileNotReady", fmt.Sprintf("FlowProfile %s/%s has not reached Ready", run.Namespace, name), nil
+		}
+		if flowProfileAssignmentFormat(profile.Status.Resolved.Format) != assignment.Format {
+			return nil, "IngestFlowProfileFormatMismatch", "The selected FlowProfile format does not match the requested essence stream", nil
+		}
+		item.ProfileID = profile.Status.ProfileID
+		item.ProfileRef = name
+		resolved = append(resolved, item)
+	}
+	return resolved, "", "", nil
+}
+
+func flowProfileAssignmentFormat(format string) string {
+	switch format {
+	case "urn:x-nmos:format:video":
+		return ingestFlowFormatVideo
+	case "urn:x-nmos:format:audio":
+		return "audio"
+	case "urn:x-tam:format:image":
+		return "image"
+	case "urn:x-nmos:format:data":
+		return "data"
+	default:
+		return ""
+	}
+}
+
 func validateResolvedIngestInputs(resolved ResolvedIngestInputs, maxInputs int32) error {
 	if len(resolved.Selectors) == 0 {
 		return fmt.Errorf("no input selectors")
@@ -428,6 +588,12 @@ func validateResolvedIngestInputs(resolved ResolvedIngestInputs, maxInputs int32
 	}
 	if resolved.ExpectedInputs < 0 || resolved.ExpectedInputs > maxInputs {
 		return fmt.Errorf("expected input count %d exceeds limit %d", resolved.ExpectedInputs, maxInputs)
+	}
+	if strings.TrimSpace(resolved.SourceName) == "" {
+		return fmt.Errorf("resolved source policy is incomplete")
+	}
+	if decoded, err := hex.DecodeString(resolved.PolicyDigest); err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("resolved source policy digest is invalid")
 	}
 	totalBytes := 0
 	for _, location := range resolved.Selectors {
@@ -450,7 +616,7 @@ func validateResolvedIngestInputs(resolved ResolvedIngestInputs, maxInputs int32
 			if parsed.Host == "" || strings.Trim(parsed.Path, "/") == "" {
 				return fmt.Errorf("S3 input location requires a bucket and object key")
 			}
-		case "http", "https":
+		case "https":
 			if parsed.Host == "" {
 				return fmt.Errorf("HTTP input location requires a host")
 			}
@@ -485,7 +651,7 @@ func (r *IngestRunReconciler) reconcileIngestCancellation(ctx context.Context, r
 			return ctrl.Result{}, err
 		}
 		if podsRemain {
-			result, err := r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhaseRunning, "CancellationRequested", "The Tamsin Pod is terminating", true)
+			result, err := r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhaseRunning, "CancellationRequested", "The TAMSin Pod is terminating", true)
 			if err == nil && result.RequeueAfter == 0 {
 				result.RequeueAfter = ingestRunRequeueCancel
 			}
@@ -498,7 +664,7 @@ func (r *IngestRunReconciler) reconcileIngestCancellation(ctx context.Context, r
 			return ctrl.Result{}, err
 		}
 	}
-	result, err := r.setIngestRunJobPhase(ctx, run, job, tamossv1alpha1.IngestRunPhaseRunning, "CancellationRequested", "The Tamsin Job is terminating", true, 0, 0)
+	result, err := r.setIngestRunJobPhase(ctx, run, job, tamossv1alpha1.IngestRunPhaseRunning, "CancellationRequested", "The TAMSin Job is terminating", true, 0, 0)
 	if err == nil && result.RequeueAfter == 0 {
 		result.RequeueAfter = ingestRunRequeueCancel
 	}
@@ -575,6 +741,8 @@ func (r *IngestRunReconciler) setIngestRunJobPhaseWithStream(ctx context.Context
 	if job != nil {
 		run.Status.JobRef.Name = job.Name
 		run.Status.JobRef.UID = job.UID
+		run.Status.ResolvedSource.Name = job.Annotations[ingestSourceAnnotation]
+		run.Status.ResolvedSource.PolicyDigest = job.Annotations[ingestSourcePolicyAnnotation]
 		if run.Status.StartedAt == nil {
 			now := metav1.Now()
 			run.Status.StartedAt = &now
@@ -649,68 +817,62 @@ func ingestJobFinished(job *batchv1.Job) bool {
 	return false
 }
 
-func ingestPhaseFromJob(ctx context.Context, reader client.Reader, job *batchv1.Job, result tamossv1alpha1.IngestRunResultStatus, now time.Time, stream *ingestStreamSummary) (tamossv1alpha1.IngestRunPhase, string, string, bool, error) {
-	for _, condition := range job.Status.Conditions {
-		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
-			if ingestResultVerificationRequired(result) && !isDigestVerifiedIngestResult(result) {
-				finished := job.Status.CompletionTime
-				if finished == nil {
-					finished = &condition.LastTransitionTime
-				}
-				if ingestObservationDeadlineExpired(*finished, now) {
-					return tamossv1alpha1.IngestRunPhaseFailed, "ResultVerificationTimeout", "A durable result was recorded but did not pass digest verification within the observation deadline", false, nil
-				}
-				return tamossv1alpha1.IngestRunPhaseRunning, "ResultVerificationPending", "A durable result was recorded but has not passed digest verification", false, nil
-			}
-			return tamossv1alpha1.IngestRunPhaseSucceeded, "IngestSucceeded", "Tamsin completed the ingest run", false, nil
-		}
+func ingestStreamFailurePhase(job *batchv1.Job, now time.Time, streamErr error) (tamossv1alpha1.IngestRunPhase, string, string) {
+	if errors.Is(streamErr, errIngestStreamInvalid) {
+		return tamossv1alpha1.IngestRunPhaseFailed, "IngestProtocolInvalid", "TAMSin produced an invalid terminal event stream"
+	}
+	if ingestObservationDeadlineExpired(ingestJobTerminalReference(job), now) {
+		return tamossv1alpha1.IngestRunPhaseFailed, "IngestResultUnavailable", "The terminal TAMSin event stream was not available within the observation deadline"
+	}
+	return tamossv1alpha1.IngestRunPhaseRunning, "IngestResultPending", "The Job is terminal, but its TAMSin event stream is not yet available"
+}
+
+func ingestJobTerminalReference(job *batchv1.Job) metav1.Time {
+	if job.Status.CompletionTime != nil {
+		return *job.Status.CompletionTime
 	}
 	for _, condition := range job.Status.Conditions {
-		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-			exitCode, found, err := ingestJobTerminalExitCode(ctx, reader, job)
-			if err != nil {
-				return "", "", "", false, err
+		if condition.Status == corev1.ConditionTrue && (condition.Type == batchv1.JobComplete || condition.Type == batchv1.JobFailed) {
+			return condition.LastTransitionTime
+		}
+	}
+	return metav1.Time{}
+}
+
+func ingestPhaseFromJob(ctx context.Context, reader client.Reader, job *batchv1.Job, result tamossv1alpha1.IngestRunResultStatus, now time.Time, stream *ingestStreamSummary) (tamossv1alpha1.IngestRunPhase, string, string, bool, error) {
+	_ = ctx
+	_ = reader
+	if ingestJobFinished(job) {
+		if stream == nil || !stream.RunFinished {
+			return tamossv1alpha1.IngestRunPhaseRunning, "IngestResultPending", "The Job is terminal, but its TAMSin event stream is not yet available", false, nil
+		}
+		if (stream.Outcome == ingestevent.RunSucceeded || stream.Outcome == ingestevent.RunPartial) &&
+			ingestResultVerificationRequired(result) && !isDigestVerifiedIngestResult(result) {
+			if ingestObservationDeadlineExpired(ingestJobTerminalReference(job), now) {
+				return tamossv1alpha1.IngestRunPhaseFailed, "ResultVerificationTimeout", "A durable result was recorded but did not pass digest verification within the observation deadline", false, nil
 			}
-			message := strings.TrimSpace(condition.Message)
-			if message == "" {
-				message = "The Tamsin Job failed"
-			}
-			if !found {
-				// The Pod carrying the exit code can be garbage collected before
-				// it is observed. The Job has already failed, so classify it as a
-				// plain failure rather than waiting for evidence that will never
-				// arrive; only the partial-success refinement is lost.
-				if ingestObservationDeadlineExpired(condition.LastTransitionTime, now) {
-					return tamossv1alpha1.IngestRunPhaseFailed, "IngestFailed", message, false, nil
-				}
-				return tamossv1alpha1.IngestRunPhaseRunning, "ExitCodePending", "The Job failed, but its owned terminal Tamsin Pod has not been observed", false, nil
-			}
-			if exitCode == 4 {
-				if ingestResultVerificationRequired(result) && !isDigestVerifiedIngestResult(result) {
-					if ingestObservationDeadlineExpired(condition.LastTransitionTime, now) {
-						return tamossv1alpha1.IngestRunPhaseFailed, "ResultVerificationTimeout", "A durable result was recorded but did not pass digest verification within the observation deadline", false, nil
-					}
-					return tamossv1alpha1.IngestRunPhaseRunning, "ResultVerificationPending", "A durable result was recorded but has not passed digest verification", false, nil
-				}
-				// Exit 4 means at least one input failed, not that any succeeded.
-				// The collected stream distinguishes a partial run from a wholly
-				// failed one; without it, partial remains the honest default for
-				// the exit code's documented meaning.
-				if stream != nil && stream.RunFinished && stream.Succeeded == 0 {
-					return tamossv1alpha1.IngestRunPhaseFailed, "IngestFailed", "Tamsin reported no successful inputs", false, nil
-				}
-				return tamossv1alpha1.IngestRunPhasePartiallySucceeded, "IngestPartiallySucceeded", "Tamsin completed with one or more failed inputs", false, nil
-			}
-			return tamossv1alpha1.IngestRunPhaseFailed, "IngestFailed", message, false, nil
+			return tamossv1alpha1.IngestRunPhaseRunning, "ResultVerificationPending", "A durable result was recorded but has not passed digest verification", false, nil
+		}
+		switch stream.Outcome {
+		case ingestevent.RunSucceeded:
+			return tamossv1alpha1.IngestRunPhaseSucceeded, "IngestSucceeded", "TAMSin completed the ingest run", false, nil
+		case ingestevent.RunPartial:
+			return tamossv1alpha1.IngestRunPhasePartiallySucceeded, "IngestPartiallySucceeded", "TAMSin completed with both successful and failed inputs", false, nil
+		case ingestevent.RunInterrupted:
+			return tamossv1alpha1.IngestRunPhaseFailed, "IngestInterrupted", "TAMSin was interrupted before the ingest completed", false, nil
+		case ingestevent.RunFailed:
+			return tamossv1alpha1.IngestRunPhaseFailed, "IngestFailed", "TAMSin reported an ingest failure", false, nil
+		default:
+			return tamossv1alpha1.IngestRunPhaseFailed, "IngestProtocolInvalid", "TAMSin reported an unknown terminal outcome", false, nil
 		}
 	}
 	if job.Status.Active > 0 {
-		return tamossv1alpha1.IngestRunPhaseRunning, "IngestRunning", "Tamsin is processing media", true, nil
+		return tamossv1alpha1.IngestRunPhaseRunning, "IngestRunning", "TAMSin is processing media", true, nil
 	}
 	if job.Status.StartTime != nil {
-		return tamossv1alpha1.IngestRunPhaseRunning, "JobStarting", "The Tamsin Pod is starting", true, nil
+		return tamossv1alpha1.IngestRunPhaseRunning, "JobStarting", "The TAMSin Pod is starting", true, nil
 	}
-	return tamossv1alpha1.IngestRunPhaseQueued, "JobQueued", "The Tamsin Job is waiting to be scheduled", true, nil
+	return tamossv1alpha1.IngestRunPhaseQueued, "JobQueued", "The TAMSin Job is waiting to be scheduled", true, nil
 }
 
 func ingestResultRequiredForPhase(phase tamossv1alpha1.IngestRunPhase) bool {
@@ -720,12 +882,12 @@ func ingestResultRequiredForPhase(phase tamossv1alpha1.IngestRunPhase) bool {
 // ingestResultVerificationRequired reports whether a recorded durable result
 // must pass digest verification before the run is believed.
 //
-// Tamsin 0.1.0-rc.2 writes its durable journal to the Job's own filesystem and
-// publishes neither a digest nor a size for it, so there is no artifact for the
-// operator to fetch and verify. Demanding one unconditionally would make
-// success unreachable for every run. Tamsin's own --verify pass still reads
-// back and checks each uploaded Media Object, so a clean exit is real evidence
-// that the media landed; what is missing is a second, operator-side check.
+// TAMSin v1.0.0-rc.1 publishes a complete, versioned terminal event stream but
+// does not publish a separate durable result artefact. Demanding such an
+// artefact unconditionally would make success unreachable for every run.
+// TAMSin's own --verify pass still reads back and checks each uploaded Media
+// Object, while the operator validates the event lifecycle and matching exit
+// code.
 //
 // The stronger gate stays armed for whatever does record a result: once a key
 // is present it must carry a valid digest, so a collector cannot publish a
@@ -754,32 +916,6 @@ func isDigestVerifiedIngestResult(result tamossv1alpha1.IngestRunResultStatus) b
 		}
 	}
 	return true
-}
-
-func ingestJobTerminalExitCode(ctx context.Context, reader client.Reader, job *batchv1.Job) (int32, bool, error) {
-	pods := &corev1.PodList{}
-	if err := reader.List(ctx, pods, client.InNamespace(job.Namespace), client.MatchingLabels{"job-name": job.Name}); err != nil {
-		return 0, false, fmt.Errorf("list terminal Pods for Job %s/%s: %w", job.Namespace, job.Name, err)
-	}
-	var selected *corev1.ContainerStateTerminated
-	for i := range pods.Items {
-		if job.UID == "" || !podOwnedByJobUID(&pods.Items[i], job.UID) {
-			continue
-		}
-		for _, status := range pods.Items[i].Status.ContainerStatuses {
-			terminated := status.State.Terminated
-			if status.Name != "tamsin" || terminated == nil {
-				continue
-			}
-			if selected == nil || terminated.FinishedAt.After(selected.FinishedAt.Time) {
-				selected = terminated
-			}
-		}
-	}
-	if selected == nil {
-		return 0, false, nil
-	}
-	return selected.ExitCode, true, nil
 }
 
 type ingestJobResources struct {
@@ -819,7 +955,7 @@ func ingestResources(concurrency int32, budget, temporarySize, requestCPU, reque
 	}
 }
 
-func desiredIngestJob(run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestRunSpec, tamoss *tamossv1alpha1.Tamoss, endpoint, image, storageID string, inputSelectors []string) *batchv1.Job {
+func desiredIngestJob(run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestRunSpec, tamoss *tamossv1alpha1.Tamoss, endpoint, image, storageID, flowMetadata string, resolved ResolvedIngestInputs) *batchv1.Job {
 	jobResources := resourcesForIngestRun(spec.SizeClass)
 	concurrency := spec.Options.Concurrency
 	if concurrency == 0 {
@@ -831,23 +967,76 @@ func desiredIngestJob(run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestR
 		"--format", "json",
 		"--log-format", "json",
 		"--progress", "none",
-		"--profile", strings.TrimSuffix(string(spec.Profile), "@1"),
+		"--profile", string(spec.Profile),
 		"--max-inputs", fmt.Sprintf("%d", spec.Options.MaxInputs),
 		"--concurrency", fmt.Sprintf("%d", concurrency),
 		"--staging-byte-budget", jobResources.StagingByteBudget,
-		fmt.Sprintf("--verify=%t", ptr.Deref(spec.Options.Verify, true)),
+		"--verify=" + ingestVerifyMode(ptr.Deref(spec.Options.Verify, true)),
+	}
+	if resolved.S3Endpoint != "" {
+		args = append(args, "--s3-endpoint", resolved.S3Endpoint, "--s3-region", resolved.S3Region)
+		if resolved.S3PathStyle {
+			args = append(args, "--s3-path-style")
+		}
 	}
 	if spec.Options.DryRun {
-		args = append(args, "--dry-run")
+		args = append(args, "--dry-run=exact")
 	}
+	args = append(args, tamsFlowProfileArguments(spec.Options.TAMSFlowProfiles)...)
 	if tamoss.Spec.Profile == tamossv1alpha1.TamossProfileLocalKind {
 		args = append(args, "--insecure-skip-verify")
 	}
 	if storageID != "" {
 		args = append(args, "--storage-id", storageID)
 	}
-	for _, selector := range inputSelectors {
+	podAnnotations := map[string]string{}
+	volumeMounts := []corev1.VolumeMount{{Name: "temporary-media", MountPath: "/tmp"}}
+	volumes := []corev1.Volume{{
+		Name:         "temporary-media",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &jobResources.TemporarySize}},
+	}}
+	if flowMetadata != "" {
+		podAnnotations[ingestFlowMetadataAnnotation] = flowMetadata
+		args = append(args, "--flow-metadata", ingestFlowMetadataFile)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name: ingestFlowMetadataVolume, MountPath: ingestFlowMetadataMountPath, ReadOnly: true,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: ingestFlowMetadataVolume,
+			VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{
+				Items: []corev1.DownwardAPIVolumeFile{{
+					Path: "flow-metadata.json",
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.annotations['" + ingestFlowMetadataAnnotation + "']",
+					},
+				}},
+			}},
+		})
+	}
+	for _, selector := range resolved.Selectors {
 		args = append(args, "--input", selector)
+	}
+	env := []corev1.EnvVar{
+		{Name: "TAMSIN_AUTH_MODE", Value: "bearer"},
+		{
+			Name: "TAMSIN_AUTH_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: tamoss.ResourceName("api-token")},
+				Key:                  "TAMOSS_API_TOKEN",
+			}},
+		},
+	}
+	if resolved.CredentialSecretName != "" {
+		switch resolved.CredentialKind {
+		case tamossv1alpha1.IngestSourceKindHTTP:
+			env = append(env, sourceSecretEnv(httpCredentialSecretKey, resolved.CredentialSecretName, false))
+		case tamossv1alpha1.IngestSourceKindS3:
+			env = append(env,
+				sourceSecretEnv(s3AccessKeySecretKey, resolved.CredentialSecretName, false),
+				sourceSecretEnv(s3SecretKeySecretKey, resolved.CredentialSecretName, false),
+				sourceSecretEnv(s3SessionTokenSecretKey, resolved.CredentialSecretName, true),
+			)
+		}
 	}
 
 	labels := map[string]string{
@@ -863,16 +1052,20 @@ func desiredIngestJob(run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestR
 			Name:      ingestJobName(run.Name),
 			Namespace: run.Namespace,
 			Labels:    labels,
+			Annotations: map[string]string{
+				ingestSourceAnnotation:       resolved.SourceName,
+				ingestSourcePolicyAnnotation: resolved.PolicyDigest,
+			},
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            ptr.To[int32](2),
 			ActiveDeadlineSeconds:   ptr.To[int64](21600),
 			TTLSecondsAfterFinished: ptr.To[int32](3600),
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: podAnnotations},
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: ptr.To(false),
-					// Tamsin rejects any TAMSIN_-prefixed variable it does not
+					// TAMSin rejects any TAMSIN_-prefixed variable it does not
 					// recognise and exits before doing any work. Service links
 					// inject one per Service in the namespace, so a Service whose
 					// name starts with "tamsin" would break every ingest here.
@@ -893,31 +1086,54 @@ func desiredIngestJob(run *tamossv1alpha1.IngestRun, spec tamossv1alpha1.IngestR
 						Image:           image,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Args:            args,
-						Env: []corev1.EnvVar{
-							{Name: "TAMSIN_AUTH_MODE", Value: "bearer"},
-							{
-								Name: "TAMSIN_AUTH_TOKEN",
-								ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: tamoss.ResourceName("api-token")},
-									Key:                  "TAMOSS_API_TOKEN",
-								}},
-							},
-						},
-						Resources: corev1.ResourceRequirements{Requests: jobResources.Requests, Limits: jobResources.Limits},
+						Env:             env,
+						Resources:       corev1.ResourceRequirements{Requests: jobResources.Requests, Limits: jobResources.Limits},
 						SecurityContext: &corev1.SecurityContext{
 							AllowPrivilegeEscalation: ptr.To(false),
 							ReadOnlyRootFilesystem:   ptr.To(true),
 							Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 						},
-						VolumeMounts: []corev1.VolumeMount{{Name: "temporary-media", MountPath: "/tmp"}},
+						VolumeMounts: volumeMounts,
 					}},
-					Volumes: []corev1.Volume{{
-						Name:         "temporary-media",
-						VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &jobResources.TemporarySize}},
-					}},
+					Volumes: volumes,
 				},
 			},
 		},
+	}
+}
+
+func ingestVerifyMode(verify bool) string {
+	if verify {
+		return "auto"
+	}
+	return "none"
+}
+
+func tamsFlowProfileArguments(assignments []tamossv1alpha1.IngestRunTAMSFlowProfile) []string {
+	ordered := append([]tamossv1alpha1.IngestRunTAMSFlowProfile(nil), assignments...)
+	formatOrder := map[string]int{ingestFlowFormatVideo: 0, "audio": 1, "image": 2, "data": 3}
+	sort.Slice(ordered, func(i, j int) bool {
+		left, right := ordered[i], ordered[j]
+		if formatOrder[left.Format] != formatOrder[right.Format] {
+			return formatOrder[left.Format] < formatOrder[right.Format]
+		}
+		return left.Index < right.Index
+	})
+	args := make([]string, 0, len(ordered)*2)
+	for _, assignment := range ordered {
+		args = append(args, "--tams-flow-profile", fmt.Sprintf("%s:%d=%s", assignment.Format, assignment.Index, assignment.ProfileID))
+	}
+	return args
+}
+
+func sourceSecretEnv(key, secretName string, optional bool) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: key,
+		ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+			Key:                  key,
+			Optional:             ptr.To(optional),
+		}},
 	}
 }
 

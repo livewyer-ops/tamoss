@@ -14,6 +14,13 @@ from tamoss.domain.pagination import Page, resolve_page_window
 
 
 class PostgresProfileMixin:
+    def lock_profile(self, profile_id: UUID) -> None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"tamoss-profile:{profile_id}",),
+            )
+
     def list_profiles_page(
         self,
         *,
@@ -94,6 +101,23 @@ class PostgresProfileMixin:
                     "record": Jsonb(record),
                     "created": profile.created,
                 },
+            )
+            return cur.fetchone() is not None
+
+    def count_flows_by_profile(self, profile_id: UUID) -> int:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM tamoss_flows WHERE profile_id = %s",
+                (profile_id,),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def delete_profile(self, profile_id: UUID) -> bool:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM tamoss_profiles WHERE id = %s RETURNING id",
+                (profile_id,),
             )
             return cur.fetchone() is not None
 

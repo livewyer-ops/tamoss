@@ -20,19 +20,23 @@ Set the namespace and run name used by the examples:
 ```bash
 export TAMOSS_NAMESPACE=tams
 export TAMOSS_NAME=tamoss-kind
-export INGEST_INPUT=example-programme
 export INGEST_RUN=example-run
 ```
 
-## Create a Run from an Approved Input
+## Enable an Ingest Source
 
-First add the HTTPS location to
-`.spec.ingest.approvedInputs` in the source-controlled `Tamoss` environment and
-apply it through the normal environment workflow. The
-[reference example](../reference/ingestrun-cr.md#approved-input-and-run-example)
-shows the exact shape. Do not put a signed URL or credentials in the approval.
+Production profiles default to `Disabled`. Choose `PublicHTTPS` for unrestricted
+public HTTPS assets or define reusable named sources and use `Restricted`. Apply
+the `Tamoss` change through the normal environment workflow. The
+[reference examples](../reference/ingestrun-cr.md#public-https-example) show the
+exact shapes.
 
-Create a run that names only the approved ID:
+Do not put a signed URL in a run or credentials in a source definition. Put any
+credentials in the source-owned Secret described by the reference.
+
+## Create a Run with Kubernetes
+
+Create a run for one selector:
 
 ```bash
 kubectl apply -f - <<EOF
@@ -44,11 +48,20 @@ metadata:
 spec:
   tamossRef:
     name: ${TAMOSS_NAME}
-  inputRef:
-    kind: ApprovedHTTP
-    id: ${INGEST_INPUT}
-  profile: editorial@1
+  input:
+    kind: HTTP
+    uri: https://media.example.com/programmes/example.mp4
+  profile: essence-segments@1
   sizeClass: standard
+  options:
+    maxInputs: 1
+  output:
+    flowMetadata:
+      label: Example programme
+      description: Programme ingest requested by media operations
+      tags:
+        editorial_purpose:
+          - programme
 EOF
 ```
 
@@ -58,16 +71,20 @@ Confirm that the request was accepted and acquired a phase:
 kubectl -n "$TAMOSS_NAMESPACE" get ingestrun "$INGEST_RUN" -w
 ```
 
-The current Console does not expose a create command. Kubernetes creation
-therefore requires an explicitly authorised administrator or deployment
-automation.
+The output block is optional. It is available only when `maxInputs` is exactly
+one. TAMSin applies this metadata to the root and member Flows in the generated
+graph. The `_tamsin_` tag prefix is reserved.
+
+The Console deliberately has no POST endpoint or create form. Use `kubectl`,
+GitOps, or deployment automation with explicit Kubernetes RBAC.
 
 ## Inspect Run History in the Console
 
 1. Open the TAMOSS UI and select **Ingest runs**.
 2. Filter by phase when investigating active, failed, or completed work.
-3. Open a run to inspect its target, profile, attempt, progress, conditions,
-   Job reference, and verified result metadata.
+3. Open a run to inspect its target, profile, output intent, attempt, progress,
+   conditions, Job reference, verified result metadata, and links to resulting
+   Flows.
 4. Follow the next-page control until it is absent. The list is cursor-paged
    and does not promise a total count.
 
@@ -88,7 +105,7 @@ Inspect the selected run:
 ```bash
 kubectl -n "$TAMOSS_NAMESPACE" describe ingestrun "$INGEST_RUN"
 kubectl -n "$TAMOSS_NAMESPACE" get ingestrun "$INGEST_RUN" \
-  -o jsonpath='{.status.phase}{"\n"}{.status.progress}{"\n"}{.status.conditions}{"\n"}'
+  -o jsonpath='{.status.phase}{"\n"}{.status.progress}{"\n"}{.status.output}{"\n"}{.status.conditions}{"\n"}'
 ```
 
 If `status.jobRef.name` is present, check the operator-owned Job without
@@ -137,19 +154,25 @@ Read `.status.conditions` first. Common reasons include:
 | Reason | Action |
 | --- | --- |
 | `TamossNotReady` | Restore the referenced instance to `Ready=True`. |
-| `InputResolutionFailed` | Confirm `inputRef` exactly matches an approved input on the target `Tamoss`. |
-| `CredentialProfileResolverUnavailable` | Remove `credentialProfileRef`; credential profiles are not enabled. |
+| `InputPolicyRejected` | Check source-policy mode, source name, origin or bucket, prefixes, and source-owned credential Secret. |
 | `IngestStorageBackendNotReady` | Restore the selected media backend or choose a Ready backend belonging to the same instance. |
+| `IngestFlowProfileNotFound` | Create the referenced `FlowProfile` in the run namespace or correct its name. |
+| `IngestFlowProfileNotReady` | Wait for current `FlowProfile` registration and inspect its conditions. |
+| `IngestFlowProfileTargetMismatch` | Select a `FlowProfile` associated with the run's target `Tamoss`. |
+| `IngestFlowProfileFormatMismatch` | Match the assignment's `format` to the resolved Profile format. |
 | `TamsinRuntimeUnavailable` or `TamsinImageNotImmutable` | Check the operator's configured [TAMSin](https://github.com/livewyer-ops/tamsin) image and release metadata. |
+| `IngestProtocolInvalid` | Inspect the operator-owned Job and TAMSin logs; the terminal event stream failed protocol or exit-code validation. |
+| `IngestResultPending` | Wait for the terminal Pod log to become readable. |
+| `IngestResultUnavailable` | The terminal event stream remained unavailable for 15 minutes; retain the run and investigate cluster log retention. |
 | `IngestJobMissing` | Treat the outcome as unknown and create a deliberate retry only after reviewing possible side effects. |
 
-Verify the target configuration and approved input IDs without printing Secret
+Verify the target mode and named source metadata without printing Secret
 values:
 
 ```bash
 kubectl -n "$TAMOSS_NAMESPACE" get tamoss \
   "$(kubectl -n "$TAMOSS_NAMESPACE" get ingestrun "$INGEST_RUN" -o jsonpath='{.spec.tamossRef.name}')" \
-  -o jsonpath='{.status.phase}{"\n"}{.spec.ingest.approvedInputs[*].id}{"\n"}'
+  -o jsonpath='{.status.phase}{"\n"}{.spec.ingest.sourcePolicy.mode}{"\n"}{.spec.ingest.sources[*].name}{"\n"}'
 ```
 
 For general instance and workload failures, continue with

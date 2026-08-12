@@ -55,6 +55,9 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Images.RustFS != defaults.DefaultRustFSImage {
 		t.Fatalf("expected default RustFS image, got %q", tamoss.Status.Resolved.Images.RustFS)
 	}
+	if tamoss.Status.Resolved.Images.TAMSin != defaults.DefaultTAMSinImage {
+		t.Fatalf("expected default TAMSin image, got %q", tamoss.Status.Resolved.Images.TAMSin)
+	}
 	if tamoss.Status.Resolved.Versions.Schema == "0.0.0" ||
 		tamoss.Status.Resolved.Versions.Schema == "" {
 		t.Fatalf("expected non-placeholder schema version, got %#v", tamoss.Status.Resolved.Versions)
@@ -149,7 +152,7 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	}
 	defaults.Apply(tamoss)
 
-	status := resolvedTamossStatus(tamoss)
+	status := resolvedTamossStatus(tamoss, "registry.example.com/tamsin@sha256:"+strings.Repeat("b", 64))
 
 	if status.Images.API != "registry.example.com/tamoss-api:v1.2.3" {
 		t.Fatalf("expected overridden API image, got %q", status.Images.API)
@@ -168,6 +171,9 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	}
 	if status.Images.RustFS != "registry.example.com/rustfs:v1" {
 		t.Fatalf("expected overridden RustFS image, got %q", status.Images.RustFS)
+	}
+	if status.Images.TAMSin != "registry.example.com/tamsin@sha256:"+strings.Repeat("b", 64) {
+		t.Fatalf("expected overridden TAMSin image, got %q", status.Images.TAMSin)
 	}
 	if status.GeneratedSecrets.APIToken != "" {
 		t.Fatalf("did not expect a generated API token Secret when token is supplied inline, got %q", status.GeneratedSecrets.APIToken)

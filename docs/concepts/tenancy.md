@@ -1,7 +1,8 @@
 # Tenancy
 
 TAMOSS tenancy is namespace-based. A tenant is a Kubernetes namespace containing
-one or more `Tamoss` resources, their `StorageBackend` resources, referenced
+one or more `Tamoss` resources, their `StorageBackend`, `FlowProfile`, and
+`IngestRun` resources, referenced
 Secrets, and the workloads reconciled by the operator.
 
 TAMOSS does not provide a `Tenant`, `TamossTenant`, or `TamossPlatform` CRD.

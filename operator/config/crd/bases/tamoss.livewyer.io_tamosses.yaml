@@ -9312,50 +9312,139 @@ spec:
                 type: object
               ingest:
                 description: |-
-                  Ingest approves the media an IngestRun may read. An empty list resolves
-                  no input at all, which is the safe default.
+                  Ingest defines reusable source trust boundaries for IngestRuns. Omitted
+                  configuration defaults to Disabled outside the local-kind profile.
                 properties:
-                  approvedInputs:
+                  sourcePolicy:
+                    properties:
+                      mode:
+                        description: |-
+                          Mode defaults to Disabled when omitted. The local-kind profile explicitly
+                          defaults it to PublicHTTPS for the development ingest workflow.
+                        enum:
+                        - Disabled
+                        - PublicHTTPS
+                        - Restricted
+                        type: string
+                    type: object
+                  sources:
                     description: |-
-                      ApprovedInputs are the media locations an IngestRun may name by id. An
-                      IngestRun carries an opaque id and never a media locator, so this list is
-                      the boundary between what a run asks for and what it can reach.
+                      Sources are reusable, named trust boundaries. Credentials belong to a
+                      source and cannot be selected independently by an IngestRun.
                     items:
-                      description: ApprovedIngestInputSpec binds one opaque input
-                        id to fixed media locations.
                       properties:
-                        id:
-                          description: ID is the value an IngestRun's spec.inputRef.id
-                            must carry.
-                          maxLength: 128
-                          minLength: 1
-                          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
-                          type: string
+                        http:
+                          properties:
+                            allowPrivateAddresses:
+                              description: |-
+                                AllowPrivateAddresses permits private, loopback and link-local resolved
+                                addresses for this explicitly named source.
+                              type: boolean
+                            credentialSecretRef:
+                              description: |-
+                                CredentialSecretRef names a source-bound Secret. The Secret must contain
+                                TAMSIN_SOURCE_HTTP_HEADERS as a JSON array of HTTP header values.
+                              properties:
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            origin:
+                              description: |-
+                                Origin is an exact HTTPS scheme and authority. User information, paths,
+                                queries and fragments are rejected by the controller.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                            pathPrefixes:
+                              description: PathPrefixes restrict URL paths within
+                                Origin. Empty allows every path.
+                              items:
+                                maxLength: 1024
+                                minLength: 1
+                                type: string
+                              maxItems: 32
+                              type: array
+                          required:
+                          - origin
+                          type: object
                         kind:
-                          description: |-
-                            Kind must match the referencing run. Only ApprovedHTTP resolves today;
-                            staged objects, manifests, and S3 prefixes need a credential boundary
-                            that does not exist yet.
                           enum:
-                          - ApprovedHTTP
+                          - HTTP
+                          - S3
                           type: string
-                        urls:
-                          description: |-
-                            URLs are absolute HTTPS media locations. Credentials, query strings, and
-                            fragments are rejected so an approved input cannot smuggle a signed URL.
-                          items:
-                            maxLength: 2048
-                            pattern: ^https://[^/?#@]+(/[^?#]*)?$
-                            type: string
-                          maxItems: 16
-                          minItems: 1
-                          type: array
+                        name:
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                        s3:
+                          properties:
+                            allowPrivateAddresses:
+                              type: boolean
+                            bucket:
+                              maxLength: 255
+                              minLength: 1
+                              type: string
+                            credentialSecretRef:
+                              description: |-
+                                CredentialSecretRef names a source-bound Secret containing
+                                AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. AWS_SESSION_TOKEN is optional.
+                              properties:
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            endpoint:
+                              description: Endpoint is the exact HTTPS endpoint TAMSin
+                                may contact.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                            keyPrefixes:
+                              description: KeyPrefixes restrict object keys within
+                                Bucket. Empty allows every key.
+                              items:
+                                maxLength: 1024
+                                minLength: 1
+                                type: string
+                              maxItems: 32
+                              type: array
+                            pathStyle:
+                              type: boolean
+                            region:
+                              maxLength: 128
+                              minLength: 1
+                              type: string
+                          required:
+                          - bucket
+                          - endpoint
+                          - region
+                          type: object
                       required:
-                      - id
                       - kind
-                      - urls
+                      - name
                       type: object
-                    maxItems: 16
+                      x-kubernetes-validations:
+                      - message: HTTP sources require http only; S3 sources require
+                          s3 only
+                        rule: 'self.kind == ''HTTP'' ? has(self.http) && !has(self.s3)
+                          : has(self.s3) && !has(self.http)'
+                    maxItems: 32
                     type: array
                 type: object
               ingress:
@@ -20034,6 +20123,8 @@ spec:
                       rustfs:
                         type: string
                       schemaMigrationPostgresClient:
+                        type: string
+                      tamsin:
                         type: string
                       ui:
                         type: string

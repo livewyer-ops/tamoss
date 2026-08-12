@@ -11,6 +11,7 @@ then stay on the matching install, configuration, usage, and operations path.
 | Install on an existing cluster | [Install](operations/install.md) | [Edge](getting-started/edge.md), [Single Server](getting-started/single-server.md), or [Multi Server](getting-started/multi-server.md), then [Configuration](configuration.md) |
 | Choose a deployment shape | [Deployment Profiles](concepts/profiles.md) | `local-kind`, `edge`, `single-server`, or `multi-server` |
 | Configure providers and endpoints | [Configuration](configuration.md) | [Provider Ownership](concepts/provider-ownership.md), [Runtime Configuration](reference/runtime-configuration.md), [Tamoss CR](reference/tamoss-cr.md), [StorageBackend CR](reference/storagebackend-cr.md) |
+| Register reusable Flow definitions | [Manage Flow Profiles](operations/manage-flow-profiles.md) | [Flow Profiles](concepts/flow-profiles.md), [FlowProfile CR](reference/flowprofile-cr.md) |
 | Use the UI or API | [Usage](usage.md) | [API](reference/api.md), [Storage Backends](concepts/storage-backends.md) |
 | Monitor or cancel ingest work | [Manage Ingest Runs](operations/manage-ingest-runs.md) | [Ingest Runs](concepts/ingest-runs.md), [IngestRun CR](reference/ingestrun-cr.md) |
 | Operate an installed cluster | [Day 2](operations/day-2.md) | [Backup and Restore](operations/backup-restore.md), [Hibernate and Resume](operations/hibernate-resume.md), [Upgrades](operations/upgrades.md), [Troubleshooting](operations/troubleshooting.md) |
@@ -59,6 +60,8 @@ then stay on the matching install, configuration, usage, and operations path.
   database hibernation artefacts and recovery.
 - [Manage Ingest Runs](operations/manage-ingest-runs.md) - inspect history,
   follow workloads, and cancel active runs.
+- [Manage Flow Profiles](operations/manage-flow-profiles.md) - register,
+  reference, replace, and safely delete immutable Profiles.
 - [Upgrades](operations/upgrades.md) - change sequencing and rollback.
 - [Deletion Protection](operations/deletion-protection.md) - required
   confirmation annotations and finalizers.
@@ -70,6 +73,8 @@ then stay on the matching install, configuration, usage, and operations path.
 - [Tamoss CR](reference/tamoss-cr.md) - instance resource reference.
 - [StorageBackend CR](reference/storagebackend-cr.md) - additional object-store
   backend reference.
+- [FlowProfile CR](reference/flowprofile-cr.md) - declarative TAMS Profile
+  registration and status.
 - [IngestRun CR](reference/ingestrun-cr.md) - ingest request, lifecycle, and
   status fields.
 - [CRD Versioning](reference/crd-versioning.md) - API compatibility,
@@ -97,6 +102,7 @@ navigation becomes a clear maintenance burden.
 | --- | --- |
 | `Tamoss` | The namespaced custom resource reconciled into API, UI, worker, database, storage, identity, and routing resources. |
 | `StorageBackend` | A namespaced custom resource that represents a registered TAMS object-store backend and its readiness. |
+| `FlowProfile` | A namespaced custom resource that registers one immutable TAMS Flow Profile in a `Tamoss` instance. |
 | `IngestRun` | A durable, namespaced request and history record for one approved TAMSin ingest attempt. |
 | TAMSin Job | The temporary Kubernetes `Job` created and owned by the operator for an `IngestRun`; it is not a user-authored ingest API. See [TAMSin](https://github.com/livewyer-ops/tamsin). |
 | Deployment profile | A Kubernetes deployment shape such as `local-kind`, `edge`, `single-server`, or `multi-server` that supplies defaults. |

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -181,13 +182,36 @@ func TestIngestRunCursorIsOpaqueTamperEvidentAndQueryBound(t *testing.T) {
 func TestIngestRunDetailProjectionRedactsSensitiveFieldsAndDefaults(t *testing.T) {
 	verify := false
 	run := ingestRunFixture("run", "media", "")
-	run.Spec.InputRef = tamossv1alpha1.IngestInputReference{Kind: "ApprovedS3", ID: "input-secret-canary"}
-	run.Spec.CredentialProfileRef = &tamossv1alpha1.IngestCredentialProfileReference{Name: "credential-secret-canary"}
+	run.Spec.Input = tamossv1alpha1.IngestRunInput{
+		Kind:      tamossv1alpha1.IngestInputKindS3,
+		URI:       "s3://input-secret-canary/private-prefix/",
+		SourceRef: &tamossv1alpha1.IngestSourceReference{Name: "credential-secret-canary"},
+	}
 	run.Spec.Options.Verify = &verify
 	run.Spec.Options.StorageBackendRef = &tamossv1alpha1.IngestStorageBackendReference{Name: "archive"}
+	run.Spec.Options.TAMSFlowProfiles = []tamossv1alpha1.IngestRunTAMSFlowProfile{{
+		Format: "video", Index: 0, ProfileRef: &tamossv1alpha1.IngestFlowProfileReference{Name: "hd-avc"},
+	}}
+	run.Status.ResolvedTAMSFlowProfiles = []tamossv1alpha1.IngestRunResolvedFlowProfileStatus{{
+		Format: "video", Index: 0, ProfileID: "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28", ProfileRef: "hd-avc",
+	}}
+	run.Spec.Output = &tamossv1alpha1.IngestRunOutputIntent{FlowMetadata: tamossv1alpha1.IngestRunFlowMetadata{
+		Label:       "8.2 ingest test",
+		Description: "Acceptance ingest",
+		Tags: map[string]apiextensionsv1.JSON{
+			"editorial_purpose": {Raw: []byte(`["testing"]`)},
+		},
+	}}
 	run.Status.TamsinRunID = "run\n" + strings.Repeat("r", maxProjectedTamsinRunIDLength+20)
 	run.Status.ResultRef = tamossv1alpha1.IngestRunResultStatus{
 		Key: "artifact-secret-canary", SHA256: strings.Repeat("a", 64), Size: 42, MediaType: "application/\njson", Verified: true,
+	}
+	run.Status.Output = &tamossv1alpha1.IngestRunOutputStatus{
+		RootFlowID: "713d391c-828a-513e-9929-65e1bab9c35b",
+		SourceID:   "6148f737-4536-5442-8897-c20b647e8836",
+		MemberFlows: []tamossv1alpha1.IngestRunOutputFlowStatus{{
+			ID: "69d2a402-b8db-5faa-a970-0aed4f2acfc2", Format: "urn:x-nmos:format:video", Role: "video",
+		}},
 	}
 	run.Status.Conditions = []metav1.Condition{{
 		Type: "Ready\n", Status: metav1.ConditionFalse, Reason: "InputResolver\tUnavailable", Message: "message-secret-canary", LastTransitionTime: metav1.Now(),
@@ -203,7 +227,7 @@ func TestIngestRunDetailProjectionRedactsSensitiveFieldsAndDefaults(t *testing.T
 		}
 	}
 	if detail.Phase != string(tamossv1alpha1.IngestRunPhasePending) ||
-		detail.Profile != string(tamossv1alpha1.IngestRunProfileEditorial) ||
+		detail.Profile != string(tamossv1alpha1.IngestRunProfileEssenceSegments) ||
 		detail.SizeClass != string(tamossv1alpha1.IngestRunSizeClassStandard) ||
 		detail.DesiredState != string(tamossv1alpha1.IngestRunDesiredStateRunning) {
 		t.Fatalf("defaulted projection = %#v", detail.IngestRunSummary)
@@ -211,8 +235,21 @@ func TestIngestRunDetailProjectionRedactsSensitiveFieldsAndDefaults(t *testing.T
 	if detail.Options.Verify || detail.Options.MaxInputs != 1000 || detail.Result == nil || !detail.Result.Present || !detail.Result.Verified {
 		t.Fatalf("unexpected detail options/result: %#v", detail)
 	}
+	if len(detail.Options.TAMSFlowProfiles) != 1 ||
+		detail.Options.TAMSFlowProfiles[0].ProfileRef != "hd-avc" ||
+		detail.Options.TAMSFlowProfiles[0].ResolvedProfileID != "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28" {
+		t.Fatalf("TAMS Flow Profile projection = %#v", detail.Options.TAMSFlowProfiles)
+	}
+	if detail.OutputIntent == nil || detail.OutputIntent.FlowMetadata.Label != "8.2 ingest test" ||
+		detail.OutputIntent.FlowMetadata.Tags["editorial_purpose"].([]string)[0] != "testing" {
+		t.Fatalf("output intent projection = %#v", detail.OutputIntent)
+	}
+	if detail.Output == nil || detail.Output.RootFlowID != "713d391c-828a-513e-9929-65e1bab9c35b" ||
+		len(detail.Output.MemberFlows) != 1 || detail.Output.MemberFlows[0].Role != "video" {
+		t.Fatalf("output projection = %#v", detail.Output)
+	}
 	if len([]rune(detail.TamsinRunID)) != maxProjectedTamsinRunIDLength {
-		t.Fatalf("Tamsin run ID was not bounded: %d", len([]rune(detail.TamsinRunID)))
+		t.Fatalf("TAMSin run ID was not bounded: %d", len([]rune(detail.TamsinRunID)))
 	}
 	if strings.ContainsAny(detail.TamsinRunID+detail.Result.MediaType+detail.Conditions[0].Type+detail.Conditions[0].Reason, "\n\t") {
 		t.Fatalf("detail projection retained control characters: %#v", detail)
@@ -304,7 +341,7 @@ func ingestRunFixture(name, instance string, phase tamossv1alpha1.IngestRunPhase
 		},
 		Spec: tamossv1alpha1.IngestRunSpec{
 			TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: instance},
-			InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "opaque"},
+			Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/opaque.mp4"},
 		},
 		Status: tamossv1alpha1.IngestRunStatus{Phase: phase, ObservedGeneration: 2},
 	}

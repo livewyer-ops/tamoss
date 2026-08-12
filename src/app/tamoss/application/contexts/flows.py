@@ -642,6 +642,7 @@ class FlowUseCases:
 
         if existing is None and isinstance(requested_profile_id, UUID):
             profile_id = requested_profile_id
+            self.profile_repository.lock_profile(profile_id)
             profile = self.profile_repository.get_profile(profile_id)
             if profile is None:
                 raise BadRequest("Bad request. Profile does not exist.")

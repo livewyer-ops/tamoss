@@ -13,6 +13,7 @@ import type {
   RuntimeEndpointSlicePort,
   RuntimeResourceCondition,
   RuntimeServicePort,
+  RuntimeWorkload,
 } from "@/control/runtime";
 import { useRuntime } from "@/control/runtime";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -49,6 +50,32 @@ function conditionDetails(conditions: RuntimeResourceCondition[]) {
       </div>
     </div>
   ));
+}
+
+function workloadDiagnostic(workload: RuntimeWorkload) {
+  const priority = [
+    ["ReplicaFailure", "True"],
+    ["Available", "False"],
+    ["Progressing", "False"],
+    ["Progressing", "True"],
+  ];
+  for (const [type, status] of priority) {
+    const condition = workload.conditions.find(
+      (candidate) => candidate.type === type && candidate.status === status,
+    );
+    if (condition) return condition.reason || condition.type;
+  }
+  const condition = workload.conditions.find(
+    (candidate) => candidate.status === "False",
+  );
+  return condition?.reason || condition?.type || "-";
+}
+
+function workloadIsRollingOut(workload: RuntimeWorkload) {
+  return (
+    workload.observedGeneration < workload.generation ||
+    workload.updatedReplicas < workload.desiredReplicas
+  );
 }
 
 function diagnosticDetails(reason?: string) {
@@ -111,6 +138,9 @@ export default function SystemPage() {
   const hibernated = snapshot?.instance.phase === "Hibernated";
   const services = snapshot?.services ?? [];
   const endpointSlices = snapshot?.endpointSlices ?? [];
+  const instanceCurrent = snapshot
+    ? snapshot.instance.observedGeneration >= snapshot.instance.generation
+    : false;
 
   return (
     <Page>
@@ -172,13 +202,28 @@ export default function SystemPage() {
                 {formatDate(snapshot.observedAt)} (
                 {formatRelativeTime(snapshot.observedAt)})
               </dd>
-              <dt>Generation</dt>
+              <dt>Reconciliation</dt>
               <dd>
-                {snapshot.instance.observedGeneration} /{" "}
-                {snapshot.instance.generation}
+                <StatusBadge tone={instanceCurrent ? "success" : "warning"}>
+                  {instanceCurrent ? "Current" : "Reconciling"}
+                </StatusBadge>
               </dd>
-              <dt>UID</dt>
-              <dd className={surfaceStyles.mono}>{snapshot.instance.uid}</dd>
+              <dt>Details</dt>
+              <dd>
+                <details>
+                  <summary>Instance identity</summary>
+                  <dl className={surfaceStyles.definitionList}>
+                    <dt>UID</dt>
+                    <dd className={surfaceStyles.mono}>
+                      {snapshot.instance.uid}
+                    </dd>
+                    <dt>Observed generation</dt>
+                    <dd>{snapshot.instance.observedGeneration}</dd>
+                    <dt>Desired generation</dt>
+                    <dd>{snapshot.instance.generation}</dd>
+                  </dl>
+                </details>
+              </dd>
             </dl>
           </Panel>
 
@@ -232,10 +277,8 @@ export default function SystemPage() {
                       <th>Component</th>
                       <th>Deployment</th>
                       <th>Status</th>
-                      <th>Ready</th>
-                      <th>Updated</th>
-                      <th>Generation</th>
-                      <th>Details</th>
+                      <th>Replicas</th>
+                      <th>Diagnostic</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -254,12 +297,34 @@ export default function SystemPage() {
                         </td>
                         <td>
                           {workload.readyReplicas}/{workload.desiredReplicas}
+                          {workloadIsRollingOut(workload) ? (
+                            <div className={surfaceStyles.secondary}>
+                              {workload.updatedReplicas} updated
+                            </div>
+                          ) : null}
                         </td>
-                        <td>{workload.updatedReplicas}</td>
                         <td>
-                          {workload.observedGeneration}/{workload.generation}
+                          <div>{workloadDiagnostic(workload)}</div>
+                          <details>
+                            <summary>Details</summary>
+                            <dl className={surfaceStyles.definitionList}>
+                              <dt>Generation</dt>
+                              <dd>
+                                {workload.observedGeneration}/
+                                {workload.generation} observed
+                              </dd>
+                              <dt>Replicas</dt>
+                              <dd>
+                                {workload.readyReplicas} ready,{" "}
+                                {workload.availableReplicas} available,{" "}
+                                {workload.updatedReplicas} updated,{" "}
+                                {workload.desiredReplicas} desired
+                              </dd>
+                              <dt>Conditions</dt>
+                              <dd>{conditionDetails(workload.conditions)}</dd>
+                            </dl>
+                          </details>
                         </td>
-                        <td>{conditionDetails(workload.conditions)}</td>
                       </tr>
                     ))}
                   </tbody>

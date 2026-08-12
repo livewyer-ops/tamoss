@@ -34,6 +34,7 @@ dependencies = [
 
 [project.scripts]
 tamoss-db = "tamoss.db.cli:main"
+tamoss-profile = "tamoss.profile_cli:main"
 
 [dependency-groups]
 dev = [

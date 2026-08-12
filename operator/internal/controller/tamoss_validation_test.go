@@ -55,6 +55,29 @@ var _ = Describe("Tamoss API validation", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		It("requires a positive TTL for TTL hibernation retention", func() {
+			backend := &tamossv1alpha1.StorageBackend{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-hibernate-ttl", Namespace: "default"},
+				Spec: tamossv1alpha1.StorageBackendSpec{
+					TamossRef:  tamossv1alpha1.TamossReferenceSpec{Name: "example"},
+					Provider:   tamossv1alpha1.StorageBackendProviderExternalS3,
+					Usage:      tamossv1alpha1.StorageBackendUsageHibernate,
+					Region:     "eu-west-2",
+					BucketName: "hibernate",
+					Endpoint: tamossv1alpha1.S3EndpointSpec{
+						Default: tamossv1alpha1.EndpointURLSpec{URL: "https://s3.example.test"},
+					},
+					Hibernate: tamossv1alpha1.StorageBackendHibernateSpec{
+						Retention: tamossv1alpha1.HibernationRetentionSpec{Mode: tamossv1alpha1.HibernationRetentionModeTTL},
+					},
+				},
+			}
+
+			err := k8sClient.Create(ctx, backend)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
 		It("requires an explicit API token when generation is disabled", func() {
 			resource := minimalTamossUnstructured("invalid-token")
 			Expect(unstructured.SetNestedField(resource.Object, false, "spec", "secrets", "apiToken", "generate")).To(Succeed())
@@ -75,6 +98,206 @@ var _ = Describe("Tamoss API validation", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		It("requires the current IngestRun input shape", func() {
+			run := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": tamossv1alpha1.SchemeGroupVersion.String(),
+				"kind":       "IngestRun",
+				"metadata": map[string]interface{}{
+					"name":      "legacy-ingest-input",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"tamossRef": map[string]interface{}{"name": "example"},
+					"inputRef":  map[string]interface{}{"name": "retired-asset-catalogue-entry"},
+				},
+			}}
+
+			err := k8sClient.Create(ctx, run)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("keeps the IngestRun input immutable", func() {
+			run := testIngestRun()
+			run.Name = "immutable-ingest-input"
+			run.Namespace = "default"
+			Expect(k8sClient.Create(ctx, run)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, run)
+			})
+
+			created := &tamossv1alpha1.IngestRun{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: run.Name, Namespace: run.Namespace}, created)).To(Succeed())
+			created.Spec.Input.URI = "https://media.example.test/replacement"
+
+			err := k8sClient.Update(ctx, created)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("defaults the released TAMSin treatment and validates TAMS Flow Profile assignments", func() {
+			run := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": tamossv1alpha1.SchemeGroupVersion.String(),
+				"kind":       "IngestRun",
+				"metadata": map[string]interface{}{
+					"name":      "released-tamsin-options",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"tamossRef": map[string]interface{}{"name": "example"},
+					"input": map[string]interface{}{
+						"kind": "HTTP",
+						"uri":  "https://media.example.test/programme.mp4",
+					},
+					"options": map[string]interface{}{
+						"tamsFlowProfiles": []interface{}{map[string]interface{}{
+							"format":    "video",
+							"profileID": "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28",
+						}},
+					},
+				},
+			}}
+
+			Expect(k8sClient.Create(ctx, run)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, run) })
+			created := &tamossv1alpha1.IngestRun{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: run.GetName(), Namespace: run.GetNamespace()}, created)).To(Succeed())
+			Expect(created.Spec.Profile).To(Equal(tamossv1alpha1.IngestRunProfileEssenceSegments))
+			Expect(created.Spec.Options.TAMSFlowProfiles).To(Equal([]tamossv1alpha1.IngestRunTAMSFlowProfile{{
+				Format: "video", Index: 0, ProfileID: "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28",
+			}}))
+
+			invalid := testIngestRun()
+			invalid.Name = "invalid-tams-flow-profile"
+			invalid.Namespace = "default"
+			invalid.Spec.Options.TAMSFlowProfiles = []tamossv1alpha1.IngestRunTAMSFlowProfile{{
+				Format: "video", ProfileID: "not-a-uuid",
+			}}
+			err := k8sClient.Create(ctx, invalid)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+
+			byReference := testIngestRun()
+			byReference.Name = "referenced-tams-flow-profile"
+			byReference.Namespace = "default"
+			byReference.Spec.Options.TAMSFlowProfiles = []tamossv1alpha1.IngestRunTAMSFlowProfile{{
+				Format: "video", ProfileRef: &tamossv1alpha1.IngestFlowProfileReference{Name: "hd-avc"},
+			}}
+			Expect(k8sClient.Create(ctx, byReference)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, byReference) })
+
+			both := byReference.DeepCopy()
+			both.ResourceVersion = ""
+			both.Name = "ambiguous-tams-flow-profile"
+			both.Spec.Options.TAMSFlowProfiles[0].ProfileID = "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28"
+			err = k8sClient.Create(ctx, both)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("admits FlowProfiles and keeps their typed specification immutable", func() {
+			profile := &tamossv1alpha1.FlowProfile{
+				ObjectMeta: metav1.ObjectMeta{Name: "hd-avc-profile", Namespace: "default"},
+				Spec: tamossv1alpha1.FlowProfileSpec{
+					TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
+					Label:     "HD AVC",
+					FlowMetadata: apiextensionsv1.JSON{Raw: []byte(`{
+						"format":"urn:x-nmos:format:video",
+						"codec":"video/h264",
+						"container":"video/mp4",
+						"essence_parameters":{"frame_rate":{"numerator":25,"denominator":1},"frame_width":1920,"frame_height":1080}
+					}`)},
+				},
+			}
+			Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, profile) })
+			profile.Spec.Label = "Changed"
+			err := k8sClient.Update(ctx, profile)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("admits immutable single-input Flow output metadata", func() {
+			run := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": tamossv1alpha1.SchemeGroupVersion.String(),
+				"kind":       "IngestRun",
+				"metadata": map[string]interface{}{
+					"name":      "root-flow-output",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"tamossRef": map[string]interface{}{"name": "example"},
+					"input": map[string]interface{}{
+						"kind": "HTTP",
+						"uri":  "https://media.example.test/programme.mp4",
+					},
+					"options": map[string]interface{}{"maxInputs": int64(1)},
+					"output": map[string]interface{}{"flowMetadata": map[string]interface{}{
+						"label": "8.2 ingest test",
+						"tags": map[string]interface{}{
+							"owner":             "media-operations",
+							"editorial_purpose": []interface{}{"testing"},
+						},
+					}},
+				},
+			}}
+
+			Expect(k8sClient.Create(ctx, run)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, run) })
+			created := &tamossv1alpha1.IngestRun{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: run.GetName(), Namespace: run.GetNamespace()}, created)).To(Succeed())
+			Expect(created.Spec.Output).NotTo(BeNil())
+			Expect(created.Spec.Output.FlowMetadata.Tags["owner"].Raw).To(MatchJSON(`"media-operations"`))
+			Expect(created.Spec.Output.FlowMetadata.Tags["editorial_purpose"].Raw).To(MatchJSON(`["testing"]`))
+
+			created.Spec.Output.FlowMetadata.Label = "replacement"
+			err := k8sClient.Update(ctx, created)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("rejects output metadata without an explicit single-input bound", func() {
+			run := testIngestRun()
+			run.Name = "ambiguous-output"
+			run.Namespace = "default"
+			run.Spec.Output = &tamossv1alpha1.IngestRunOutputIntent{FlowMetadata: tamossv1alpha1.IngestRunFlowMetadata{Label: "ambiguous"}}
+			err := k8sClient.Create(ctx, run)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsInvalid(err)).To(BeTrue())
+		})
+
+		It("requires source configuration to match its declared kind", func() {
+			for _, source := range []tamossv1alpha1.IngestSourceSpec{
+				{
+					Name: "http-with-s3",
+					Kind: tamossv1alpha1.IngestSourceKindHTTP,
+					S3: &tamossv1alpha1.S3IngestSourceSpec{
+						Endpoint: "https://s3.example.test",
+						Region:   "eu-west-2",
+						Bucket:   "media",
+					},
+				},
+				{
+					Name: "s3-with-http",
+					Kind: tamossv1alpha1.IngestSourceKindS3,
+					HTTP: &tamossv1alpha1.HTTPIngestSourceSpec{
+						Origin: "https://media.example.test",
+					},
+				},
+			} {
+				resource := &tamossv1alpha1.Tamoss{
+					ObjectMeta: metav1.ObjectMeta{Name: "invalid-" + source.Name, Namespace: "default"},
+					Spec:       minimalTamossSpec(),
+				}
+				resource.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyRestricted
+				resource.Spec.Ingest.Sources = []tamossv1alpha1.IngestSourceSpec{source}
+
+				err := k8sClient.Create(ctx, resource)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.IsInvalid(err)).To(BeTrue())
+			}
+		})
+
 		// A minimal IngestRun omits spec.options entirely, and the nested
 		// defaults do not materialise when the parent object is absent. The
 		// options immutability rule must therefore tolerate its absence, or the
@@ -85,7 +308,7 @@ var _ = Describe("Tamoss API validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "minimal-ingest-run", Namespace: "default"},
 				Spec: tamossv1alpha1.IngestRunSpec{
 					TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
-					InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
+					Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/staged-123"},
 				},
 			}
 
@@ -107,7 +330,7 @@ var _ = Describe("Tamoss API validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "immutable-ingest-options", Namespace: "default"},
 				Spec: tamossv1alpha1.IngestRunSpec{
 					TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
-					InputRef:  tamossv1alpha1.IngestInputReference{Kind: "StagedObject", ID: "staged-123"},
+					Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/staged-123"},
 					Options:   tamossv1alpha1.IngestRunOptions{MaxInputs: 10},
 				},
 			}

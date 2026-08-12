@@ -52,14 +52,10 @@ spec:
           value: ""
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
-        # Tamsin 0.1.0-rc.2, the first release publishing the event-based JSON
-        # ingest output. Pinned by digest because the operator rejects a mutable
-        # reference: an ingest attempt must be reproducible from its recorded
-        # run. The multi-architecture index covers linux/amd64 and linux/arm64.
-        # Ingest stays disabled regardless until the approved input and endpoint
-        # resolvers are wired; this only satisfies the image gate.
+        # TAMSin v1.0.0-rc.1, pinned to the published multi-platform index.
+        # Install overlays may replace this only with another immutable digest.
         - name: TAMOSS_TAMSIN_IMAGE
-          value: ghcr.io/livewyer-ops/tamsin@sha256:c67222bc5d4a51770d4add021c3129bf364c92f166c899f9330959b7ec9509f3
+          value: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

@@ -22,8 +22,32 @@ This model provides:
 
 The UUID remains a provenance link, not a live inheritance mechanism. Changing
 or deleting Profile data behind existing Flows would make the same UUID mean
-different technical metadata, so the Profile API does not provide update or
-delete operations.
+different technical metadata, so the public Profile API does not provide
+update or delete operations.
+
+## Kubernetes Ownership
+
+`FlowProfile` provides a declarative Kubernetes owner for a TAMS Profile. It is
+a namespaced resource associated with one `Tamoss` in the same namespace. The
+operator validates its definition with the TAMOSS application, creates or
+adopts the exact immutable Profile UUID, and publishes the resolved identity in
+status.
+
+If `spec.id` is omitted, the operator derives a stable UUID from the Kubernetes
+namespace and resource name. Supplying an ID is useful when adopting an
+existing Profile. Adoption succeeds only when the stored Profile definition is
+identical; an ID collision with different metadata fails closed.
+
+The Kubernetes specification is immutable. Create a differently named
+`FlowProfile` for a changed technical definition. This preserves the TAMS rule
+that one Profile UUID always describes one technical identity.
+
+Deletion is also deliberate. `FlowProfile` uses the standard confirmation
+annotation, then an internal application command removes the TAMS Profile only
+when no Flow references it. A referenced Profile remains in `Deleting` with a
+`DeletionBlocked=True` condition until those references are unlinked or
+deleted. This internal lifecycle does not expose a public TAMS Profile DELETE
+operation.
 
 ## Ownership of Metadata
 
@@ -58,8 +82,10 @@ use the empty-string sentinel.
 The UI provides read-only Profile listing and detail, links Profile-backed
 Flows to their Profile, and can filter Flows by `profile_id`. Profile creation
 remains a TAMS API operation with write scope; browser forward-auth sessions are
-read-only.
+read-only. The UI also displays `FlowProfile` provenance recorded on an
+`IngestRun`, but does not create, update, retry, or delete these resources.
 
 Use the [API reference](../reference/api.md) for the contract and interactive
-OpenAPI documentation. See [Deployment Profiles](profiles.md) for Kubernetes
-installation shapes.
+OpenAPI documentation. Use [Manage Flow Profiles](../operations/manage-flow-profiles.md)
+for the Kubernetes workflow, [FlowProfile CR](../reference/flowprofile-cr.md)
+for fields, and [Deployment Profiles](profiles.md) for installation shapes.
