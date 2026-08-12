@@ -1,0 +1,11 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tamsin-profiled-ingest
+  namespace: ($namespace)
+spec:
+  template:
+    spec:
+      containers:
+        - name: tamsin
+          image: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41

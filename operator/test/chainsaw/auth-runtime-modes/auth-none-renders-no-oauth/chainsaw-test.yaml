@@ -1,7 +1,7 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: auth-none-renders-no-oauth
+  name: auth-runtime-modes-render-correctly
   labels:
     test.tamoss.io/target: kind
     test.tamoss.io/tier: smoke
@@ -24,14 +24,31 @@ spec:
         - assert:
             file: assert/no-oauth-runtime.yaml
             timeout: 120s
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              ui_env_from="$(kubectl -n "$NAMESPACE" get deployment auth-none-ui -o jsonpath='{.spec.template.spec.containers[?(@.name=="ui")].envFrom}')"
-              test -z "$ui_env_from"
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: auth-none-oauth2-creds
+                namespace: ($namespace)
+            timeout: 5s
 
-              # chainsaw-script: generated Secret absence is clearer as a direct Kubernetes lookup.
-              ! kubectl -n "$NAMESPACE" get secret auth-none-oauth2-creds
+    - name: apply external oauth instance
+      try:
+        - apply:
+            file: resources/external-oauth-secret.yaml
+        - apply:
+            file: resources/external-oauth-schema-state.yaml
+        - apply:
+            file: resources/external-oauth-tamoss.yaml
+        - assert:
+            file: assert/external-oauth-runtime.yaml
+            timeout: 120s
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: external-oauth-oauth2-creds
+                namespace: ($namespace)
+            timeout: 5s

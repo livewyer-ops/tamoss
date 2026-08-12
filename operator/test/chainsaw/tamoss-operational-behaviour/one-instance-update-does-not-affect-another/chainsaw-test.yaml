@@ -25,15 +25,46 @@ spec:
             file: assert/postgres-instances-available.yaml
         - apply:
             file: resources/tamoss-instances.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
-              ../../scripts/simulate-rustfs-tenant-ready.sh alpha-s3 alpha
-              ../../scripts/simulate-rustfs-tenant-ready.sh beta-s3 beta
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: alpha-s3
+                namespace: ($namespace)
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: alpha-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: beta-s3
+                namespace: ($namespace)
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: beta-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
         - assert:
             file: assert/tamoss-instances-ready.yaml
             timeout: 5m
@@ -43,18 +74,16 @@ spec:
 
     - name: snapshot unmodified instance
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: captures beta state before mutating alpha; native assertions cover readiness.
-              beta_token="$(kubectl -n "$NAMESPACE" get secret beta-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')"
-              beta_creds="$(kubectl -n "$NAMESPACE" get secret beta-storage-backend-credentials -o jsonpath='{.data.credentials\\.json}')"
-              kubectl -n "$NAMESPACE" create configmap beta-stability-snapshot \
-                --from-literal=apiToken="$beta_token" \
-                --from-literal=storageCredentials="$beta_creds"
+        - create:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: beta-stability-snapshot
+                namespace: ($namespace)
+              data:
+                apiToken: (x_k8s_get($client, 'v1', 'Secret', $namespace, 'beta-api-token').data.TAMOSS_API_TOKEN)
+                storageCredentials: (x_k8s_get($client, 'v1', 'Secret', $namespace, 'beta-storage-backend-credentials').data."credentials.json")
 
     - name: update one instance
       try:
@@ -72,15 +101,15 @@ spec:
         - assert:
             file: assert/alpha-worker-enabled.yaml
             timeout: 5m
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: compares beta values captured before the alpha-only patch.
-              expect() {
-                kubectl -n "$NAMESPACE" get configmap beta-stability-snapshot -o "jsonpath={.data.$1}"
-              }
-              [ "$(kubectl -n "$NAMESPACE" get secret beta-api-token -o jsonpath='{.data.TAMOSS_API_TOKEN}')" = "$(expect apiToken)" ]
-              [ "$(kubectl -n "$NAMESPACE" get secret beta-storage-backend-credentials -o jsonpath='{.data.credentials\\.json}')" = "$(expect storageCredentials)" ]
+        - assert:
+            resource:
+              (x_k8s_get($client, 'v1', 'Secret', $namespace, 'beta-api-token')):
+                data:
+                  TAMOSS_API_TOKEN: (x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'beta-stability-snapshot').data.apiToken)
+            timeout: 30s
+        - assert:
+            resource:
+              (x_k8s_get($client, 'v1', 'Secret', $namespace, 'beta-storage-backend-credentials')):
+                data:
+                  credentials.json: (x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'beta-stability-snapshot').data.storageCredentials)
+            timeout: 30s

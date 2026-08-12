@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: tamoss-schema-state
-data:
-  failureCount: "3"

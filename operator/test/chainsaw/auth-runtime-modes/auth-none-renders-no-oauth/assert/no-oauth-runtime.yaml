@@ -20,3 +20,4 @@ metadata:
 (spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_AUTHENTIK_AUTH_REQUEST_URL'] | length(@)): 0
 (spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_API_FORWARD_AUTH_SHARED_SECRET_FILE'] | length(@)): 0
 (spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE'] | length(@)): 0
+(length(not_null(spec.template.spec.containers[?name == 'ui'] | [0].envFrom, `[]`))): 0

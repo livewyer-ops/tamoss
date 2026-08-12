@@ -27,26 +27,33 @@ Use native Chainsaw operations for Kubernetes state:
 - `patch` mutates Kubernetes resources when the mutation is the behaviour under
   test.
 - `wait` handles direct readiness and deletion waits.
-- `error` is preferred when the Kubernetes API is expected to reject an apply
-  or update.
+- `apply` with an `expect` check on `$error` proves that the Kubernetes API
+  rejected a submitted resource. The Chainsaw `error` operation only asserts
+  an error state; it does not submit the file and must not be used as an
+  admission test.
 
 Event names often include API-server generated suffixes; that is not a reason
 to use shell. Assert a partial `v1/Event` with the expected `reason` and
 `involvedObject` fields when the scenario only needs to prove that the Event
 exists.
 
-Scripts are reserved for behaviour native Chainsaw cannot express cleanly:
-`task` wrappers, API ingest, S3 read-back, database row checks, Authentik
-fixture probes, render-only Kustomize checks, recovery annotations, and
-before/after comparisons. Prefer native `patch` with `subresource: status` for
-straight status simulation when an absent provider controller is the only thing
-being simulated. When a scenario still needs a script for Kubernetes state, keep
-it narrow and leave a local comment explaining why the native form is not
-practical.
+Use Chainsaw operations in this order:
 
-Do not maintain a separate script inventory or script-style checker. The README
-is the source of truth for the script boundary, and script-heavy changes should
-be reviewed against this convention directly.
+1. Use `apply`, `create`, `patch`, `delete`, `wait`, `assert`, and `error` for
+   Kubernetes resources and controller convergence.
+2. Use `proxy` for read-only HTTP reachability checks served by a Kubernetes
+   Pod or Service.
+3. Use `command` only for an external system boundary, such as PostgreSQL, S3,
+   operator process configuration, a mutating API workflow, or a response-body
+   assertion that cannot use `proxy` because Chainsaw 0.2.15 does not propagate
+   proxy outputs.
+
+Inline `script` operations, shell entrypoints, shell pipelines, and `kubectl`
+polling are not allowed. A command at an external boundary must invoke one
+purpose-built executable directly and have an explicit Chainsaw `check`.
+Fixture containers follow the same rule: invoke `pg_isready`, `aws`, or the
+fixture programme directly and use Kubernetes Job retries or probes for
+convergence.
 
 Run against the current Kubernetes context:
 
@@ -63,12 +70,6 @@ task operator:e2e:chainsaw:nightly KUBECONFIG=/path/to/kubeconfig
 task operator:e2e:chainsaw:release KUBECONFIG=/path/to/kubeconfig
 ```
 
-Render-only tests do not need a Kubernetes cluster:
-
-```bash
-task operator:e2e:chainsaw:render
-```
-
 Create a disposable Kind cluster, build and load the operator image, apply the
 checked-in Chainsaw operator overlay, run the suite, and tear the cluster down:
 
@@ -82,9 +83,11 @@ CI uses the labelled Kind wrapper:
 task operator:e2e:chainsaw:ci:up
 ```
 
-The disposable run applies `operator/config/chainsaw`, which expects the stable
-local image tag `livewyer/tamoss-operator:chainsaw`. The wrapper builds or
-retags `OPERATOR_IMAGE` to that tag before loading it into Kind, so custom
+The disposable run renders `operator/config/chainsaw` with unrestricted local
+loading so its only base is the checked-in `deploy/operator/install.yaml`
+distribution. The overlay adds test-only operator settings and expects the
+stable local image tag `livewyer/tamoss-operator:chainsaw`. The wrapper builds
+or retags `OPERATOR_IMAGE` to that tag before loading it into Kind, so custom
 images remain possible without generated Kustomize overlays:
 
 ```bash
@@ -123,7 +126,7 @@ is the executable source of truth for label values and selector presets.
 
 | Label | Values |
 | --- | --- |
-| `test.tamoss.io/target` | `render`, `kind`, `deployed`, `external` |
+| `test.tamoss.io/target` | `kind`, `deployed`, `external` |
 | `test.tamoss.io/tier` | `smoke`, `standard`, `extended`, `release` |
 | `test.tamoss.io/domain` | `install`, `instance`, `storage`, `db`, `auth`, `routing`, `schema`, `profile`, `observability`, `operations` |
 | `test.tamoss.io/lifecycle` | `read-only`, `ephemeral`, `destructive` |
@@ -132,7 +135,6 @@ is the executable source of truth for label values and selector presets.
 
 | Command | Selection |
 | --- | --- |
-| `task operator:e2e:chainsaw:render` | `target=render` with `--no-cluster` |
 | `task operator:e2e:chainsaw:smoke` | Kind-backed smoke tests |
 | `task operator:e2e:chainsaw:ci` | Kind-backed smoke and standard tests, excluding external-provider tests |
 | `task operator:e2e:chainsaw:nightly` | Kind-backed smoke, standard, and extended tests |
@@ -193,11 +195,19 @@ kebab-case the heading, then add a matching test directory with an explicit
 even for single-file cases; it leaves room for local `resources/` and `assert/`
 files without flattening scenario ownership into `<scenario>.yaml` files.
 
+Chainsaw is the boundary test for behaviour that requires a real Kubernetes
+API server and controller loop: watches, convergence, Jobs, provider contracts,
+finalisers, recovery, isolation, and destructive lifecycle operations. Put
+pure validation, rendering, defaulting, and status permutations in Go unit or
+envtest coverage. Extend an existing lifecycle journey when a new assertion
+shares its setup and transition; do not add a scenario for each field or each
+previously observed defect.
+
 ## Operational Groups
 
-- `operator-install-distribution/` covers installing or rendering the operator
-  distribution itself, including the base install and optional monitoring
-  overlay shape.
+- `operator-install-distribution/` covers installing the operator distribution
+  and integrating it with external services. Static base and monitoring-overlay
+  renders are validated by `task operator:monitoring:check`.
 - `tamoss-instance-reconciliation/` covers single-instance CR rendering,
   validation, immutable fields, resource ownership, and update behaviour.
 - `tamoss-operational-behaviour/` covers cross-cutting day-two contracts such
@@ -212,6 +222,9 @@ files without flattening scenario ownership into `<scenario>.yaml` files.
   Authentik, including disabled auth and external OAuth/OIDC.
 - `database-schema-management/` covers schema migration state, gating, fixture
   loading, and terminal failure behaviour.
+- `ingest-lifecycle/` covers the release-critical `FlowProfile` to `IngestRun`
+  journey through the pinned TAMSin image, namespace-local input storage, TAMS
+  registration, and controller cleanup.
 - `profile-rendering/` covers profile-rendered Kubernetes shape without
   duplicating full Kind bootstrapping.
 

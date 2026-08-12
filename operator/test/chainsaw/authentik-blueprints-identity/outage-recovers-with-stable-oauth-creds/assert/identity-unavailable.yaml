@@ -3,5 +3,5 @@ kind: Tamoss
 metadata:
   name: tamoss
 (status.conditions[?type == 'IdentityReady'] | [0].status): "False"
-(status.conditions[?type == 'IdentityReady'] | [0].reason): AuthentikManagedBlueprintApplyFailed
+(status.conditions[?type == 'IdentityReady'] | [0].reason): AuthentikManagedBlueprintApplyRetrying
 (status.conditions[?type == 'Ready'] | [0].status): "False"

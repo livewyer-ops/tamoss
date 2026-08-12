@@ -4,7 +4,7 @@ metadata:
   name: schema-retry-recovers-terminal-failure
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: extended
+    test.tamoss.io/tier: release
     test.tamoss.io/domain: schema
     test.tamoss.io/lifecycle: ephemeral
     test.tamoss.io/provider: mixed
@@ -22,7 +22,7 @@ spec:
         - apply:
             file: ../../fixtures/rustfs.yaml
         - apply:
-            file: ../../database-schema-management/failed-migration-halts-after-three-attempts/resources/bad-postgresql-auth.yaml
+            file: resources/bad-postgresql-auth.yaml
         - assert:
             file: ../../fixtures/assert/postgresql-available.yaml
             timeout: 120s
@@ -33,7 +33,7 @@ spec:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
             timeout: 180s
         - apply:
-            file: ../../database-schema-management/failed-migration-halts-after-three-attempts/resources/tamoss.yaml
+            file: resources/tamoss.yaml
         - assert:
             file: assert/schema-terminal-failure.yaml
             timeout: 4m
@@ -54,17 +54,15 @@ spec:
         - assert:
             file: assert/schema-ready.yaml
             timeout: 5m
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: checks absence of stale failure keys after recovery.
-              if kubectl -n "$NAMESPACE" get configmap tamoss-schema-state -o jsonpath='{.data.failureCount}' | grep -q .; then
-                kubectl -n "$NAMESPACE" get configmap tamoss-schema-state -o yaml
-                exit 1
-              fi
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: tamoss-schema-state
+                namespace: ($namespace)
+              (contains(keys(data), 'failureCount')): false
+            timeout: 30s
         - assert:
             file: assert/schema-retry-accepted-event.yaml
             timeout: 1m

@@ -31,15 +31,15 @@ spec:
             file: assert/api-token-secret-present.yaml
         - assert:
             file: assert/api-deployment-present.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: captures the original rollout checksum for later comparison.
-              before="$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.metadata.annotations.checksum/api-token-secret}')"
-              kubectl -n "$NAMESPACE" create configmap token-checksum-snapshot --from-literal=before="$before"
+        - create:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: token-checksum-snapshot
+                namespace: ($namespace)
+              data:
+                before: (x_k8s_get($client, 'apps/v1', 'Deployment', $namespace, 'tamoss-api').spec.template.metadata.annotations."checksum/api-token-secret")
         - patch:
             resource:
               apiVersion: tamoss.livewyer.io/v1alpha1
@@ -53,23 +53,12 @@ spec:
                     token: user-supplied-token
         - assert:
             file: assert/explicit-token-secret.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: compares checksum values captured around the token change.
-              before="$(kubectl -n "$NAMESPACE" get configmap token-checksum-snapshot -o jsonpath='{.data.before}')"
-              end=$(($(date +%s) + 90))
-              while true; do
-                after="$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.metadata.annotations.checksum/api-token-secret}' 2>/dev/null || true)"
-                if [ "$before" != "$after" ] && [ -n "$after" ]; then
-                  exit 0
-                fi
-                if [ "$(date +%s)" -ge "$end" ]; then
-                  echo "timed out waiting for api token checksum change" >&2
-                  exit 1
-                fi
-                sleep 2
-              done
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: tamoss-api
+                namespace: ($namespace)
+              (spec.template.metadata.annotations."checksum/api-token-secret" != x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'token-checksum-snapshot').data.before): true
+            timeout: 90s

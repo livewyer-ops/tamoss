@@ -38,24 +38,25 @@ spec:
 
     - name: check api storage backend list
       try:
-        - script:
+        - command:
+            entrypoint: kubectl
             env:
               - name: NAMESPACE
                 value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: calls the TAMOSS API; Kubernetes readiness is asserted natively above.
-              kubectl -n "$NAMESPACE" exec deployment/tamoss-api -- python -c '
-              import json
-              import urllib.request
-
-              with urllib.request.urlopen("http://127.0.0.1:8000/service/storage-backends", timeout=10) as response:
-                  payload = json.load(response)
-
-              matches = [item for item in payload if item.get("id") == "11111111-1111-5111-8111-111111111111"]
-              if len(matches) != 1:
-                  raise SystemExit(f"expected one archive backend in API list, got {payload!r}")
-              backend = matches[0]
-              if backend.get("label") != "tamoss.us-east-1:s3:archive":
-                  raise SystemExit(f"unexpected archive backend label: {backend!r}")
-              '
+            args:
+              - -n
+              - $NAMESPACE
+              - exec
+              - deployment/tamoss-api
+              - --
+              - wget
+              - -qO-
+              - -T
+              - "10"
+              - http://127.0.0.1:8000/service/storage-backends
+            timeout: 30s
+            check:
+              ($error == null): true
+              (json_parse($stdout)[?id == '11111111-1111-5111-8111-111111111111'] | length(@)): 1
+              (json_parse($stdout)[?id == '11111111-1111-5111-8111-111111111111'].label):
+                - tamoss.us-east-1:s3:archive

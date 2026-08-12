@@ -4,7 +4,7 @@ metadata:
   name: tamoss-delete-cascades-to-tenant
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: standard
+    test.tamoss.io/tier: extended
     test.tamoss.io/domain: storage
     test.tamoss.io/lifecycle: destructive
     test.tamoss.io/provider: rustfs
@@ -25,14 +25,26 @@ spec:
 
     - name: simulate rustfs readiness and assert default storage backend
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: RustFS Tenant status is simulated because no RustFS controller is running in Chainsaw.
-              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: tamoss-s3
+                namespace: ($namespace)
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: tamoss-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
         - assert:
             file: assert/default-storagebackend-owned.yaml
             timeout: 120s

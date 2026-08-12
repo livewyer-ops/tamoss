@@ -54,9 +54,11 @@ spec:
           readinessProbe:
             exec:
               command:
-                - /bin/sh
-                - -ec
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+                - pg_isready
+                - -U
+                - tams
+                - -d
+                - tams
             periodSeconds: 2
             timeoutSeconds: 2
           volumeMounts:
@@ -139,9 +141,11 @@ spec:
           readinessProbe:
             exec:
               command:
-                - /bin/sh
-                - -ec
-                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+                - pg_isready
+                - -U
+                - tams
+                - -d
+                - tams
             periodSeconds: 2
             timeoutSeconds: 2
           volumeMounts:

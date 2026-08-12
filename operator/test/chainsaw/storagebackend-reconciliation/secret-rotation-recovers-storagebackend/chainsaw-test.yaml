@@ -36,9 +36,8 @@ spec:
             file: assert/missing-secret-event.yaml
             timeout: 1m
     # Creating the credentials Secret is the only action in this step. No
-    # reconcile-tamoss.sh tick or annotation nudge is allowed here: the
-    # StorageBackend must be re-enqueued by the controller itself once the
-    # Secret exists.
+    # A parent annotation nudge is not allowed here: the StorageBackend must be
+    # re-enqueued by the controller itself once the Secret exists.
     - name: create credentials secret and observe recovery
       try:
         - apply:

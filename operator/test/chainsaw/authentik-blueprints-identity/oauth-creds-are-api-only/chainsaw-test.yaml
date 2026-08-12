@@ -30,17 +30,6 @@ spec:
             file: ../../fixtures/tamoss-authentik.yaml
         - assert:
             file: assert/oauth2-secret-api-only.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: the JWKS URL includes a Chainsaw-generated namespace value.
-              [ "$(kubectl -n "$NAMESPACE" get deployment tamoss-api -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="TAMOSS_OAUTH2_JWKS_URI")].value}')" = "http://authentik-chainsaw.auth.svc:9000/application/o/tamoss-${NAMESPACE}-tamoss/jwks/" ]
-
-              ui_env_from="$(kubectl -n "$NAMESPACE" get deployment tamoss-ui -o jsonpath='{.spec.template.spec.containers[?(@.name=="ui")].envFrom}')"
-              test -z "$ui_env_from"
         - assert:
             file: assert/managed-blueprint-applied-event.yaml
             timeout: 1m

@@ -169,7 +169,9 @@ task_operator_chainsaw_apply_operator() {
   local kubeconfig="$1"
 
   kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/gateway-api-crds.yaml
-  kubectl --kubeconfig "$kubeconfig" apply --server-side -k operator/config/chainsaw
+  kubectl kustomize operator/config/chainsaw \
+    --load-restrictor=LoadRestrictionsNone | \
+    kubectl --kubeconfig "$kubeconfig" apply --server-side -f -
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \

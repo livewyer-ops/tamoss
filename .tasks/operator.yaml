@@ -152,30 +152,6 @@ tasks:
         CHAINSAW_ALLOWED_PROFILES="$(task_profiles_list)" \
           python3 .tasks/lib/chainsaw_labels.py validate operator/test/chainsaw
 
-  e2e:chainsaw:render:
-    silent: true
-    vars:
-      CHAINSAW_BIN: '{{default "chainsaw" .CHAINSAW_BIN}}'
-      CHAINSAW_TESTS: '{{default "operator/test/chainsaw" .CHAINSAW_TESTS}}'
-      REPORT_PATH: '{{default "reports" .REPORT_PATH}}'
-      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=render" .CHAINSAW_SELECTOR}}'
-    cmds:
-      - task: e2e:chainsaw:labels
-      - |
-        set -euo pipefail
-        . .tasks/lib/progress.sh
-        mkdir -p "{{.REPORT_PATH}}"
-        printf 'test operator.chainsaw.render\n'
-        CHAINSAW_CMD="$(task_resolve_aqua_binary "{{.CHAINSAW_BIN}}")"
-        set -- test "{{.CHAINSAW_TESTS}}" \
-          --config operator/test/chainsaw/configuration.yaml \
-          --report-name junit-operator-chainsaw-render \
-          --report-format JUNIT-TEST \
-          --report-path "{{.REPORT_PATH}}" \
-          --no-cluster \
-          --selector "{{.CHAINSAW_SELECTOR}}"
-        ${CHAINSAW_CMD} "$@" {{.CLI_ARGS}}
-
   e2e:chainsaw:smoke:
     silent: true
     requires:
@@ -401,6 +377,8 @@ tasks:
         msg: "kubectl required"
       - sh: command -v rg
         msg: "rg required"
+      - sh: command -v yq
+        msg: "yq required"
     cmds:
       - |
         set -euo pipefail
@@ -416,8 +394,10 @@ tasks:
           exit 1
         fi
         rg -q '^#- \.\./prometheus$' operator/config/default/kustomization.yaml
-        rg -q '^kind: ServiceMonitor$' "$monitoring_rendered"
-        rg -q '^kind: PrometheusRule$' "$monitoring_rendered"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1")] | length' "$base_rendered")" = "0"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1" and .kind == "ServiceMonitor")] | length' "$monitoring_rendered")" = "1"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1" and .kind == "PrometheusRule")] | length' "$monitoring_rendered")" = "1"
+        test "$(yq ea '[select(.kind == "PrometheusRule") | .spec.groups[].rules[] | select(.alert == "TAMOSSReconcileErrors")] | length' "$monitoring_rendered")" = "1"
         rg -Fq 'tamoss_schema_migrations_total{result="failed"}' "$monitoring_rendered"
         rg -Fq 'tamoss_reconcile_phase_count' "$monitoring_rendered"
         rg -Fq 'tamoss_operator_schema_version' "$monitoring_rendered"

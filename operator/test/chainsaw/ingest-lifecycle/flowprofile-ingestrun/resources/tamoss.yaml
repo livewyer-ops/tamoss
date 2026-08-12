@@ -1,0 +1,87 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  profile: local-kind
+  fullnameOverride: tamoss
+  publicEndpoint:
+    baseDomain: chainsaw.local
+    tlsSecretName: ingest-proxy-tls
+  ingress:
+    annotations:
+      cert-manager.io/issuer: ingest-selfsigned
+    tls:
+      - secretName: ingest-proxy-tls
+        hosts:
+          - tamoss-api-proxy
+    api:
+      host: tamoss-api-proxy
+    ui:
+      web:
+        host: tamoss-ui-proxy
+  auth:
+    providedBy: none
+    required: false
+  api:
+    enabled: true
+    replicaCount: 1
+    image:
+      repository: livewyer/tamoss-api
+      tag: dev
+      pullPolicy: IfNotPresent
+  worker:
+    enabled: false
+    replicaCount: 0
+  ui:
+    enabled: false
+    replicaCount: 0
+  console:
+    enabled: false
+    replicaCount: 0
+  backends:
+    db:
+      providedBy: external
+      applyFixtures: false
+      external:
+        host: postgresql
+        port: "5432"
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        region: us-east-1
+        bucket: tamoss
+        auth:
+          existingSecret: tams-rustfs-auth
+          secretKeys:
+            accessKey: RUSTFS_ACCESS_KEY
+            secretKey: RUSTFS_SECRET_KEY
+  ingest:
+    sourcePolicy:
+      mode: Restricted
+    sources:
+      - name: fixture-s3
+        kind: S3
+        s3:
+          endpoint: (join('', ['https://rustfs-tls.', $namespace, '.svc.cluster.local']))
+          region: us-east-1
+          bucket: tamoss
+          keyPrefixes:
+            - input/
+          pathStyle: true
+          allowPrivateAddresses: true
+          credentialSecretRef:
+            name: ingest-source-credentials
+  networkPolicy:
+    enabled: false

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-oauth-schema-state
+data:
+  appliedVersion: "0.0.1"
+  fixturesApplied: "false"

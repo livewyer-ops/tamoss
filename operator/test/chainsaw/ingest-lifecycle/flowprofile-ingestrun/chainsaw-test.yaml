@@ -1,0 +1,148 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flowprofile-ingestrun-registers-profiled-flow
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: release
+    test.tamoss.io/domain: operations
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: local-kind
+spec:
+  timeouts:
+    exec: 12m
+  steps:
+    - name: prepare the store and namespace-local input
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            file: ../../fixtures/assert/postgresql-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-available.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-bucket-ready.yaml
+        - apply:
+            file: resources/tls-proxies.yaml
+        - apply:
+            file: resources/input-fixture.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: upload-ingest-fixture
+            timeout: 3m
+            for:
+              condition:
+                name: Complete
+                value: "true"
+
+    - name: reconcile a runnable local instance
+      try:
+        - apply:
+            file: resources/tamoss.yaml
+        - apply:
+            file: resources/storagebackend.yaml
+        - assert:
+            file: assert/storagebackend-ready.yaml
+            timeout: 5m
+        - assert:
+            file: assert/tamoss-ready.yaml
+            timeout: 6m
+        - wait:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: ingest-tls-proxies
+            timeout: 3m
+            for:
+              condition:
+                name: Available
+                value: "true"
+
+    - name: register the TAMS Flow Profile
+      try:
+        - apply:
+            file: resources/flowprofile.yaml
+        - assert:
+            file: assert/flowprofile-ready.yaml
+            timeout: 5m
+
+    - name: ingest through the resolved profile
+      try:
+        - apply:
+            file: resources/ingestrun.yaml
+        - assert:
+            file: assert/ingestrun-succeeded.yaml
+            timeout: 10m
+        - assert:
+            file: assert/tamsin-job-uses-release.yaml
+            timeout: 2m
+        - command:
+            entrypoint: kubectl
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+              - name: FLOW_ID
+                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'IngestRun', $namespace, 'profiled-ingest').status.output.rootFlowID)
+              - name: PROFILE_ID
+                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-timed-text').status.profileID)
+            args:
+              - -n
+              - $NAMESPACE
+              - exec
+              - deployment/postgresql
+              - --
+              - psql
+              - -U
+              - tams
+              - -d
+              - tams
+              - -At
+              - -c
+              - "SELECT count(*) FROM tamoss_flows WHERE id = '$FLOW_ID'::uuid AND profile_id = '$PROFILE_ID'::uuid AND label = 'Chainsaw profiled timed text';"
+            timeout: 30s
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "1"
+        - command:
+            entrypoint: kubectl
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+              - name: PROFILE_ID
+                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-timed-text').status.profileID)
+            args:
+              - -n
+              - $NAMESPACE
+              - exec
+              - deployment/postgresql
+              - --
+              - psql
+              - -U
+              - tams
+              - -d
+              - tams
+              - -At
+              - -c
+              - "SELECT count(*) FROM tamoss_profiles WHERE id = '$PROFILE_ID'::uuid AND label = 'Chainsaw timed text';"
+            timeout: 30s
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "1"
+      finally:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: IngestRun
+              name: profiled-ingest
+            timeout: 120s
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: tamoss
+            timeout: 180s
