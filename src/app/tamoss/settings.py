@@ -169,8 +169,18 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
 
-    service_name: str = "TAMOSS"
-    service_description: str = "Time Addressable Media Open Source Store"
+    service_name: str = Field(
+        default="TAMOSS",
+        validation_alias="TAMOSS_SERVICE_NAME",
+    )
+    service_description: str = Field(
+        default="Time Addressable Media Open Source Store",
+        validation_alias="TAMOSS_SERVICE_DESCRIPTION",
+    )
+    service_identity_managed: bool = Field(
+        default=False,
+        validation_alias="TAMOSS_SERVICE_IDENTITY_MANAGED",
+    )
     tamoss_version: str = Field(
         default=TAMOSS_VERSION,
         validation_alias="TAMOSS_VERSION",

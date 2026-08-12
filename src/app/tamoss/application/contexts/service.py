@@ -6,6 +6,7 @@ from typing import Any
 from tamoss.contract.payloads import JsonPayload, without_none
 from tamoss.domain.model import ServiceMetadata, StorageBackend
 from tamoss.domain.pagination import Page
+from tamoss.errors import Forbidden
 from tamoss.ports.repositories import ServiceRepository
 from tamoss.settings import Settings
 
@@ -27,7 +28,14 @@ class ServiceUseCases:
         return ["service", "flows", "sources", "objects", "flow-delete-requests"]
 
     def service_info(self) -> JsonPayload:
-        metadata = self.repository.get_service_metadata()
+        # Operator-managed identity ignores any stored metadata, so a value set
+        # through the API before the Tamoss resource claimed identity cannot
+        # shadow the declared one.
+        metadata = (
+            None
+            if self.settings.service_identity_managed
+            else self.repository.get_service_metadata()
+        )
         info = {
             "type": "urn:x-tams:service.tamoss",
             "api_version": self.settings.api_version,
@@ -43,6 +51,11 @@ class ServiceUseCases:
         return without_none(info)
 
     def update_service_info(self, update: Mapping[str, Any]) -> None:
+        if self.settings.service_identity_managed:
+            raise Forbidden(
+                "Forbidden. Service identity is managed by the Tamoss resource. "
+                "Update spec.serviceIdentity and reapply."
+            )
         self.repository.save_service_metadata(
             ServiceMetadata(
                 name=update.get("name") or None,

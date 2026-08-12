@@ -40,6 +40,14 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			"TAMOSS_FORWARD_AUTH_GROUP_BINDINGS",
 		)
 	}
+	if identity := tamoss.Spec.ServiceIdentity; identity.IsManaged() {
+		env = append(env, serviceIdentityEnv(identity)...)
+		excludedEnv = append(excludedEnv,
+			"TAMOSS_SERVICE_IDENTITY_MANAGED",
+			"TAMOSS_SERVICE_NAME",
+			"TAMOSS_SERVICE_DESCRIPTION",
+		)
+	}
 	env = append(env, literalEnv(tamoss.Spec.API.Env, excludedEnv...)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.API.WorkloadCommonSpec, tamoss)
 	spec = withForwardAuthProofVolume(spec, tamoss, ForwardAuthAPIProofSecretKey)

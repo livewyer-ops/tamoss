@@ -263,6 +263,9 @@ spec:
   profile: $profile
   publicEndpoint:
     baseDomain: $domain
+  # serviceIdentity:
+  #   name: Newsroom Archive
+  #   description: Long-form newsroom archive, retained for 12 months.
 YAML
 
   yq -i ".resources += [\"$instance.yaml\"]" "$kustomization"

@@ -21,6 +21,14 @@ type TamossSpec struct {
 	// PublicEndpoint defines the public DNS defaults used by profile defaulting.
 	PublicEndpoint PublicEndpointSpec `json:"publicEndpoint,omitempty"`
 
+	// ServiceIdentity sets the human-readable name and description this
+	// instance advertises on the TAMS `/service` endpoint. Setting either field
+	// makes identity operator-managed: the API serves these values and rejects
+	// `POST /service`. Leaving both empty keeps identity settable through the
+	// API. This is unrelated to the Tamoss resource name, which is a Kubernetes
+	// object name.
+	ServiceIdentity ServiceIdentitySpec `json:"serviceIdentity,omitempty"`
+
 	NameOverride     string `json:"nameOverride,omitempty"`
 	FullnameOverride string `json:"fullnameOverride,omitempty"`
 
@@ -88,6 +96,19 @@ type PublicEndpointSpec struct {
 	TLSSecretName string `json:"tlsSecretName,omitempty"`
 	// S3TLSSecretName is the default TLS Secret for managed S3 public routes.
 	S3TLSSecretName string `json:"s3TLSSecretName,omitempty"`
+}
+
+// ServiceIdentitySpec is the editorial identity advertised on `/service`.
+// It describes what the store holds or who owns it, and changes on a different
+// cadence to the deployment itself.
+type ServiceIdentitySpec struct {
+	// Name is a very short human-readable label shown in listings of TAMS
+	// service instances, such as "Reuters External".
+	//+kubebuilder:validation:MaxLength=64
+	Name string `json:"name,omitempty"`
+	// Description is a longer explanation shown in detailed views.
+	//+kubebuilder:validation:MaxLength=1024
+	Description string `json:"description,omitempty"`
 }
 
 type AdvancedSpec struct {

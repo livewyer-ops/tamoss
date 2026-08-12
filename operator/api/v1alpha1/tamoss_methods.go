@@ -59,6 +59,10 @@ func (s TamossSpec) ConsoleEnabled() bool {
 	return s.Console.IsEnabled()
 }
 
+func (s ServiceIdentitySpec) IsManaged() bool {
+	return s.Name != "" || s.Description != ""
+}
+
 func (w WorkloadCommonSpec) DesiredReplicaCount() int32 {
 	return int32Value(w.ReplicaCount, 1)
 }

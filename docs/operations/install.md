@@ -180,6 +180,123 @@ environment. Pass `INSTANCE=<name>` to work with one:
 task env:summary ENV=<env> INSTANCE=prod-a KUBECONFIG="$KUBECONFIG"
 ```
 
+## Service Identity
+
+Each instance advertises a human-readable `name` and `description` on
+`GET /service`. Clients that connect to several TAMS stores display these in
+their store listings, so they are how a reader tells one instance from another.
+
+Both fall back to `TAMOSS` and `Time Addressable Media Open Source Store` on
+every install. Set them per instance whenever a cluster hosts more than one
+instance, or whenever the store is reached by a federated client — otherwise
+every store in the listing reports the same name. Describe the content or the
+owning organisation rather than the deployment.
+
+Service identity is not the `Tamoss` resource name. The resource name is a
+Kubernetes object name, fixed at install and restricted to lowercase
+alphanumerics and hyphens; service identity is free text, may contain spaces
+and capitals, and changes whenever the store's remit changes.
+
+### Declare it on the Tamoss resource
+
+Every generated manifest carries `serviceIdentity` commented out. Uncomment it
+and set the values:
+
+```yaml
+spec:
+  serviceIdentity:
+    name: Newsroom Archive
+    description: Long-form newsroom archive, retained for 12 months.
+```
+
+This is an edit to a file the install flow already asks you to open, so it adds
+no step:
+
+```bash
+task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+$EDITOR deploy/environments/my-prod/platform-values.yaml
+$EDITOR deploy/environments/my-prod/tamoss-patch.yaml     # identity goes here
+task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+```
+
+Set it during that first edit where you can. An instance applied without
+identity advertises the default name until it is set, and a federated client
+that reads `/service` on first contact may cache that placeholder.
+
+Changing identity later is the same edit followed by `task env:apply`. The
+operator republishes the value and rolls the API Deployment; no restart step is
+needed. Other entry points follow the same shape:
+
+| Path | Edit | Then |
+| --- | --- | --- |
+| Local Kind | `deploy/instances/local-kind/tamoss.yaml` | `task kind:up PROFILE=local-kind` |
+| Extra instance | `deploy/environments/<env>/<instance>.yaml` | `task env:apply ENV=<env>` |
+
+Because identity is part of the instance manifest, it is version-controlled
+with the rest of the environment, reproduced by a rebuild from scratch, and the
+commit history records who changed it and why.
+
+Setting either field makes identity operator-managed. The API then serves the
+declared values and answers `POST /service` with `403`, so a value set through
+the API cannot silently shadow the manifest. Omitting a field keeps its
+built-in default rather than advertising an empty string, so an instance may
+declare only a name.
+
+### Instances that do not declare identity
+
+While `spec.serviceIdentity` is empty, identity stays settable through the
+API. `task env:summary` prints the API URL and token for the instance:
+
+```bash
+task env:summary ENV=<env> INSTANCE=<name> KUBECONFIG="$KUBECONFIG"
+
+curl -X POST "https://api.<domain>/service" \
+  -H "Authorization: Bearer <API Token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Reuters External",
+       "description":"External-facing wire content, retained for 90 days."}'
+```
+
+`POST /service` replaces both fields rather than patching them. Always send
+`name` and `description` together: an omitted field is cleared and reverts to
+its default. Confirm the result with:
+
+```bash
+curl -s "https://api.<domain>/service" -H "Authorization: Bearer <API Token>"
+```
+
+Prefer `spec.serviceIdentity` for anything long-lived. A value set this way
+lives only in the database, so it is not reproduced when the environment is
+rebuilt from the codebase.
+
+To automate this path in a pipeline, read both inputs from the cluster rather
+than parsing the summary output. The API URL is published on the resource
+status, and the token is stored in `<resource-name>-api-token` under the
+`TAMOSS_API_TOKEN` key:
+
+```bash
+API="$(kubectl -n "$NS" get tamoss "$NAME" -o jsonpath='{.status.endpoints.api}')"
+TOKEN="$(kubectl -n "$NS" get secret "${NAME}-api-token" \
+  -o jsonpath='{.data.TAMOSS_API_TOKEN}' | base64 --decode)"
+
+curl -fsS -X POST "${API%/}/service" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @service-identity.json
+```
+
+Run it after `task env:wait`, and keep the payload in a file so both fields are
+always sent together. Re-running converges on the file's contents.
+
+### Why this is not set from the web UI
+
+The web UI shows service identity read-only. The UI proxies `/api/` with only
+`GET`, `HEAD`, and `OPTIONS` permitted, and forward-auth browser identities are
+read-only at the API, so identity is declared on the resource or set with an
+operator credential rather than from a browser session. The static API token
+above is accepted as issued; an OAuth2 token needs the admin scope.
+
 ## Environment Secrets
 
 The platform Authentik flow needs no secrets in the environment files: when

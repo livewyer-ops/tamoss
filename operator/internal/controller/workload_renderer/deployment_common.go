@@ -142,6 +142,17 @@ func withStorageBackendCredentialsVolume(spec tamossv1alpha1.WorkloadCommonSpec,
 	return next
 }
 
+func serviceIdentityEnv(identity tamossv1alpha1.ServiceIdentitySpec) []corev1.EnvVar {
+	env := []corev1.EnvVar{{Name: "TAMOSS_SERVICE_IDENTITY_MANAGED", Value: "true"}}
+	if identity.Name != "" {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_SERVICE_NAME", Value: identity.Name})
+	}
+	if identity.Description != "" {
+		env = append(env, corev1.EnvVar{Name: "TAMOSS_SERVICE_DESCRIPTION", Value: identity.Description})
+	}
+	return env
+}
+
 func authEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
 	oauth2 := tamoss.Spec.Auth.OAuth2Config(tamoss.Namespace, tamoss.Name)
 	trustForwardAuth := tamoss.Spec.Auth.TrustForwardAuthHeaders || forwardAuthEnabled(tamoss)

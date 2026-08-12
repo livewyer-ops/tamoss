@@ -11483,6 +11483,27 @@ spec:
                   name:
                     type: string
                 type: object
+              serviceIdentity:
+                description: |-
+                  ServiceIdentity sets the human-readable name and description this
+                  instance advertises on the TAMS `/service` endpoint. Setting either field
+                  makes identity operator-managed: the API serves these values and rejects
+                  `POST /service`. Leaving both empty keeps identity settable through the
+                  API. This is unrelated to the Tamoss resource name, which is a Kubernetes
+                  object name.
+                properties:
+                  description:
+                    description: Description is a longer explanation shown in detailed
+                      views.
+                    maxLength: 1024
+                    type: string
+                  name:
+                    description: |-
+                      Name is a very short human-readable label shown in listings of TAMS
+                      service instances, such as "Reuters External".
+                    maxLength: 64
+                    type: string
+                type: object
               ui:
                 default:
                   image:

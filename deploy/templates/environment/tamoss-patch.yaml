@@ -7,3 +7,6 @@ spec:
   profile: __PROFILE__
   publicEndpoint:
     baseDomain: __DOMAIN__
+  # serviceIdentity:
+  #   name: Newsroom Archive
+  #   description: Long-form newsroom archive, retained for 12 months.
