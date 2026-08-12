@@ -65,8 +65,7 @@
   padding: 16px;
 }
 
-.button,
-.iconButton {
+.button {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
@@ -86,19 +85,12 @@
   padding: 6px 11px;
 }
 
-.iconButton {
-  width: 34px;
-  padding: 0;
-}
-
-.button:hover,
-.iconButton:hover {
+.button:hover {
   border-color: #87959b;
   background: var(--surface-soft);
 }
 
-.button:disabled,
-.iconButton:disabled {
+.button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -120,8 +112,7 @@
 }
 
 .input,
-.select,
-.textarea {
+.select {
   min-height: 34px;
   border: 1px solid var(--line-strong);
   border-radius: 5px;
@@ -130,8 +121,7 @@
   font-size: 0.8125rem;
 }
 
-.input,
-.textarea {
+.input {
   padding: 6px 9px;
 }
 
@@ -139,20 +129,8 @@
   padding: 5px 28px 5px 9px;
 }
 
-.input::placeholder,
-.textarea::placeholder {
+.input::placeholder {
   color: var(--subtle);
-}
-
-.field {
-  display: grid;
-  gap: 5px;
-}
-
-.fieldLabel {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .badge {
@@ -297,7 +275,6 @@
 }
 
 .grid2,
-.grid3,
 .grid4 {
   display: grid;
   gap: 14px;
@@ -305,10 +282,6 @@
 
 .grid2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.grid3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .grid4 {
@@ -386,7 +359,6 @@
     width: 100%;
   }
 
-  .grid3,
   .grid4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -394,7 +366,6 @@
 
 @media (max-width: 620px) {
   .grid2,
-  .grid3,
   .grid4 {
     grid-template-columns: 1fr;
   }

@@ -12,7 +12,7 @@ they name rather than repeating the hex:
 - Borders — `--line`, `--line-strong`
 - Surfaces — `--surface`, `--surface-soft`
 - Navigation chrome — `--nav`, `--nav-hover`
-- Action and focus — `--accent`, `--accent-soft`, `--focus`
+- Action and focus — `--accent`, `--focus`
 - Status, each with a soft background pair — `--danger`, `--warning`,
   `--success`, `--info`
 

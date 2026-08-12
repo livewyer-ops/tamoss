@@ -71,7 +71,3 @@ export function truncateId(id: string, chars = 8): string {
   if (id.length <= chars) return id;
   return `${id.substring(0, chars)}...`;
 }
-
-export function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text);
-}

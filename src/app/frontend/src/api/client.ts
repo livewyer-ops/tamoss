@@ -22,7 +22,6 @@ import type {
   StorageAllocation,
   StorageAllocationOptions,
   StorageBackend,
-  UpdateServiceInfo,
   WebhookDetail,
   WebhookWritePayload,
 } from "@/types/tams";
@@ -93,17 +92,6 @@ export class TamossApiClient extends ApiTransport {
     return this.requestText("/healthz");
   }
 
-  async getRootPaths(): Promise<string[]> {
-    return this.request<string[]>("/");
-  }
-
-  async updateServiceInfo(payload: UpdateServiceInfo): Promise<void> {
-    return this.request<void>("/service", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  }
-
   async getStorageBackends(): Promise<StorageBackend[]> {
     return this.request<StorageBackend[]>("/service/storage-backends");
   }
@@ -130,48 +118,6 @@ export class TamossApiClient extends ApiTransport {
     return this.request<Profile>(path`/service/profiles/${profileId}`);
   }
 
-  async getSourceTags(
-    sourceId: string,
-  ): Promise<Record<string, string | string[]>> {
-    return this.request<Record<string, string | string[]>>(
-      path`/sources/${sourceId}/tags`,
-    );
-  }
-
-  async updateSourceTag(
-    sourceId: string,
-    name: string,
-    value: string,
-  ): Promise<void> {
-    return this.request<void>(path`/sources/${sourceId}/tags/${name}`, {
-      method: "PUT",
-      body: JSON.stringify(value),
-    });
-  }
-
-  async deleteSourceTag(sourceId: string, name: string): Promise<void> {
-    return this.request<void>(path`/sources/${sourceId}/tags/${name}`, {
-      method: "DELETE",
-    });
-  }
-
-  async updateSourceLabel(sourceId: string, label: string): Promise<void> {
-    return this.request<void>(path`/sources/${sourceId}/label`, {
-      method: "PUT",
-      body: JSON.stringify(label),
-    });
-  }
-
-  async updateSourceDescription(
-    sourceId: string,
-    description: string,
-  ): Promise<void> {
-    return this.request<void>(path`/sources/${sourceId}/description`, {
-      method: "PUT",
-      body: JSON.stringify(description),
-    });
-  }
-
   async getFlows(
     params?: FlowListParams,
     options?: ApiRequestOptions,
@@ -185,13 +131,6 @@ export class TamossApiClient extends ApiTransport {
     options: ApiRequestOptions = {},
   ): Promise<Flow> {
     return this.request<Flow>(path`/flows/${flowId}`, options, params);
-  }
-
-  async updateFlow(flowId: string, data: Partial<Flow>): Promise<Flow> {
-    return this.request<Flow>(path`/flows/${flowId}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
   }
 
   async deleteFlow(flowId: string): Promise<DeletionRequest | undefined> {
@@ -219,49 +158,6 @@ export class TamossApiClient extends ApiTransport {
     });
   }
 
-  async deleteFlowTag(flowId: string, name: string): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/tags/${name}`, {
-      method: "DELETE",
-    });
-  }
-
-  async updateFlowLabel(flowId: string, label: string): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/label`, {
-      method: "PUT",
-      body: JSON.stringify(label),
-    });
-  }
-
-  async updateFlowDescription(
-    flowId: string,
-    description: string,
-  ): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/description`, {
-      method: "PUT",
-      body: JSON.stringify(description),
-    });
-  }
-
-  async updateFlowAvgBitRate(
-    flowId: string,
-    avgBitRate: number,
-  ): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/avg_bit_rate`, {
-      method: "PUT",
-      body: JSON.stringify(avgBitRate),
-    });
-  }
-
-  async updateFlowMaxBitRate(
-    flowId: string,
-    maxBitRate: number,
-  ): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/max_bit_rate`, {
-      method: "PUT",
-      body: JSON.stringify(maxBitRate),
-    });
-  }
-
   async getFlowCollection(
     flowId: string,
     options: ApiRequestOptions = {},
@@ -279,13 +175,6 @@ export class TamossApiClient extends ApiTransport {
     return this.request<void>(path`/flows/${flowId}/flow_collection`, {
       method: "PUT",
       body: JSON.stringify(items),
-    });
-  }
-
-  async setFlowReadOnly(flowId: string, readOnly: boolean): Promise<void> {
-    return this.request<void>(path`/flows/${flowId}/read_only`, {
-      method: "PUT",
-      body: JSON.stringify(readOnly),
     });
   }
 
@@ -376,22 +265,6 @@ export class TamossApiClient extends ApiTransport {
     return this.request<WebhookDetail>("/service/webhooks", {
       method: "POST",
       body: JSON.stringify(payload),
-    });
-  }
-
-  async updateWebhook(
-    webhookId: string,
-    payload: Partial<WebhookWritePayload>,
-  ): Promise<WebhookDetail> {
-    return this.request<WebhookDetail>(path`/service/webhooks/${webhookId}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-  }
-
-  async deleteWebhook(webhookId: string): Promise<void> {
-    return this.request<void>(path`/service/webhooks/${webhookId}`, {
-      method: "DELETE",
     });
   }
 

@@ -7,12 +7,9 @@ import { useEffect } from "react";
 import { config } from "@/config";
 import type { components, operations } from "@/control/generated/openapi";
 
-export type RuntimeCondition =
-  components["schemas"]["RuntimeInstanceCondition"];
 export type RuntimeResourceCondition =
   components["schemas"]["RuntimeResourceCondition"];
 export type RuntimeServicePort = components["schemas"]["RuntimeServicePort"];
-export type RuntimeService = components["schemas"]["RuntimeService"];
 export type RuntimeEndpointSlicePort =
   components["schemas"]["RuntimeEndpointSlicePort"];
 export type RuntimeEndpointSlice =

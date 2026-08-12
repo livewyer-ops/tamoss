@@ -13,8 +13,6 @@ export const INGEST_RUN_PHASES = [
   "Cancelled",
 ] as const satisfies readonly IngestRunPhase[];
 
-export type IngestRunProgress = components["schemas"]["IngestRunProgress"];
-export type IngestRunSummary = components["schemas"]["IngestRunSummary"];
 export type IngestRunCondition = components["schemas"]["IngestRunCondition"];
 export type IngestRunDetail =
   operations["getIngestRun"]["responses"][200]["content"]["application/json"];
