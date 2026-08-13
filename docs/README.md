@@ -75,6 +75,8 @@ then stay on the matching install, configuration, usage, and operations path.
 - [Development Workflow](development/contributing.md) - local product
   development.
 - [Testing](development/testing.md) - local, operator, and deployed gates.
+- [Releases](development/releases.md) - version scheme and the tag-driven
+  release process.
 
 Docs are maintained as raw Markdown. Revisit a static site generator only if the
 documentation set grows beyond roughly 50 maintained pages or Markdown
