@@ -1,0 +1,87 @@
+name: Adopter listing
+description: Tell us your organisation is using TAMOSS, and a maintainer will add you to ADOPTERS.md
+title: "adopter: "
+labels: ["adopter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for using TAMOSS. Fill this in, and a maintainer will add your row to
+        [ADOPTERS.md](https://github.com/livewyer-ops/tamoss/blob/main/ADOPTERS.md)
+        for you. No pull request needed.
+
+        Issues are public. Only include details you are happy to publish, and no
+        hostnames, credentials, or deployment specifics you would keep out of a
+        public bug report.
+  - type: input
+    attributes:
+      label: Organisation
+      description: The name to show in the adopters table.
+      placeholder: Acme Media
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Website
+      description: Your organisation's main website.
+      placeholder: https://example.com
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: How you use TAMOSS
+      description: Your relationship to the store. You run one, you build a client that talks to one, or you provide the object storage underneath.
+      options:
+        - Running a TAMS store
+        - Client integration
+        - Storage backend
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Status
+      description: If you run TAMOSS yourself, how far along is your deployment? Leave blank if you do not run it.
+      options:
+        - Evaluating
+        - Non-production
+        - Production
+    validations:
+      required: false
+  - type: checkboxes
+    attributes:
+      label: Profile
+      description: If you run TAMOSS yourself, which deployment profiles? Select all that apply.
+      options:
+        - label: local-kind
+        - label: edge
+        - label: single-server
+        - label: multi-server
+  - type: input
+    attributes:
+      label: Using since
+      description: Roughly when you started using TAMOSS.
+      placeholder: June 2026
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: What you use it for
+      description: One or two sentences of context for the maintainers. Not published in the table.
+      placeholder: We run TAMOSS as the media store behind our archive ingest pipeline.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Public contact
+      description: Optional. A team alias or GitHub handle is fine, no need for a named person.
+      placeholder: "@acme-platform"
+    validations:
+      required: false
+  - type: checkboxes
+    attributes:
+      label: Consent
+      options:
+        - label: I am authorised to list my organisation publicly.
+          required: true
+        - label: I consent to our name and logo appearing on LiveWyer's website, in the adopters section, and in the rotating logo carousel.
+          required: true
