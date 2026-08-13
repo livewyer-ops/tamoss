@@ -237,6 +237,7 @@ URLs in public issues.
 ## Getting help
 
 - Bugs and feature requests: [GitHub Issues](https://github.com/livewyer-ops/tamoss/issues)
+- Chat: the `#tamoss` Slack channel, invite in [SUPPORT.md](SUPPORT.md)
 - Questions: [GitHub Discussions](https://github.com/livewyer-ops/tamoss/discussions)
 - Security disclosure: [SECURITY.md](SECURITY.md)
 
