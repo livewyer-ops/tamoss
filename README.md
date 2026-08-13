@@ -153,6 +153,7 @@ See [Development Workflow](docs/development/contributing.md) and
 ## Community
 
 - Bug reports and feature requests: [GitHub Issues](https://github.com/livewyer-ops/tamoss/issues)
+- Chat: [#tamoss in the Cloud Native Agile Production Slack](https://join.slack.com/t/cnap-media/shared_invite/zt-46so866cy-YstgGBzIgcA6U1c3J1Rg1g)
 - Discussions: [GitHub Discussions](https://github.com/livewyer-ops/tamoss/discussions)
 - Security vulnerabilities: see [SECURITY.md](SECURITY.md)
 
