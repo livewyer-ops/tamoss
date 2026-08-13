@@ -22,7 +22,7 @@ tasks:
     desc: "Validation: exercise the pinned TAMSin release asset and event contract"
     silent: true
     vars:
-      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41
+      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.3@sha256:f764e26601561b8652d80ff34c16ff50598a09fb8735204c65bbf26b62a6e709
       EVENT_DIR: '{{.ROOT_DIR}}/reports/tamsin-release-events'
     preconditions:
       - sh: command -v docker
@@ -35,7 +35,7 @@ tasks:
       - docker pull '{{.TAMSIN_IMAGE}}'
       - |
         version="$(docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --version)"
-        test "$version" = "tamsin version 1.0.0-rc.1 (d3cb68388ce02bf64c1dae899a1a2c2cfb4a5ac7, 2026-08-12T02:26:12Z)"
+        test "$version" = "tamsin version 1.0.0-rc.3 (fe717546e9169b54a3cdfb4c28b552de707580c1, 2026-08-12T20:21:44Z)"
         printf '%s\n' "$version" > '{{.EVENT_DIR}}/version.txt'
       - |
         docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --format json profiles > '{{.EVENT_DIR}}/profiles.json'

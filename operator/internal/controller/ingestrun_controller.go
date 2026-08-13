@@ -882,7 +882,7 @@ func ingestResultRequiredForPhase(phase tamossv1alpha1.IngestRunPhase) bool {
 // ingestResultVerificationRequired reports whether a recorded durable result
 // must pass digest verification before the run is believed.
 //
-// TAMSin v1.0.0-rc.1 publishes a complete, versioned terminal event stream but
+// TAMSin v1.0.0-rc.3 publishes a complete, versioned terminal event stream but
 // does not publish a separate durable result artefact. Demanding such an
 // artefact unconditionally would make success unreachable for every run.
 // TAMSin's own --verify pass still reads back and checks each uploaded Media

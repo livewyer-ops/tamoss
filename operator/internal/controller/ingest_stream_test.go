@@ -57,7 +57,7 @@ func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string 
 		}
 	}
 	emit(nil, ingestevent.Hello{
-		ToolVersion: "1.0.0-rc.1", ToolCommit: "d3cb6838", ResultSchemaVersion: "2.1",
+		ToolVersion: "1.0.0-rc.3", ToolCommit: "fe717546", ResultSchemaVersion: "2.1",
 		ProfilePolicyVersion: "1", MaxEventBytes: ingestevent.DefaultMaxEventBytes,
 		Capabilities: []string{"terminal_results", "tams_flow_profiles"},
 	})

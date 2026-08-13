@@ -8,7 +8,7 @@ the temporary Kubernetes workload that performs the work.
 
 The public resource is `IngestRun`. After validating its immutable intent, the
 operator creates a fixed-purpose
-[TAMSin v1.0.0-rc.1](https://github.com/livewyer-ops/tamsin/releases/tag/v1.0.0-rc.1)
+[TAMSin v1.0.0-rc.3](https://github.com/livewyer-ops/tamsin/releases/tag/v1.0.0-rc.3)
 Kubernetes `Job` and records the Job's name and UID in `status.jobRef`.
 
 The distinction is deliberate:
@@ -88,7 +88,7 @@ parent, which preserves both attempts as history.
 A single-input run can carry constrained human-facing metadata for the Flow
 graph produced from that input: `label`, `description`, and ordinary TAMS
 tags. TAMOSS translates this intent to TAMSin's
-[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/v1.0.0-rc.1/docs/reference/cli.md)
+[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/v1.0.0-rc.3/docs/reference/cli.md)
 argument. It does not expose arbitrary Flow JSON, technical media overrides,
 FFmpeg arguments, identifiers, or TAMSin's wider CLI.
 

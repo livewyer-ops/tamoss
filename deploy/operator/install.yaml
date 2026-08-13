@@ -22189,7 +22189,7 @@ spec:
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
         - name: TAMOSS_TAMSIN_IMAGE
-          value: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.1@sha256:a3a8a42b87fc8d8643174ed5e6737adfc4234fd1c3efd5a95c85d2a841380d41
+          value: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.3@sha256:f764e26601561b8652d80ff34c16ff50598a09fb8735204c65bbf26b62a6e709
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

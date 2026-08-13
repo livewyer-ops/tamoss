@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/cloudnative-pg/cloudnative-pg v1.29.1
-	github.com/livewyer-ops/tamsin v1.0.0-rc.1
+	github.com/livewyer-ops/tamsin v1.0.0-rc.3
 	github.com/minio/minio-go/v7 v7.0.88
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0
