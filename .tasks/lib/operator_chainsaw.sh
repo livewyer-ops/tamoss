@@ -75,6 +75,7 @@ task_operator_chainsaw_up() {
     REPORT_PATH="${CHAINSAW_REPORT_PATH:-reports}" \
     CHAINSAW_SELECTOR="${CHAINSAW_SELECTOR:-}" \
     CHAINSAW_EXTRA_ARGS="${CHAINSAW_EXTRA_ARGS:-}" \
+    SCHEMA_VERSION="$schema_version" \
     ${CHAINSAW_TASK_ARGS:-}
 }
 

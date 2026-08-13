@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
+
+
+RELEASE_CANDIDATE_PATTERN = re.compile(r"^(?P<base>.+)-rc(?P<number>0|[1-9][0-9]*)$")
 
 
 def fail(message: str) -> None:
@@ -90,11 +94,10 @@ def emit_release_metadata(
     validate_releases(releases, path, verbose=False)
     releases_by_version = {str(item.get("version")): item for item in releases}
 
-    release = None
-    for item in releases:
-        if item.get("version") == version:
-            release = item
-            break
+    release = releases_by_version.get(version)
+    release_candidate = RELEASE_CANDIDATE_PATTERN.fullmatch(version)
+    if release is None and release_candidate is not None:
+        release = releases_by_version.get(release_candidate.group("base"))
     if release is None:
         fail(f"release {version} not found in {path}")
 
@@ -116,7 +119,8 @@ def emit_release_metadata(
         )
 
     metadata = {
-        "version": release.get("version"),
+        "version": version,
+        "prerelease": "true" if release_candidate is not None else "false",
         "schema_revision": release.get("schemaRevision"),
         "previous_schema_revision": next(iter(previous_schema_revisions), ""),
         "tams_api": release.get("tamsAPI"),

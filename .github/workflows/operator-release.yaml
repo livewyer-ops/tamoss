@@ -75,11 +75,19 @@ jobs:
           KUSTOMIZE_BIN="$(ls operator/bin/kustomize-v* | head -n 1)"
           "$KUSTOMIZE_BIN" build dist/operator-release > dist/operator-release/install.yaml
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             dist/operator-release/install.yaml
             operator/compatibility.yaml
+          draft: true
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          make_latest: ${{ steps.version.outputs.prerelease == 'true' && 'false' || 'legacy' }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false

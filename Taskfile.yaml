@@ -14,6 +14,7 @@ vars:
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
   KIND_DEMO_INGEST: '{{default "true" (default (env "KIND_DEMO_INGEST") .KIND_DEMO_INGEST)}}'
   KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
   TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
@@ -129,6 +130,7 @@ tasks:
           KUBECONFIG: "{{.KUBECONFIG}}"
           PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
           DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+          DEMO_AUDIO_FILE: "{{.DEMO_AUDIO_FILE}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
       - |
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then
@@ -149,7 +151,7 @@ tasks:
           task_step "Demo media: skip playable media ingest" true
         else
           task_step "Demo media: ingest playable media" \
-            .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
+            .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}" "{{.DEMO_AUDIO_FILE}}"
         fi
 
   kind:down:

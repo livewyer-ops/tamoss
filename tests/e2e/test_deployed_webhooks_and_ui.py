@@ -560,15 +560,11 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
             "() => document.querySelectorAll('video, audio').length === 0"
         )
 
-        page.get_by_role("link", name="Preview", exact=True).click()
-        page.get_by_label("Flow ID").fill(audio_flow_id)
-        page.get_by_role("button", name="Load").click()
         _assert_preview_buffers(
             page,
             e2e_target,
             audio_flow_id,
             expect_sidecar_audio=False,
-            navigate=False,
         )
     finally:
         context.close()

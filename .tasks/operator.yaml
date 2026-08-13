@@ -133,7 +133,8 @@ tasks:
           --report-name junit-operator-chainsaw \
           --report-format JUNIT-TEST \
           --report-path "{{.REPORT_PATH}}" \
-          --parallel "{{.CHAINSAW_PARALLEL}}"
+          --parallel "{{.CHAINSAW_PARALLEL}}" \
+          --set-string "schemaVersion={{.SCHEMA_VERSION}}"
         if [ -n "{{.CHAINSAW_SELECTOR}}" ]; then
           set -- "$@" --selector "{{.CHAINSAW_SELECTOR}}"
         fi
@@ -258,6 +259,10 @@ tasks:
       OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       API_IMAGE: "{{.API_IMAGE}}"
       VERSION: "{{.VERSION}}"
+      SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
+      PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
+      TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
+      OPERAND_VERSION: "{{.OPERAND_VERSION}}"
       CHAINSAW_SELECTOR: "{{.CHAINSAW_SELECTOR}}"
       CHAINSAW_EXTRA_ARGS: "{{.CHAINSAW_EXTRA_ARGS}}"
       CHAINSAW_TASK_ARGS: "{{.CHAINSAW_TASK_ARGS}}"

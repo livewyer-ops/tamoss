@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: external-oauth-schema-state
 data:
-  appliedVersion: "0.0.1"
+  appliedVersion: ($values.schemaVersion)
   fixturesApplied: "false"
