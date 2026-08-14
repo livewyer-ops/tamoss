@@ -9,6 +9,30 @@ fi
 # shellcheck source=.tasks/lib/progress.sh
 . "$task_lib_dir/progress.sh"
 
+# Content-derived tag for the operand images built from src/. A static tag leaves
+# the Deployment spec unchanged after a rebuild, so Kubernetes has no reason to
+# roll the pods and a local code change never reaches the cluster. Deriving the
+# tag from source content makes the rendered spec differ whenever the code does.
+# This triggers rollout.
+task_kind_operand_tag() {
+  local paths
+
+  paths="$(
+    git ls-files --cached --others --exclude-standard -- src \
+      | sort -u \
+      | while IFS= read -r path; do
+          [ -f "$path" ] && printf '%s\n' "$path"
+        done
+  )"
+
+  printf 'dev-%s' "$(
+    {
+      printf '%s\n' "$paths"
+      printf '%s\n' "$paths" | git hash-object --stdin-paths
+    } | sha256sum | cut -c1-12
+  )"
+}
+
 task_kind_ensure_cluster() {
   local project_name="$1"
   local kind_config="$2"
