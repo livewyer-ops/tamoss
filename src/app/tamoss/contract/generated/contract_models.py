@@ -1228,7 +1228,7 @@ class EssenceParameters4(BaseModel):
     ] = None
 
 
-class FlowMulti(BaseModel):
+class FlowMulti(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )

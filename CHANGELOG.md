@@ -22,6 +22,11 @@ This project follows semantic versioning for public releases.
 ## Unreleased
 
 - Preparing the first public TAMOSS release candidate.
+- Realigned the vendored BBC TAMS contract with the upstream 8.2 bugfix retag,
+  restoring the `codec`, `container`, `avg_bit_rate`, `segment_duration` and
+  `container_mapping` properties on multi-essence Flows, with conformance
+  coverage that validates them. The advertised API version stays 8.2, matching
+  upstream's versioning policy for this fix.
 - Added a database hibernate/resume lifecycle: `TamossHibernate` exports the
   managed CNPG database to an external S3 hibernation `StorageBackend` with a
   checksummed manifest, and `spec.hibernation.resumeFrom` restores it into a target `Tamoss`

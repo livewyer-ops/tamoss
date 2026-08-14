@@ -2091,7 +2091,7 @@ export interface components {
          * Multi-essence Flow
          * @description Describes a multi-essence Flow
          */
-        "flow-multi": {
+        "flow-multi": components["schemas"]["flow-technical"] & {
             /**
              * @description The primary content type URN for the flow.
              * @enum {string}

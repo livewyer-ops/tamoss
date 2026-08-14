@@ -39,7 +39,9 @@ def _technical_metadata(format_value: str) -> dict[str, Any]:
         "format": format_value,
         "essence_parameters": deepcopy(essence_by_format[format_value]),
     }
-    if format_value != MULTI_FORMAT:
+    if format_value == MULTI_FORMAT:
+        metadata["container"] = "video/mp2t"
+    else:
         metadata["codec"] = {
             VIDEO_FORMAT: "video/h264",
             AUDIO_FORMAT: "audio/aac",
@@ -126,6 +128,41 @@ def test_multi_essence_parameters_rejects_explicit_null_object(
 ) -> None:
     payload = _direct_flow_payload(MULTI_FORMAT)
     payload["essence_parameters"] = None
+
+    response = client.put(f"/flows/{payload['id']}", json=payload)
+
+    assert response.status_code == 400
+
+
+def test_multi_flows_keep_technical_metadata(client: TestClient) -> None:
+    payload = _direct_flow_payload(MULTI_FORMAT)
+    payload["segment_duration"] = {"numerator": 1, "denominator": 1}
+    payload["avg_bit_rate"] = 12_000
+
+    assert client.put(f"/flows/{payload['id']}", json=payload).status_code == 201
+
+    flow = client.get(f"/flows/{payload['id']}").json()
+    assert flow["container"] == "video/mp2t"
+    assert flow["segment_duration"] == {"numerator": 1, "denominator": 1}
+    assert flow["avg_bit_rate"] == 12_000
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: payload.update(container=12_345),
+        lambda payload: payload.update(container="not a mime type"),
+        lambda payload: payload.update(avg_bit_rate=-1),
+        lambda payload: payload.update(segment_duration="PT1S"),
+    ],
+    ids=("container-type", "container-pattern", "avg-bit-rate", "segment-duration"),
+)
+def test_multi_flow_technical_metadata_is_validated(
+    client: TestClient,
+    mutate: Any,
+) -> None:
+    payload = _direct_flow_payload(MULTI_FORMAT)
+    mutate(payload)
 
     response = client.put(f"/flows/{payload['id']}", json=payload)
 
