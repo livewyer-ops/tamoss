@@ -63,9 +63,11 @@ jobs:
               version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
             fi
             tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
-            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${version}"
+              echo "schema_revision=dev"
+              echo "tams_api=${tams_api}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
@@ -254,10 +256,12 @@ jobs:
               version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
             fi
             tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
-            echo "previous_schema_revision=" >> "$GITHUB_OUTPUT"
-            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${version}"
+              echo "schema_revision=dev"
+              echo "previous_schema_revision="
+              echo "tams_api=${tams_api}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
