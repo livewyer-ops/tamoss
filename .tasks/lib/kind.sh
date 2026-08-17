@@ -14,18 +14,43 @@ fi
 # roll the pods and a local code change never reaches the cluster. Deriving the
 # tag from source content makes the rendered spec differ whenever the code does.
 # This triggers rollout.
+# Anchored to the work tree root rather than the caller's directory: resolving
+# src/ relative to the cwd would match nothing when called from elsewhere and
+# return a constant tag, which is the staleness this function exists to prevent.
+# Outside a work tree there is no content to hash, so "dev" is the honest answer
+# and matches the tag used before content addressing.
 task_kind_operand_tag() {
-  local paths
+  local root paths
+
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
+  if [ -z "$root" ]; then
+    printf 'dev'
+    return 0
+  fi
 
   paths="$(
+    cd "$root" || exit 1
     git ls-files --cached --others --exclude-standard -- src \
       | sort -u \
       | while IFS= read -r path; do
-          [ -f "$path" ] && printf '%s\n' "$path"
+          # An "if" rather than "&&": git lists the src/vendor/bbc-tams
+          # submodule as a gitlink, which is not a regular file and sorts last,
+          # so a short-circuiting test would leave the loop — and under
+          # pipefail the whole assignment — with a non-zero status.
+          if [ -f "$path" ]; then
+            printf '%s\n' "$path"
+          fi
         done
   )"
 
+  if [ -z "$paths" ]; then
+    printf 'task_kind_operand_tag: no operand sources found under %s/src\n' \
+      "$root" >&2
+    return 1
+  fi
+
   printf 'dev-%s' "$(
+    cd "$root" || exit 1
     {
       printf '%s\n' "$paths"
       printf '%s\n' "$paths" | git hash-object --stdin-paths
