@@ -59,9 +59,10 @@ updates:
       - "/tests/media"
     schedule:
       interval: "weekly"
+    # No semver-major-days: Dependabot rejects SemVer-classified cooldowns for
+    # ecosystems that do not carry SemVer, and image tags do not.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       images-minor:
         patterns: ["*"]
@@ -74,9 +75,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # No semver-major-days: actions are pinned by SHA, so Dependabot has no
+    # SemVer to classify against and rejects the key for this ecosystem.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       images-minor:
         patterns: ["*"]
