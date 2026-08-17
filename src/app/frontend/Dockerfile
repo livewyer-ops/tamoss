@@ -3,7 +3,9 @@ FROM node:26-alpine AS build
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# .npmrc carries ignore-scripts and must land before the install, otherwise the
+# image build is the one path that still executes dependency lifecycle scripts.
+COPY package.json package-lock.json* .npmrc ./
 RUN npm ci
 
 COPY . .
