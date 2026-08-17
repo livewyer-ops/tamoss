@@ -1,20 +1,83 @@
 version: 2
+
+# Supply-chain intake policy.
+#
+# cooldown: an upstream release must age before Dependabot will propose it.
+# Compromised packages are almost always discovered days after publication, so
+# a scanner run at PR time cannot see them.
+#
+# groups: one PR per ecosystem for minor/patch keeps the lockfile diff in a
+# single reviewable place. Majors stay on their own PR so one breaking bump
+# cannot hold the rest back.
+#
+# Release exposure is bounded separately: pushes to main publish only :main
+# images, and versioned releases are manually cut from a tag.
 updates:
   - package-ecosystem: "uv"
     directory: "/src"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      python-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "npm"
     directory: "/src/app/frontend"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      frontend-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # operator/ is an independent Go module and was previously unmanaged here,
+  # which is why its dependencies drifted behind published advisories.
+  - package-ecosystem: "gomod"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      operator-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "docker"
     directories:
       - "/src/app/tamoss"
       - "/src/app/frontend"
+      - "/operator"
+      - "/tests/media"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      images-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Actions are pinned by commit SHA; Dependabot rewrites the SHA and its
+  # version comment together. A retagged action is a direct path to repository
+  # credentials, so this ecosystem matters more than its size suggests.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      images-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
