@@ -171,70 +171,13 @@ jobs:
       - name: TypeScript type checking
         run: cd src/app/frontend && npm run typecheck
 
+  # Defined in dependency-audit.yaml so the pull-request run, the nightly
+  # re-scan of main, and the release gate on the tag build all execute the
+  # same checks.
   security:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    uses: ./.github/workflows/dependency-audit.yaml
     permissions:
       contents: read
       # SARIF upload needs Code Scanning and workflow-run metadata access.
       security-events: write
       actions: read
-    steps:
-      - name: Git Checkout
-        uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install project
-        run: uv sync --project src --locked --all-extras --dev
-
-      - name: Ensure reports dir exists
-        run: mkdir -p reports
-
-      - name: OSV-Scanner filesystem scan
-        id: osv-scanner
-        continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@v2.5.0
-        with:
-          scan-args: |-
-            --recursive
-            --experimental-exclude=src/vendor/bbc-tams/examples
-            --format=sarif
-            --output-file=reports/osv-scanner.sarif
-            ./
-
-      - name: Upload OSV-Scanner SARIF to Code Scanning
-        if: always() && vars.ENABLE_CODE_SCANNING_UPLOAD == 'true' && steps.osv-scanner.conclusion != 'skipped'
-        uses: github/codeql-action/upload-sarif@v4.37.6
-        with:
-          sarif_file: reports/osv-scanner.sarif
-          category: osv-scanner
-
-      - name: Archive OSV-Scanner SARIF as workflow artifact
-        if: always() && steps.osv-scanner.conclusion != 'skipped'
-        uses: actions/upload-artifact@v7
-        with:
-          name: osv-scanner-sarif
-          path: reports/osv-scanner.sarif
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Audit Python dependencies (pip-audit)
-        # Audit the locked dependency set through the OSV service: auditing
-        # the installed environment queries PyPI's JSON API per package
-        # (including the private project name), which fails the job whenever
-        # that API wobbles.
-        run: |
-          uv export --project src --frozen --no-emit-project --output-file reports/requirements-audit.txt
-          uv run --project src --with pip-audit pip-audit -s osv --no-deps -r reports/requirements-audit.txt
-
-      - name: Audit frontend dependencies (npm audit)
-        run: |
-          cd src/app/frontend
-          npm audit --audit-level=high --omit=dev
