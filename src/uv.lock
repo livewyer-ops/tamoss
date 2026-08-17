@@ -345,7 +345,7 @@ wheels = [
 
 [[package]]
 name = "datamodel-code-generator"
-version = "0.72.1"
+version = "0.72.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "argcomplete" },
@@ -357,9 +357,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/92/74866dde631cb94f4dbc827127b64e199ec40179103d29f54ca29c9306a2/datamodel_code_generator-0.72.1.tar.gz", hash = "sha256:e1789dbaba2eb4edd49b033144f0355754b751ceabc9ecfc7394b27f38348dfc", size = 1847031, upload-time = "2026-08-04T18:14:43.553Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/b1/a34381cab4c126623d8d59728ffcdb4cb2822877b00484189f1438eae087/datamodel_code_generator-0.72.4.tar.gz", hash = "sha256:b9f0992d46eac4664c4e0b633d93c6e384d39fa8f2df491ac79f05f72ae724fd", size = 1968256, upload-time = "2026-08-12T16:26:06.141Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/e3/20d5bb1243f281be4310fe2adc0e0e9c9aab4e01e385ec4df1ae7eb854e6/datamodel_code_generator-0.72.1-py3-none-any.whl", hash = "sha256:20ff7ddc09133285bb0724bb51df9ec408695f86b9011561398e583eda9339b2", size = 511686, upload-time = "2026-08-04T18:14:41.968Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/f3/d11738bc4672952b50fa0aa703cc33e17ea432482403c580c6e0d9a7b2d3/datamodel_code_generator-0.72.4-py3-none-any.whl", hash = "sha256:96cb2edbcf3b50c4cc246a48dac5cb5ff848af0675bb4e81235467c47e1038e4", size = 555785, upload-time = "2026-08-12T16:26:04.347Z" },
 ]
 
 [package.optional-dependencies]
@@ -1363,7 +1363,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", extras = ["toml"], specifier = ">=1.9.4" },
-    { name = "datamodel-code-generator", extras = ["ruff"], specifier = ">=0.72.1" },
+    { name = "datamodel-code-generator", extras = ["ruff"], specifier = ">=0.72.4" },
     { name = "faker", specifier = ">=40.36.0" },
     { name = "httpx", specifier = ">=0.24.0" },
     { name = "httpx2", specifier = ">=2.9.1" },
