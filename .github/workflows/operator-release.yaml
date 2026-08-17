@@ -19,14 +19,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Resolve tool versions
         id: aqua-versions
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
