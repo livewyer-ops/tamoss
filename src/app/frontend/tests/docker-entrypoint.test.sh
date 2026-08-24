@@ -37,10 +37,17 @@ if grep -q 'must-not-reach\|Authorization "Bearer\|auth_request /_tamoss/auth' "
   echo "auth-none configuration exposed a credential or enabled auth_request" >&2
   exit 1
 fi
-if grep -q 'controlApiUrl\|location /ui-api/' "$tmp_dir/runtime-config.js" "$tmp_dir/runtime.conf"; then
-  echo "console configuration was emitted without an upstream" >&2
+if grep -q 'controlApiUrl\|proxy_pass .*console\|auth_request /_tamoss/auth' "$tmp_dir/runtime-config.js" "$tmp_dir/runtime.conf"; then
+  echo "console proxy configuration was emitted without an upstream" >&2
   exit 1
 fi
+if [ "$(grep -c 'console_unavailable' "$tmp_dir/runtime.conf")" -ne 2 ]; then
+  echo "disabled Console paths did not fail explicitly" >&2
+  exit 1
+fi
+grep -q 'location = /ui-api {' "$tmp_dir/runtime.conf"
+grep -q 'location /ui-api/ {' "$tmp_dir/runtime.conf"
+grep -q 'default_type application/json;' "$tmp_dir/runtime.conf"
 
 run_entrypoint "none" "http://tamoss-console:8081"
 grep -q '"controlApiUrl":"/ui-api/v1"' "$tmp_dir/runtime-config.js"
@@ -86,6 +93,12 @@ if [ "$(grep -c 'browser_auth_unavailable' "$tmp_dir/runtime.conf")" -ne 2 ]; th
   echo "unavailable mode did not fail both browser backends closed" >&2
   exit 1
 fi
+
+run_entrypoint "unavailable"
+if [ "$(grep -c 'browser_auth_unavailable' "$tmp_dir/runtime.conf")" -ne 1 ] || [ "$(grep -c 'console_unavailable' "$tmp_dir/runtime.conf")" -ne 2 ]; then
+  echo "unavailable mode did not distinguish the API and disabled Console" >&2
+  exit 1
+fi
 if grep -q 'proxy_pass\|auth_request /_tamoss/auth\|must-not-reach' "$tmp_dir/runtime.conf"; then
   echo "unavailable mode emitted a backend proxy or credential" >&2
   exit 1
@@ -123,6 +136,20 @@ if grep -q 'proxy_set_header Remote-User\|proxy_set_header X-authentik-' "$tmp_d
 fi
 if grep -q 'must-not-reach\|VITE_API_TOKEN' "$tmp_dir/runtime-config.js" "$tmp_dir/runtime.conf"; then
   echo "a browser or legacy API credential reached generated output" >&2
+  exit 1
+fi
+
+run_entrypoint \
+  "authentik" \
+  "" \
+  "http://authentik-outpost.auth.svc:9000/outpost.goauthentik.io/auth/nginx" \
+  "$tmp_dir/api-forward-auth-proof"
+if [ "$(grep -c 'auth_request /_tamoss/auth;' "$tmp_dir/runtime.conf")" -ne 1 ]; then
+  echo "disabled Console configuration enabled an auth subrequest for the Console" >&2
+  exit 1
+fi
+if [ "$(grep -c 'console_unavailable' "$tmp_dir/runtime.conf")" -ne 2 ] || grep -q 'console-forward-proof\|proxy_pass .*console' "$tmp_dir/runtime.conf"; then
+  echo "disabled Console configuration emitted a Console proxy or proof" >&2
   exit 1
 fi
 

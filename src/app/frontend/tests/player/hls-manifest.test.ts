@@ -16,6 +16,8 @@ function track(
     label?: string;
     role?: string;
     container?: string;
+    initSegments?: boolean;
+    frameRate?: { numerator: number; denominator: number };
     segments?: Array<{
       object_id: string;
       timerange: string;
@@ -40,6 +42,16 @@ function track(
           ? "urn:x-nmos:format:audio"
           : "urn:x-nmos:format:video",
       container: options.container ?? "video/mp2t",
+      ...(options.initSegments === undefined && !options.frameRate
+        ? {}
+        : {
+            essence_parameters: {
+              ...(options.initSegments === undefined
+                ? {}
+                : { init_segments: options.initSegments }),
+              ...(options.frameRate ? { frame_rate: options.frameRate } : {}),
+            },
+          }),
       ...(options.label ? { label: options.label } : {}),
       avg_bit_rate: kind === "audio" ? 128 : 2_000,
     },
@@ -365,9 +377,123 @@ describe("playback plans", () => {
     });
   });
 
+  it("plays complete self-contained MP4 video and audio sequences", () => {
+    const plan = compilePlaybackPlan(
+      {
+        initialTimerange: "[1782377427:464363574_1782377437:112697124)",
+        tracks: [
+          track("video", {
+            id: "cr-video",
+            container: "video/mp4",
+            frameRate: { numerator: 25, denominator: 1 },
+            segments: [
+              {
+                object_id: "video-one",
+                timerange: "[1782377427:512696981_1782377431:472697019)",
+                ts_offset: "1782377427:464363574",
+                get_urls: [{ url: "https://media.example/video-one.mp4" }],
+              },
+              {
+                object_id: "video-two",
+                timerange: "[1782377431:472697020_1782377437:112697124)",
+                ts_offset: "1782377427:464363574",
+                get_urls: [{ url: "https://media.example/video-two.mp4" }],
+              },
+            ],
+          }),
+          track("audio", {
+            id: "cr-audio",
+            container: "video/mp4",
+            segments: [
+              {
+                object_id: "audio-one",
+                timerange: "[1782377427:464363574_1782377431:475030183)",
+                ts_offset: "1782377427:464363574",
+                get_urls: [{ url: "https://media.example/audio-one.mp4" }],
+              },
+              {
+                object_id: "audio-two",
+                timerange: "[1782377431:475030184_1782377435:464363574)",
+                ts_offset: "1782377427:464363574",
+                get_urls: [{ url: "https://media.example/audio-two.mp4" }],
+              },
+              {
+                object_id: "audio-three",
+                timerange: "[1782377435:464363575_1782377437:107030153)",
+                ts_offset: "1782377427:464363574",
+                get_urls: [{ url: "https://media.example/audio-three.mp4" }],
+              },
+            ],
+          }),
+        ],
+      },
+      blobApi(),
+    );
+
+    expect(plan.kind).toBe("hls");
+    if (plan.kind !== "hls") return;
+    expect(plan.trimmed).toBe(false);
+    expect(plan.audioSidecars).toEqual([
+      {
+        flowId: "cr-audio",
+        label: "Audio 1",
+        offsetSeconds: 0.048333407,
+        url: "blob:manifest-2",
+      },
+    ]);
+    const videoManifest = plan.mediaManifests.get("cr-video") as string;
+    expect(videoManifest).toContain("#EXT-X-VERSION:7");
+    expect(videoManifest).toContain("https://media.example/video-one.mp4");
+    expect(videoManifest).toContain("https://media.example/video-two.mp4");
+    expect(videoManifest).not.toContain("#EXT-X-MAP");
+    expect(videoManifest).not.toContain("#EXT-X-DISCONTINUITY");
+    const audioManifest = plan.mediaManifests.get("cr-audio") as string;
+    expect(audioManifest).toContain("https://media.example/audio-one.mp4");
+    expect(audioManifest).toContain("https://media.example/audio-two.mp4");
+    expect(audioManifest).toContain("https://media.example/audio-three.mp4");
+    expect(audioManifest).not.toContain("#EXT-X-MAP");
+  });
+
+  it("builds an HLS plan for self-contained audio-only MP4 Objects", () => {
+    const plan = compilePlaybackPlan(
+      {
+        initialTimerange: "[90:0_120:0)",
+        tracks: [
+          track("audio", {
+            container: "audio/mp4",
+            segments: [
+              {
+                object_id: "audio-two",
+                timerange: "[104:0_108:0)",
+                get_urls: [{ url: "https://media.example/audio-two.mp4" }],
+              },
+              {
+                object_id: "audio-one",
+                timerange: "[100:0_104:0)",
+                get_urls: [{ url: "https://media.example/audio-one.mp4" }],
+              },
+            ],
+          }),
+        ],
+      },
+      blobApi(),
+    );
+
+    expect(plan.kind).toBe("hls");
+    if (plan.kind !== "hls") return;
+    expect(plan.mediaManifests.get("audio-flow")).toContain(
+      "https://media.example/audio-one.mp4",
+    );
+    expect(plan.mediaManifests.get("audio-flow")).toContain(
+      "https://media.example/audio-two.mp4",
+    );
+    expect(plan.audioSidecars).toEqual([]);
+  });
+
   it("builds fragmented MP4 playlists with initialisation Objects", () => {
     const fragmented = track("video", {
       container: "video/mp4",
+      initSegments: true,
       segments: [
         {
           object_id: "one",
@@ -408,9 +534,10 @@ describe("playback plans", () => {
     );
   });
 
-  it("rejects fragmented MP4 without init Objects and unsupported containers", () => {
+  it("rejects declared fragmented MP4 without init Objects and unsupported containers", () => {
     const multiObject = track("video", {
       container: "video/mp4",
+      initSegments: true,
       segments: [
         {
           object_id: "one",

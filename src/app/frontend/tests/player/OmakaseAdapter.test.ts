@@ -4,8 +4,10 @@ import type { MediaPreviewDescriptor, PreviewTrack } from "@/player/descriptor";
 const mocks = vi.hoisted(() => {
   const instances: MockPlayer[] = [];
   const plan = {
-    kind: "hls" as const,
+    kind: "hls" as "hls" | "direct",
     url: "blob:master",
+    mediaKind: "video" as "video" | "audio",
+    mimeType: "video/mp4",
     mainUrl: "blob:video",
     audioSidecars: [] as Array<{
       flowId: string;
@@ -206,6 +208,7 @@ describe("OmakaseAdapter", () => {
     mocks.instances.length = 0;
     mocks.plan.audioSidecars = [];
     mocks.plan.trimmed = false;
+    mocks.plan.kind = "hls";
   });
 
   it("subscribes to load and timeline operations then tears everything down", async () => {
@@ -396,6 +399,37 @@ describe("OmakaseAdapter", () => {
       warning:
         "Playback is limited to the timerange shared by video and audio tracks.",
     });
+    handle.destroy();
+  });
+
+  it("loads one standalone MP4 Object directly", async () => {
+    mocks.plan.kind = "direct";
+    mocks.plan.url = "https://storage.example/object.mp4?signature=secret";
+    const onChange = vi.fn();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange,
+    });
+
+    await handle.ready;
+
+    expect(mocks.instances[0].loadMainMedia).toHaveBeenCalledWith(
+      mocks.plan.url,
+      expect.objectContaining({
+        fileFormatType: "MP4",
+        mainMediaType: "MP4",
+      }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      phase: "ready",
+      currentTime: 0,
+      duration: 12,
+    });
+    expect(JSON.stringify(onChange.mock.calls)).not.toContain(
+      "signature=secret",
+    );
     handle.destroy();
   });
 

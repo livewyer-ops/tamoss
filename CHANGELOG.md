@@ -22,6 +22,10 @@ This project follows semantic versioning for public releases.
 ## Unreleased
 
 - Preparing the first public TAMOSS release candidate.
+- Made UI requests to a disabled Console API fail explicitly with a JSON 503
+  response instead of falling through to the single-page application shell.
+- Added complete playback for independently decodable MP4 Object sequences,
+  including split video and audio Flows.
 - Realigned the vendored BBC TAMS contract with the upstream 8.2 bugfix retag,
   restoring the `codec`, `container`, `avg_bit_rate`, `segment_duration` and
   `container_mapping` properties on multi-essence Flows, with conformance

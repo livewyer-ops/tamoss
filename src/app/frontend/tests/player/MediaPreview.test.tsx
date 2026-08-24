@@ -108,6 +108,52 @@ describe("MediaPreview", () => {
     expect(mocks.destroy).toHaveBeenCalledOnce();
   });
 
+  it("shows a playback warning while preserving Object inventory", async () => {
+    const bounded = descriptor();
+    const second = {
+      ...bounded.tracks[0].segments[0],
+      object_id: "object-2.mp4",
+      timerange: "[105:0_110:0)",
+      get_urls: [
+        {
+          url: "https://storage.example/object-2.mp4?signature=other-secret",
+          credentials: "omit" as const,
+          presigned: true,
+          label: "primary",
+        },
+      ],
+    };
+    bounded.tracks[0].segments.push(second);
+    bounded.segmentCount = 2;
+    mocks.buildDescriptor.mockResolvedValue(bounded);
+    mocks.createPreview.mockImplementation(({ onChange }) => {
+      onChange({
+        phase: "ready",
+        currentTime: 0,
+        duration: 5,
+        warning:
+          "Playback is limited to the timerange shared by video and audio tracks.",
+      });
+      return {
+        ready: Promise.resolve(),
+        audioTracks: [],
+        destroy: mocks.destroy,
+        selectAudioTrack: mocks.selectAudioTrack,
+      };
+    });
+
+    renderWithQueryClient(<MediaPreview flowId="video-1" />);
+
+    expect(
+      await screen.findByText(
+        "Playback is limited to the timerange shared by video and audio tracks.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("object-1.ts", { exact: false })).not.toBeNull();
+    expect(screen.getByText("object-2.mp4", { exact: false })).not.toBeNull();
+    expect(document.body.textContent).not.toContain("other-secret");
+  });
+
   it("shows metadata without mounting a player for non-media tracks", async () => {
     const dataOnly = descriptor();
     const dataTrack = {

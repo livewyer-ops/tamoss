@@ -165,6 +165,19 @@ location /ui-api/ {
     return 503 '{"code":"browser_auth_unavailable","error":"browser authentication is not configured"}';
 }
 EOF
+  else
+    cat >> "$runtime_conf_path" <<'EOF'
+
+location = /ui-api {
+    default_type application/json;
+    return 503 '{"code":"console_unavailable","error":"Console API is not enabled for this TAMOSS instance."}';
+}
+
+location /ui-api/ {
+    default_type application/json;
+    return 503 '{"code":"console_unavailable","error":"Console API is not enabled for this TAMOSS instance."}';
+}
+EOF
   fi
   exec "$@"
 fi
@@ -255,6 +268,19 @@ ${console_trusted_identity_headers}
     add_header Cross-Origin-Embedder-Policy "require-corp" always;
     add_header Cross-Origin-Resource-Policy "same-origin" always;
     add_header Content-Security-Policy \$tamoss_content_security_policy always;
+}
+EOF
+else
+  cat >> "$runtime_conf_path" <<'EOF'
+
+location = /ui-api {
+    default_type application/json;
+    return 503 '{"code":"console_unavailable","error":"Console API is not enabled for this TAMOSS instance."}';
+}
+
+location /ui-api/ {
+    default_type application/json;
+    return 503 '{"code":"console_unavailable","error":"Console API is not enabled for this TAMOSS instance."}';
 }
 EOF
 fi

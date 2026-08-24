@@ -3,6 +3,7 @@ import type { PreviewTrack } from "@/player/descriptor";
 const NANOS_PER_SECOND = 1_000_000_000n;
 const SYNTHETIC_EPOCH_NANOSECONDS = 946_684_800n * NANOS_PER_SECOND;
 const HLS_MIME_TYPE = "application/vnd.apple.mpegurl";
+const SEGMENT_BOUNDARY_TOLERANCE_NANOSECONDS = 1n;
 
 export interface ParsedTamsTimerange {
   startNanoseconds: bigint;
@@ -216,6 +217,13 @@ function ceilSeconds(nanoseconds: bigint): bigint {
   return (nanoseconds + NANOS_PER_SECOND - 1n) / NANOS_PER_SECOND;
 }
 
+function segmentsAreContiguous(leftEnd: bigint, rightStart: bigint): boolean {
+  return (
+    rightStart >= leftEnd &&
+    rightStart - leftEnd <= SEGMENT_BOUNDARY_TOLERANCE_NANOSECONDS
+  );
+}
+
 function floorDivision(dividend: bigint, divisor: bigint): bigint {
   const quotient = dividend / divisor;
   return dividend < 0n && dividend % divisor !== 0n ? quotient - 1n : quotient;
@@ -260,6 +268,17 @@ function isMp4(container: string | undefined): boolean {
   return container?.toLowerCase().endsWith("/mp4") ?? false;
 }
 
+function usesMp4InitialisationObjects(track: PreviewTrack): boolean {
+  return (
+    isMp4(track.flow.container) &&
+    track.flow.essence_parameters?.init_segments === true
+  );
+}
+
+function isSelfContainedMp4(track: PreviewTrack): boolean {
+  return isMp4(track.flow.container) && !usesMp4InitialisationObjects(track);
+}
+
 function trackBitrate(track: PreviewTrack): bigint {
   const kilobits = track.flow.max_bit_rate ?? track.flow.avg_bit_rate;
   return Number.isSafeInteger(kilobits) && (kilobits ?? 0) > 0
@@ -282,8 +301,9 @@ export function compileHlsMediaManifest(
   track: PreviewTrack,
   initialTimerange: string,
 ): string {
-  const fragmentedMp4 = isMp4(track.flow.container);
-  if (!isMpegTransportStream(track.flow.container) && !fragmentedMp4) {
+  const mp4 = isMp4(track.flow.container);
+  const usesInitialisationObjects = usesMp4InitialisationObjects(track);
+  if (!isMpegTransportStream(track.flow.container) && !mp4) {
     return fail(
       "unsupported-container",
       "HLS preview requires MPEG transport stream or fragmented MP4 segments.",
@@ -308,13 +328,16 @@ export function compileHlsMediaManifest(
     const previous = segments[index - 1];
     if (
       previous &&
-      (previous.endNanoseconds !== segment.startNanoseconds ||
+      (!segmentsAreContiguous(
+        previous.endNanoseconds,
+        segment.startNanoseconds,
+      ) ||
         previous.timestampOffsetNanoseconds !==
           segment.timestampOffsetNanoseconds)
     ) {
       entries.push("#EXT-X-DISCONTINUITY");
     }
-    if (fragmentedMp4) {
+    if (usesInitialisationObjects) {
       if (!segment.initUrl) {
         return fail(
           "missing-init-object",
@@ -337,7 +360,7 @@ export function compileHlsMediaManifest(
   }
   return [
     "#EXTM3U",
-    `#EXT-X-VERSION:${fragmentedMp4 ? 7 : 3}`,
+    `#EXT-X-VERSION:${mp4 ? 7 : 3}`,
     `#EXT-X-TARGETDURATION:${ceilSeconds(targetDuration)}`,
     "#EXT-X-MEDIA-SEQUENCE:0",
     "#EXT-X-PLAYLIST-TYPE:VOD",
@@ -345,6 +368,23 @@ export function compileHlsMediaManifest(
     "#EXT-X-ENDLIST",
     "",
   ].join("\n");
+}
+
+function videoFrameDurationNanoseconds(track: PreviewTrack): bigint {
+  const rate = track.flow.essence_parameters?.frame_rate;
+  const numerator = rate?.numerator;
+  const denominator = rate?.denominator ?? 1;
+  if (
+    !Number.isSafeInteger(numerator) ||
+    !Number.isSafeInteger(denominator) ||
+    (numerator ?? 0) <= 0 ||
+    denominator <= 0
+  ) {
+    return 0n;
+  }
+  const divisor = BigInt(numerator as number);
+  const dividend = NANOS_PER_SECOND * BigInt(denominator);
+  return (dividend + divisor - 1n) / divisor;
 }
 
 export function compileHlsMasterManifest(input: MasterManifestInput): string {
@@ -401,6 +441,7 @@ function alignSplitEssenceTracks(tracks: PreviewTrack[]): {
 
   const primarySegments = timedSegments(primary);
   const audioSegments = audio.map((track) => timedSegments(track));
+  const boundaryTolerance = videoFrameDurationNanoseconds(primary);
   const latestStart = audioSegments.reduce(
     (latest, segments) =>
       segments[0].startNanoseconds > latest
@@ -417,12 +458,14 @@ function alignSplitEssenceTracks(tracks: PreviewTrack[]): {
   );
   const anchor = primarySegments.find(
     (segment) =>
-      segment.startNanoseconds >= latestStart &&
+      segment.startNanoseconds + boundaryTolerance >= latestStart &&
+      segment.endNanoseconds > latestStart &&
       segment.startNanoseconds < commonEnd &&
       audioSegments.every((segments) =>
         segments.some(
           (audioSegment) =>
-            audioSegment.startNanoseconds <= segment.startNanoseconds &&
+            audioSegment.startNanoseconds <=
+              segment.startNanoseconds + boundaryTolerance &&
             audioSegment.endNanoseconds > segment.startNanoseconds,
         ),
       ),
@@ -439,13 +482,14 @@ function alignSplitEssenceTracks(tracks: PreviewTrack[]): {
   for (const segment of primarySegments) {
     if (segment.startNanoseconds < anchor.startNanoseconds) continue;
     if (
-      segment.startNanoseconds !== primaryEnd ||
-      segment.endNanoseconds > commonEnd
+      !segmentsAreContiguous(primaryEnd, segment.startNanoseconds) ||
+      segment.endNanoseconds > commonEnd + boundaryTolerance
     ) {
       break;
     }
     primaryWindow.push(segment);
     primaryEnd = segment.endNanoseconds;
+    if (primaryEnd >= commonEnd) break;
   }
   if (primaryWindow.length === 0) {
     return fail(
@@ -472,13 +516,20 @@ function alignSplitEssenceTracks(tracks: PreviewTrack[]): {
   }));
   if (
     aligned.some(
-      (track) =>
+      (track, index) =>
         track.segments.length === 0 ||
-        !continuouslyCovers(
-          timedSegments(track),
-          anchor.startNanoseconds,
-          primaryEnd,
-        ),
+        (tracks[index] === primary
+          ? !continuouslyCovers(
+              timedSegments(track),
+              anchor.startNanoseconds,
+              primaryEnd,
+            )
+          : !continuouslyCoversWithBoundaryTolerance(
+              timedSegments(track),
+              anchor.startNanoseconds,
+              primaryEnd,
+              boundaryTolerance,
+            )),
     )
   ) {
     return fail(
@@ -494,6 +545,33 @@ function alignSplitEssenceTracks(tracks: PreviewTrack[]): {
   };
 }
 
+function continuouslyCoversWithBoundaryTolerance(
+  segments: TimedSegment[],
+  startNanoseconds: bigint,
+  endNanoseconds: bigint,
+  toleranceNanoseconds: bigint,
+): boolean {
+  let coveredUntil: bigint | undefined;
+  for (const segment of segments) {
+    if (segment.endNanoseconds <= startNanoseconds) continue;
+    if (coveredUntil === undefined) {
+      if (segment.startNanoseconds > startNanoseconds + toleranceNanoseconds) {
+        return false;
+      }
+    } else if (!segmentsAreContiguous(coveredUntil, segment.startNanoseconds)) {
+      return false;
+    }
+    if (coveredUntil === undefined || segment.endNanoseconds > coveredUntil) {
+      coveredUntil = segment.endNanoseconds;
+    }
+    if (coveredUntil + toleranceNanoseconds >= endNanoseconds) return true;
+  }
+  return (
+    coveredUntil !== undefined &&
+    coveredUntil + toleranceNanoseconds >= endNanoseconds
+  );
+}
+
 function continuouslyCovers(
   segments: TimedSegment[],
   startNanoseconds: bigint,
@@ -502,7 +580,9 @@ function continuouslyCovers(
   let coveredUntil = startNanoseconds;
   for (const segment of segments) {
     if (segment.endNanoseconds <= coveredUntil) continue;
-    if (segment.startNanoseconds > coveredUntil) return false;
+    if (!segmentsAreContiguous(coveredUntil, segment.startNanoseconds)) {
+      return false;
+    }
     coveredUntil = segment.endNanoseconds;
     if (coveredUntil >= endNanoseconds) return true;
   }
@@ -534,34 +614,6 @@ export function compilePlaybackPlan(
     );
   }
 
-  const mp4Tracks = mediaTracks.filter((track) => isMp4(track.flow.container));
-  if (
-    mp4Tracks.length === 1 &&
-    mediaTracks.length === 1 &&
-    mp4Tracks[0].segments.length === 1 &&
-    !mp4Tracks[0].segments[0].init_object
-  ) {
-    const track = mp4Tracks[0];
-    timedSegments(track);
-    const url = playableUrl(track, 0);
-    return {
-      kind: "direct",
-      url,
-      mediaKind: mediaKind(track),
-      mimeType: track.flow.container as string,
-      dispose() {},
-    };
-  }
-  if (
-    mp4Tracks.some((track) =>
-      track.segments.some((segment) => !segment.init_object),
-    )
-  ) {
-    return fail(
-      "missing-init-object",
-      "Fragmented MP4 preview requires an initialisation Object for every media Object.",
-    );
-  }
   if (
     mediaTracks.some(
       (track) =>
@@ -573,6 +625,36 @@ export function compilePlaybackPlan(
       "unsupported-container",
       "The media container is not supported for preview.",
     );
+  }
+
+  const fragmentedMp4Tracks = mediaTracks.filter(usesMp4InitialisationObjects);
+  if (
+    fragmentedMp4Tracks.some((track) =>
+      track.segments.some((segment) => !segment.init_object),
+    )
+  ) {
+    return fail(
+      "missing-init-object",
+      "Fragmented MP4 preview requires an initialisation Object for every media Object.",
+    );
+  }
+
+  const selfContainedMp4Tracks = mediaTracks.filter(isSelfContainedMp4);
+  const directTrack =
+    mediaTracks.length === 1 &&
+    selfContainedMp4Tracks.length === 1 &&
+    selfContainedMp4Tracks[0].segments.length === 1
+      ? selfContainedMp4Tracks[0]
+      : undefined;
+  if (directTrack) {
+    const segments = timedSegments(directTrack);
+    return {
+      kind: "direct",
+      url: segments[0].url,
+      mediaKind: mediaKind(directTrack),
+      mimeType: directTrack.flow.container as string,
+      dispose() {},
+    };
   }
 
   const aligned = alignSplitEssenceTracks(mediaTracks);
