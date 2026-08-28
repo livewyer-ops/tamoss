@@ -54,3 +54,4 @@ keeps its number and every reference to it stays valid.
 | [0007](./0007-console-api-reads-kubernetes-for-the-ui.md) | A Separate Console API Reads Kubernetes for the UI | accepted |
 | [0008](./0008-flowprofile-owns-the-tams-profile.md) | A Kubernetes Resource Owns Each TAMS Flow Profile | accepted |
 | [0009](./0009-expand-flow-profiles-at-write-time.md) | Expand Flow Profile Metadata Into the Flow at Write Time | accepted |
+| [0012](./0012-media-plane-compute-on-the-job-pattern.md) | Media-Plane Compute on the Ingest Job Pattern | proposed |
