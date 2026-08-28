@@ -44,3 +44,4 @@ would otherwise have to be reconstructed from the code.
 | [0003](./0003-namespaces-as-the-tenancy-boundary.md) | Namespaces as the Tenancy Boundary | accepted |
 | [0004](./0004-selectable-backends.md) | Selectable Backends Rather Than Bundled Ones | accepted |
 | [0005](./0005-kubernetes-agnostic-api.md) | Keep the API Kubernetes-Agnostic | accepted |
+| [0011](./0011-reconcile-the-index-against-the-object-store.md) | Reconcile the Index Against the Object Store | proposed |
