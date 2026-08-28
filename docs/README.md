@@ -69,6 +69,17 @@ then stay on the matching install, configuration, usage, and operations path.
   surface.
 - [API](reference/api.md) - BBC TAMS API and product health endpoints.
 
+## ADRs
+
+This repository uses [(M)ADR documents](https://adr.github.io/madr/) to record
+significant architectural decisions, the options considered, and the
+consequences accepted by choosing.
+The index of records, and how we use them, is in
+[the decisions README](./adr/README.md).
+
+These are decision records for TAMOSS itself. The TAMS specification ADRs in
+`src/vendor/bbc-tams/docs/adr/` are upstream's and are numbered separately.
+
 ## Development
 
 - [Contributing](../CONTRIBUTING.md) - public contribution workflow.
