@@ -29,10 +29,16 @@ would otherwise have to be reconstructed from the code.
 ## Creating a new ADR
 
 0. Look at the existing records, and see whether this has been considered before or would supersede one of them
-1. Copy [adr-template.md](./adr-template.md) to the next number in sequence, with a title that names the decision (e.g. `0010-schema-migration-rollback.md`)
+1. Copy [adr-template.md](./adr-template.md) to the next free number, with a title that names the decision (e.g. `0013-schema-migration-rollback.md`). Numbers are assigned in blocks, described below
 2. Fill in at least the "Context and Problem Statement", "Considered Options" and "Pros and Cons of the Options" sections. The template carries the rest, and notes which MADR sections we leave out
 3. Set `status` to `proposed` while it is under discussion, and to `accepted` when it is agreed. A record that is later replaced becomes `superseded by [ADR-xxxx](./xxxx-short-title.md)` rather than being edited
 4. Record the consequences honestly; what the decision makes hard is the part that is useful later
+
+Numbers are grouped so the log reads in a useful order: records accepted before
+TAMS 8.2 first, then records accepted with 8.2 support, then everything still
+`proposed`. A number is assigned from the right block when the record is first
+committed and does not move afterwards, so a proposal that is later accepted
+keeps its number and every reference to it stays valid.
 
 ## The records
 
@@ -44,3 +50,7 @@ would otherwise have to be reconstructed from the code.
 | [0003](./0003-namespaces-as-the-tenancy-boundary.md) | Namespaces as the Tenancy Boundary | accepted |
 | [0004](./0004-selectable-backends.md) | Selectable Backends Rather Than Bundled Ones | accepted |
 | [0005](./0005-kubernetes-agnostic-api.md) | Keep the API Kubernetes-Agnostic | accepted |
+| [0006](./0006-operator-owned-ingest-jobs.md) | The Operator Is the Only Author of Ingest Jobs | accepted |
+| [0007](./0007-console-api-reads-kubernetes-for-the-ui.md) | A Separate Console API Reads Kubernetes for the UI | accepted |
+| [0008](./0008-flowprofile-owns-the-tams-profile.md) | A Kubernetes Resource Owns Each TAMS Flow Profile | accepted |
+| [0009](./0009-expand-flow-profiles-at-write-time.md) | Expand Flow Profile Metadata Into the Flow at Write Time | accepted |
