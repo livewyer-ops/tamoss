@@ -24,11 +24,13 @@ integrations.
 
 ## TAMS compatibility
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="src/app/frontend/public/brand/tams-lockup-color-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="src/app/frontend/public/brand/tams-lockup-color-light.svg">
-  <img src="src/app/frontend/public/brand/tams-lockup-color-light.svg" alt="TAMS" width="220">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/app/frontend/public/brand/tams-lockup-color-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="src/app/frontend/public/brand/tams-lockup-color-light.svg">
+    <img src="src/app/frontend/public/brand/tams-lockup-color-light.svg" alt="TAMS" width="260">
+  </picture>
+</p>
 
 TAMOSS implements version 8.2 of the
 [BBC TAMS API specification](https://github.com/bbc/tams). Compatibility is
