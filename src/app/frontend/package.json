@@ -26,7 +26,7 @@
   "dependencies": {
     "@byomakase/omakase-player": "1.1.1",
     "@tanstack/react-query": "^5.101.2",
-    "hls.js": "^1.7.0",
+    "hls.js": "1.6.17",
     "lucide-react": "^0.468.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.8",

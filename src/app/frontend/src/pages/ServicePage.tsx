@@ -11,9 +11,10 @@ import {
 } from "@/components/Surface";
 import { useApi } from "@/contexts/ApiContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import styles from "./ServicePage.module.css";
 
 export default function ServicePage() {
-  usePageTitle("TAMS service");
+  usePageTitle("TAMS Service");
   const api = useApi();
   const service = useQuery({
     queryKey: ["api", "service"],
@@ -31,7 +32,16 @@ export default function ServicePage() {
   return (
     <Page>
       <PageHeader
-        title="TAMS service"
+        title={
+          <span className={styles.serviceTitle}>
+            <img
+              className={styles.tamsLockup}
+              src="/brand/tams-lockup-color-light.svg"
+              alt="TAMS"
+            />{" "}
+            <span>Service</span>
+          </span>
+        }
         actions={
           <Button type="button" onClick={refresh}>
             <RefreshCw size={14} aria-hidden="true" /> Refresh

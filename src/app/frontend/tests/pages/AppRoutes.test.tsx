@@ -439,7 +439,7 @@ describe("operational routes", () => {
 
   it.each([
     ["/", "Overview", "Overview · TAMOSS"],
-    ["/service", "TAMS service", "TAMS service · TAMOSS"],
+    ["/service", "TAMS Service", "TAMS Service · TAMOSS"],
     ["/sources", "Sources", "Sources · TAMOSS"],
     ["/sources/source-1", "Camera A", "Source · TAMOSS"],
     ["/flows", "Flows", "Flows · TAMOSS"],
@@ -463,6 +463,25 @@ describe("operational routes", () => {
       await screen.findByRole("heading", { name: heading }),
     ).toBeInTheDocument();
     expect(document.title).toBe(title);
+  });
+
+  it("uses the official TAMS assets for the service route", async () => {
+    renderRoute("/service");
+
+    const heading = await screen.findByRole("heading", {
+      name: "TAMS Service",
+    });
+    expect(within(heading).getByRole("img", { name: "TAMS" })).toHaveAttribute(
+      "src",
+      "/brand/tams-lockup-color-light.svg",
+    );
+
+    const serviceLink = screen.getByRole("link", { name: "TAMS service" });
+    expect(serviceLink.querySelector("img")).toHaveAttribute(
+      "src",
+      "/brand/tams-mark-tile.svg",
+    );
+    expect(serviceLink.querySelector(".lucide-server-cog")).toBeNull();
   });
 
   it.each([

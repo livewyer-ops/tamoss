@@ -17,6 +17,7 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   `container_mapping` properties on multi-essence Flows, with conformance
   coverage that validates them. The advertised API version stays 8.2, matching
   upstream's versioning policy for this fix.
+- Applied the official TAMS Brand Kit to the service page and navigation.
 - Fixed `task kind:up` leaving application workloads on the previous build:
   operand images are now tagged by `src/` content, so a rebuild changes the
   rendered Deployment spec and Kubernetes rolls the api, ui and worker pods
