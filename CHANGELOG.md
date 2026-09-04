@@ -18,10 +18,14 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   coverage that validates them. The advertised API version stays 8.2, matching
   upstream's versioning policy for this fix.
 - Applied the official TAMS Brand Kit to the service page and navigation.
+- Consolidated Python, npm and Go dependency auditing into one reproducible
+  workflow and made versioned image and operator-asset releases depend on it.
+- Refreshed compatible Python, frontend, operator, container and GitHub Actions
+  dependencies while retaining the reviewed Omakase/HLS compatibility pins.
 - Fixed `task kind:up` leaving application workloads on the previous build:
   operand images are now tagged by `src/` content, so a rebuild changes the
-  rendered Deployment spec and Kubernetes rolls the api, ui and worker pods
-  without an imperative restart.
+  rendered Deployment spec and Kubernetes rolls the api, ui, console and worker
+  pods without an imperative restart.
 
 ## 8.1.0-oss6 - 2026-08-08
 
