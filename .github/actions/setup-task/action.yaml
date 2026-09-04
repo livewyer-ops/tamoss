@@ -10,6 +10,6 @@ runs:
       run: echo "task=$(python3 .github/scripts/aqua-version.py go-task/task)" >> "$GITHUB_OUTPUT"
 
     - name: Install Task
-      uses: go-task/setup-task@v2
+      uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
       with:
         version: ${{ steps.version.outputs.task }}
