@@ -6,9 +6,16 @@ set: [errexit, nounset, pipefail]
 vars:
   PROFILE: '{{default "local-kind" .PROFILE}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
-  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
-  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
-  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  OPERAND_TAG:
+    sh: '. .tasks/lib/kind.sh; task_kind_operand_tag'
+  # Prefixed because included Taskfile vars are visible globally: an unprefixed
+  # API_IMAGE, UI_IMAGE or OPERATOR_IMAGE declared here would be in scope for
+  # every other included taskfile, overriding the defaults they set for
+  # themselves. The KIND_ prefix keeps these confined to the Kind path, and
+  # the tasks below pass them under the unprefixed names the callees expect.
+  KIND_API_IMAGE: '{{default (printf "livewyer/tamoss-api:%s" .OPERAND_TAG) (default (env "API_IMAGE") .API_IMAGE)}}'
+  KIND_UI_IMAGE: '{{default (printf "livewyer/tamoss-ui:%s" .OPERAND_TAG) (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  KIND_OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
   KIND_DEMO_INGEST: '{{default "true" (default (env "KIND_DEMO_INGEST") .KIND_DEMO_INGEST)}}'
   KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
@@ -36,9 +43,9 @@ tasks:
       - task: image
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          API_IMAGE: "{{.KIND_API_IMAGE}}"
+          UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
 
   delete:
     silent: true
@@ -84,6 +91,7 @@ tasks:
         vars:
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
           VERSION: "{{.VERSION}}"
+          OPERAND_VERSION: "{{.OPERAND_TAG}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
 
   image:load:
@@ -109,12 +117,13 @@ tasks:
     cmds:
       - task: :operator:image:build
         vars:
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
           VERSION: "{{.VERSION}}"
+          OPERAND_VERSION: "{{.OPERAND_TAG}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
       - |
         . .tasks/lib/kind.sh
-        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.KIND_OPERATOR_IMAGE}}"
       - task: :operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -133,9 +142,9 @@ tasks:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          KIND_API_IMAGE: "{{.KIND_API_IMAGE}}"
+          KIND_UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          KIND_OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
