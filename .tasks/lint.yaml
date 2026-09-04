@@ -68,6 +68,20 @@ tasks:
     cmds:
       - bash -n .tasks/lib/*.sh
 
+  actions:
+    desc: Lint GitHub Actions workflows
+    silent: true
+    preconditions:
+      - sh: command -v actionlint
+        msg: "actionlint is required; run aqua install"
+    # check-yaml only proves a workflow parses. Actions are SHA-pinned and the
+    # release path gates on a job graph, so a bad `needs:` reference or a
+    # mistyped expression would otherwise stay invisible until a tag build.
+    # actionlint also runs shellcheck over `run:` blocks when it is on PATH,
+    # which catches defects such as unquoted expansions.
+    cmds:
+      - actionlint
+
   yamlfmt:
     interactive: true
     silent: true

@@ -20,14 +20,14 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve tool versions
         id: aqua-versions
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -48,7 +48,7 @@ jobs:
         run: task test:tamsin:release
 
       - name: Upload TAMSin release reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: tamsin-release-reports-${{ github.run_id }}
@@ -95,14 +95,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve tool versions
         id: aqua-versions
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -130,7 +130,7 @@ jobs:
       OPERATOR_IMAGE: livewyer/tamoss-operator:chainsaw-${{ github.sha }}
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve tool versions
         id: aqua-versions
@@ -138,7 +138,7 @@ jobs:
           echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -162,7 +162,7 @@ jobs:
           platforms: amd64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Run chainsaw smoke suite
         if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload chainsaw reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: operator-chainsaw-e2e-${{ github.run_id }}
           path: |
@@ -224,7 +224,7 @@ jobs:
 
       - name: Publish chainsaw JUnit summary
         if: always() && hashFiles('reports/junit-operator-chainsaw.xml') != ''
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         with:
           paths: reports/junit-operator-chainsaw.xml
           show: all

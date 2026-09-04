@@ -1,0 +1,105 @@
+name: Dependency Audit
+
+# One definition of the dependency audit, called from three places:
+#
+#   validate.yaml   pull requests and merge queue
+#   docker-hub.yaml gate on the tag build, so a release cannot be cut from a
+#                   tree that fails an enforcing check
+#   schedule below  daily re-scan of whatever is currently on main
+#
+# The scheduled run is the one that earns its keep. A dependency update is
+# scanned at PR time against advisory databases that, for a freshly published
+# compromise, are still empty — the finding does not exist until days later.
+# Without a re-scan, nothing ever looks at that tree again, and the wait
+# imposed by the Dependabot cooldown buys nothing.
+
+on:
+  workflow_call:
+    inputs:
+      strict:
+        description: Also fail on the known backlog, not just the enforcing checks.
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: Also fail on the known backlog, not just the enforcing checks.
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # SARIF upload needs Code Scanning and workflow-run metadata access.
+      security-events: write
+      actions: read
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: ./.github/actions/setup-task
+
+      - name: Install aqua tools
+        uses: ./.github/actions/setup-aqua
+        with:
+          tags: ci-security
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install project
+        run: uv sync --project src --locked --all-extras --dev
+
+      - name: Set up Node.js
+        uses: ./.github/actions/setup-node
+        with:
+          cache: npm
+          cache-dependency-path: src/app/frontend/package-lock.json
+
+      # Signature verification reads the installed tree rather than the
+      # lockfile, so the frontend has to be installed before the audit runs.
+      - name: Install frontend dependencies
+        run: cd src/app/frontend && npm ci
+
+      # The checks live in .tasks/security.yaml so this job and a developer's
+      # `task security:audit` cannot report different things.
+      - name: Audit dependencies
+        run: task security:audit ${{ inputs.strict && 'STRICT=1' || '' }}
+
+      # Backlog findings do not fail the build, so Code Scanning is where they
+      # are actually tracked — as individual alerts with history, rather than
+      # one binary pass/fail nobody can triage. Requires the repository
+      # variable ENABLE_CODE_SCANNING_UPLOAD to be set to 'true'.
+      - name: Upload OSV-Scanner SARIF to Code Scanning
+        if: always() && vars.ENABLE_CODE_SCANNING_UPLOAD == 'true'
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: reports/osv-scanner.sarif
+          category: osv-scanner
+
+      - name: Archive OSV-Scanner SARIF as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: osv-scanner-sarif
+          path: reports/osv-scanner.sarif
+          if-no-files-found: warn
+          retention-days: 30

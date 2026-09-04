@@ -40,6 +40,7 @@ tasks:
     silent: true
     vars:
       OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+      OPERAND_VERSION: '{{default "dev" .OPERAND_VERSION}}'
       STEP_LABEL: '{{default "Operator: build image" .STEP_LABEL}}'
     cmds:
       - |

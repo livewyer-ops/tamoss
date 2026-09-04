@@ -21,7 +21,21 @@ env:
   PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
 jobs:
+  # A tag build is the only path that produces a versioned release, and nothing
+  # previously security-scanned the tree it was cut from. Non-tag builds skip
+  # this: pull requests are already covered by validate.yaml, and :main images
+  # are not a released artefact.
+  dependency-audit:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/dependency-audit.yaml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   tamoss-api:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # id-token: write is required for cosign keyless signing (Fulcio OIDC).
@@ -30,7 +44,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -63,9 +77,11 @@ jobs:
               version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
             fi
             tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
-            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${version}"
+              echo "schema_revision=dev"
+              echo "tams_api=${tams_api}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
@@ -95,7 +111,7 @@ jobs:
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Install cosign
         if: env.PUSH_IMAGES == 'true'
@@ -132,6 +148,8 @@ jobs:
           done
 
   tamoss-ui:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -139,7 +157,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -178,7 +196,7 @@ jobs:
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Install cosign
         if: env.PUSH_IMAGES == 'true'
@@ -210,6 +228,8 @@ jobs:
           done
 
   tamoss-console-api:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -217,7 +237,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -287,6 +307,8 @@ jobs:
           done
 
   tamoss-operator:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -294,7 +316,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -331,10 +353,12 @@ jobs:
               version="$(printf '%s' "${GITHUB_REF_NAME}" | sed 's![^a-zA-Z0-9._-]!-!g')"
             fi
             tams_api="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["tamsAPI"])')"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-            echo "schema_revision=dev" >> "$GITHUB_OUTPUT"
-            echo "previous_schema_revision=" >> "$GITHUB_OUTPUT"
-            echo "tams_api=${tams_api}" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${version}"
+              echo "schema_revision=dev"
+              echo "previous_schema_revision="
+              echo "tams_api=${tams_api}"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Git metadata
@@ -363,7 +387,7 @@ jobs:
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Install cosign
         if: env.PUSH_IMAGES == 'true'

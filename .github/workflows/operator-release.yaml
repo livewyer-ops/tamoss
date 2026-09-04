@@ -14,19 +14,31 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # Release assets and the GitHub Release itself are user-facing artefacts, so
+  # they gate on the same audit as the images.
+  dependency-audit:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/dependency-audit.yaml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   build-and-release:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve tool versions
         id: aqua-versions
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -58,6 +70,7 @@ jobs:
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum
 
       - name: Build release install manifest
+        shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -72,7 +85,10 @@ jobs:
               newName: livewyer/tamoss-operator
               newTag: ${VERSION}
           EOF
-          KUSTOMIZE_BIN="$(ls operator/bin/kustomize-v* | head -n 1)"
+          # Glob rather than parsing `ls`: the shell expands in the same
+          # lexicographic order, so this picks the same binary.
+          kustomize_bins=(operator/bin/kustomize-v*)
+          KUSTOMIZE_BIN="${kustomize_bins[0]}"
           "$KUSTOMIZE_BIN" build dist/operator-release > dist/operator-release/install.yaml
 
       - name: Create draft GitHub Release

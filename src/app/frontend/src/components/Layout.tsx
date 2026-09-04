@@ -7,16 +7,33 @@ import {
   PackageSearch,
   PlaySquare,
   Radio,
-  ServerCog,
   SlidersHorizontal,
   Trash2,
   Webhook,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type AriaAttributes, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import TamossMark from "@/components/TamossMark";
 import styles from "./Layout.module.css";
+
+function TamsNavigationIcon({
+  size = 17,
+}: {
+  size?: number;
+  strokeWidth?: number;
+  "aria-hidden"?: AriaAttributes["aria-hidden"];
+}) {
+  return (
+    <img
+      src="/brand/tams-mark-tile.svg"
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+    />
+  );
+}
 
 const navigation = [
   {
@@ -45,7 +62,7 @@ const navigation = [
     label: "System",
     items: [
       { to: "/system", label: "Runtime", icon: Boxes },
-      { to: "/service", label: "TAMS service", icon: ServerCog },
+      { to: "/service", label: "TAMS service", icon: TamsNavigationIcon },
     ],
   },
 ] as const;

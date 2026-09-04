@@ -11,11 +11,18 @@ vars:
   SCHEMA_VERSION: '{{default "dev-20260810-0007" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
   PREVIOUS_SCHEMA_VERSION: '{{default "0.0.1" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
   TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
-  OPERAND_VERSION: '{{default "dev" (default (env "OPERAND_VERSION") .OPERAND_VERSION)}}'
-  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
-  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
-  CONSOLE_IMAGE: '{{default "livewyer/tamoss-console-api:dev" (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
-  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  OPERAND_TAG:
+    sh: '. .tasks/lib/kind.sh; task_kind_operand_tag'
+  KIND_OPERAND_VERSION: '{{default .OPERAND_TAG (env "OPERAND_VERSION")}}'
+  # Prefixed because included Taskfile vars are visible globally: an unprefixed
+  # image variable declared here would be in scope for every other included
+  # taskfile, overriding the defaults they set for themselves. The KIND_ prefix
+  # keeps these confined to the Kind path, and the tasks below pass them under
+  # the unprefixed names the callees expect.
+  KIND_API_IMAGE: '{{default (printf "livewyer/tamoss-api:%s" .OPERAND_TAG) (default (env "API_IMAGE") .API_IMAGE)}}'
+  KIND_UI_IMAGE: '{{default (printf "livewyer/tamoss-ui:%s" .OPERAND_TAG) (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  KIND_CONSOLE_IMAGE: '{{default (printf "livewyer/tamoss-console-api:%s" .OPERAND_TAG) (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
+  KIND_OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
   DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
@@ -45,10 +52,10 @@ tasks:
       - task: image
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          API_IMAGE: "{{.KIND_API_IMAGE}}"
+          UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.KIND_CONSOLE_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
 
   delete:
     silent: true
@@ -100,7 +107,7 @@ tasks:
           SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
           PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
           TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
-          OPERAND_VERSION: "{{.OPERAND_VERSION}}"
+          OPERAND_VERSION: "{{.KIND_OPERAND_VERSION}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
 
   image:load:
@@ -127,16 +134,16 @@ tasks:
     cmds:
       - task: :operator:image:build
         vars:
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
           VERSION: "{{.VERSION}}"
           SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
           PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
           TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
-          OPERAND_VERSION: "{{.OPERAND_VERSION}}"
+          OPERAND_VERSION: "{{.KIND_OPERAND_VERSION}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
       - |
         . .tasks/lib/kind.sh
-        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.KIND_OPERATOR_IMAGE}}"
       - task: :operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -155,10 +162,10 @@ tasks:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          KIND_API_IMAGE: "{{.KIND_API_IMAGE}}"
+          KIND_UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          KIND_CONSOLE_IMAGE: "{{.KIND_CONSOLE_IMAGE}}"
+          KIND_OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh

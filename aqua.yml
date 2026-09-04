@@ -51,7 +51,9 @@ packages:
 
     # Cloud & storage
     - name: aws/aws-cli@2.32.34 # .tasks/test.yaml k6:seed (S3 bucket seeding via rustfs)
-    - name: google/osv-scanner@v2.3.5 # .tasks/security.yaml security:audit:osv
+    - name: google/osv-scanner@v2.5.0 # .tasks/security.yaml security:audit:osv
+      tags:
+          - ci-security
 
     # Languages & runtimes
     - name: nodejs/node@v25.3.0 # frontend local npm scripts
@@ -60,6 +62,9 @@ packages:
 
     # Linting / formatting / data
     - name: google/yamlfmt@v0.21.0 # .tasks/lint.yaml (lint:yamlfmt)
+    - name: rhysd/actionlint@v1.7.12 # .tasks/lint.yaml (lint:actions)
+      tags:
+          - ci-validate
     - name: mikefarah/yq@v4.35.1 # .tasks/lib/profile.sh and platform dependency checks
       tags:
           - ci-kind
