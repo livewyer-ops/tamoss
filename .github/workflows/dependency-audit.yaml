@@ -30,7 +30,10 @@ on:
     - cron: "17 3 * * *"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A called workflow inherits the caller's github.workflow value. Keep this
+  # key distinct from a caller's own concurrency group so the audit cannot
+  # cancel or queue behind the release workflow that is waiting for it.
+  group: ${{ github.workflow }}-${{ github.ref }}-dependency-audit
   cancel-in-progress: false
 
 permissions:
