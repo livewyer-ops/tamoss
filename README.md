@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/assets/tamoss-logo.png" alt="TAMOSS logo" width="308">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/app/frontend/public/tamoss-logo-transparent.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/tamoss-logo-light-transparent.png">
+    <img src="docs/assets/tamoss-logo-light-transparent.png" alt="TAMOSS logo" width="260">
+  </picture>
 </p>
 
 # TAMOSS
