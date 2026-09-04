@@ -30,7 +30,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -141,7 +141,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Derive PR head image tag
         id: pr-head-tag
@@ -296,7 +296,7 @@ jobs:
       id-token: write
     steps:
       - name: Git Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Derive PR head image tag
         id: pr-head-tag

@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -27,7 +27,7 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -41,7 +41,7 @@ jobs:
         run: task test:fast
 
       - name: Upload fast Python reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: python-fast-reports-${{ github.run_id }}
@@ -50,7 +50,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Fast Python test summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-py-fast.xml
@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -68,7 +68,7 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -82,7 +82,7 @@ jobs:
         run: task test:tams:contract
 
       - name: Upload TAMS contract reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: tams-contract-reports-${{ github.run_id }}
@@ -91,7 +91,7 @@ jobs:
           if-no-files-found: warn
 
       - name: TAMS contract summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-*.xml
@@ -101,7 +101,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -109,7 +109,7 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -123,7 +123,7 @@ jobs:
         run: task test:tams:semantics
 
       - name: Upload TAMS semantic reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: tams-semantics-reports-${{ github.run_id }}
@@ -132,7 +132,7 @@ jobs:
           if-no-files-found: warn
 
       - name: TAMS semantic summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-*.xml
@@ -142,7 +142,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -150,7 +150,7 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -164,7 +164,7 @@ jobs:
         run: task test:workers
 
       - name: Upload worker reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: worker-reports-${{ github.run_id }}
@@ -173,7 +173,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Worker test summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-*.xml
@@ -183,7 +183,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -191,7 +191,7 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -212,7 +212,7 @@ jobs:
         run: COMPOSE_FILE=deploy/compose/docker-compose.yaml docker compose down --volumes
 
       - name: Upload adapter reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: adapter-reports-${{ github.run_id }}
@@ -221,7 +221,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Adapter test summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-*.xml
@@ -231,7 +231,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Task
         uses: ./.github/actions/setup-task
@@ -246,7 +246,7 @@ jobs:
         run: task test:frontend
 
       - name: Upload frontend reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: frontend-reports-${{ github.run_id }}
@@ -255,7 +255,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Frontend test summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-frontend-unit.xml
@@ -265,7 +265,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Task
         uses: ./.github/actions/setup-task
@@ -274,7 +274,7 @@ jobs:
         run: task test:media:fixtures
 
       - name: Upload media fixture reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: media-fixture-reports-${{ github.run_id }}
@@ -283,7 +283,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Media fixture test summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         if: always()
         with:
           paths: reports/junit-media-fixtures.xml
