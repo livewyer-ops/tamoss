@@ -21,7 +21,21 @@ env:
   PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
 jobs:
+  # A tag build is the only path that produces a versioned release, and nothing
+  # previously security-scanned the tree it was cut from. Non-tag builds skip
+  # this: pull requests are already covered by validate.yaml, and :main images
+  # are not a released artefact.
+  dependency-audit:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/dependency-audit.yaml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   tamoss-api:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # id-token: write is required for cosign keyless signing (Fulcio OIDC).
@@ -134,6 +148,8 @@ jobs:
           done
 
   tamoss-ui:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -212,6 +228,8 @@ jobs:
           done
 
   tamoss-console-api:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -289,6 +307,8 @@ jobs:
           done
 
   tamoss-operator:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:

@@ -14,7 +14,19 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # Release assets and the GitHub Release itself are user-facing artefacts, so
+  # they gate on the same audit as the images.
+  dependency-audit:
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/dependency-audit.yaml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   build-and-release:
+    needs: [dependency-audit]
+    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
