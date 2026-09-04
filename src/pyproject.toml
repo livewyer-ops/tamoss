@@ -45,7 +45,7 @@ dev = [
     "httpx>=0.24.0",
     "polyfactory>=2.14.0",
     "faker>=40.36.0",
-    "ruff==0.16.3",
+    "ruff==0.16.5",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
     "mypy>=2.3.0",
