@@ -101,12 +101,15 @@ tasks:
         msg: "osv-scanner is required; run aqua install"
     # The only check covering operator/go.mod — npm audit and pip-audit are
     # blind to the Go module, so anything it reports there is reported nowhere
-    # else. Writes SARIF for CI to upload, and re-runs as a table on failure
-    # because SARIF alone tells a human at a terminal nothing.
+    # else. Go call analysis is deliberately disabled: this is a deterministic
+    # lockfile audit and must not depend on whichever Go toolchain happens to be
+    # installed on the developer machine or runner. Writes SARIF for CI to
+    # upload, and re-runs as a table on failure because SARIF alone tells a
+    # human at a terminal nothing.
     cmds:
       - mkdir -p reports
       - |
-        set -- --recursive --experimental-exclude=src/vendor/bbc-tams/examples
+        set -- --recursive --no-call-analysis=go --experimental-exclude=src/vendor/bbc-tams/examples
         status=0
         osv-scanner "$@" --format=sarif --output-file=reports/osv-scanner.sarif ./ || status=$?
         if [ "$status" -ne 0 ]; then

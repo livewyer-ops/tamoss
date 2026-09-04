@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           submodules: true
@@ -46,7 +46,7 @@ jobs:
           kubectl version --client=true
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -77,7 +77,7 @@ jobs:
             --output-root reports/kind-support || true
 
       - name: Upload test reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: ${{ inputs.artifact-name }}
@@ -97,7 +97,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Test Summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
         with:
           paths: reports/junit-*.xml
         if: always()

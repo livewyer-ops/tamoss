@@ -38,13 +38,14 @@ tasks:
     silent: true
     vars:
       OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+      OPERAND_VERSION: '{{default "dev" .OPERAND_VERSION}}'
       STEP_LABEL: '{{default "Operator: build image" .STEP_LABEL}}'
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/progress.sh
         task_step "{{.STEP_LABEL}}" \
-          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}"
+          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}" OPERAND_VERSION="{{.OPERAND_VERSION}}"
 
   test:
     desc: "Operator: run unit and envtest suites"
