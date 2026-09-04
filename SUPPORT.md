@@ -3,6 +3,9 @@
 Use GitHub Issues for public bug reports, feature requests, and operational
 questions.
 
+For informal questions and community chat, join the `#tamoss` channel in the
+[Cloud Native Agile Production Slack](https://join.slack.com/t/cnap-media/shared_invite/zt-46so866cy-YstgGBzIgcA6U1c3J1Rg1g).
+
 Before opening an issue, check:
 
 - [README](README.md) for the supported deployment and development paths
@@ -27,4 +30,4 @@ hostnames if they are not public.
 
 Maintainers triage public issues on a best-effort basis. If you have a separate
 commercial support agreement, use that channel for urgent production incidents;
-otherwise use GitHub Issues or Discussions.
+otherwise use GitHub Issues, GitHub Discussions, or the `#tamoss` Slack channel.

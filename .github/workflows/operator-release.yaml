@@ -58,6 +58,7 @@ jobs:
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum
 
       - name: Build release install manifest
+        shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -72,7 +73,10 @@ jobs:
               newName: livewyer/tamoss-operator
               newTag: ${VERSION}
           EOF
-          KUSTOMIZE_BIN="$(ls operator/bin/kustomize-v* | head -n 1)"
+          # Glob rather than parsing `ls`: the shell expands in the same
+          # lexicographic order, so this picks the same binary.
+          kustomize_bins=(operator/bin/kustomize-v*)
+          KUSTOMIZE_BIN="${kustomize_bins[0]}"
           "$KUSTOMIZE_BIN" build dist/operator-release > dist/operator-release/install.yaml
 
       - name: Create draft GitHub Release

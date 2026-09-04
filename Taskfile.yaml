@@ -7,10 +7,6 @@ vars:
   PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
   SECRETS_DIR: ".local"
-  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
-  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
-  CONSOLE_IMAGE: '{{default "livewyer/tamoss-console-api:dev" (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
-  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
   OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
@@ -98,10 +94,6 @@ tasks:
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
           KIND_SUMMARY: "{{.KIND_SUMMARY}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
@@ -279,13 +271,14 @@ tasks:
         done
 
   lint:
-    desc: "Development: lint Python/frontend/shell; operator Go and manifest gates are separate"
+    desc: "Development: lint Python/frontend/shell/workflows; operator Go and manifest gates are separate"
     silent: true
     cmds:
       - task: lint:ruff:lint
       - task: lint:mypy
       - task: lint:shell
       - task: lint:eslint
+      - task: lint:actions
 
   check:
     desc: "Development: run lint plus the fast test subset"
