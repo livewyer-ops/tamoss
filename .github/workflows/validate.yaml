@@ -184,10 +184,10 @@ jobs:
       actions: read
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -203,7 +203,7 @@ jobs:
       - name: OSV-Scanner filesystem scan
         id: osv-scanner
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@v2.5.0
+        uses: google/osv-scanner-action/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
         with:
           scan-args: |-
             --recursive
@@ -214,14 +214,14 @@ jobs:
 
       - name: Upload OSV-Scanner SARIF to Code Scanning
         if: always() && vars.ENABLE_CODE_SCANNING_UPLOAD == 'true' && steps.osv-scanner.conclusion != 'skipped'
-        uses: github/codeql-action/upload-sarif@v4.37.8
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           sarif_file: reports/osv-scanner.sarif
           category: osv-scanner
 
       - name: Archive OSV-Scanner SARIF as workflow artifact
         if: always() && steps.osv-scanner.conclusion != 'skipped'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: osv-scanner-sarif
           path: reports/osv-scanner.sarif
