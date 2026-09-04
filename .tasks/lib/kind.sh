@@ -20,7 +20,7 @@ fi
 # Outside a work tree there is no content to hash, so "dev" is the honest answer
 # and matches the tag used before content addressing.
 task_kind_operand_tag() {
-  local root paths
+  local root paths gitlinks
 
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
   if [ -z "$root" ]; then
@@ -43,7 +43,17 @@ task_kind_operand_tag() {
         done
   )"
 
-  if [ -z "$paths" ]; then
+  # gitlinks are not regular files, so hash their staged object IDs explicitly.
+  # A BBC TAMS contract update can consist solely of moving this pointer; that
+  # must still change the API/UI image tag and roll the running workloads.
+  gitlinks="$(
+    cd "$root" || exit 1
+    git ls-files --stage -- src \
+      | awk '$1 == "160000" { print $4 "\t" $2 }' \
+      | sort
+  )"
+
+  if [ -z "$paths" ] && [ -z "$gitlinks" ]; then
     printf 'task_kind_operand_tag: no operand sources found under %s/src\n' \
       "$root" >&2
     return 1
@@ -54,6 +64,7 @@ task_kind_operand_tag() {
     {
       printf '%s\n' "$paths"
       printf '%s\n' "$paths" | git hash-object --stdin-paths
+      printf '%s\n' "$gitlinks"
     } | sha256sum | cut -c1-12
   )"
 }

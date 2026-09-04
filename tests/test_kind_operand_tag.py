@@ -44,6 +44,42 @@ def test_operand_tag_falls_back_outside_a_work_tree(tmp_path: Path) -> None:
     assert _operand_tag(tmp_path) == "dev"
 
 
+def test_operand_tag_changes_when_a_submodule_pointer_changes(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("bash") is None or shutil.which("git") is None:
+        pytest.skip("bash and git are required for operand tag checks")
+
+    repository = tmp_path / "repository"
+    source = repository / "src/app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("print('operand')\n", encoding="utf-8")
+    _git(repository, "init")
+    _git(repository, "add", "src/app.py")
+
+    gitlink = "src/vendor/bbc-tams"
+    _git(
+        repository,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"160000,{'1' * 40},{gitlink}",
+    )
+    first = _operand_tag(repository)
+
+    _git(
+        repository,
+        "update-index",
+        "--cacheinfo",
+        f"160000,{'2' * 40},{gitlink}",
+    )
+    second = _operand_tag(repository)
+
+    assert TAG_PATTERN.match(first), first
+    assert TAG_PATTERN.match(second), second
+    assert first != second
+
+
 def test_kind_build_loads_and_renders_one_operand_tag() -> None:
     """Every consumer of the operand tag must agree within a single build.
 
@@ -137,3 +173,13 @@ def _operand_tag(cwd: Path) -> str:
         check=True,
         text=True,
     ).stdout
+
+
+def _git(repository: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
