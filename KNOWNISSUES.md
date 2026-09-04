@@ -4,7 +4,8 @@
 
 Reviewed 2026-09-04. `pip-audit`, production-scope `npm audit`, and npm
 signature verification are clean. The entries below are conservative lockfile
-findings reported by OSV and the development-scope npm audit.
+findings reported by OSV and the development-scope npm audit. OSV currently
+reports 30 known vulnerabilities across 13 packages.
 
 The Go findings are transitive operator dependencies. Reachability is not
 asserted because the repository audit deliberately disables Go call analysis
@@ -19,14 +20,10 @@ scripts are disabled by #191 and each upstream toolchain fix remains required.
 | Ecosystem | Package | Locked version | Advisory IDs |
 | --- | --- | --- | --- |
 | Go | `github.com/google/cel-go` | 0.26.0 | GO-2026-6094 |
-| Go | `github.com/klauspost/compress` | 1.18.0 | GO-2026-5841 |
 | Go | `go.opentelemetry.io/otel` | 1.43.0 | GO-2026-5158 |
-| Go | `golang.org/x/crypto` | 0.50.0 | GO-2026-5005, GO-2026-5006, GO-2026-5013, GO-2026-5014, GO-2026-5015, GO-2026-5016, GO-2026-5017, GO-2026-5018, GO-2026-5019, GO-2026-5020, GO-2026-5021, GO-2026-5023, GO-2026-5033, GO-2026-5932, GO-2026-6303, GO-2026-6354, GO-2026-6355 |
-| Go | `golang.org/x/mod` | 0.35.0 | GO-2026-6179, GO-2026-6180 |
-| Go | `golang.org/x/net` | 0.53.0 | GO-2026-5025, GO-2026-5026, GO-2026-5027, GO-2026-5028, GO-2026-5029, GO-2026-5030, GO-2026-5942 |
-| Go | `golang.org/x/sys` | 0.43.0 | GO-2026-5024 |
-| Go | `golang.org/x/text` | 0.36.0 | GO-2026-5970 |
-| Go | `google.golang.org/grpc` | 1.81.0 | GO-2026-6061, GHSA-vp52-pcj8-j9qc |
+| Go | `golang.org/x/crypto` | 0.55.0 | GO-2026-5932, GO-2026-6354, GO-2026-6355 |
+| Go | `golang.org/x/mod` | 0.38.0 | GO-2026-6179, GO-2026-6180 |
+| Go | `google.golang.org/grpc` | 1.81.1 | GO-2026-6061, GHSA-vp52-pcj8-j9qc |
 | npm | `@babel/core` | 7.29.0 | GHSA-4x5r-pxfx-6jf8 |
 | npm | `@humanfs/node` | 0.16.7 | GHSA-p498-v437-472g |
 | npm | `brace-expansion` | 2.1.1 | GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895 |
