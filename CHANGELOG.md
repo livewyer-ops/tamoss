@@ -6,7 +6,10 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
-- Nothing yet.
+- Fixed `task kind:up` leaving application workloads on the previous build:
+  operand images are now tagged by `src/` content, so a rebuild changes the
+  rendered Deployment spec and Kubernetes rolls the api, ui and worker pods
+  without an imperative restart.
 
 ## 8.1.0-oss6 - 2026-08-08
 
