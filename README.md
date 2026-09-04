@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/app/frontend/public/tamoss-icon.png" alt="TAMOSS logo" width="128">
+  <img src="docs/assets/tamoss-logo.png" alt="TAMOSS logo" width="308">
 </p>
 
 # TAMOSS
@@ -17,6 +17,22 @@ The operator reconciles `Tamoss`, `StorageBackend`, `FlowProfile`, and
 `IngestRun` custom resources into the API, worker, UI, schema migration,
 generated Secrets, routing, Profile registration, and selected backend
 integrations.
+
+## TAMS compatibility
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="src/app/frontend/public/brand/tams-lockup-color-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="src/app/frontend/public/brand/tams-lockup-color-light.svg">
+  <img src="src/app/frontend/public/brand/tams-lockup-color-light.svg" alt="TAMS" width="220">
+</picture>
+
+TAMOSS implements version 8.2 of the
+[BBC TAMS API specification](https://github.com/bbc/tams). Compatibility is
+verified by the project's maintained
+[TAMS conformance gates](docs/development/testing.md#unit-and-contract-gates),
+including contract, semantic, integration, and deployed tests. The TAMS mark
+identifies the specification TAMOSS implements; it is not a claim of TAMS or
+BBC certification or endorsement.
 
 ## Features
 

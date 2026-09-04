@@ -5,7 +5,6 @@
       "**",
       "!src/api/generated",
       "!src/control/generated",
-      "!public/tamoss-icon.svg",
       "!public/brand/*.svg",
       "!dist",
       "!coverage"

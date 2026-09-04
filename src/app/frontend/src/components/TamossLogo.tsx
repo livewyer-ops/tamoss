@@ -1,15 +1,14 @@
-type TamossMarkProps = {
+type TamossLogoProps = {
   className?: string;
 };
 
-export default function TamossMark({ className = "" }: TamossMarkProps) {
+export default function TamossLogo({ className = "" }: TamossLogoProps) {
   const classes = ["block", className].filter(Boolean).join(" ");
 
   return (
     <img
-      src="/tamoss-icon.png"
-      alt=""
-      aria-hidden="true"
+      src="/tamoss-logo-transparent.png"
+      alt="TAMOSS"
       className={classes}
       draggable={false}
     />

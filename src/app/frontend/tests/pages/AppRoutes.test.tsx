@@ -484,6 +484,21 @@ describe("operational routes", () => {
     expect(serviceLink.querySelector(".lucide-server-cog")).toBeNull();
   });
 
+  it("uses the approved TAMOSS product assets", async () => {
+    renderRoute("/");
+    await screen.findByRole("heading", { name: "Overview" });
+
+    expect(screen.getByRole("img", { name: "TAMOSS" })).toHaveAttribute(
+      "src",
+      "/tamoss-logo-transparent.png",
+    );
+    const mobileMark = document.querySelector(
+      'header img[src="/tamoss-icon.png"]',
+    );
+    expect(mobileMark).toBeInTheDocument();
+    expect(mobileMark).toHaveAttribute("aria-hidden", "true");
+  });
+
   it.each([
     ["/sources", "Sources", mocks.api.getSources, true],
     ["/flows", "Flows", mocks.api.getFlows, true],

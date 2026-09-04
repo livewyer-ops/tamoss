@@ -17,30 +17,46 @@
 
 .brand {
   display: flex;
-  min-height: 65px;
+  min-height: 82px;
   align-items: center;
   gap: 10px;
   padding: 11px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.brand strong {
-  display: block;
-  font-size: 0.875rem;
-  letter-spacing: 0;
+.brandIdentity {
+  min-width: 0;
 }
 
-.brand span {
+.logo {
   display: block;
+  width: 140px;
+  height: auto;
+}
+
+.brandIdentity span {
+  display: block;
+  margin-top: 2px;
   color: #aeb8bc;
   font-size: 0.6875rem;
 }
 
-.mark,
-.mobileMark {
-  width: 36px;
-  height: 36px;
+.mobileMarkFrame {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  background: var(--nav);
+}
+
+.mobileMark {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .navigation {
@@ -136,11 +152,6 @@
     border-bottom: 1px solid var(--line);
     background: #fff;
     font-size: 0.8125rem;
-  }
-
-  .mobileMark {
-    width: 30px;
-    height: 30px;
   }
 
   .sidebar {
