@@ -28,7 +28,7 @@ integrations.
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="src/app/frontend/public/brand/tams-lockup-color-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="src/app/frontend/public/brand/tams-lockup-color-light.svg">
-    <img src="src/app/frontend/public/brand/tams-lockup-color-light.svg" alt="TAMS" width="260">
+    <img src="src/app/frontend/public/brand/tams-lockup-color-light.svg" alt="TAMS" width="180">
   </picture>
 </p>
 
