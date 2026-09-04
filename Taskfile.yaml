@@ -275,13 +275,14 @@ tasks:
         done
 
   lint:
-    desc: "Development: lint Python/frontend/shell; operator Go and manifest gates are separate"
+    desc: "Development: lint Python/frontend/shell/workflows; operator Go and manifest gates are separate"
     silent: true
     cmds:
       - task: lint:ruff:lint
       - task: lint:mypy
       - task: lint:shell
       - task: lint:eslint
+      - task: lint:actions
 
   check:
     desc: "Development: run lint plus the fast test subset"
