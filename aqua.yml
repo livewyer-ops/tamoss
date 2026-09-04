@@ -51,7 +51,9 @@ packages:
 
     # Cloud & storage
     - name: aws/aws-cli@2.32.34 # .tasks/test.yaml k6:seed (S3 bucket seeding via rustfs)
-    - name: google/osv-scanner@v2.3.5 # .tasks/security.yaml security:audit:osv
+    - name: google/osv-scanner@v2.5.0 # .tasks/security.yaml security:audit:osv
+      tags:
+          - ci-security
 
     # Languages & runtimes
     - name: nodejs/node@v25.3.0 # frontend local npm scripts
