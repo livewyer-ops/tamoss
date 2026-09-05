@@ -32,6 +32,7 @@ def verify_unpublished(*, api_url: str, repository: str, tag: str, token: str) -
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
+                "User-Agent": "tamoss-release-preflight",
             },
         )
         response = connection.getresponse()

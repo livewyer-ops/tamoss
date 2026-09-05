@@ -133,6 +133,10 @@ def test_release_preflight_preserves_enterprise_api_prefix_and_encodes_tag(
         "GET",
         "/api/v3/repos/org/repo/releases/tags/release%2F8.2.0",
     )
+    assert (
+        connection.request.call_args.kwargs["headers"]["User-Agent"]
+        == "tamoss-release-preflight"
+    )
 
 
 def test_release_record_rejects_any_missing_or_malformed_image_digest() -> None:
