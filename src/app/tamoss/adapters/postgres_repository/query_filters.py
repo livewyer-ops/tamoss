@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.types import PostgresCursor
+from tamoss.domain.listing_pagination import ListingWindow
 from tamoss.domain.model import FlowRecord
 
 
@@ -33,6 +35,38 @@ def _listing_order_sql(
         identity_sql,
         direction,
     )
+
+
+def _append_listing_cursor_filter(
+    clauses: list[sql.Composable],
+    params: dict[str, Any],
+    window: ListingWindow,
+    *,
+    value_sql: sql.Composable,
+    identity_sql: sql.Composable,
+    timestamp: bool,
+) -> None:
+    if window.anchor_id is None:
+        return
+    operator = sql.SQL("<") if window.descending else sql.SQL(">")
+    params["cursor_id"] = window.anchor_id
+    tie = sql.SQL("{} {} %(cursor_id)s").format(identity_sql, operator)
+    if window.anchor_value is None:
+        predicate = sql.SQL("({} IS NULL AND {})").format(value_sql, tie)
+        if window.missing_first:
+            predicate += sql.SQL(" OR {} IS NOT NULL").format(value_sql)
+    else:
+        params["cursor_value"] = (
+            datetime.fromisoformat(window.anchor_value)
+            if timestamp
+            else window.anchor_value
+        )
+        predicate = sql.SQL("({}, {}) {} (%(cursor_value)s, %(cursor_id)s)").format(
+            value_sql, identity_sql, operator
+        )
+        if not timestamp and not window.missing_first:
+            predicate += sql.SQL(" OR {} IS NULL").format(value_sql)
+    clauses.append(sql.SQL("(") + predicate + sql.SQL(")"))
 
 
 def _append_flow_collected_by_filter(

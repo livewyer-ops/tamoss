@@ -19,12 +19,14 @@ from tamoss.adapters.postgres_repository.mappers import (
 from tamoss.adapters.postgres_repository.query_filters import (
     _append_flow_collected_by_filter,
     _append_flow_timerange_filter,
+    _append_listing_cursor_filter,
     _append_source_collected_by_filter,
     _append_tag_filter_clauses,
     _flows_with_collected_by,
     _listing_order_sql,
     _where_sql,
 )
+from tamoss.domain.listing_pagination import listing_page, listing_window
 from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import FlowRecord, SourceRecord, SourceRelationships
 from tamoss.domain.pagination import Page, resolve_page_window
@@ -92,7 +94,13 @@ class PostgresFlowSourceMixin:
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]:
-        window = resolve_page_window(page=page, limit=limit)
+        window = listing_window(
+            page=page,
+            limit=limit,
+            resource="flows",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+        )
         clauses: list[sql.Composable] = []
         params: dict[str, Any] = {
             "offset": window.offset,
@@ -156,12 +164,20 @@ class PostgresFlowSourceMixin:
             collected_by_ids=collected_by_ids,
             top_level_only=top_level_only,
         )
-        where_sql = _where_sql(clauses)
         sort_expression = {
             FlowSortBy.CREATED: sql.SQL("flow.created"),
             FlowSortBy.METADATA_UPDATED: sql.SQL("flow.metadata_updated"),
             FlowSortBy.LABEL: sql.SQL("flow.label"),
         }[sort_by]
+        _append_listing_cursor_filter(
+            clauses,
+            params,
+            window,
+            value_sql=sort_expression,
+            identity_sql=sql.SQL("flow.id"),
+            timestamp=sort_by != FlowSortBy.LABEL,
+        )
+        where_sql = _where_sql(clauses)
         descending = sort_by.descending(reverse_order=reverse_order)
         order_sql = _listing_order_sql(
             sort_expression,
@@ -184,12 +200,18 @@ class PostgresFlowSourceMixin:
                 params,
             )
             rows = cur.fetchall()
-            flows = [_flow_from_record(row[0]) for row in rows[: window.limit]]
+            flows = [_flow_from_record(row[0]) for row in rows]
             flows = _flows_with_collected_by(cur, flows)
-        next_page = (
-            str(window.offset + window.limit) if len(rows) > window.limit else None
+        return listing_page(
+            flows,
+            window,
+            value=lambda flow: {
+                FlowSortBy.CREATED: flow.created,
+                FlowSortBy.METADATA_UPDATED: flow.metadata_updated,
+                FlowSortBy.LABEL: flow.data.get("label"),
+            }[sort_by],
+            identity=lambda flow: flow.id,
         )
-        return Page(items=flows, limit=window.limit, next_page=next_page)
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
@@ -226,6 +248,14 @@ class PostgresFlowSourceMixin:
     def delete_flow(self, flow_id: UUID) -> None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM tamoss_flows WHERE id = %s", (flow_id,))
+
+    def lock_source(self, source_id: UUID) -> None:
+        if self._transaction_connection.get() is None:
+            raise RuntimeError("Source locks require a unit of work.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM tamoss_sources WHERE id = %s FOR UPDATE", (source_id,)
+            )
 
     def get_source(self, source_id: UUID) -> SourceRecord | None:
         with self._connect() as conn, conn.cursor() as cur:
@@ -301,7 +331,13 @@ class PostgresFlowSourceMixin:
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]:
-        window = resolve_page_window(page=page, limit=limit)
+        window = listing_window(
+            page=page,
+            limit=limit,
+            resource="sources",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+        )
         clauses: list[sql.Composable] = []
         params: dict[str, Any] = {
             "offset": window.offset,
@@ -326,12 +362,20 @@ class PostgresFlowSourceMixin:
             collected_by_ids=collected_by_ids,
             top_level_only=top_level_only,
         )
-        where_sql = _where_sql(clauses)
         sort_expression = {
             SourceSortBy.CREATED: sql.SQL("source.created"),
             SourceSortBy.UPDATED: sql.SQL("source.metadata_updated"),
             SourceSortBy.LABEL: sql.SQL("source.label"),
         }[sort_by]
+        _append_listing_cursor_filter(
+            clauses,
+            params,
+            window,
+            value_sql=sort_expression,
+            identity_sql=sql.SQL("source.id"),
+            timestamp=sort_by != SourceSortBy.LABEL,
+        )
+        where_sql = _where_sql(clauses)
         descending = sort_by.descending(reverse_order=reverse_order)
         order_sql = _listing_order_sql(
             sort_expression,
@@ -354,11 +398,17 @@ class PostgresFlowSourceMixin:
                 params,
             )
             rows = cur.fetchall()
-        sources = [_source_from_record(row[0]) for row in rows[: window.limit]]
-        next_page = (
-            str(window.offset + window.limit) if len(rows) > window.limit else None
+        sources = [_source_from_record(row[0]) for row in rows]
+        return listing_page(
+            sources,
+            window,
+            value=lambda source: {
+                SourceSortBy.CREATED: source.created,
+                SourceSortBy.UPDATED: source.metadata_updated,
+                SourceSortBy.LABEL: source.label,
+            }[sort_by],
+            identity=lambda source: source.id,
         )
-        return Page(items=sources, limit=window.limit, next_page=next_page)
 
     def source_relationships_for(
         self, source_ids: Iterable[UUID]

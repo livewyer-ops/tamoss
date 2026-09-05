@@ -14,6 +14,8 @@ import {
 import { useApi } from "@/contexts/ApiContext";
 import { useCursorPage } from "@/hooks/useCursorPage";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import styles from "@/pages/WebhooksPage.module.css";
+import type { WebhookDetail } from "@/types/tams";
 import { displaySafeUrl } from "@/utils/media-location";
 
 function tone(status?: string) {
@@ -21,6 +23,42 @@ function tone(status?: string) {
   if (status === "error") return "error" as const;
   if (status === "disabled") return "warning" as const;
   return "neutral" as const;
+}
+
+function WebhookFilters({ webhook }: { webhook: WebhookDetail }) {
+  const filters = [
+    ["Flow IDs", webhook.flow_ids, "[]"],
+    ["Source IDs", webhook.source_ids, "[]"],
+    [
+      "Flow collected by",
+      webhook.flow_collected_by_ids,
+      "Top-level Flows only",
+    ],
+    [
+      "Source collected by",
+      webhook.source_collected_by_ids,
+      "Top-level Sources only",
+    ],
+    ["URL labels", webhook.accept_get_urls, "[]"],
+    ["Storage IDs", webhook.accept_storage_ids, "[]"],
+  ] as const;
+  const active = filters.filter(([, values]) => values !== undefined);
+  return (
+    <div>
+      {active.length === 0 && webhook.presigned === undefined && "Unrestricted"}
+      {active.map(([label, values, empty]) => (
+        <div key={label}>
+          <strong>{label}</strong>
+          <div className={`${surfaceStyles.secondary} ${surfaceStyles.mono}`}>
+            {values?.length ? values.join(", ") : empty}
+          </div>
+        </div>
+      ))}
+      {webhook.presigned !== undefined && (
+        <div>Presigned URLs: {webhook.presigned ? "Yes" : "No"}</div>
+      )}
+    </div>
+  );
 }
 
 export default function WebhooksPage() {
@@ -83,10 +121,8 @@ export default function WebhooksPage() {
                       </div>
                     </td>
                     <td>{webhook.events.join(", ")}</td>
-                    <td>
-                      {(webhook.flow_ids?.length ?? 0) +
-                        (webhook.source_ids?.length ?? 0)}{" "}
-                      resource filters
+                    <td className={styles.filters}>
+                      <WebhookFilters webhook={webhook} />
                     </td>
                     <td>
                       <StatusBadge tone={tone(webhook.status)}>

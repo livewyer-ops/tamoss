@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -435,20 +436,26 @@ class FlowUseCases:
         collection: list[dict[str, Any]],
         identity: Identity,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        self._replace_flow_collection(flow, collection)
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            self._replace_flow_collection(flow, collection)
 
-    def _save_and_publish(self, flow: FlowRecord, identity: Identity | None) -> None:
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+    @contextmanager
+    def _edit_flow(
+        self, flow_id: UUID, identity: Identity | None
+    ) -> Iterator[FlowRecord]:
+        with self.repository.unit_of_work():
+            self.repository.lock_flow_segments(flow_id)
+            flow = self.get_flow(flow_id)
+            yield flow
+            touch_flow_metadata(flow, identity=identity)
+            self.repository.save_flow(flow)
+            webhooking.publish_flow_event(
+                repository=self.webhook_repository,
+                resource_repository=self.repository,
+                event_type="flows/updated",
+                flow=flow,
+            )
 
     def delete_flow_collection(self, *, flow_id: UUID, identity: Identity) -> None:
         self.set_flow_collection(flow_id=flow_id, collection=[], identity=identity)
@@ -483,26 +490,25 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        if property_name in {"label", "description"}:
-            ensure_flow_writable(flow)
-            if not isinstance(value, str):
-                raise BadRequest("Bad request. Invalid Flow property value.")
-        elif property_name in {"avg_bit_rate", "max_bit_rate"}:
-            ensure_flow_writable(flow)
-            if property_name == "avg_bit_rate" and flow.profile_id is not None:
-                raise BadRequest(
-                    "Bad request. Profile-backed Flows cannot override "
-                    "average bit rate."
-                )
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise BadRequest("Bad request. Invalid Flow bit rate.")
-        else:
-            if not isinstance(value, bool):
-                raise BadRequest("Bad request. Invalid Flow read_only value.")
-            flow.read_only = value
-        flow.data[property_name] = value
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            if property_name in {"label", "description"}:
+                ensure_flow_writable(flow)
+                if not isinstance(value, str):
+                    raise BadRequest("Bad request. Invalid Flow property value.")
+            elif property_name in {"avg_bit_rate", "max_bit_rate"}:
+                ensure_flow_writable(flow)
+                if property_name == "avg_bit_rate" and flow.profile_id is not None:
+                    raise BadRequest(
+                        "Bad request. Profile-backed Flows cannot override "
+                        "average bit rate."
+                    )
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise BadRequest("Bad request. Invalid Flow bit rate.")
+            else:
+                if not isinstance(value, bool):
+                    raise BadRequest("Bad request. Invalid Flow read_only value.")
+                flow.read_only = value
+            flow.data[property_name] = value
 
     def delete_flow_property(
         self,
@@ -511,14 +517,14 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        if property_name == "avg_bit_rate" and flow.profile_id is not None:
-            raise BadRequest(
-                "Bad request. Profile-backed Flows cannot override average bit rate."
-            )
-        flow.data.pop(property_name, None)
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            if property_name == "avg_bit_rate" and flow.profile_id is not None:
+                raise BadRequest(
+                    "Bad request. Profile-backed Flows cannot override "
+                    "average bit rate."
+                )
+            flow.data.pop(property_name, None)
 
     def get_flow_tags(self, flow_id: UUID) -> dict[str, TagValue]:
         return self.get_flow(flow_id).tags
@@ -539,11 +545,10 @@ class FlowUseCases:
     ) -> None:
         if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Flow tag value.")
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        flow.tags[name] = value
-        flow.data["tags"] = flow.tags
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            flow.tags[name] = value
+            flow.data["tags"] = flow.tags
 
     def delete_flow_tag(
         self,
@@ -552,11 +557,10 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        flow.tags.pop(name, None)
-        flow.data["tags"] = flow.tags
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            flow.tags.pop(name, None)
+            flow.data["tags"] = flow.tags
 
     def _replace_flow_collection(
         self, flow: FlowRecord, collection: list[dict[str, Any]] | None

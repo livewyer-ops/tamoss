@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+from http.cookiejar import DefaultCookiePolicy
 from typing import Protocol
 from urllib.parse import ParseResult, urljoin, urlparse
 from uuid import UUID, uuid4
@@ -15,6 +16,13 @@ from uuid import UUID, uuid4
 import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.exceptions import (
+    ConnectTimeoutError,
+    NameResolutionError,
+    NewConnectionError,
+)
 
 from tamoss.application.contexts.object_get_urls import objects_get_urls
 from tamoss.contract.payloads import (
@@ -90,10 +98,8 @@ _WEBHOOK_CREDENTIAL_REF = "webhook.api_key_value"
 _HTTP_POOL_CONNECTIONS = 32
 _HTTP_POOL_MAXSIZE = 128
 
-# Egress validation resolves receiver hostnames repeatedly (twice per
-# delivery attempt); a short TTL cache absorbs that without materially
-# changing rebinding exposure, since the post-validation connect resolves
-# independently either way.
+# Cached addresses are also the literal connection destinations: the HTTP
+# transport never resolves the receiver hostname a second time.
 _DNS_CACHE_TTL_SECONDS = 30.0
 _DNS_CACHE_MAX_ENTRIES = 1024
 _dns_cache_lock = threading.Lock()
@@ -103,16 +109,71 @@ _dns_cache: dict[
 ] = {}
 
 
-@lru_cache(maxsize=1)
-def _http_session() -> requests.Session:
+class _RejectCookies(DefaultCookiePolicy):
+    def set_ok(self, *_args: object, **_kwargs: object) -> bool:
+        return False
+
+
+@lru_cache(maxsize=16)
+def _http_session(policy: WebhookEgressPolicy) -> requests.Session:
+    class ValidatedHTTPConnection(HTTPConnection):
+        def _new_conn(self) -> socket.socket:
+            return _connect_validated(self, super()._new_conn, policy)
+
+    class ValidatedHTTPSConnection(HTTPSConnection):
+        def _new_conn(self) -> socket.socket:
+            return _connect_validated(self, super()._new_conn, policy)
+
+    class ValidatedHTTPPool(HTTPConnectionPool):
+        ConnectionCls = ValidatedHTTPConnection
+
+    class ValidatedHTTPSPool(HTTPSConnectionPool):
+        ConnectionCls = ValidatedHTTPSConnection
+
     session = requests.Session()
+    # Ambient proxies can resolve the hostname themselves, bypassing the
+    # validated socket path. Webhook credentials come only from registration.
+    session.trust_env = False
+    session.cookies.set_policy(_RejectCookies())
     adapter = HTTPAdapter(
         pool_connections=_HTTP_POOL_CONNECTIONS,
         pool_maxsize=_HTTP_POOL_MAXSIZE,
     )
+    adapter.poolmanager.pool_classes_by_scheme = {
+        "http": ValidatedHTTPPool,
+        "https": ValidatedHTTPSPool,
+    }
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
+
+
+def _connect_validated(
+    connection: HTTPConnection,
+    connect: Callable[[], socket.socket],
+    policy: WebhookEgressPolicy,
+) -> socket.socket:
+    hostname = connection._dns_host
+    port = connection.port or connection.default_port
+    addresses = _resolve_host_addresses(hostname, port)
+    _validate_resolved_addresses(hostname, addresses, policy)
+    if not addresses:
+        raise NameResolutionError(
+            hostname, connection, socket.gaierror("Webhook hostname did not resolve")
+        )
+    last_error: NewConnectionError | ConnectTimeoutError | None = None
+    for address in addresses:
+        try:
+            # Only the dial target changes. Restore the original hostname
+            # before urllib3 performs TLS/SNI and HTTP Host processing.
+            connection._dns_host = str(address)
+            return connect()
+        except (NewConnectionError, ConnectTimeoutError) as exc:
+            last_error = exc
+        finally:
+            connection._dns_host = hostname
+    assert last_error is not None
+    raise last_error
 
 
 @dataclass(frozen=True)
@@ -631,7 +692,7 @@ def send_webhook_delivery(
     validate_webhook_url(url, egress_policy=egress_policy)
     start = time.perf_counter()
     try:
-        response = _http_session().post(
+        response = _http_session(egress_policy or WebhookEgressPolicy()).post(
             url,
             headers=webhook_headers(webhook),
             json=payload,
@@ -705,7 +766,21 @@ def validate_webhook_target(
         return
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    for address in _resolve_host_addresses(hostname, port):
+    _validate_resolved_addresses(
+        hostname, _resolve_host_addresses(hostname, port), policy
+    )
+
+
+def _validate_resolved_addresses(
+    hostname: str,
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+    policy: WebhookEgressPolicy,
+) -> None:
+    if policy.allow_private_targets or _host_allowed(
+        _normalized_hostname(hostname), policy.allowed_hosts
+    ):
+        return
+    for address in addresses:
         if _blocked_ip(address):
             raise WebhookEgressError(
                 "Webhook URL resolves to a restricted network destination"

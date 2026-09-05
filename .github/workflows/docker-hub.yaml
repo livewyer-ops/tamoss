@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   # Push images for trusted release/internal PR branches so deploy tests can
@@ -21,6 +21,50 @@ env:
   PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
 jobs:
+  release-preflight:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate immutable release target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/scripts/release-metadata.py "${GITHUB_REF_NAME#v}"
+          python3 .github/scripts/release-preflight.py
+
+  release-tests:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+      actions: read
+
+  release-operator-tests:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/operator-ci.yaml
+    permissions:
+      contents: read
+      actions: read
+
+  release-kind-e2e:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/kind-e2e-run.yaml
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    with:
+      artifact-name: release-kind-e2e-${{ github.run_id }}
+      retention-days: 90
+      summary-title: Release commit Kind E2E
+      summary-description: Builds and tests the exact tagged source commit before publication.
+
   # A tag build is the only path that produces a versioned release, and nothing
   # previously security-scanned the tree it was cut from. Non-tag builds skip
   # this: pull requests are already covered by validate.yaml, and :main images
@@ -34,8 +78,10 @@ jobs:
       actions: read
 
   tamoss-api:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight]
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # id-token: write is required for cosign keyless signing (Fulcio OIDC).
@@ -148,8 +194,10 @@ jobs:
           done
 
   tamoss-ui:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight]
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -228,8 +276,10 @@ jobs:
           done
 
   tamoss-console-api:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight]
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -307,8 +357,10 @@ jobs:
           done
 
   tamoss-operator:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight]
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -423,3 +475,24 @@ jobs:
           for tag in ${TAGS}; do
             cosign sign --yes "${tag}@${DIGEST}"
           done
+
+  release-assets:
+    if: github.ref_type == 'tag'
+    needs:
+      - dependency-audit
+      - release-preflight
+      - release-tests
+      - release-operator-tests
+      - release-kind-e2e
+      - tamoss-api
+      - tamoss-ui
+      - tamoss-console-api
+      - tamoss-operator
+    uses: ./.github/workflows/operator-release.yaml
+    permissions:
+      contents: write
+    with:
+      api-digest: ${{ needs.tamoss-api.outputs.digest }}
+      ui-digest: ${{ needs.tamoss-ui.outputs.digest }}
+      console-api-digest: ${{ needs.tamoss-console-api.outputs.digest }}
+      operator-digest: ${{ needs.tamoss-operator.outputs.digest }}

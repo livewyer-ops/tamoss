@@ -1,32 +1,26 @@
 name: Operator Release Assets
 
 on:
-  push:
-    tags:
-      - "*.*.*"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      api-digest:
+        required: true
+        type: string
+      ui-digest:
+        required: true
+        type: string
+      console-api-digest:
+        required: true
+        type: string
+      operator-digest:
+        required: true
+        type: string
 
 permissions:
   contents: write
-  packages: write
-
-env:
-  REGISTRY: ghcr.io
 
 jobs:
-  # Release assets and the GitHub Release itself are user-facing artefacts, so
-  # they gate on the same audit as the images.
-  dependency-audit:
-    if: github.ref_type == 'tag'
-    uses: ./.github/workflows/dependency-audit.yaml
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-
   build-and-release:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -44,6 +38,8 @@ jobs:
           cache-dependency-path: operator/go.sum
 
       - name: Validate release ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             echo "::error::Operator release assets must run from a version tag."
@@ -56,6 +52,7 @@ jobs:
               exit 1
               ;;
           esac
+          python3 .github/scripts/release-preflight.py
 
       - name: Resolve release metadata
         id: version
@@ -72,7 +69,7 @@ jobs:
       - name: Build release install manifest
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          OPERATOR_DIGEST: ${{ inputs.operator-digest }}
         run: |
           mkdir -p dist/operator-release
           cat > dist/operator-release/kustomization.yaml <<EOF
@@ -83,7 +80,7 @@ jobs:
           images:
             - name: livewyer/tamoss-operator
               newName: livewyer/tamoss-operator
-              newTag: ${VERSION}
+              digest: ${OPERATOR_DIGEST}
           EOF
           # Glob rather than parsing `ls`: the shell expands in the same
           # lexicographic order, so this picks the same binary.
@@ -91,12 +88,21 @@ jobs:
           KUSTOMIZE_BIN="${kustomize_bins[0]}"
           "$KUSTOMIZE_BIN" build dist/operator-release > dist/operator-release/install.yaml
 
+      - name: Record immutable release contents
+        env:
+          API_DIGEST: ${{ inputs.api-digest }}
+          UI_DIGEST: ${{ inputs.ui-digest }}
+          CONSOLE_API_DIGEST: ${{ inputs.console-api-digest }}
+          OPERATOR_DIGEST: ${{ inputs.operator-digest }}
+        run: python3 .github/scripts/release-record.py --output dist/operator-release/release.json
+
       - name: Create draft GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             dist/operator-release/install.yaml
             operator/compatibility.yaml
+            dist/operator-release/release.json
           draft: true
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.prerelease }}

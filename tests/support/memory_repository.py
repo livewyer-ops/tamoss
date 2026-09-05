@@ -13,6 +13,7 @@ from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.domain import flow_collections
 from tamoss.domain import segments as segment_domain
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
+from tamoss.domain.listing_pagination import page_listing_sequence
 from tamoss.domain.listings import (
     DeleteRequestSortBy,
     FlowSortBy,
@@ -145,6 +146,9 @@ class FakeTamossRepository:
                 raise
 
     def lock_flow_segments(self, flow_id: UUID) -> None:
+        return None
+
+    def lock_source(self, source_id: UUID) -> None:
         return None
 
     def lock_profile(self, profile_id: UUID) -> None:
@@ -382,7 +386,16 @@ class FakeTamossRepository:
             descending=sort_by.descending(reverse_order=reverse_order),
             missing_first=reverse_order,
         )
-        return page_sequence(flows, page=page, limit=limit)
+        return page_listing_sequence(
+            flows,
+            page=page,
+            limit=limit,
+            resource="flows",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=flow_sort_value,
+            identity=lambda flow: flow.id,
+        )
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
@@ -474,7 +487,16 @@ class FakeTamossRepository:
             descending=sort_by.descending(reverse_order=reverse_order),
             missing_first=reverse_order,
         )
-        return page_sequence(sources, page=page, limit=limit)
+        return page_listing_sequence(
+            sources,
+            page=page,
+            limit=limit,
+            resource="sources",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=source_sort_value,
+            identity=lambda source: source.id,
+        )
 
     def source_relationships_for(
         self, source_ids: Iterable[UUID]

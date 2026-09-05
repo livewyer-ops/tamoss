@@ -147,7 +147,9 @@ class FlowRepository(TransactionalRepository, FlowCollectionRepository, Protocol
     def save_flow(self, flow: FlowRecord) -> None: ...
 
 
-class SourceRepository(Protocol):
+class SourceRepository(TransactionalRepository, Protocol):
+    def lock_source(self, source_id: UUID) -> None: ...
+
     def list_sources_page(
         self,
         *,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from typing import Literal
 from uuid import UUID
 
@@ -129,26 +130,29 @@ class SourceUseCases:
     ) -> None:
         if not isinstance(value, str):
             raise BadRequest("Bad request. Invalid Source property value.")
-        source = self.get_source(source_id)
-        setattr(source, property_name, value)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            setattr(source, property_name, value)
 
     def delete_source_property(
         self, source_id: UUID, property_name: SourcePropertyName
     ) -> None:
-        source = self.get_source(source_id)
-        setattr(source, property_name, None)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            setattr(source, property_name, None)
 
-    def _save_and_publish(self, source: SourceRecord) -> None:
-        source.metadata_updated = utc_now()
-        self.repository.save_source(source)
-        webhooking.publish_source_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="sources/updated",
-            source=source,
-        )
+    @contextmanager
+    def _edit_source(self, source_id: UUID) -> Iterator[SourceRecord]:
+        with self.repository.unit_of_work():
+            self.repository.lock_source(source_id)
+            source = self.get_source(source_id)
+            yield source
+            source.metadata_updated = utc_now()
+            self.repository.save_source(source)
+            webhooking.publish_source_event(
+                repository=self.webhook_repository,
+                resource_repository=self.repository,
+                event_type="sources/updated",
+                source=source,
+            )
 
     def get_source_tags(self, source_id: UUID) -> dict[str, TagValue]:
         return self.get_source(source_id).tags
@@ -162,11 +166,9 @@ class SourceUseCases:
     def set_source_tag(self, source_id: UUID, name: str, value: TagValue) -> None:
         if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Source tag value.")
-        source = self.get_source(source_id)
-        source.tags[name] = value
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            source.tags[name] = value
 
     def delete_source_tag(self, source_id: UUID, name: str) -> None:
-        source = self.get_source(source_id)
-        source.tags.pop(name, None)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            source.tags.pop(name, None)

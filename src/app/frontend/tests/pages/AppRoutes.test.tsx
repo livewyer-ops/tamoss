@@ -465,6 +465,42 @@ describe("operational routes", () => {
     expect(document.title).toBe(title);
   });
 
+  it("shows 8.2 webhook selectors and distinguishes absent and empty collections", async () => {
+    mocks.api.getWebhooks.mockResolvedValue({
+      data: [
+        {
+          id: "webhook-filtered",
+          url: "https://receiver.example.test/events?token=secret-value",
+          events: ["flows/segments_added"],
+          status: "started",
+          flow_ids: ["00000000-0000-4000-8000-000000000101"],
+          flow_collected_by_ids: [],
+          source_collected_by_ids: ["00000000-0000-4000-8000-000000000102"],
+          accept_get_urls: ["editorial"],
+          presigned: false,
+        },
+        {
+          id: "webhook-unrestricted",
+          url: "https://receiver.example.test/unrestricted",
+          events: ["sources/created"],
+          status: "created",
+        },
+      ],
+    });
+    renderRoute("/webhooks");
+    expect(await screen.findByText("Top-level Flows only")).toBeVisible();
+    expect(
+      screen.getByText("00000000-0000-4000-8000-000000000101"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("00000000-0000-4000-8000-000000000102"),
+    ).toBeVisible();
+    expect(screen.getByText("editorial")).toBeVisible();
+    expect(screen.getByText("Presigned URLs: No")).toBeVisible();
+    expect(screen.getByText("Unrestricted")).toBeVisible();
+    expect(document.body.textContent).not.toContain("secret-value");
+  });
+
   it("uses the official TAMS assets for the service route", async () => {
     renderRoute("/service");
 
