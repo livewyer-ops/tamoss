@@ -8,8 +8,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess
-import sys
+import runpy
 from pathlib import Path
 
 IMAGES = {
@@ -30,26 +29,34 @@ def image_references(environment: dict[str, str]) -> dict[str, str]:
     return images
 
 
+def commit_sha(name: str) -> str:
+    value = os.environ.get(name, "")
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise ValueError(f"Missing or invalid {name}")
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     tag = os.environ["GITHUB_REF_NAME"]
-    metadata = subprocess.check_output(
-        [sys.executable, ".github/scripts/release-metadata.py", tag.removeprefix("v")],
-        text=True,
+    metadata_module = runpy.run_path(
+        str(Path(__file__).with_name("release-metadata.py"))
+    )
+    compatibility_path = Path("operator/compatibility.yaml")
+    metadata = metadata_module["release_metadata"](
+        tag.removeprefix("v"),
+        metadata_module["load_releases"](compatibility_path),
+        compatibility_path,
     )
     images = image_references(dict(os.environ))
     record = {
         "recordVersion": 1,
         "tag": tag,
-        "sourceCommit": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True
-        ).strip(),
-        "bbcTamsCommit": subprocess.check_output(
-            ["git", "rev-parse", "HEAD:src/vendor/bbc-tams"], text=True
-        ).strip(),
-        "compatibility": dict(line.split("=", 1) for line in metadata.splitlines()),
+        "sourceCommit": commit_sha("SOURCE_COMMIT"),
+        "bbcTamsCommit": commit_sha("BBC_TAMS_COMMIT"),
+        "compatibility": metadata,
         "images": images,
         "workerImage": images["api"],
         "artifacts": {

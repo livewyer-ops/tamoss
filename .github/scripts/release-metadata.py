@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 RELEASE_CANDIDATE_PATTERN = re.compile(r"^(?P<base>.+)-rc(?P<number>0|[1-9][0-9]*)$")
 
 
@@ -88,9 +87,9 @@ def required_string(
     return value
 
 
-def emit_release_metadata(
+def release_metadata(
     version: str, releases: list[dict[str, Any]], path: Path
-) -> None:
+) -> dict[str, str]:
     validate_releases(releases, path, verbose=False)
     releases_by_version = {str(item.get("version")): item for item in releases}
 
@@ -130,6 +129,13 @@ def emit_release_metadata(
     for key, value in metadata.items():
         if value is None:
             fail(f"release {version} is missing {key}")
+    return {key: str(value) for key, value in metadata.items()}
+
+
+def emit_release_metadata(
+    version: str, releases: list[dict[str, Any]], path: Path
+) -> None:
+    for key, value in release_metadata(version, releases, path).items():
         print(f"{key}={value}")
 
 

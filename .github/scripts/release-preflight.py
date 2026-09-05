@@ -5,27 +5,45 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.error import HTTPError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from http.client import HTTPSConnection
+from urllib.parse import quote, urlsplit
 
 
 def verify_unpublished(*, api_url: str, repository: str, tag: str, token: str) -> None:
-    url = f"{api_url}/repos/{repository}/releases/tags/{quote(tag, safe='')}"
-    request = Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-        },
+    parsed = urlsplit(api_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("GitHub API URL must be an HTTPS origin with an optional path")
+    path = (
+        f"{parsed.path.rstrip('/')}/repos/{repository}/releases/tags/"
+        f"{quote(tag, safe='')}"
     )
+    connection = HTTPSConnection(parsed.hostname, parsed.port, timeout=30)
     try:
-        with urlopen(request, timeout=30) as response:
-            release = json.load(response)
-    except HTTPError as exc:
-        if exc.code == 404:
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        response = connection.getresponse()
+        if response.status == 404:
             return
-        raise
+        if response.status != 200:
+            raise SystemExit(
+                f"GitHub release lookup failed with HTTP {response.status}"
+            )
+        release = json.load(response)
+    finally:
+        connection.close()
     if release.get("draft") is not True:
         raise SystemExit(f"Release {tag} is already published. Use a new version tag.")
 

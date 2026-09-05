@@ -94,7 +94,10 @@ jobs:
           UI_DIGEST: ${{ inputs.ui-digest }}
           CONSOLE_API_DIGEST: ${{ inputs.console-api-digest }}
           OPERATOR_DIGEST: ${{ inputs.operator-digest }}
-        run: python3 .github/scripts/release-record.py --output dist/operator-release/release.json
+        run: |
+          SOURCE_COMMIT="$(git rev-parse HEAD)" \
+          BBC_TAMS_COMMIT="$(git rev-parse HEAD:src/vendor/bbc-tams)" \
+          python3 .github/scripts/release-record.py --output dist/operator-release/release.json
 
       - name: Create draft GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

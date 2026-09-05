@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
-from urllib.error import HTTPError
+import sys
+from unittest.mock import Mock
 
 import pytest
 import yaml
@@ -46,11 +46,11 @@ def test_release_preflight_only_allows_drafts(monkeypatch, draft) -> None:
     module = load_python_module(
         "release_preflight", REPO_ROOT / ".github/scripts/release-preflight.py"
     )
-    monkeypatch.setattr(
-        module,
-        "urlopen",
-        lambda *args, **kwargs: io.BytesIO(json.dumps({"draft": draft}).encode()),
+    connection = Mock()
+    connection.getresponse.return_value = Mock(
+        status=200, read=lambda: json.dumps({"draft": draft})
     )
+    monkeypatch.setattr(module, "HTTPSConnection", Mock(return_value=connection))
     arguments = {
         "api_url": "https://api.github.com",
         "repository": "org/repo",
@@ -62,20 +62,19 @@ def test_release_preflight_only_allows_drafts(monkeypatch, draft) -> None:
     else:
         with pytest.raises(SystemExit, match="already published"):
             module.verify_unpublished(**arguments)
+    connection.close.assert_called_once()
 
 
-@pytest.mark.parametrize("status", [401, 403, 404, 429, 500])
+@pytest.mark.parametrize("status", [302, 307, 401, 403, 404, 429, 500])
 def test_release_preflight_fails_closed_except_for_missing_release(
     monkeypatch, status
 ) -> None:
     module = load_python_module(
         "release_preflight", REPO_ROOT / ".github/scripts/release-preflight.py"
     )
-
-    def fail(*args, **kwargs):
-        raise HTTPError("https://api.github.com", status, "error", None, None)
-
-    monkeypatch.setattr(module, "urlopen", fail)
+    connection = Mock()
+    connection.getresponse.return_value.status = status
+    monkeypatch.setattr(module, "HTTPSConnection", Mock(return_value=connection))
     arguments = {
         "api_url": "https://api.github.com",
         "repository": "org/repo",
@@ -85,8 +84,55 @@ def test_release_preflight_fails_closed_except_for_missing_release(
     if status == 404:
         module.verify_unpublished(**arguments)
     else:
-        with pytest.raises(HTTPError):
+        with pytest.raises(SystemExit, match=f"HTTP {status}"):
             module.verify_unpublished(**arguments)
+    connection.request.assert_called_once()
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    [
+        "http://api.github.com",
+        "file:///tmp/release",
+        "https://user:password@api.github.com",
+        "https://api.github.com?token=value",
+    ],
+)
+def test_release_preflight_rejects_unsafe_api_urls(monkeypatch, api_url) -> None:
+    module = load_python_module(
+        "release_preflight", REPO_ROOT / ".github/scripts/release-preflight.py"
+    )
+    connect = Mock()
+    monkeypatch.setattr(module, "HTTPSConnection", connect)
+    with pytest.raises(ValueError, match="HTTPS origin"):
+        module.verify_unpublished(
+            api_url=api_url, repository="org/repo", tag="8.2.0-oss1", token="secret"
+        )
+    connect.assert_not_called()
+
+
+def test_release_preflight_preserves_enterprise_api_prefix_and_encodes_tag(
+    monkeypatch,
+) -> None:
+    module = load_python_module(
+        "release_preflight", REPO_ROOT / ".github/scripts/release-preflight.py"
+    )
+    connection = Mock()
+    connection.getresponse.return_value.status = 404
+    connect = Mock(return_value=connection)
+    monkeypatch.setattr(module, "HTTPSConnection", connect)
+    module.verify_unpublished(
+        api_url="https://github.example:8443/api/v3/",
+        repository="org/repo",
+        tag="release/8.2.0",
+        token="secret",
+    )
+    connect.assert_called_once_with("github.example", 8443, timeout=30)
+    assert connection.request.call_args.args == (
+        "GET",
+        "/api/v3/repos/org/repo/releases/tags/release%2F8.2.0",
+    )
 
 
 def test_release_record_rejects_any_missing_or_malformed_image_digest() -> None:
@@ -120,23 +166,20 @@ def test_release_record_includes_assets_specification_and_worker_identity(
     for path in (install, compatibility):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("release fixture\n")
-    replies = iter(["version=8.2.0-oss1-rc5\ntams_api=8.2\n", "a" * 40, "b" * 40])
-    monkeypatch.setattr(
-        module.subprocess, "check_output", lambda *args, **kwargs: next(replies)
-    )
+    compatibility.write_text((REPO_ROOT / "operator/compatibility.yaml").read_text())
     for name, value in {
         "GITHUB_REF_NAME": "8.2.0-oss1-rc5",
         "GITHUB_SERVER_URL": "https://github.com",
         "GITHUB_REPOSITORY": "livewyer-ops/tamoss",
         "GITHUB_RUN_ID": "1234",
         "GITHUB_RUN_ATTEMPT": "2",
+        "SOURCE_COMMIT": "a" * 40,
+        "BBC_TAMS_COMMIT": "b" * 40,
         **{f"{name.upper()}_DIGEST": "sha256:" + "c" * 64 for name in module.IMAGES},
     }.items():
         monkeypatch.setenv(name, value)
     output = tmp_path / "release.json"
-    monkeypatch.setattr(
-        module.sys, "argv", ["release-record.py", "--output", str(output)]
-    )
+    monkeypatch.setattr(sys, "argv", ["release-record.py", "--output", str(output)])
     module.main()
     record = json.loads(output.read_text())
     assert record["sourceCommit"] == "a" * 40
