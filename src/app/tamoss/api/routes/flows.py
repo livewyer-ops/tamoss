@@ -116,7 +116,9 @@ def list_flows(
     if head := head_response(request, response):
         return head
     timeranges = (
-        flows.flow_timeranges(flow.id for flow in flow_page.items)
+        flows.flow_timeranges(
+            (flow.id for flow in flow_page.items), seed_flows=flow_page.items
+        )
         if include_timerange
         else {}
     )

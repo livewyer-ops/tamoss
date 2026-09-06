@@ -371,8 +371,10 @@ class FlowUseCases:
             return str(flow_range)
         return str(flow_range.intersect_with(requested_range))
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
-        return self._flow_timeranges(flow_ids)
+    def flow_timeranges(
+        self, flow_ids: Iterable[UUID], *, seed_flows: Iterable[FlowRecord] = ()
+    ) -> dict[UUID, str]:
+        return self._flow_timeranges(flow_ids, seed_flows=seed_flows)
 
     def _flow_timeranges(
         self,
