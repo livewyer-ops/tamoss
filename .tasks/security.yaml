@@ -16,11 +16,12 @@ tasks:
   audit:
     desc: Audit dependencies for known vulnerabilities
     cmds:
-      - task: audit:python
-      - task: audit:frontend
-      - task: audit:frontend:signatures
-      - task: audit:frontend:dev
-      - task: audit:osv
+      - |
+        status=0
+        for check in python frontend frontend:signatures frontend:dev osv; do
+          task "security:audit:$check" || status=1
+        done
+        exit "$status"
 
   audit:python:
     desc: Audit the locked Python dependency set

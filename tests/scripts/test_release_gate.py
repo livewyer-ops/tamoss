@@ -79,6 +79,31 @@ def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
     assert result.returncode == status
 
 
+@pytest.mark.parametrize(
+    "failed_check",
+    [None, "python", "frontend", "frontend:signatures", "frontend:dev", "osv"],
+)
+def test_dependency_audit_finishes_every_check(tmp_path, failed_check) -> None:
+    taskfile = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())
+    checks = {name for name in taskfile["tasks"] if name != "audit"}
+    for name in checks:
+        status = 1 if name == f"audit:{failed_check}" else 0
+        taskfile["tasks"][name] = {"cmds": [f"touch '{name}'; exit {status}"]}
+    taskfile["tasks"] = {
+        f"security:{name}": task for name, task in taskfile["tasks"].items()
+    }
+    path = tmp_path / "Taskfile.yaml"
+    path.write_text(yaml.safe_dump(taskfile))
+    result = subprocess.run(
+        ["task", "--taskfile", str(path), "security:audit"],
+        cwd=tmp_path,
+        check=False,
+        timeout=30,
+    )
+    assert (result.returncode != 0) == (failed_check is not None)
+    assert {path.name for path in tmp_path.glob("audit:*")} == checks
+
+
 def test_shell_lint_checks_later_helpers(tmp_path) -> None:
     helpers = tmp_path / ".tasks/lib"
     helpers.mkdir(parents=True)
