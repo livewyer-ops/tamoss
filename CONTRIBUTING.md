@@ -60,8 +60,8 @@ rollout checks.
 ### Operator development
 
 The Kubernetes operator lives under `operator/` and uses Go with
-controller-runtime tooling. The operator has an independent Go
-module and release cadence from the Python API and Node UI.
+controller-runtime tooling. It has an independent Go module, but the operator,
+API, UI and Console API ship together through the [release process](docs/development/releases.md).
 
 Use the root Taskfile wrappers where possible:
 
