@@ -981,3 +981,19 @@ func TestApplyEdgeHonoursAuthentikBlueprints(t *testing.T) {
 		t.Fatalf("expected edge API tuning to apply with OAuth, got %q", got)
 	}
 }
+
+func TestProductionProfilesDefaultIngestSourcePolicyToDisabled(t *testing.T) {
+	for _, profile := range []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
+	} {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Profile: profile}}
+			Apply(tamoss)
+			if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyDisabled {
+				t.Fatalf("production ingest source policy = %q, want Disabled", got)
+			}
+		})
+	}
+}

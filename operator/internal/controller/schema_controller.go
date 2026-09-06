@@ -556,9 +556,6 @@ func terminalSchemaFailure(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamos
 }
 
 func jobSucceeded(job *batchv1.Job) bool {
-	if job.Status.Succeeded > 0 {
-		return true
-	}
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
 			return true
@@ -568,9 +565,6 @@ func jobSucceeded(job *batchv1.Job) bool {
 }
 
 func jobFailed(job *batchv1.Job) bool {
-	if job.Status.Failed > 0 {
-		return true
-	}
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
 			return true

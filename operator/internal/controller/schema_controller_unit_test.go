@@ -146,3 +146,18 @@ func TestSchemaJobTemplateDriftedComparesRenderedFields(t *testing.T) {
 		}
 	}
 }
+
+func TestJobOutcomeWaitsForTerminalConditions(t *testing.T) {
+	job := &batchv1.Job{Status: batchv1.JobStatus{Active: 1, Failed: 1, Succeeded: 1}}
+	if jobSucceeded(job) || jobFailed(job) {
+		t.Fatal("Pod counters must not finish a Job whose Pods are still running")
+	}
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+	if !jobSucceeded(job) || jobFailed(job) {
+		t.Fatal("a completed Job must remain successful after an earlier failed Pod")
+	}
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	if jobSucceeded(job) || !jobFailed(job) {
+		t.Fatal("a failed Job must not be reported as successful from its Pod count")
+	}
+}

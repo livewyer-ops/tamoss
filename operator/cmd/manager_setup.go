@@ -20,6 +20,7 @@ import (
 
 	"github.com/livewyer-ops/tamoss/operator/internal/controller"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
 	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 )
@@ -114,16 +115,22 @@ func setupControllers(
 	dependencyDiscovery *operatordiscovery.Manager,
 	dependencyProbeInterval time.Duration,
 ) error {
+	watchScope := controller.WatchNamespaceSet(watchNamespaces)
+	tamsinImage := strings.TrimSpace(os.Getenv("TAMOSS_TAMSIN_IMAGE"))
+	if tamsinImage == "" {
+		tamsinImage = defaults.DefaultTAMSinImage
+	}
 	tamossReconciler := &controller.TamossReconciler{
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
-		WatchNamespaces:             watchNamespaces,
+		WatchNamespaces:             watchScope,
 		Discovery:                   dependencyDiscovery,
 		DependencyProbeInterval:     dependencyProbeInterval,
 		AuthentikPlatformNamespaces: authentik.NewPlatformNamespacePolicy(os.Getenv("TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES")),
 		AuthentikProbeTimeout:       authentikProbeTimeout(),
 		AuthentikHTTPClient:         authentik.NewHTTPClient(),
+		TAMSinImage:                 tamsinImage,
 	}
 	if err := tamossReconciler.SetupWithManager(mgr); err != nil {
 		return err
@@ -132,7 +139,23 @@ func setupControllers(
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "tamosshibernate-controller"),
-		WatchNamespaces: watchNamespaces,
+		WatchNamespaces: watchScope,
+	}).SetupWithManager(mgr); err != nil {
+		return err
+	}
+	ingestLogReader, err := controller.NewIngestPodLogReader(mgr.GetConfig())
+	if err != nil {
+		return err
+	}
+	if err := (&controller.IngestRunReconciler{
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		WatchNamespaces:  watchScope,
+		TamsinImage:      tamsinImage,
+		APIReader:        mgr.GetAPIReader(),
+		InputResolver:    controller.SourcePolicyResolver{Client: mgr.GetClient()},
+		EndpointResolver: controller.PublishedEndpointResolver{Client: mgr.GetClient()},
+		PodLogs:          ingestLogReader,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -143,11 +166,19 @@ func setupControllers(
 			}
 		})
 	}
-	return (&controller.StorageBackendReconciler{
+	if err := (&controller.StorageBackendReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
-		WatchNamespaces: watchNamespaces,
+		WatchNamespaces: watchScope,
+	}).SetupWithManager(mgr); err != nil {
+		return err
+	}
+	return (&controller.FlowProfileReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        eventRecorderFor(mgr, "flowprofile-controller"),
+		WatchNamespaces: watchScope,
 	}).SetupWithManager(mgr)
 }
 
@@ -166,6 +197,12 @@ func registerDeleteProtectionWebhooks(mgr ctrl.Manager) {
 	server.Register(deleteprotection.StorageBackendWebhookPath, &admission.Webhook{
 		Handler: deleteprotection.NewHandler(
 			"StorageBackend",
+			operatorCleanupUsername(operatorNamespaceFromEnv(), operatorServiceAccountFromEnv()),
+		),
+	})
+	server.Register(deleteprotection.FlowProfileWebhookPath, &admission.Webhook{
+		Handler: deleteprotection.NewImmutableSpecHandler(
+			"FlowProfile",
 			operatorCleanupUsername(operatorNamespaceFromEnv(), operatorServiceAccountFromEnv()),
 		),
 	})

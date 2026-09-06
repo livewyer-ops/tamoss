@@ -2,6 +2,8 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
+- bases/tamoss.livewyer.io_flowprofiles.yaml
+- bases/tamoss.livewyer.io_ingestruns.yaml
 - bases/tamoss.livewyer.io_storagebackends.yaml
 - bases/tamoss.livewyer.io_tamosshibernations.yaml
 - bases/tamoss.livewyer.io_tamosses.yaml

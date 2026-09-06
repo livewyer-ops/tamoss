@@ -37,7 +37,9 @@ const (
 
 	// tamossAppName is the default app.kubernetes.io/name label value for
 	// resources the operator manages.
-	tamossAppName = "tamoss"
+	tamossAppName     = "tamoss"
+	appComponentLabel = "app.kubernetes.io/component"
+	componentAPI      = "api"
 
 	defaultAuthentikProbeInterval         = 30 * time.Second
 	defaultAuthentikRetryGracePeriod      = 10 * time.Minute
@@ -61,6 +63,7 @@ type TamossReconciler struct {
 	AuthentikHTTPClient         *http.Client
 	ManifestReader              HibernationManifestReader
 	ArtifactCleaner             HibernationArtifactCleaner
+	TAMSinImage                 string
 	WarningEvents               operatorstatus.WarningEventDeduper
 	optionalWatches             *optionalWatchRegistrar
 }
