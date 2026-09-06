@@ -172,30 +172,32 @@ UI.
 
 ## Dependency audit backlog
 
-Reviewed 2026-09-04. `pip-audit` and npm signature verification are clean. The
-entries below are conservative lockfile findings reported by OSV. OSV currently
-reports 10 known vulnerabilities across six packages.
+Reviewed 2026-09-06. The dependency audit fails on the two remaining lockfile
+findings below. Updates to CEL, OpenTelemetry, x/crypto, x/mod and gRPC removed
+eight other findings without changing the Kubernetes or controller-runtime pins.
 
-The Go findings are transitive operator dependencies. Reachability is not
-asserted because the repository audit deliberately disables Go call analysis
-to stay reproducible across developer machines and CI runners. Upgrade them
-through compatible Kubernetes/controller dependency releases, using the Go
-Dependabot coverage added in #188, and keep them failing under `STRICT=1`.
+The Go finding affects the unmaintained `golang.org/x/crypto/openpgp` packages,
+not every package in x/crypto. The operator and Console API dependency graphs
+(`go list -deps ./cmd/...` from `operator`) do not import those packages, and
+`go mod why golang.org/x/crypto/openpgp` reports no dependency. This is
+package-level evidence, not a change to the lockfile audit: an explicit,
+reviewed applicability policy is still needed before excluding the finding.
+The [Go advisory](https://pkg.go.dev/vuln/GO-2026-5932) has no fixed version.
 
 The npm finding is a moderate-severity runtime advisory in Omakase Player's
-`subtitle-converter` dependency. The only remediation proposed by `npm audit`
-downgrades Omakase Player from 1.1.1 to 0.25.4, which is a breaking change and
-would discard the reviewed 8.2 player integration. Keep Omakase exactly pinned
-and take an upstream dependency fix when one is available.
+`subtitle-converter` dependency. Omakase 1.1.1 also embeds that dependency and
+the vulnerable `xml2js` parser in its published JavaScript; its source map
+includes `node_modules/xml2js/lib/parser.js`. Overriding the npm dependency
+alone does not repair the embedded code. The downgrade to Omakase 0.25.4
+suggested by `npm audit fix --force` is breaking and must not be applied as an
+automatic fix. A corrected player build or separately reviewed replacement
+is required; keep the current player pinned until that is available.
 
 | Ecosystem | Package | Locked version | Advisory IDs |
 | --- | --- | --- | --- |
-| Go | `github.com/google/cel-go` | 0.26.0 | GO-2026-6094 |
-| Go | `go.opentelemetry.io/otel` | 1.43.0 | GO-2026-5158 |
-| Go | `golang.org/x/crypto` | 0.55.0 | GO-2026-5932, GO-2026-6354, GO-2026-6355 |
-| Go | `golang.org/x/mod` | 0.38.0 | GO-2026-6179, GO-2026-6180 |
-| Go | `google.golang.org/grpc` | 1.81.1 | GO-2026-6061, GHSA-vp52-pcj8-j9qc |
+| Go | `golang.org/x/crypto` | 0.56.0 | GO-2026-5932 |
 | npm | `xml2js` | 0.4.23 | GHSA-776f-qx25-q3cc |
 
-Remove an entry when its lockfile no longer reports the advisory. The desired
-end state is for `task security:audit STRICT=1` to pass without exceptions.
+Findings and scanner errors still fail `task security:audit`; this list is not
+a release-gate exception. Remove an entry only after its underlying issue is
+resolved, including embedded copies of vulnerable dependencies.
