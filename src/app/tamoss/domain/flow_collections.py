@@ -74,34 +74,29 @@ def collection_aware_flow_timeranges(
     flow_ids: Iterable[UUID],
 ) -> dict[UUID, str]:
     flows_by_id = {flow.id: flow for flow in flows}
-    cache: dict[UUID, str] = {}
-
-    def resolved_timerange(flow_id: UUID, visiting: set[UUID]) -> str:
-        if flow_id in cache:
-            return cache[flow_id]
-        if flow_id in visiting:
-            return _direct_timerange(direct_timeranges.get(flow_id)) or "()"
-
-        visiting.add(flow_id)
-        timeranges: list[str | None] = [
-            _direct_timerange(direct_timeranges.get(flow_id))
-        ]
-        flow = flows_by_id.get(flow_id)
-        if flow is not None:
-            for item in flow_collection(flow):
-                child_id = collection_child_id(item)
-                if child_id is not None:
-                    timeranges.append(resolved_timerange(child_id, visiting))
-        visiting.remove(flow_id)
-
-        merged = timerange_union_strings(timeranges) or "()"
-        cache[flow_id] = merged
-        return merged
-
-    return {
-        flow_id: resolved_timerange(flow_id, set())
-        for flow_id in list(dict.fromkeys(flow_ids))
-    }
+    timeranges: dict[UUID, str] = {}
+    for root_id in dict.fromkeys(flow_ids):
+        pending = [root_id]
+        visited: set[UUID] = set()
+        while pending:
+            flow_id = pending.pop()
+            if flow_id in visited:
+                continue
+            visited.add(flow_id)
+            flow = flows_by_id.get(flow_id)
+            if flow is not None:
+                pending.extend(
+                    child_id
+                    for item in flow_collection(flow)
+                    if (child_id := collection_child_id(item)) is not None
+                )
+        timeranges[root_id] = (
+            timerange_union_strings(
+                _direct_timerange(direct_timeranges.get(flow_id)) for flow_id in visited
+            )
+            or "()"
+        )
+    return timeranges
 
 
 def _direct_timerange(timerange: str | None) -> str | None:

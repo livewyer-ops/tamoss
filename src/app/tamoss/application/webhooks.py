@@ -5,15 +5,24 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+from http.cookiejar import DefaultCookiePolicy
+from typing import Protocol
 from urllib.parse import ParseResult, urljoin, urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.exceptions import (
+    ConnectTimeoutError,
+    NameResolutionError,
+    NewConnectionError,
+)
 
 from tamoss.application.contexts.object_get_urls import objects_get_urls
 from tamoss.contract.payloads import (
@@ -25,7 +34,6 @@ from tamoss.contract.payloads import (
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_child_id,
-    collection_role,
     flow_collection,
     flow_with_collected_by,
 )
@@ -38,7 +46,7 @@ from tamoss.domain.model import (
     WebhookRecord,
     utc_now,
 )
-from tamoss.domain.segments import timerange_union
+from tamoss.domain.segments import segment_object_timerange, timerange_union
 from tamoss.metrics import observe_webhook_delivery
 from tamoss.ports.object_storage import ObjectStorage
 from tamoss.ports.repositories import (
@@ -90,10 +98,8 @@ _WEBHOOK_CREDENTIAL_REF = "webhook.api_key_value"
 _HTTP_POOL_CONNECTIONS = 32
 _HTTP_POOL_MAXSIZE = 128
 
-# Egress validation resolves receiver hostnames repeatedly (twice per
-# delivery attempt); a short TTL cache absorbs that without materially
-# changing rebinding exposure, since the post-validation connect resolves
-# independently either way.
+# Cached addresses are also the literal connection destinations: the HTTP
+# transport never resolves the receiver hostname a second time.
 _DNS_CACHE_TTL_SECONDS = 30.0
 _DNS_CACHE_MAX_ENTRIES = 1024
 _dns_cache_lock = threading.Lock()
@@ -103,16 +109,71 @@ _dns_cache: dict[
 ] = {}
 
 
-@lru_cache(maxsize=1)
-def _http_session() -> requests.Session:
+class _RejectCookies(DefaultCookiePolicy):
+    def set_ok(self, *_args: object, **_kwargs: object) -> bool:
+        return False
+
+
+@lru_cache(maxsize=16)
+def _http_session(policy: WebhookEgressPolicy) -> requests.Session:
+    class ValidatedHTTPConnection(HTTPConnection):
+        def _new_conn(self) -> socket.socket:
+            return _connect_validated(self, super()._new_conn, policy)
+
+    class ValidatedHTTPSConnection(HTTPSConnection):
+        def _new_conn(self) -> socket.socket:
+            return _connect_validated(self, super()._new_conn, policy)
+
+    class ValidatedHTTPPool(HTTPConnectionPool):
+        ConnectionCls = ValidatedHTTPConnection
+
+    class ValidatedHTTPSPool(HTTPSConnectionPool):
+        ConnectionCls = ValidatedHTTPSConnection
+
     session = requests.Session()
+    # Ambient proxies can resolve the hostname themselves, bypassing the
+    # validated socket path. Webhook credentials come only from registration.
+    session.trust_env = False
+    session.cookies.set_policy(_RejectCookies())
     adapter = HTTPAdapter(
         pool_connections=_HTTP_POOL_CONNECTIONS,
         pool_maxsize=_HTTP_POOL_MAXSIZE,
     )
+    adapter.poolmanager.pool_classes_by_scheme = {
+        "http": ValidatedHTTPPool,
+        "https": ValidatedHTTPSPool,
+    }
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
+
+
+def _connect_validated(
+    connection: HTTPConnection,
+    connect: Callable[[], socket.socket],
+    policy: WebhookEgressPolicy,
+) -> socket.socket:
+    hostname = connection._dns_host
+    port = connection.port or connection.default_port
+    addresses = _resolve_host_addresses(hostname, port)
+    _validate_resolved_addresses(hostname, addresses, policy)
+    if not addresses:
+        raise NameResolutionError(
+            hostname, connection, socket.gaierror("Webhook hostname did not resolve")
+        )
+    last_error: NewConnectionError | ConnectTimeoutError | None = None
+    for address in addresses:
+        try:
+            # Only the dial target changes. Restore the original hostname
+            # before urllib3 performs TLS/SNI and HTTP Host processing.
+            connection._dns_host = str(address)
+            return connect()
+        except (NewConnectionError, ConnectTimeoutError) as exc:
+            last_error = exc
+        finally:
+            connection._dns_host = hostname
+    assert last_error is not None
+    raise last_error
 
 
 @dataclass(frozen=True)
@@ -128,6 +189,21 @@ class WebhookEgressError(ValueError):
 WebhookData = Mapping[str, object]
 WebhookEventFactory = Callable[[WebhookRecord], JsonPayload]
 FlowWebhookEventFactory = Callable[[WebhookRecord, list[str]], JsonPayload]
+
+
+class FlowEventResourceRepository(Protocol):
+    def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]: ...
+
+    def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]: ...
+
+    def get_source(self, source_id: UUID) -> SourceRecord | None: ...
+
+
+@dataclass(frozen=True)
+class FlowEventContext:
+    source: SourceRecord | None
+    flow_collected_by_ids: list[str]
+    source_collected_by_ids: list[str]
 
 
 def validate_webhook_configuration(
@@ -213,9 +289,9 @@ def webhook_matches(
             flow_ids,
             _list_of_strings(webhook_data.get("flow_ids")),
         )
-        flow_collected_filter_matches = _selector_matches(
+        flow_collected_filter_matches = _collection_selector_matches(
             flow_collected_by_ids,
-            _list_of_strings(webhook_data.get("flow_collected_by_ids")),
+            _optional_list_of_strings(webhook_data.get("flow_collected_by_ids")),
         )
     return (
         flow_filter_matches
@@ -223,9 +299,9 @@ def webhook_matches(
             source_ids, _list_of_strings(webhook_data.get("source_ids"))
         )
         and flow_collected_filter_matches
-        and _selector_matches(
+        and _collection_selector_matches(
             source_collected_by_ids,
-            _list_of_strings(webhook_data.get("source_collected_by_ids")),
+            _optional_list_of_strings(webhook_data.get("source_collected_by_ids")),
         )
     )
 
@@ -308,25 +384,26 @@ def publish_webhook_event(
 def _publish_flow_webhook_event(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     event_type: str,
     flow: FlowRecord,
     event_factory: FlowWebhookEventFactory,
+    event_context: FlowEventContext | None = None,
 ) -> list[WebhookDeliveryRecord]:
     webhooks = active_webhooks_for_event(repository, event_type)
     if not webhooks:
         return []
-    source, collected_by_ids, source_collected_ids = flow_event_context(
-        resource_repository, flow
-    )
+    context = event_context or flow_event_context(resource_repository, flow)
     return publish_webhook_event(
         repository=repository,
         event_type=event_type,
-        event_factory=lambda webhook: event_factory(webhook, collected_by_ids),
+        event_factory=lambda webhook: event_factory(
+            webhook, context.flow_collected_by_ids
+        ),
         flow=flow,
-        source=source,
-        flow_collected_by_ids=collected_by_ids,
-        source_collected_by_ids=source_collected_ids,
+        source=context.source,
+        flow_collected_by_ids=context.flow_collected_by_ids,
+        source_collected_by_ids=context.source_collected_by_ids,
         webhooks=webhooks,
     )
 
@@ -334,7 +411,7 @@ def _publish_flow_webhook_event(
 def publish_flow_event(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     event_type: str,
     flow: FlowRecord,
 ) -> list[WebhookDeliveryRecord]:
@@ -352,8 +429,9 @@ def publish_flow_event(
 def publish_flow_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     flow: FlowRecord,
+    event_context: FlowEventContext,
 ) -> list[WebhookDeliveryRecord]:
     return _publish_flow_webhook_event(
         repository=repository,
@@ -361,13 +439,14 @@ def publish_flow_deleted(
         event_type="flows/deleted",
         flow=flow,
         event_factory=lambda _webhook, _collected_by_ids: {"flow_id": str(flow.id)},
+        event_context=event_context,
     )
 
 
 def publish_segments_added(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     object_storage: ObjectStorage,
     flow: FlowRecord,
     segments: list[SegmentRecord],
@@ -391,7 +470,7 @@ def publish_segments_added(
 def publish_segments_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
+    resource_repository: FlowEventResourceRepository,
     flow: FlowRecord,
     segments: list[SegmentRecord],
 ) -> list[WebhookDeliveryRecord]:
@@ -443,8 +522,8 @@ def publish_source_event(
 def publish_source_deleted(
     *,
     repository: WebhookEventRepository,
-    resource_repository: WebhookResourceRepository,
     source: SourceRecord,
+    source_collected_by_ids: list[str],
 ) -> list[WebhookDeliveryRecord]:
     webhooks = active_webhooks_for_event(repository, "sources/deleted")
     if not webhooks:
@@ -456,7 +535,7 @@ def publish_source_deleted(
         flow=None,
         source=source,
         flow_collected_by_ids=[],
-        source_collected_by_ids=source_collected_by_ids(resource_repository, source),
+        source_collected_by_ids=source_collected_by_ids,
         webhooks=webhooks,
     )
 
@@ -464,16 +543,31 @@ def publish_source_deleted(
 def segment_payload(
     segment: SegmentRecord,
     get_urls: list[JsonPayload],
+    *,
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[JsonPayload] | None = None,
+    include_object_timerange: bool = False,
 ) -> JsonPayload:
     payload = {
         "object_id": segment.object_id,
         "timerange": segment.timerange,
         "ts_offset": segment.ts_offset,
         "last_duration": segment.last_duration,
+        "object_timerange": (
+            segment_object_timerange(segment) if include_object_timerange else None
+        ),
         "sample_offset": segment.sample_offset,
         "sample_count": segment.sample_count,
         "get_urls": get_urls,
         "key_frame_count": segment.key_frame_count,
+        "init_object": (
+            {
+                "object_id": init_object.id,
+                "get_urls": init_get_urls or [],
+            }
+            if init_object is not None
+            else None
+        ),
     }
     return without_none(payload)
 
@@ -486,52 +580,76 @@ def segments_added_event(
     webhook_data: WebhookData,
     object_storage: ObjectStorage,
 ) -> JsonPayload:
-    media_objects = []
-    for object_id in dict.fromkeys(segment.object_id for segment in segments):
+    event_objects = []
+    for object_id in dict.fromkeys(
+        object_id
+        for segment in segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    ):
         media_object = objects_by_id.get(object_id)
         if media_object is not None:
-            media_objects.append(media_object)
+            event_objects.append(media_object)
+    presigned_value = webhook_data.get("presigned")
+    presigned = presigned_value if isinstance(presigned_value, bool) else None
     get_urls_by_object = (
         objects_get_urls(
-            media_objects,
+            event_objects,
             object_storage=object_storage,
             accept_get_urls=_optional_string_set(webhook_data.get("accept_get_urls")),
             accept_storage_ids=_optional_string_set(
                 webhook_data.get("accept_storage_ids")
             ),
-            presigned=webhook_data.get("presigned"),
+            presigned=presigned,
             verbose_storage=bool(webhook_data.get("verbose_storage")),
         )
-        if media_objects
+        if event_objects
         else {}
     )
+    include_object_timerange = bool(webhook_data.get("include_object_timerange"))
     return {
         "flow_id": str(flow.id),
         "segments": [
-            segment_payload(segment, get_urls_by_object.get(segment.object_id, []))
+            segment_payload(
+                segment,
+                get_urls_by_object.get(segment.object_id, []),
+                init_object=(
+                    objects_by_id.get(segment.init_object_id)
+                    if segment.init_object_id is not None
+                    else None
+                ),
+                init_get_urls=(
+                    get_urls_by_object.get(segment.init_object_id, [])
+                    if segment.init_object_id is not None
+                    else None
+                ),
+                include_object_timerange=include_object_timerange,
+            )
             for segment in segments
         ],
     }
 
 
 def flow_event_context(
-    repository: WebhookResourceRepository,
+    repository: FlowEventResourceRepository,
     flow: FlowRecord,
-) -> tuple[SourceRecord | None, list[str], list[str]]:
+) -> FlowEventContext:
     source = (
         repository.get_source(flow.source_id) if flow.source_id is not None else None
     )
     parents = repository.list_flows_collecting([flow.id])
     collected_by_ids = collected_by_by_flow_id(parents).get(flow.id, [])
-    return (
-        source,
-        collected_by_ids,
-        source_collected_by_ids(repository, source),
+    return FlowEventContext(
+        source=source,
+        flow_collected_by_ids=collected_by_ids,
+        source_collected_by_ids=source_collected_by_ids(repository, source),
     )
 
 
 def source_collected_by_ids(
-    repository: WebhookResourceRepository,
+    repository: FlowEventResourceRepository,
     source: SourceRecord | None,
 ) -> list[str]:
     if source is None:
@@ -545,7 +663,7 @@ def source_collected_by_ids(
             continue
         for item in flow_collection(parent_flow):
             child_flow_id = collection_child_id(item)
-            if child_flow_id is None or collection_role(item) is None:
+            if child_flow_id is None:
                 continue
             if child_flow_id not in child_ids:
                 continue
@@ -574,14 +692,19 @@ def send_webhook_delivery(
     validate_webhook_url(url, egress_policy=egress_policy)
     start = time.perf_counter()
     try:
-        response = _http_session().post(
+        response = _http_session(egress_policy or WebhookEgressPolicy()).post(
             url,
             headers=webhook_headers(webhook),
             json=payload,
             allow_redirects=False,
             timeout=timeout_seconds,
+            stream=True,
         )
-        _validate_redirect_response(url, response, egress_policy=egress_policy)
+        try:
+            _validate_redirect_response(url, response, egress_policy=egress_policy)
+        finally:
+            # Delivery processing only uses status and reason, never the body.
+            response.close()
     except Exception:
         observe_webhook_delivery("failure", time.perf_counter() - start)
         raise
@@ -648,7 +771,21 @@ def validate_webhook_target(
         return
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    for address in _resolve_host_addresses(hostname, port):
+    _validate_resolved_addresses(
+        hostname, _resolve_host_addresses(hostname, port), policy
+    )
+
+
+def _validate_resolved_addresses(
+    hostname: str,
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+    policy: WebhookEgressPolicy,
+) -> None:
+    if policy.allow_private_targets or _host_allowed(
+        _normalized_hostname(hostname), policy.allowed_hosts
+    ):
+        return
+    for address in addresses:
         if _blocked_ip(address):
             raise WebhookEgressError(
                 "Webhook URL resolves to a restricted network destination"
@@ -682,9 +819,30 @@ def _list_of_strings(value: object) -> list[str]:
     return []
 
 
+def _optional_list_of_strings(value: object) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return None
+
+
 def _selector_matches(candidates: list[str], required: list[str]) -> bool:
     if not required:
         return True
+    if not candidates:
+        return False
+    candidate_set = set(candidates)
+    return any(item in candidate_set for item in required)
+
+
+def _collection_selector_matches(
+    candidates: list[str], required: list[str] | None
+) -> bool:
+    if required is None:
+        return True
+    if not required:
+        return not candidates
     if not candidates:
         return False
     candidate_set = set(candidates)

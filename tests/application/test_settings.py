@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 from tamoss.settings import Settings, read_secret_file
 
+FORWARD_AUTH_PROOF = "0123456789abcdef0123456789abcdef"
+
 
 @pytest.mark.parametrize(
     ("name", "value", "message"),
@@ -94,6 +96,9 @@ def test_local_kind_runtime_env_values_parse(
         "TAMOSS_S3_SECRET_KEY": "rustfs-secret",
         "TAMOSS_S3_BUCKET": "tamoss",
         "TAMOSS_STORAGE_LABEL": "tamoss.local-kind:s3:tamoss",
+        "TAMOSS_STORAGE_BACKEND_TAGS": (
+            '{"access":["programme","archive"],"tier":"hot"}'
+        ),
         "TAMOSS_AUTH_REQUIRED": "true",
         "TAMOSS_BASIC_AUTH_USERNAME": "tamoss",
         "TAMOSS_BASIC_AUTH_PASSWORD": "tamoss-pass",
@@ -126,6 +131,23 @@ def test_local_kind_runtime_env_values_parse(
     assert storage_backend.public_endpoint_url == "https://s3.tamoss.localtest.me"
     assert storage_backend.access_key == "rustfs-access"
     assert storage_backend.secret_key == "rustfs-secret"
+    assert storage_backend.tags == {
+        "access": ["programme", "archive"],
+        "tier": "hot",
+    }
+
+
+@pytest.mark.parametrize("raw_tags", ["not-json", "[]", '{"bad": 1}'])
+def test_storage_backend_tags_reject_invalid_env(
+    monkeypatch: pytest.MonkeyPatch, raw_tags: str
+) -> None:
+    monkeypatch.setenv("TAMOSS_S3_BUCKET", "tamoss")
+    monkeypatch.setenv("TAMOSS_S3_ACCESS_KEY", "access")
+    monkeypatch.setenv("TAMOSS_S3_SECRET_KEY", "secret")
+    monkeypatch.setenv("TAMOSS_STORAGE_BACKEND_TAGS", raw_tags)
+
+    with pytest.raises(ValueError, match=r"TAMOSS_STORAGE_BACKEND_TAGS|validation"):
+        Settings()
 
 
 def test_disabled_oauth_accepts_empty_operator_url_env(
@@ -187,7 +209,7 @@ def test_default_versions_are_not_placeholders() -> None:
 
     assert settings.tamoss_version != "0.0.0"
     assert settings.service_version != "0.0.0"
-    assert settings.api_version == "8.1"
+    assert settings.api_version == "8.2"
 
 
 def test_runtime_secret_files_are_reloaded(tmp_path) -> None:
@@ -249,15 +271,92 @@ def test_basic_auth_password_is_explicit() -> None:
 
 def test_forward_auth_secret_file_is_reloaded(tmp_path) -> None:
     proof_file = tmp_path / "forward-auth-proof"
-    proof_file.write_text("proof-1", encoding="utf-8")
+    first_proof = "1" * 32
+    second_proof = "2" * 32
+    proof_file.write_text(first_proof, encoding="utf-8")
 
     settings = Settings(
         trust_forward_auth_headers=True,
         forward_auth_shared_secret_file=str(proof_file),
+        forward_auth_group_bindings=[
+            {"groupName": "tamoss-viewers", "permissions": ["viewer"]}
+        ],
     )
 
-    assert settings.forward_auth_shared_secret_value() == "proof-1"
+    assert settings.forward_auth_shared_secret_value() == first_proof
 
-    proof_file.write_text("proof-2", encoding="utf-8")
+    proof_file.write_text(second_proof, encoding="utf-8")
 
-    assert settings.forward_auth_shared_secret_value() == "proof-2"
+    assert settings.forward_auth_shared_secret_value() == second_proof
+
+
+def test_forward_auth_requires_minimum_shared_proof_length(tmp_path) -> None:
+    proof_file = tmp_path / "forward-auth-proof"
+    proof_file.write_text("too-short", encoding="utf-8")
+    bindings = [{"groupName": "tamoss-viewers", "permissions": ["viewer"]}]
+
+    with pytest.raises(ValueError, match="at least 32 characters"):
+        Settings(
+            trust_forward_auth_headers=True,
+            forward_auth_shared_secret="too-short",
+            forward_auth_group_bindings=bindings,
+        )
+    with pytest.raises(ValueError, match="at least 32 characters"):
+        Settings(
+            trust_forward_auth_headers=True,
+            forward_auth_shared_secret_file=str(proof_file),
+            forward_auth_group_bindings=bindings,
+        )
+
+
+def test_forward_auth_group_bindings_parse_from_operator_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TAMOSS_TRUST_FORWARD_AUTH_HEADERS", "true")
+    monkeypatch.setenv("TAMOSS_FORWARD_AUTH_SHARED_SECRET", FORWARD_AUTH_PROOF)
+    monkeypatch.setenv(
+        "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS",
+        '[{"groupName":"tamoss-viewers","permissions":["viewer"]},'
+        '{"groupName":"tamoss-admins","permissions":["admin"]}]',
+    )
+
+    settings = Settings()
+
+    assert [
+        (binding.group_name, binding.permissions)
+        for binding in settings.forward_auth_group_bindings
+    ] == [
+        ("tamoss-viewers", frozenset({"viewer"})),
+        ("tamoss-admins", frozenset({"admin"})),
+    ]
+
+
+def test_forward_auth_requires_group_bindings() -> None:
+    with pytest.raises(ValueError, match="TAMOSS_FORWARD_AUTH_GROUP_BINDINGS"):
+        Settings(
+            trust_forward_auth_headers=True,
+            forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+        )
+
+
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        [{"groupName": "tamoss-viewers", "permissions": []}],
+        [{"groupName": "tamoss-viewers", "permissions": ["write"]}],
+        [{"groupName": "one|two", "permissions": ["viewer"]}],
+        [
+            {"groupName": "duplicate", "permissions": ["viewer"]},
+            {"groupName": "duplicate", "permissions": ["admin"]},
+        ],
+    ],
+)
+def test_forward_auth_rejects_invalid_group_bindings(
+    bindings: list[dict[str, object]],
+) -> None:
+    with pytest.raises(ValueError):
+        Settings(
+            trust_forward_auth_headers=True,
+            forward_auth_shared_secret=FORWARD_AUTH_PROOF,
+            forward_auth_group_bindings=bindings,
+        )

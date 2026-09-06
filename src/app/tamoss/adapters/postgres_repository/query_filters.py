@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.types import PostgresCursor
+from tamoss.domain.listing_pagination import ListingWindow
 from tamoss.domain.model import FlowRecord
 
 
@@ -15,6 +17,112 @@ def _where_sql(clauses: list[sql.Composable]) -> sql.Composable:
     if not clauses:
         return sql.SQL("")
     return sql.SQL("WHERE ") + sql.SQL(" AND ").join(clauses)
+
+
+def _listing_order_sql(
+    value_sql: sql.Composable,
+    identity_sql: sql.Composable,
+    *,
+    descending: bool,
+    missing_first: bool,
+) -> sql.Composable:
+    direction = sql.SQL("DESC") if descending else sql.SQL("ASC")
+    nulls = sql.SQL("FIRST") if missing_first else sql.SQL("LAST")
+    return sql.SQL("{} {} NULLS {}, {} {}").format(
+        value_sql,
+        direction,
+        nulls,
+        identity_sql,
+        direction,
+    )
+
+
+def _append_listing_cursor_filter(
+    clauses: list[sql.Composable],
+    params: dict[str, Any],
+    window: ListingWindow,
+    *,
+    value_sql: sql.Composable,
+    identity_sql: sql.Composable,
+    timestamp: bool,
+) -> None:
+    if window.anchor_id is None:
+        return
+    operator = sql.SQL("<") if window.descending else sql.SQL(">")
+    params["cursor_id"] = window.anchor_id
+    tie = sql.SQL("{} {} %(cursor_id)s").format(identity_sql, operator)
+    if window.anchor_value is None:
+        predicate = sql.SQL("({} IS NULL AND {})").format(value_sql, tie)
+        if window.missing_first:
+            predicate += sql.SQL(" OR {} IS NOT NULL").format(value_sql)
+    else:
+        params["cursor_value"] = (
+            datetime.fromisoformat(window.anchor_value)
+            if timestamp
+            else window.anchor_value
+        )
+        predicate = sql.SQL("({}, {}) {} (%(cursor_value)s, %(cursor_id)s)").format(
+            value_sql, identity_sql, operator
+        )
+        if not timestamp and not window.missing_first:
+            predicate += sql.SQL(" OR {} IS NULL").format(value_sql)
+    clauses.append(sql.SQL("(") + predicate + sql.SQL(")"))
+
+
+def _append_flow_collected_by_filter(
+    clauses: list[sql.Composable],
+    params: dict[str, Any],
+    *,
+    collected_by_ids: set[UUID] | None,
+    top_level_only: bool,
+) -> None:
+    if collected_by_ids is None and not top_level_only:
+        return
+    relationship = sql.SQL(
+        """
+        SELECT 1
+        FROM tamoss_flows AS parent
+        WHERE parent.flow_collection_ids @> ARRAY[flow.id]
+        """
+    )
+    if top_level_only:
+        clauses.append(sql.SQL("NOT EXISTS (") + relationship + sql.SQL(")"))
+        return
+    params["collected_by_ids"] = list(collected_by_ids or set())
+    clauses.append(
+        sql.SQL("EXISTS (")
+        + relationship
+        + sql.SQL(" AND parent.id = ANY(%(collected_by_ids)s::uuid[]))")
+    )
+
+
+def _append_source_collected_by_filter(
+    clauses: list[sql.Composable],
+    params: dict[str, Any],
+    *,
+    collected_by_ids: set[UUID] | None,
+    top_level_only: bool,
+) -> None:
+    if collected_by_ids is None and not top_level_only:
+        return
+    relationship = sql.SQL(
+        """
+        SELECT 1
+        FROM tamoss_flows AS child
+        JOIN tamoss_flows AS parent
+          ON parent.flow_collection_ids @> ARRAY[child.id]
+        WHERE child.source_id = source.id
+        """
+    )
+    if top_level_only:
+        clauses.append(sql.SQL("NOT EXISTS (") + relationship + sql.SQL(")"))
+        return
+    params["source_collected_by_ids"] = list(collected_by_ids or set())
+    clauses.append(
+        sql.SQL("EXISTS (")
+        + relationship
+        + sql.SQL(" AND parent.source_id = ANY(%(source_collected_by_ids)s::uuid[]))")
+    )
 
 
 def _append_tag_filter_clauses(

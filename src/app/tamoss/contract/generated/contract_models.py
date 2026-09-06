@@ -97,7 +97,7 @@ class Service(BaseModel):
     min_object_timeout: Annotated[
         Timestamp,
         Field(
-            description="The minimum timeframe within which a Media Object created by this service must be registered against a Flow segment before it is garbage collected. Services SHOULD allow a small grace period beyond the advertised value to account for latency in assigning the Objects and returning them to the Client. This timeout MUST be `300:0` (i.e. 5 minutes) or greater. Clients MUST be capable of reaching this minimum performance level. Clients SHOULD adapt to this value by balancing how many object URLs to request per page against how fast they will be used. Services MAY allow this value to be configured at deploy-time. Format as described by the [Timestamp](#/schemas/timestamp) type. For more infomation, see the documentation of the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage) endpoint."
+            description="The minimum timeframe within which a Object created by this service must be registered against a Flow segment before it is garbage collected. Services SHOULD allow a small grace period beyond the advertised value to account for latency in assigning the Objects and returning them to the Client. This timeout MUST be `300:0` (i.e. 5 minutes) or greater. Clients MUST be capable of reaching this minimum performance level. Clients SHOULD adapt to this value by balancing how many object URLs to request per page against how fast they will be used. Services MAY allow this value to be configured at deploy-time. Format as described by the [Timestamp](#/schemas/timestamp) type. For more infomation, see the documentation of the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage) endpoint."
         ),
     ]
     min_presigned_url_timeout: Annotated[
@@ -116,6 +116,21 @@ class ServicePost(BaseModel):
     description: Annotated[
         str | None, Field(description="The service instance description")
     ] = None
+
+
+class UrlTagList(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="A list of tag values, formatted for use in query string parameters",
+            pattern="^([^,]+(,[^,]+)*)?$",
+            title="Query String Tag value list",
+        ),
+    ]
+
+
+class Tags(RootModel[dict[str, str | list[str]]]):
+    root: dict[str, str | list[str]]
 
 
 class StoreType(StrEnum):
@@ -148,6 +163,9 @@ class StorageBackend(BaseModel):
     ] = None
     store_product: Annotated[
         str | None, Field(description="The storage product name.")
+    ] = None
+    tags: Annotated[
+        Tags | None, Field(description="Key value is a freeform string.")
     ] = None
 
 
@@ -198,185 +216,13 @@ class StorageBackendsList(RootModel[list[StorageBackendsListItem]]):
     ]
 
 
-class UrlTagList(RootModel[str]):
+class MimeType(RootModel[str]):
     root: Annotated[
         str,
         Field(
-            description="A list of tag values, formatted for use in query string parameters",
-            pattern="^([^,]+(,[^,]+)*)?$",
-            title="Query String Tag value list",
-        ),
-    ]
-
-
-class Tags(RootModel[dict[str, str | list[str]]]):
-    root: dict[str, str | list[str]]
-
-
-class Event(StrEnum):
-    flows_created = "flows/created"
-    flows_updated = "flows/updated"
-    flows_deleted = "flows/deleted"
-    flows_segments_added = "flows/segments_added"
-    flows_segments_deleted = "flows/segments_deleted"
-    sources_created = "sources/created"
-    sources_updated = "sources/updated"
-    sources_deleted = "sources/deleted"
-
-
-class Webhook(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    url: Annotated[
-        str,
-        Field(
-            description="The URL to which the service instance should make HTTP POST requests with event data"
-        ),
-    ]
-    api_key_name: Annotated[
-        str | None,
-        Field(description="The HTTP header name that is added to the event POST"),
-    ] = None
-    events: Annotated[list[Event], Field(description="List of event types to receive")]
-    flow_ids: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Limit Flow and Flow Segment events to Flows in the given list of Flow IDs"
-        ),
-    ] = None
-    source_ids: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Limit Flow, Flow Segment and Source events to Sources in the given list of Source IDs"
-        ),
-    ] = None
-    flow_collected_by_ids: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Limit Flow and Flow Segment events to those with Flow that is collected by a Flow Collection in the given list of Flow Collection IDs"
-        ),
-    ] = None
-    source_collected_by_ids: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Limit Flow, Flow Segment and Source events to those with Source that is collected by a Source Collection in the given list of Source Collection IDs"
-        ),
-    ] = None
-    accept_get_urls: Annotated[
-        list[str] | None,
-        Field(
-            description="List of labels of URLs to include in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `accept_get_urls` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint, except that the labels are represented using a JSON array rather than a (comma separated list) string."
-        ),
-    ] = None
-    accept_storage_ids: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="List of labels of `storage_id`s to include in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `accept_storage_ids` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint, except that the IDs are represented using a JSON array rather than a (comma separated list) string."
-        ),
-    ] = None
-    presigned: Annotated[
-        bool | None,
-        Field(
-            description="Whether to include presigned/non-presigned URLs in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `presigned` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint."
-        ),
-    ] = None
-    verbose_storage: Annotated[
-        bool | None,
-        Field(
-            description="Whether to include storage metadata in the `get_urls` property in `flows/segments_added` events. This option is the same as the `verbose_storage` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint."
-        ),
-    ] = None
-    tags: Tags | None = None
-
-
-class WebhookWithId(Webhook):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    id: Annotated[Uuid, Field(description="Webhook identifier")]
-
-
-class Error(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    type: Annotated[str, Field(description="The error type name.")]
-    summary: Annotated[
-        str, Field(description="Summary description of the error and causes.")
-    ]
-    traceback: Annotated[
-        list[str] | None,
-        Field(description="Stack trace leading to error (as a list of strings)"),
-    ] = None
-    time: Annotated[
-        AwareDatetime,
-        Field(description="Time at which the error ocurred, to aid in log correlation"),
-    ]
-
-
-class Status(StrEnum):
-    created = "created"
-    started = "started"
-    disabled = "disabled"
-    error = "error"
-
-
-class WebhookGet(WebhookWithId):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    error: Annotated[
-        Error | None,
-        Field(
-            description="Provides more information for the error status, as described by the [Error](#/schemas/error) type"
-        ),
-    ] = None
-    status: Annotated[
-        Status,
-        Field(
-            description="Status of the Webhook. `created` indicates the webhook has been successfully registered but is yet to begin sending events or, depending on the service implementation, the worker responsible for sending the events has yet to start. `started` indicates the webhook is active and sending events. `disabled` indicates the webhook has been disabled by a client and is not currently sending events. `error` indicates an error condition has been encountered and the webhook has been disabled by the service instance. More information about the error condition will be indicated by the service instance in the `error` parameter. Service implementations SHOULD implement appropriate retries and only enter the `error` state when absolutely necesary. A webhook in the `error` or `disabled` state may be re-enabled by a client by setting the status to `created`. A webhook in the `created` or `started` state may be disabled by a client by setting the status to `disabled`. Attempting to transition an `error` status to `disabled` SHOULD be rejected."
-        ),
-    ]
-
-
-class Status1(StrEnum):
-    created = "created"
-    disabled = "disabled"
-
-
-class WebhookPost(Webhook):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    api_key_value: Annotated[
-        str | None,
-        Field(
-            description="The value that the HTTP header 'api_key_name' will be set to"
-        ),
-    ] = None
-    status: Annotated[
-        Status1 | None,
-        Field(
-            description="Status of the Webhook. `created` will register the webhook in the created state and the service instance will attempt to start sending events. `disabled` will register the webhook in a disabled state and will not send events. Assumed to be `created` if not set."
-        ),
-    ] = None
-
-
-class WebhookPut(WebhookWithId):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    api_key_value: Annotated[
-        str | None,
-        Field(
-            description="The value that the HTTP header 'api_key_name' will be set to"
-        ),
-    ] = None
-    status: Annotated[
-        Status1,
-        Field(
-            description="Status of the Webhook. `created` indicates the webhook has been successfully registered but is yet to begin sending events or, depending on the service implementation, the worker responsible for sending the events has yet to start. `started` indicates the webhook is active and sending events. `disabled` indicates the webhook has been disabled by a client and is not currently sending events. `error` indicates an error condition has been encountered and the webhook has been disabled by the service instance. More information about the error condition will be indicated by the service instance in the `error` parameter. Service implementations SHOULD implement appropriate retries and only enter the `error` state when absolutely necesary. A webhook in the `error` or `disabled` state may be re-enabled by a client by setting the status to `created`. A webhook in the `created` or `started` state may be disabled by a client by setting the status to `disabled`. Attempting to transition an `error` status to `disabled` SHOULD be rejected."
+            description="A Mime Type without parameters as defined in [RFC2045](https://www.rfc-editor.org/rfc/rfc2045#section-5.1) and [RFC7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1)",
+            pattern="^(application|audio|font|example|image|message|model|multipart|text|video|x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/([0-9A-Za-z!#$%&'*+.^_`|~-]+)$",
+            title="MIME Type",
         ),
     ]
 
@@ -387,105 +233,6 @@ class ContentFormat(Enum):
     urn_x_nmos_format_audio = "urn:x-nmos:format:audio"
     urn_x_nmos_format_data = "urn:x-nmos:format:data"
     urn_x_nmos_format_multi = "urn:x-nmos:format:multi"
-
-
-class CollectionItem(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    id: Annotated[
-        Uuid,
-        Field(
-            description="Source or Flow Identifier of the member of this collection. Sources MUST only collect Sources, and Flows MUST only collect Flows. Must already be registered in this service instance"
-        ),
-    ]
-    role: Annotated[
-        str,
-        Field(
-            description="A human-readable role of the element in this collection (e.g. 'R' to denote a right audio channel in a collection of mono audio Sources)"
-        ),
-    ]
-
-
-class Source(BaseModel):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    id: Annotated[Uuid, Field(description="Source identifier")]
-    format: Annotated[
-        ContentFormat, Field(description="The primary content type URN for the Source.")
-    ]
-    label: Annotated[
-        str | None,
-        Field(
-            description="Freeform string label for the Source. This should be a very short, human-readable label that may be displayed in listings of Sources."
-        ),
-    ] = None
-    description: Annotated[
-        str | None,
-        Field(
-            description="Freeform text describing the Source. This should be a human-readable description that may be showed in detailed views of Sources. The description should be longer and more detailed than `label`."
-        ),
-    ] = None
-    created_by: Annotated[
-        str | None,
-        Field(
-            description="A string identifier for the entity that created the Source. Service implementations SHOULD set suitable default values for `created_by` based on the principal accessing the systems."
-        ),
-    ] = None
-    updated_by: Annotated[
-        str | None,
-        Field(
-            description="A string identifier for the entity that updated the Source metadata most recently. Service implementations SHOULD set suitable default values for `updated_by` based on the principal accessing the system."
-        ),
-    ] = None
-    created: Annotated[
-        AwareDatetime | None,
-        Field(
-            description="The date-time the Source was created in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
-        ),
-    ] = None
-    updated: Annotated[
-        AwareDatetime | None,
-        Field(
-            description="The date-time the Source metadata was last updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
-        ),
-    ] = None
-    tags: Tags | None = None
-    source_collection: Annotated[
-        list[CollectionItem] | None,
-        Field(
-            description="List of Sources that are collected together by this Source. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally. Source collections can be inferred from Flow collection definitions."
-        ),
-    ] = None
-    collected_by: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Sources that reference this Source to include it in a collection. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally. Source collections can be inferred from Flow collection definitions."
-        ),
-    ] = None
-
-
-class Timerange(RootModel[str]):
-    root: Annotated[
-        str,
-        Field(
-            description='A timerange of timestamps. It is represented using one or two timestamps with inclusivity and exclusivity markers.\n\nE.g.\n* `[0:0_10:0)` represents 10 seconds of media starting at timestamp `0:0` and ending before `10:0`.\n* `(5:0_` represents a timerange starting after `5:0` and to eternity.\n* `_` without timestamps or inclusivity markers represents "eternity" (i.e. the entire timeline).\n* `()` without timestamps represents "never" (i.e. a range of zero length in no particular position).\n* `[1694429247:0_1694429248:0)` is a 1 second TAI timerange starting at 2023-09-11T10:46:50.0Z UTC.\n* `[1694429247:0]` is an instantaneous TAI timerange at 2023-09-11T10:46:50.0Z UTC.\n  This is equivalent to `[1694429247:0_1694429247:0]`.\n  The short syntax is preferred due to ease of identification as instantaneous.\n  Instantaneous TimeRanges cannot use exclusive markers (i.e. `(` or `)`).\n* A `[` or `]` indicates that bound is inclusive, and a `(` or `)` indicates that bound is exclusive.\n\nDetails of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md) application note.\n',
-            pattern="^(\\[|\\()?(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?(_(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?)?(\\]|\\))?$",
-            title="TimeRange",
-        ),
-    ]
-
-
-class MimeType(RootModel[str]):
-    root: Annotated[
-        str,
-        Field(
-            description="A Mime Type without parameters as defined in [RFC2045](https://www.rfc-editor.org/rfc/rfc2045#section-5.1) and [RFC7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.1)",
-            pattern="^(application|audio|font|example|image|message|model|multipart|text|video|x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/([0-9A-Za-z!#$%&'*+.^_`|~-]+)$",
-            title="MIME Type",
-        ),
-    ]
 
 
 class ChannelNumber(RootModel[int]):
@@ -586,28 +333,6 @@ class ContainerMapping(BaseModel):
     ] = None
 
 
-class FlowCollectionItem(CollectionItem):
-    model_config = ConfigDict(
-        extra="allow",
-    )
-    container_mapping: Annotated[
-        ContainerMapping | None,
-        Field(
-            description="Describes the mapping of the Flow essence from this Flow collection's container"
-        ),
-    ] = None
-
-
-class FlowCollection(RootModel[list[FlowCollectionItem]]):
-    root: Annotated[
-        list[FlowCollectionItem],
-        Field(
-            description="Describes how Flows are collected into another Flow",
-            title="Flow Collection",
-        ),
-    ]
-
-
 class SegmentDuration(BaseModel):
     model_config = ConfigDict(
         extra="allow",
@@ -616,89 +341,22 @@ class SegmentDuration(BaseModel):
     denominator: Annotated[int | None, Field(description="denominator", gt=0)] = 1
 
 
-class FlowCore(BaseModel):
+class FlowTechnical(BaseModel):
     model_config = ConfigDict(
         extra="allow",
     )
-    id: Annotated[Uuid, Field(description="Flow identifier")]
-    source_id: Annotated[Uuid, Field(description="Source identifier")]
-    label: Annotated[
-        str | None,
-        Field(
-            description="Freeform string label for the Flow. This should be a very short, human-readable label that may be displayed in listings of Flows."
-        ),
-    ] = None
-    description: Annotated[
-        str | None,
-        Field(
-            description="Freeform text describing the Flow. This should be a human-readable description that may be showed in detailed views of Flows. The description should be longer and more detailed than `label`."
-        ),
-    ] = None
-    created_by: Annotated[
-        str | None,
-        Field(
-            description="A string identifier for the entity that created the Flow. Service implementations SHOULD set suitable default values for `created_by` based on the principal accessing the system, and MAY permit clients to edit the value, subject to suitable permissions-based limitations."
-        ),
-    ] = None
-    updated_by: Annotated[
-        str | None,
-        Field(
-            description="A string identifier for the entity that updated the Flow metadata most recently. Service implementations SHOULD set suitable default values for `updated_by` based on the principal accessing the system, and MAY permit clients to edit the value, subject to suitable permissions-based limitations."
-        ),
-    ] = None
-    tags: Annotated[
-        Tags | None,
-        Field(
-            description="Key value is a freeform string. WARNING: When updating a Flow with `tags` set, `tags` will be replaced with the provided dictionary. `tags` WILL NOT be merged with the provided values. When `tags` is not set in the request, `tags` will be unset (i.e. set to `{}`). To update individual tags, clients should use the [Create or Update Flow Tag](#/operations/PUT_flows-flowId-tags-name) endpoint."
-        ),
-    ] = None
-    metadata_version: Annotated[
-        str | None,
-        Field(
-            description="A change to the Flow metadata, not including metadata_version, metadata_updated, segments_updated, or Segments, results in a new version. If the metadata_version for Flow instances is identical then the metadata is identical. Service implementations SHOULD set suitable default values for `metadata_version` whenever Flow metadata is changed and `metadata_version` is either not set by the client, or set to it's existing value. Service implementations MAY permit clients to edit the value, subject to suitable permissions-based limitations. Where media is transfered between TAMS service instances without changing the Flow metadata, clients SHOULD maintain the `metadata_version`. To support this, service implementations SHOULD always accept the setting of `metadata_version` by the client on initial Flow creation. Service implementations SHOULD update this field where metadata is updated via child endpoints. Note that this specification places no requirements on incremental versioning. Service implementations may, for example, choose to use hashes or date-time version identifiers."
-        ),
-    ] = None
-    generation: Annotated[
-        int | None,
-        Field(
-            description='An indication of how many lossy encodings the Flow content has been through. This parameter provides a hint to clients as to which is the "highest qualty" Flow available to them. A Flow with a higher generation may contain less of the original information than a Flow with a lower generation. Where a Flow is captured straight from the orginating device (e.g. camera/microphone) in its highest quality, and there is no possibility of the content becoming available in a higher quality (e.g. via capture from ST2110 or SDI), it SHOULD have a `generation` of `0`. Where the originating device outputs multiple qualities of the Source, `generation` should represent the encoding processes each has been through as accurately as possible.',
-            ge=0,
-        ),
-    ] = None
-    created: Annotated[
-        AwareDatetime | None,
-        Field(
-            description="The date-time the Flow was created in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
-        ),
-    ] = None
-    metadata_updated: Annotated[
-        AwareDatetime | None,
-        Field(
-            description="The date-time the Flow metadata was updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
-        ),
-    ] = None
-    segments_updated: Annotated[
-        AwareDatetime | None,
-        Field(
-            description="The date-time the Flow Segments were updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
-        ),
-    ] = None
-    read_only: Annotated[
-        bool | None,
-        Field(
-            description="If set to 'true', service implementations SHOULD reject client requests to update Flow metadata (other than the read_only property), and Flow Segments. Service implementations should also reject requests to the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage) endpoint for the Flow, and requests to delete the Flow."
-        ),
-    ] = None
     codec: Annotated[
-        MimeType | None,
+        str | None,
         Field(
-            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use."
+            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ] = None
     container: Annotated[
-        MimeType | None,
+        str | None,
         Field(
-            description="The container MIME type for Flow Segments. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Where multiple types exist for a subtype (e.g. `video/mp4`, `audio/mp4`, `application/mp4`), the closest MIME type to the Flow `format` should be used (e.g. `audio/mp4` for a Flow `format` of `urn:x-nmos:format:audio`). Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use. Where the Flow does not reference any Media Object(s) directly (e.g. an empty Multi Flow that serves only to collect related mono-essence Flows that do reference Media Objects), this property MUST NOT be set."
+            description="The container MIME type for Flow Segments. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Where multiple types exist for a subtype (e.g. `video/mp4`, `audio/mp4`, `application/mp4`), the closest MIME type to the Flow `format` should be used (e.g. `audio/mp4` for a Flow `format` of `urn:x-nmos:format:audio`). Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ] = None
     avg_bit_rate: Annotated[
@@ -708,33 +366,10 @@ class FlowCore(BaseModel):
             ge=0,
         ),
     ] = None
-    max_bit_rate: Annotated[
-        int | None,
-        Field(
-            description="The maximum bit rate of the Flow Segments in 1000 bits/second. A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md) AppNote.",
-            ge=0,
-        ),
-    ] = None
     segment_duration: Annotated[
         SegmentDuration | None,
         Field(
             description="The target Flow Segment duration in seconds. The duration for each Segment may vary around this target value. See also the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md) AppNote for how this property can be used to calculate buffer sizes."
-        ),
-    ] = None
-    timerange: Annotated[
-        Timerange | None,
-        Field(
-            description="The timerange of samples available in the Flow, as described by the [TimeRange](#/schemas/timerange) type. Service implementations MUST ignore this if given in a PUT request, and instead manage it internally."
-        ),
-    ] = None
-    flow_collection: Annotated[
-        FlowCollection | None,
-        Field(description="List of Flows that are collected together by this Flow."),
-    ] = None
-    collected_by: Annotated[
-        list[Uuid] | None,
-        Field(
-            description="Flows that reference this Flow to include it in a collection. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
         ),
     ] = None
     container_mapping: Annotated[
@@ -928,9 +563,15 @@ class EssenceParameters(BaseModel):
             description="If `true`, the frame rate of the Flow is variable and `frame_rate` MUST NOT be set. If `false` or omitted, the frame rate of the Flow is fixed and `frame_rate` MUST be set."
         ),
     ] = False
+    init_segments: Annotated[
+        bool | None,
+        Field(
+            description="Whether the Flow makes use of initialisation segments. This parameter MUST be set to `true` if Media Objects have `init_object` populated. If set to `true`, all Media Objects MUST have `init_object` populated. Assume `false` if omitted."
+        ),
+    ] = None
 
 
-class FlowVideo(FlowCore):
+class FlowVideo(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -945,9 +586,10 @@ class FlowVideo(FlowCore):
         ),
     ]
     codec: Annotated[
-        MimeType,
+        str,
         Field(
-            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use."
+            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ]
 
@@ -1011,9 +653,15 @@ class EssenceParameters1(BaseModel):
     unc_parameters: Annotated[
         UncParameters1 | None, Field(title="Uncompressed Audio Parameters")
     ] = None
+    init_segments: Annotated[
+        bool | None,
+        Field(
+            description="Whether the Flow makes use of initialisation segments. This parameter MUST be set to `true` if Media Objects have `init_object` populated. If set to `true`, all Media Objects MUST have `init_object` populated. Assume `false` if omitted."
+        ),
+    ] = None
 
 
-class FlowAudio(FlowCore):
+class FlowAudio(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1028,9 +676,10 @@ class FlowAudio(FlowCore):
         ),
     ]
     codec: Annotated[
-        MimeType,
+        str,
         Field(
-            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use."
+            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ]
 
@@ -1057,7 +706,7 @@ class EssenceParameters2(BaseModel):
     ] = None
 
 
-class FlowImage(FlowCore):
+class FlowImage(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1072,9 +721,10 @@ class FlowImage(FlowCore):
         ),
     ]
     codec: Annotated[
-        MimeType,
+        str,
         Field(
-            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use."
+            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ]
 
@@ -1093,9 +743,15 @@ class EssenceParameters3(BaseModel):
             description="The type of information encoded in the Flow, identified using a URN. e.g. The data_type may be urn:x-tams:data:bounding-box, and the codec `application/json`."
         ),
     ] = None
+    init_segments: Annotated[
+        bool | None,
+        Field(
+            description="Whether the Flow makes use of initialisation segments. This parameter MUST be set to `true` if Media Objects have `init_object` populated. If set to `true`, all Media Objects MUST have `init_object` populated. Assume `false` if omitted."
+        ),
+    ] = None
 
 
-class FlowData(FlowCore):
+class FlowData(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1110,29 +766,610 @@ class FlowData(FlowCore):
         ),
     ]
     codec: Annotated[
-        MimeType,
+        str,
         Field(
-            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use."
+            description="A MIME type identification of the (lossy or lossless) coding used for the Flow content. Note that the `type` component of the container MIME type (i.e. the component before the `/`) may be different to the `type` component of the codec MIME type. e.g. An audio Flow may have `audio/aac` coded content may be wrapped in a `video/mp2t` container. Mime types from the [IANA registry](https://www.iana.org/assignments/media-types/media-types.xhtml) should be preferred. Where multiple MIME types are possible, the most common should be preferred. Where this is insufficient, the maintainers of the TAMS repository may create an application note advising which MIME type to use.",
+            pattern="^[^\\s/]+/[^\\s/]+$",
         ),
     ]
+
+
+class Profile(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[Uuid, Field(description="Profile identifier.")]
+    label: Annotated[
+        str | None, Field(description="Freeform string label for the Profile.")
+    ] = None
+    description: Annotated[
+        str | None, Field(description="Freeform text describing the Profile.")
+    ] = None
+    created_by: Annotated[
+        str | None,
+        Field(
+            description="A string identifier for the entity that created the Profile. Implementations SHOULD set suitable default values for `created_by` based on the principal accessing the system, and MAY permit clients to edit the value, subject to suitable permissions-based limitations."
+        ),
+    ] = None
+    created: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Profile was created in a given context, e.g. in the store. Implementations SHOULD ignore this if given in a PUT request, and instead manage it internally."
+        ),
+    ] = None
+    tags: Annotated[
+        Tags | None,
+        Field(
+            description="Key value is a freeform string.  As Profiles are considered immutable then this also applies to tags which cannot be updated after a Profile has been created."
+        ),
+    ] = None
+    flow_metadata: Annotated[
+        FlowVideo | FlowAudio | FlowImage | FlowData,
+        Field(
+            description="The technical characteristics of the Profile.  This section will be mapped directly to all flows created using this Profile."
+        ),
+    ]
+
+
+class Event(StrEnum):
+    flows_created = "flows/created"
+    flows_updated = "flows/updated"
+    flows_deleted = "flows/deleted"
+    flows_segments_added = "flows/segments_added"
+    flows_segments_deleted = "flows/segments_deleted"
+    sources_created = "sources/created"
+    sources_updated = "sources/updated"
+    sources_deleted = "sources/deleted"
+
+
+class Webhook(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    url: Annotated[
+        str,
+        Field(
+            description="The URL to which the service instance should make HTTP POST requests with event data"
+        ),
+    ]
+    api_key_name: Annotated[
+        str | None,
+        Field(description="The HTTP header name that is added to the event POST"),
+    ] = None
+    events: Annotated[list[Event], Field(description="List of event types to receive")]
+    flow_ids: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Limit Flow and Flow Segment events to Flows in the given list of Flow IDs"
+        ),
+    ] = None
+    source_ids: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Limit Flow, Flow Segment and Source events to Sources in the given list of Source IDs"
+        ),
+    ] = None
+    flow_collected_by_ids: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Limit Flow and Flow Segment events to those with a Flow that is collected by a Flow Collection in the given list of Flow Collection IDs. An empty array limits events to Flows that are not collected by any Flow Collection."
+        ),
+    ] = None
+    source_collected_by_ids: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Limit Flow, Flow Segment and Source events to those with a Source that is collected by a Source Collection in the given list of Source Collection IDs. An empty array limits events to Sources that are not collected by any Source Collection."
+        ),
+    ] = None
+    accept_get_urls: Annotated[
+        list[str] | None,
+        Field(
+            description="List of labels of URLs to include in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `accept_get_urls` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint, except that the labels are represented using a JSON array rather than a (comma separated list) string."
+        ),
+    ] = None
+    accept_storage_ids: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="List of labels of `storage_id`s to include in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `accept_storage_ids` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint, except that the IDs are represented using a JSON array rather than a (comma separated list) string."
+        ),
+    ] = None
+    presigned: Annotated[
+        bool | None,
+        Field(
+            description="Whether to include presigned/non-presigned URLs in the `get_urls` property in `flows/segments_added` events. Where multiple `get_urls` filter query parameters are provided, the included `get_urls` will match all filters. This option is the same as the `presigned` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint."
+        ),
+    ] = None
+    verbose_storage: Annotated[
+        bool | None,
+        Field(
+            description="Whether to include storage metadata in the `get_urls` property in `flows/segments_added` events. This option is the same as the `verbose_storage` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint."
+        ),
+    ] = None
+    include_object_timerange: Annotated[
+        bool | None,
+        Field(
+            description="If set to `true`, the underlying object's timerange should appear in `flows/segments_added` events. Assume `false` if omitted. This option is the same as the `include_object_timerange` query parameter for the [/flows/{flowId}/segments](#/operations/GET_flows-flowId-segments) API endpoint."
+        ),
+    ] = None
+    tags: Tags | None = None
+
+
+class WebhookWithId(Webhook):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[Uuid, Field(description="Webhook identifier")]
+
+
+class Error(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    type: Annotated[str, Field(description="The error type name.")]
+    summary: Annotated[
+        str, Field(description="Summary description of the error and causes.")
+    ]
+    traceback: Annotated[
+        list[str] | None,
+        Field(description="Stack trace leading to error (as a list of strings)"),
+    ] = None
+    time: Annotated[
+        AwareDatetime,
+        Field(description="Time at which the error ocurred, to aid in log correlation"),
+    ]
+
+
+class Status(StrEnum):
+    created = "created"
+    started = "started"
+    disabled = "disabled"
+    error = "error"
+
+
+class WebhookGet(WebhookWithId):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    error: Annotated[
+        Error | None,
+        Field(
+            description="Provides more information for the error status, as described by the [Error](#/schemas/error) type. Amongst other conditions, implementations MAY use this field to indicate failure to deliver webhooks resulting in return codes other than the 200 Success described in the the webhook event schemas."
+        ),
+    ] = None
+    status: Annotated[
+        Status,
+        Field(
+            description="Status of the Webhook. `created` indicates the webhook has been successfully registered but is yet to begin sending events or, depending on the service implementation, the worker responsible for sending the events has yet to start. `started` indicates the webhook is active and sending events. `disabled` indicates the webhook has been disabled by a client and is not currently sending events. `error` indicates an error condition has been encountered and the webhook has been disabled by the service instance. More information about the error condition will be indicated by the service instance in the `error` parameter. Service implementations SHOULD implement appropriate retries and only enter the `error` state when absolutely necesary. A webhook in the `error` or `disabled` state may be re-enabled by a client by setting the status to `created`. A webhook in the `created` or `started` state may be disabled by a client by setting the status to `disabled`. Attempting to transition an `error` status to `disabled` SHOULD be rejected."
+        ),
+    ]
+
+
+class Status1(StrEnum):
+    created = "created"
+    disabled = "disabled"
+
+
+class WebhookPost(Webhook):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    api_key_value: Annotated[
+        str | None,
+        Field(
+            description="The value that the HTTP header 'api_key_name' will be set to"
+        ),
+    ] = None
+    status: Annotated[
+        Status1 | None,
+        Field(
+            description="Status of the Webhook. `created` will register the webhook in the created state and the service instance will attempt to start sending events. `disabled` will register the webhook in a disabled state and will not send events. Assumed to be `created` if not set."
+        ),
+    ] = None
+
+
+class WebhookPut(WebhookWithId):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    api_key_value: Annotated[
+        str | None,
+        Field(
+            description="The value that the HTTP header 'api_key_name' will be set to"
+        ),
+    ] = None
+    status: Annotated[
+        Status1,
+        Field(
+            description="Status of the Webhook. `created` indicates the webhook has been successfully registered but is yet to begin sending events or, depending on the service implementation, the worker responsible for sending the events has yet to start. `started` indicates the webhook is active and sending events. `disabled` indicates the webhook has been disabled by a client and is not currently sending events. `error` indicates an error condition has been encountered and the webhook has been disabled by the service instance. More information about the error condition will be indicated by the service instance in the `error` parameter. Service implementations SHOULD implement appropriate retries and only enter the `error` state when absolutely necesary. A webhook in the `error` or `disabled` state may be re-enabled by a client by setting the status to `created`. A webhook in the `created` or `started` state may be disabled by a client by setting the status to `disabled`. Attempting to transition an `error` status to `disabled` SHOULD be rejected."
+        ),
+    ]
+
+
+class UuidListEmpty(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="A list of Universally Unique Identifiers (UUIDs) as defined in [RFC9562](https://www.rfc-editor.org/rfc/rfc9562), formatted for use in query string parameters, or an empty string. An empty value selects resources that are not in any collection.",
+            pattern="^(([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(,[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*)?$",
+            title="Query String UUID list (optionally empty)",
+        ),
+    ]
+
+
+class CollectionItem(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[
+        Uuid,
+        Field(
+            description="Source or Flow Identifier of the member of this collection. Sources MUST only collect Sources, and Flows MUST only collect Flows. Must already be registered in this service instance"
+        ),
+    ]
+    role: Annotated[
+        str | None,
+        Field(
+            description="The purpose of this element in the collection, primarily intended to be human-readable."
+        ),
+    ] = None
+
+
+class Source(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[Uuid, Field(description="Source identifier")]
+    format: Annotated[
+        ContentFormat, Field(description="The primary content type URN for the Source.")
+    ]
+    label: Annotated[
+        str | None,
+        Field(
+            description="Freeform string label for the Source. This should be a very short, human-readable label that may be displayed in listings of Sources."
+        ),
+    ] = None
+    description: Annotated[
+        str | None,
+        Field(
+            description="Freeform text describing the Source. This should be a human-readable description that may be showed in detailed views of Sources. The description should be longer and more detailed than `label`."
+        ),
+    ] = None
+    created_by: Annotated[
+        str | None,
+        Field(
+            description="A string identifier for the entity that created the Source. Service implementations SHOULD set suitable default values for `created_by` based on the principal accessing the systems."
+        ),
+    ] = None
+    updated_by: Annotated[
+        str | None,
+        Field(
+            description="A string identifier for the entity that updated the Source metadata most recently. Service implementations SHOULD set suitable default values for `updated_by` based on the principal accessing the system."
+        ),
+    ] = None
+    created: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Source was created in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
+    updated: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Source metadata was last updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
+    tags: Tags | None = None
+    source_collection: Annotated[
+        list[CollectionItem] | None,
+        Field(
+            description="List of Sources that are collected together by this Source. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally. Source collections can be inferred from Flow collection definitions."
+        ),
+    ] = None
+    collected_by: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Sources that reference this Source to include it in a collection. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally. Source collections can be inferred from Flow collection definitions."
+        ),
+    ] = None
+
+
+class Timerange(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description='A timerange of timestamps. It is represented using one or two timestamps with inclusivity and exclusivity markers.\n\nE.g.\n* `[0:0_10:0)` represents 10 seconds of media starting at timestamp `0:0` and ending before `10:0`.\n* `(5:0_` represents a timerange starting after `5:0` and to eternity.\n* `_` without timestamps or inclusivity markers represents "eternity" (i.e. the entire timeline).\n* `()` without timestamps represents "never" (i.e. a range of zero length in no particular position).\n* `[1694429247:0_1694429248:0)` is a 1 second TAI timerange starting at 2023-09-11T10:46:50.0Z UTC.\n* `[1694429247:0]` is an instantaneous TAI timerange at 2023-09-11T10:46:50.0Z UTC.\n  This is equivalent to `[1694429247:0_1694429247:0]`.\n  The short syntax is preferred due to ease of identification as instantaneous.\n  Instantaneous TimeRanges cannot use exclusive markers (i.e. `(` or `)`).\n* A `[` or `]` indicates that bound is inclusive, and a `(` or `)` indicates that bound is exclusive.\n\nDetails of the format can be found in the [Timestamps in TAMS](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md) application note.\n',
+            pattern="^(\\[|\\()?(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?(_(-?(0|[1-9][0-9]*):(0|[1-9][0-9]{0,8}))?)?(\\]|\\))?$",
+            title="TimeRange",
+        ),
+    ]
+
+
+class FlowStatus(StrEnum):
+    awaiting_content = "awaiting_content"
+    ingesting = "ingesting"
+    replication_in_progress = "replication_in_progress"
+    closed_complete = "closed_complete"
+
+
+class FlowCollectionItem(CollectionItem):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    container_mapping: Annotated[
+        ContainerMapping | None,
+        Field(
+            description="Describes the mapping of the Flow essence from this Flow collection's container"
+        ),
+    ] = None
+
+
+class FlowCollection(RootModel[list[FlowCollectionItem]]):
+    root: Annotated[
+        list[FlowCollectionItem],
+        Field(
+            description="Describes how Flows are collected into another Flow. Note that this is an ordered list.",
+            title="Flow Collection",
+        ),
+    ]
+
+
+class FlowCommon(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[Uuid, Field(description="Flow identifier")]
+    source_id: Annotated[Uuid, Field(description="Source identifier")]
+    label: Annotated[
+        str | None,
+        Field(
+            description="Freeform string label for the Flow. This should be a very short, human-readable label that may be displayed in listings of Flows."
+        ),
+    ] = None
+    description: Annotated[
+        str | None,
+        Field(
+            description="Freeform text describing the Flow. This should be a human-readable description that may be showed in detailed views of Flows. The description should be longer and more detailed than `label`."
+        ),
+    ] = None
+    created_by: Annotated[
+        str | None,
+        Field(
+            description="A string identifier for the entity that created the Flow. Service implementations SHOULD set suitable default values for `created_by` based on the principal accessing the system, and MAY permit clients to edit the value, subject to suitable permissions-based limitations."
+        ),
+    ] = None
+    updated_by: Annotated[
+        str | None,
+        Field(
+            description="A string identifier for the entity that updated the Flow metadata most recently. Service implementations SHOULD set suitable default values for `updated_by` based on the principal accessing the system, and MAY permit clients to edit the value, subject to suitable permissions-based limitations."
+        ),
+    ] = None
+    tags: Annotated[
+        Tags | None,
+        Field(
+            description="Key value is a freeform string. WARNING: When updating a Flow with `tags` set, `tags` will be replaced with the provided dictionary. `tags` WILL NOT be merged with the provided values. When `tags` is not set in the request, `tags` will be unset (i.e. set to `{}`). To update individual tags, clients should use the [Create or Update Flow Tag](#/operations/PUT_flows-flowId-tags-name) endpoint."
+        ),
+    ] = None
+    metadata_version: Annotated[
+        str | None,
+        Field(
+            description="A change to the Flow metadata, not including metadata_version, metadata_updated, segments_updated or Segments, results in a new version. If the metadata_version for Flow instances is identical then the metadata is identical. Service implementations SHOULD set suitable default values for `metadata_version` whenever Flow metadata is changed and `metadata_version` is either not set by the client, or set to it's existing value. Service implementations MAY permit clients to edit the value, subject to suitable permissions-based limitations. Where media is transfered between TAMS service instances without changing the Flow metadata, clients SHOULD maintain the `metadata_version`. To support this, service implementations SHOULD always accept the setting of `metadata_version` by the client on initial Flow creation. Service implementations SHOULD update this field where metadata is updated via child endpoints. Note that this specification places no requirements on incremental versioning. Service implementations may, for example, choose to use hashes or date-time version identifiers."
+        ),
+    ] = None
+    generation: Annotated[
+        int | None,
+        Field(
+            description='An indication of how many lossy encodings the Flow content has been through. This parameter provides a hint to clients as to which is the "highest qualty" Flow available to them. A Flow with a higher generation may contain less of the original information than a flow with a lower generation. Where a Flow is captured straight from the orginating device (e.g. camera/microphone) in its highest quality, and there is no possibility of the content becoming available in a higher quality (e.g. via capture from ST2110 or SDI), it SHOULD have a `generation` of `0`. Where the originating device outputs multiple qualities of the Source, `generation` should represent the encoding processes each has been through as accurately as possible.',
+            ge=0,
+        ),
+    ] = None
+    created: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Flow was created in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
+    metadata_updated: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Flow metadata was updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
+    segments_updated: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="The date-time the Flow Segments were updated in a given context, e.g. in the service instance. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
+    status: FlowStatus | None = None
+    read_only: Annotated[
+        bool | None,
+        Field(
+            description="If set to 'true', service implementations SHOULD reject client requests to update Flow metadata (other than the read_only property), and Flow Segments. Service implementations should also reject requests to the [`/flows/{flowId}/storage`](#/operations/POST_flows-flowId-storage) endpoint for the Flow, and requests to delete the Flow."
+        ),
+    ] = None
+    max_bit_rate: Annotated[
+        int | None,
+        Field(
+            description="The maximum bit rate of the Flow Segments in 1000 bits/second. A precise definition can be found in the [Setting Flow Bit Rate Properties](https://github.com/bbc/tams/blob/main/docs/appnotes/0013-setting-flow-bit-rate-properties.md) AppNote.",
+            ge=0,
+        ),
+    ] = None
+    timerange: Annotated[
+        Timerange | None,
+        Field(
+            description="The timerange of samples available in the Flow, as described by the [TimeRange](../schemas/timerange#top) type. Service implementations MUST ignore this if given in a PUT request, and instead manage it internally."
+        ),
+    ] = None
+    flow_collection: Annotated[
+        FlowCollection | None,
+        Field(description="List of Flows that are collected together by this Flow."),
+    ] = None
+    collected_by: Annotated[
+        list[Uuid] | None,
+        Field(
+            description="Flows that reference this Flow to include it in a collection. This attribute is intended to be read-only. Service implementations SHOULD ignore this if given in a PUT request, and instead manage it internally"
+        ),
+    ] = None
 
 
 class Format4(StrEnum):
     urn_x_nmos_format_multi = "urn:x-nmos:format:multi"
 
 
-class FlowMulti(FlowCore):
+class EssenceParameters4(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    init_segments: Annotated[
+        bool | None,
+        Field(
+            description="Whether the Flow makes use of initialisation segments. This parameter MUST be set to `true` if Media Objects have `init_object` populated. If set to `true`, all Media Objects MUST have `init_object` populated. Assume `false` if omitted."
+        ),
+    ] = None
+
+
+class FlowMulti(FlowTechnical):
     model_config = ConfigDict(
         extra="allow",
     )
     format: Annotated[
-        Format4, Field(description="The primary content type URN for the Flow.")
+        Format4, Field(description="The primary content type URN for the flow.")
+    ]
+    essence_parameters: Annotated[
+        EssenceParameters4 | None,
+        Field(
+            description="Describes the parameters of the essence inside this multi Flow",
+            title="Multi Flow Essence Parameters",
+        ),
+    ] = None
+
+
+class FlowGet1(FlowCommon):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet2(FlowVideo, FlowGet1):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet3(FlowAudio, FlowGet1):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet4(FlowImage, FlowGet1):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet5(FlowData, FlowGet1):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet6(FlowMulti, FlowGet1):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid | None,
+        Field(description="Profile identifier that was used to create the flow."),
+    ] = None
+
+
+class FlowGet(RootModel[FlowGet2 | FlowGet3 | FlowGet4 | FlowGet5 | FlowGet6]):
+    root: Annotated[
+        FlowGet2 | FlowGet3 | FlowGet4 | FlowGet5 | FlowGet6,
+        Field(description="Describes a Flow", title="Flow"),
     ]
 
 
-class Flow(RootModel[FlowVideo | FlowAudio | FlowImage | FlowData | FlowMulti]):
+class FlowPut1(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    profile_id: Annotated[
+        Uuid,
+        Field(
+            description="Profile identifier that was used to create the flow.  When supplying a profile_id no metadata which can be contained in a Profile should also be provided, doing so will result in a 400 validation error.  Trying to create a Flow using a Profile ID that does not exist should also provide a 400 validation error"
+        ),
+    ]
+
+
+class FlowPut2(FlowCommon):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut3(FlowPut1, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut4(FlowVideo, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut5(FlowAudio, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut6(FlowImage, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut7(FlowData, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut8(FlowMulti, FlowPut2):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+
+
+class FlowPut(
+    RootModel[FlowPut3 | FlowPut4 | FlowPut5 | FlowPut6 | FlowPut7 | FlowPut8]
+):
     root: Annotated[
-        FlowVideo | FlowAudio | FlowImage | FlowData | FlowMulti,
+        FlowPut3 | FlowPut4 | FlowPut5 | FlowPut6 | FlowPut7 | FlowPut8,
         Field(description="Describes a Flow", title="Flow"),
     ]
 
@@ -1201,7 +1438,7 @@ class UrlLabelList(RootModel[str]):
     root: Annotated[
         str,
         Field(
-            description="A list of Media Object GET URL Labels, formatted for use in query string parameters",
+            description="A list of Object GET URL Labels, formatted for use in query string parameters",
             pattern="^([^,]+(,[^,]+)*)?$",
             title="Query String GET URL Label list",
         ),
@@ -1229,7 +1466,7 @@ class GetUrl(StorageBackend):
     url: Annotated[
         str,
         Field(
-            description="A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint. This URL SHOULD support the inclusion of checksums in headers as supported by advertised Storage Backend product. See AppNote 0048 for more details."
+            description="A URL to which a GET request can be made to directly retrieve the contents of the Object. Clients should include credentials if the provide URL is on the same origin as the API endpoint. This URL SHOULD support the inclusion of checksums in headers as supported by advertised Storage Backend product. See AppNote 0048 for more details."
         ),
     ]
     presigned: Annotated[
@@ -1259,9 +1496,15 @@ class ObjectCore(BaseModel):
     get_urls: Annotated[
         list[GetUrl] | None,
         Field(
-            description="A list of URLs to which a GET request can be made to directly retrieve the contents of the Media Object. This is required by the `http_object_store` Storage Backend type, which is the only one currently described. Clients may choose any URL in the list and treat the content returned as identical, however servers may sort the list such that the preferred URL is first. Storage Backend metadata for controlled URLs should be populated by the TAMS instance based on the Storage Backend the Meda Object instance resides in."
+            description="A list of URLs to which a GET request can be made to directly retrieve the contents of the Object. This is required by the `http_object_store` Storage Backend type, which is the only one currently described. Clients may choose any URL in the list and treat the content returned as identical, however servers may sort the list such that the preferred URL is first. Storage Backend metadata for controlled URLs should be populated by the TAMS instance based on the Storage Backend the Object instance resides in."
         ),
     ] = None
+
+
+class ObjectMediaCore(ObjectCore):
+    model_config = ConfigDict(
+        extra="allow",
+    )
     key_frame_count: Annotated[
         int | None,
         Field(
@@ -1270,7 +1513,16 @@ class ObjectCore(BaseModel):
     ] = None
 
 
-class FlowSegment(ObjectCore):
+class InitObject(ObjectCore):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    object_id: Annotated[
+        str, Field(description="The identifier of the initialisation Object.")
+    ]
+
+
+class FlowSegment(ObjectMediaCore):
     model_config = ConfigDict(
         extra="allow",
     )
@@ -1315,6 +1567,13 @@ class FlowSegment(ObjectCore):
             description="The count of samples in the Segment (which may be fewer than in the Media Object). The count could be less than expected given the Segment duration and rate if there are gaps. If not set, every sample from sample_offset onwards is used. Note that a sample is a video frame or audio sample. A (coded) audio frame has multiple audio samples. DEPRECATED: Use object_timerange instead - see AppNote 0036. Service implementations SHOULD continue to store and return it if set.",
         ),
     ] = None
+    init_object: Annotated[
+        InitObject | None,
+        Field(
+            description="The Object containing the initialisation segment required to decode the parent Media Object.",
+            title="Initialisation Object",
+        ),
+    ] = None
 
 
 class GetUrl1(BaseModel):
@@ -1340,8 +1599,17 @@ class FlowSegmentPost(BaseModel):
         extra="allow",
     )
     object_id: Annotated[
-        str, Field(description="The Object identifier for the Media Object.")
+        str,
+        Field(
+            description="The Object identifier for the Media Object. The `content-type` of the Media Object MUST match the `container` mime-type of the Flow. Service implementations SHOULD reject Objects IDs which have previously been registered as an `init_object_id` on other Flow Segments. i.e. init segments may not be used as media segments."
+        ),
     ]
+    init_object_id: Annotated[
+        str | None,
+        Field(
+            description="The Object identifier for the initialisation segment Object required to decode the Media Object. The `content-type` of the initialisation segment Object MAY differ from the `container` mime-type of the Flow. This parameter MUST only be set where the media format makes use of initialisation segments. Initialisation Objects SHOULD be re-used where possible. This parameter SHOULD be omitted where the Object `object_id` already exists and is being re-used. Service implementations SHOULD reject Objects IDs which have previously been registered as an `id` on other Flow Segments. i.e. media segments may not be used as init segments."
+        ),
+    ] = None
     ts_offset: Annotated[
         Timestamp | None,
         Field(
@@ -1437,7 +1705,7 @@ class FlowStoragePost(BaseModel):
     limit: Annotated[
         int | None,
         Field(
-            description="Limit the number of Media Objects in each response page. Service implementations may specify their own default and maximum for the limit"
+            description="Limit the number of Objects in each response page. Service implementations may specify their own default and maximum for the limit"
         ),
     ] = None
     object_ids: Annotated[
@@ -1450,6 +1718,18 @@ class FlowStoragePost(BaseModel):
         Uuid | None,
         Field(
             description="The Storage Backend to allocate storage in. A Storage Backend identifier as advertised at the [/service/storage-backends](#/operations/GET_storage-backends) endpoint. If not set the default, as advertised at the [/service/storage-backends](#/operations/GET_storage-backends) endpoint, will be used if available. An invalid Storage Backend identifier will result in a 400 error."
+        ),
+    ] = None
+    content_type: Annotated[
+        MimeType | None,
+        Field(
+            description="The `content_type` to use for the Objects. This parameter MUST only be set where requesting storage for initialisation segments in media formats which require them, and where the mime-type of those initialisation segments differs to that of the media segments. Assumed to be the `container` type of the Flow if not set."
+        ),
+    ] = None
+    presigned: Annotated[
+        bool | None,
+        Field(
+            description="If set to `true`, the `put_url`s in the response will be presigned. If set to `false`, the `put_url`s in the response will not be presigned. If `presigned` is set to `false`, the response from the service could be substantially faster if it is not required to generate a large number of pre-signed URLs. Services may choose their own default. If Clients only support one mode of operation, they SHOULD specify this parameter."
         ),
     ] = None
 
@@ -1485,9 +1765,15 @@ class MediaObject(BaseModel):
         extra="allow",
     )
     object_id: Annotated[
-        str, Field(description="The object store identifier for the Media Object.")
+        str, Field(description="The object store identifier for the Object.")
     ]
     put_url: HttpRequest
+    presigned: Annotated[
+        bool | None,
+        Field(
+            description="If `true`, this URL is pre-signed. If this parameter is unset, the URL is NOT pre-signed. The presigned URL SHALL remain valid for the timeframe advertised in [`min_presigned_url_timeout` at the `/service`](#/operations/GET_service) endpoint, which is subject to a specified minimum (see service endpoint schema)."
+        ),
+    ] = None
 
 
 class FlowStorage(BaseModel):
@@ -1496,35 +1782,49 @@ class FlowStorage(BaseModel):
     )
     media_objects: Annotated[
         list[MediaObject] | None,
-        Field(
-            description="List of information for identifying and uploading Media Objects"
-        ),
+        Field(description="List of information for identifying and uploading Objects"),
     ] = None
 
 
-class Object(ObjectCore):
+class InitObject1(ObjectCore):
     model_config = ConfigDict(
         extra="allow",
     )
-    id: Annotated[str, Field(description="The Media Object identifier.")]
+    id: Annotated[
+        str, Field(description="The identifier of the initialisation Object.")
+    ]
+
+
+class Object(ObjectMediaCore):
+    model_config = ConfigDict(
+        extra="allow",
+    )
+    id: Annotated[str, Field(description="The Object identifier.")]
     referenced_by_flows: Annotated[
         list[Uuid],
         Field(
-            description="List of Flows that reference this Media Object via Flow Segments in this store instance."
+            description="List of Flows that reference this Object via Flow Segments in this store instance. For init Objects, this reference is indirect via Media Objects."
         ),
     ]
     first_referenced_by_flow: Annotated[
         Uuid | None,
         Field(
-            description="The first Flow that had a Flow Segment reference the Media Object in this store instance. This Flow is also present in 'referenced_by_flows' if it is still referenced by the Flow. This property is optional and may in some implementations become unset if the Flow no longer references the media object, e.g. because it was deleted."
+            description="The first Flow that had a Flow Segment reference the Object in this store instance. For init Objects, this reference is indirect via Media Objects. This Flow is also present in 'referenced_by_flows' if it is still referenced by the Flow. This property is optional and may in some implementations become unset if the Flow no longer references the Object, e.g. because it was deleted."
         ),
     ] = None
     timerange: Annotated[
-        Timerange,
+        Timerange | None,
         Field(
-            description="The timerange covering the sample timestamps embedded in or derived from the Media Object itself, on the Media Object's timeline."
+            description="The timerange covering the sample timestamps embedded in or derived from the Object itself, on the Media Object's timeline. This parameter MUST be set where the Object contains media. It MUST NOT be set where the Object contains an init segment."
         ),
-    ]
+    ] = None
+    init_object: Annotated[
+        InitObject1 | None,
+        Field(
+            description="The Object containing the initialisation segment required to decode the parent Media Object.",
+            title="Initialisation Object",
+        ),
+    ] = None
 
 
 class ObjectsInstancesPost1(BaseModel):
@@ -1541,13 +1841,13 @@ class ObjectsInstancesPost2(BaseModel):
     url: Annotated[
         str,
         Field(
-            description="A URL to which a GET request can be made to directly retrieve the contents of the media object. Clients should include credentials if the provide URL is on the same origin as the API endpoint"
+            description="A URL to which a GET request can be made to directly retrieve the contents of the Object. Clients should include credentials if the provide URL is on the same origin as the API endpoint"
         ),
     ]
     label: Annotated[
         str,
         Field(
-            description="Label identifying this Media Object instance. Service implementations should reject any requests using labels that are already associated with Storage Backends."
+            description="Label identifying this Object instance. Service implementations should reject any requests using labels that are already associated with Storage Backends."
         ),
     ]
 
@@ -1556,7 +1856,7 @@ class ObjectsInstancesPost(RootModel[ObjectsInstancesPost1 | ObjectsInstancesPos
     root: Annotated[
         ObjectsInstancesPost1 | ObjectsInstancesPost2,
         Field(
-            description="Register a Media Object instance in the store.",
-            title="Media object registration",
+            description="Register a Object instance in the store.",
+            title="Object registration",
         ),
     ]

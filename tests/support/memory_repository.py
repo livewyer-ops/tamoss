@@ -13,6 +13,13 @@ from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.domain import flow_collections
 from tamoss.domain import segments as segment_domain
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
+from tamoss.domain.listing_pagination import page_listing_sequence
+from tamoss.domain.listings import (
+    DeleteRequestSortBy,
+    FlowSortBy,
+    SourceSortBy,
+    sorted_listing,
+)
 from tamoss.domain.model import (
     DeletionRequestRecord,
     DomainErrorPayload,
@@ -20,6 +27,7 @@ from tamoss.domain.model import (
     MediaObjectRecord,
     ObjectCleanupRecord,
     ObjectCopyRecord,
+    ProfileRecord,
     SegmentRecord,
     ServiceMetadata,
     SourceRecord,
@@ -33,13 +41,7 @@ from tamoss.domain.pagination import Page, page_sequence
 from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
 from tamoss.domain.tags import tags_match
 from tamoss.errors import normalize_error_payload
-
-WorkerRecord = (
-    WebhookDeliveryRecord
-    | DeletionRequestRecord
-    | ObjectCleanupRecord
-    | ObjectCopyRecord
-)
+from tamoss.worker_claims import WorkerClaimLost, WorkerRecord, active_worker_claims
 
 
 class FakeTamossRepository:
@@ -56,6 +58,7 @@ class FakeTamossRepository:
             self._storage_backends[0],
         )
         self._flows: dict[UUID, FlowRecord] = {}
+        self._profiles: dict[UUID, ProfileRecord] = {}
         self._sources: dict[UUID, SourceRecord] = {}
         self._objects: dict[str, MediaObjectRecord] = {}
         self._segments: dict[UUID, list[SegmentRecord]] = {}
@@ -68,6 +71,10 @@ class FakeTamossRepository:
 
     @property
     def service_repository(self) -> FakeTamossRepository:
+        return self
+
+    @property
+    def profile_repository(self) -> FakeTamossRepository:
         return self
 
     @property
@@ -103,6 +110,7 @@ class FakeTamossRepository:
         with self._lock:
             snapshot = (
                 deepcopy(self._flows),
+                deepcopy(self._profiles),
                 deepcopy(self._sources),
                 deepcopy(self._objects),
                 deepcopy(self._segments),
@@ -118,6 +126,7 @@ class FakeTamossRepository:
             except Exception:
                 (
                     self._flows,
+                    self._profiles,
                     self._sources,
                     self._objects,
                     self._segments,
@@ -132,6 +141,61 @@ class FakeTamossRepository:
 
     def lock_flow_segments(self, flow_id: UUID) -> None:
         return None
+
+    def lock_source(self, source_id: UUID) -> None:
+        return None
+
+    def lock_profile(self, profile_id: UUID) -> None:
+        return None
+
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        return None
+
+    def list_profiles_page(
+        self,
+        *,
+        format: str | None,
+        codec: str | None,
+        label: str | None,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[ProfileRecord]:
+        with self._lock:
+            profiles = list(self._profiles.values())
+        if format is not None:
+            profiles = [
+                item for item in profiles if item.flow_metadata.get("format") == format
+            ]
+        if codec is not None:
+            profiles = [
+                item for item in profiles if item.flow_metadata.get("codec") == codec
+            ]
+        if label is not None:
+            profiles = [item for item in profiles if item.label == label]
+        profiles.sort(key=lambda item: str(item.id))
+        return page_sequence(profiles, page=page, limit=limit)
+
+    def get_profile(self, profile_id: UUID) -> ProfileRecord | None:
+        with self._lock:
+            profile = self._profiles.get(profile_id)
+            return deepcopy(profile) if profile is not None else None
+
+    def create_profile(self, profile: ProfileRecord) -> bool:
+        with self._lock:
+            if profile.id in self._profiles:
+                return False
+            self._profiles[profile.id] = deepcopy(profile)
+            return True
+
+    def count_flows_by_profile(self, profile_id: UUID) -> int:
+        with self._lock:
+            return sum(
+                1 for flow in self._flows.values() if flow.profile_id == profile_id
+            )
+
+    def delete_profile(self, profile_id: UUID) -> bool:
+        with self._lock:
+            return self._profiles.pop(profile_id, None) is not None
 
     def get_service_metadata(self) -> ServiceMetadata | None:
         with self._lock:
@@ -148,6 +212,30 @@ class FakeTamossRepository:
         with self._lock:
             return list(self._storage_backends)
 
+    def list_storage_backends_page(
+        self,
+        *,
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[StorageBackend]:
+        with self._lock:
+            backends = [
+                backend
+                for backend in self._storage_backends
+                if tags_match(backend.tags, tag_values, tag_exists)
+            ]
+        backends = sorted_listing(
+            backends,
+            value=lambda backend: backend.label,
+            identity=lambda backend: str(backend.id),
+            descending=reverse_order,
+            missing_first=reverse_order,
+        )
+        return page_sequence(backends, page=page, limit=limit)
+
     def default_storage_backend(self) -> StorageBackend | None:
         with self._lock:
             return self._storage_backend
@@ -158,10 +246,6 @@ class FakeTamossRepository:
                 if storage_id == backend.id:
                     return backend
             return None
-
-    def list_flows(self) -> list[FlowRecord]:
-        with self._lock:
-            return list(self._flows.values())
 
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
         with self._lock:
@@ -191,6 +275,13 @@ class FakeTamossRepository:
         timerange_is_empty: bool,
         timerange_is_point: bool,
         format: str | None,
+        profile_id: UUID | None,
+        status: str | None,
+        init_segments: bool | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: FlowSortBy,
+        reverse_order: bool,
         codec: str | None,
         label: str | None,
         frame_width: int | None,
@@ -218,6 +309,22 @@ class FakeTamossRepository:
             flows = [flow for flow in flows if flow.source_id == source_id]
         if format is not None:
             flows = [flow for flow in flows if flow.format == format]
+        if profile_id is not None:
+            flows = [flow for flow in flows if flow.profile_id == profile_id]
+        if status is not None:
+            flows = [flow for flow in flows if flow.status == status]
+        if init_segments is not None:
+            flows = [flow for flow in flows if flow.init_segments == init_segments]
+        if top_level_only:
+            flows = [flow for flow in flows if not collected_by.get(flow.id)]
+        elif collected_by_ids is not None:
+            flows = [
+                flow
+                for flow in flows
+                if collected_by_ids.intersection(
+                    UUID(parent_id) for parent_id in collected_by.get(flow.id, [])
+                )
+            ]
         if codec is not None:
             flows = [
                 flow
@@ -257,8 +364,28 @@ class FakeTamossRepository:
         flows = [
             flow for flow in flows if tags_match(flow.tags, tag_values, tag_exists)
         ]
-        flows.sort(key=lambda flow: str(flow.id))
-        return page_sequence(flows, page=page, limit=limit)
+        flow_sort_value = {
+            FlowSortBy.CREATED: lambda flow: flow.created,
+            FlowSortBy.METADATA_UPDATED: lambda flow: flow.metadata_updated,
+            FlowSortBy.LABEL: lambda flow: flow.data.get("label"),
+        }[sort_by]
+        flows = sorted_listing(
+            flows,
+            value=flow_sort_value,
+            identity=lambda flow: str(flow.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+            missing_first=reverse_order,
+        )
+        return page_listing_sequence(
+            flows,
+            page=page,
+            limit=limit,
+            resource="flows",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=flow_sort_value,
+            identity=lambda flow: flow.id,
+        )
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
@@ -305,6 +432,10 @@ class FakeTamossRepository:
         *,
         label: str | None,
         format: str | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: SourceSortBy,
+        reverse_order: bool,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
         page: str | None,
@@ -316,13 +447,46 @@ class FakeTamossRepository:
             sources = [source for source in sources if source.label == label]
         if format is not None:
             sources = [source for source in sources if source.format == format]
+        relationships = self.source_relationships_for(source.id for source in sources)
+        if top_level_only:
+            sources = [
+                source
+                for source in sources
+                if not relationships[source.id].collected_by
+            ]
+        elif collected_by_ids is not None:
+            sources = [
+                source
+                for source in sources
+                if collected_by_ids.intersection(relationships[source.id].collected_by)
+            ]
         sources = [
             source
             for source in sources
             if tags_match(source.tags, tag_values, tag_exists)
         ]
-        sources.sort(key=lambda source: str(source.id))
-        return page_sequence(sources, page=page, limit=limit)
+        source_sort_value = {
+            SourceSortBy.CREATED: lambda source: source.created,
+            SourceSortBy.UPDATED: lambda source: source.metadata_updated,
+            SourceSortBy.LABEL: lambda source: source.label,
+        }[sort_by]
+        sources = sorted_listing(
+            sources,
+            value=source_sort_value,
+            identity=lambda source: str(source.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+            missing_first=reverse_order,
+        )
+        return page_listing_sequence(
+            sources,
+            page=page,
+            limit=limit,
+            resource="sources",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=source_sort_value,
+            identity=lambda source: source.id,
+        )
 
     def source_relationships_for(
         self, source_ids: Iterable[UUID]
@@ -346,10 +510,10 @@ class FakeTamossRepository:
                 if child_flow is None or child_flow.source_id is None:
                     continue
                 role = item.get("role")
-                if not isinstance(role, str):
-                    continue
                 if parent_flow.source_id in relationships:
-                    source_item = {"id": str(child_flow.source_id), "role": role}
+                    source_item = {"id": str(child_flow.source_id)}
+                    if isinstance(role, str):
+                        source_item["role"] = role
                     source_collection = relationships[
                         parent_flow.source_id
                     ].source_collection
@@ -399,6 +563,17 @@ class FakeTamossRepository:
                     if purged >= limit:
                         return purged
                     record = store[key]
+                    if (
+                        isinstance(record, ObjectCleanupRecord)
+                        and record.delete_request_id in self._delete_requests
+                    ):
+                        continue
+                    if isinstance(record, DeletionRequestRecord) and any(
+                        cleanup.delete_request_id == record.id
+                        and cleanup.status != "done"
+                        for cleanup in self._object_cleanups.values()
+                    ):
+                        continue
                     updated = getattr(record, "updated", None)
                     if (
                         record.status in statuses
@@ -447,6 +622,10 @@ class FakeTamossRepository:
         with self._lock:
             return list(self._segments.get(flow_id, []))
 
+    def has_segments(self, flow_id: UUID) -> bool:
+        with self._lock:
+            return bool(self._segments.get(flow_id))
+
     def list_segments_for_objects(
         self, *, flow_id: UUID, object_ids: Iterable[str]
     ) -> list[SegmentRecord]:
@@ -458,6 +637,7 @@ class FakeTamossRepository:
                 segment
                 for segment in self._segments.get(flow_id, [])
                 if segment.object_id in requested_ids
+                or segment.init_object_id in requested_ids
             ]
         segments.sort(key=segment_domain.segment_sort_key)
         return segments
@@ -622,6 +802,7 @@ class FakeTamossRepository:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
@@ -632,7 +813,11 @@ class FakeTamossRepository:
             for webhook in webhooks
             if tags_match(webhook.tags, tag_values, tag_exists)
         ]
-        webhooks.sort(key=lambda webhook: str(webhook.id))
+        webhooks.sort(key=lambda webhook: str(webhook.id), reverse=reverse_order)
+        webhooks.sort(
+            key=lambda webhook: str(webhook.data["url"]),
+            reverse=reverse_order,
+        )
         return page_sequence(webhooks, page=page, limit=limit)
 
     def list_flow_ids_matching_tags_page(
@@ -672,16 +857,16 @@ class FakeTamossRepository:
 
     def list_webhook_deliveries(self) -> list[WebhookDeliveryRecord]:
         with self._lock:
-            return list(self._webhook_deliveries.values())
+            return deepcopy(list(self._webhook_deliveries.values()))
 
     def get_webhook_delivery(self, delivery_id: UUID) -> WebhookDeliveryRecord | None:
         with self._lock:
-            return self._webhook_deliveries.get(delivery_id)
+            return deepcopy(self._webhook_deliveries.get(delivery_id))
 
     def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None:
         with self._lock:
             delivery.error = DomainErrorPayload.from_json_dict(delivery.error)
-            self._webhook_deliveries[delivery.id] = delivery
+            self._save_worker_record(delivery, self._webhook_deliveries)
 
     def claim_webhook_deliveries(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -697,16 +882,44 @@ class FakeTamossRepository:
 
     def list_delete_requests(self) -> list[DeletionRequestRecord]:
         with self._lock:
-            return list(self._delete_requests.values())
+            return deepcopy(list(self._delete_requests.values()))
+
+    def list_delete_requests_page(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy,
+        reverse_order: bool,
+        retention_seconds: int,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[DeletionRequestRecord]:
+        with self._lock:
+            requests = deepcopy(list(self._delete_requests.values()))
+        value = {
+            DeleteRequestSortBy.CREATED: lambda request: request.created,
+            DeleteRequestSortBy.EXPIRY: lambda request: (
+                request.updated + timedelta(seconds=retention_seconds)
+                if request.status == "done" and retention_seconds > 0
+                else None
+            ),
+        }[sort_by]
+        requests = sorted_listing(
+            requests,
+            value=value,
+            identity=lambda request: str(request.id),
+            descending=sort_by.descending(reverse_order=reverse_order),
+            missing_first=reverse_order,
+        )
+        return page_sequence(requests, page=page, limit=limit)
 
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None:
         with self._lock:
-            return self._delete_requests.get(request_id)
+            return deepcopy(self._delete_requests.get(request_id))
 
     def save_delete_request(self, request: DeletionRequestRecord) -> None:
         with self._lock:
             request.error = DomainErrorPayload.from_json_dict(request.error)
-            self._delete_requests[request.id] = request
+            self._save_worker_record(request, self._delete_requests)
 
     def claim_delete_requests(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -727,7 +940,7 @@ class FakeTamossRepository:
         statuses: set[str] | None = None,
     ) -> list[ObjectCleanupRecord]:
         with self._lock:
-            cleanups = list(self._object_cleanups.values())
+            cleanups = deepcopy(list(self._object_cleanups.values()))
         if delete_request_id is not None:
             cleanups = [
                 cleanup
@@ -742,7 +955,7 @@ class FakeTamossRepository:
     def save_object_cleanup(self, cleanup: ObjectCleanupRecord) -> None:
         with self._lock:
             cleanup.error = DomainErrorPayload.from_json_dict(cleanup.error)
-            self._object_cleanups[cleanup.id] = cleanup
+            self._save_worker_record(cleanup, self._object_cleanups)
 
     def claim_object_cleanups(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -761,7 +974,7 @@ class FakeTamossRepository:
         self, *, statuses: set[str] | None = None
     ) -> list[ObjectCopyRecord]:
         with self._lock:
-            copies = list(self._object_copies.values())
+            copies = deepcopy(list(self._object_copies.values()))
         if statuses is not None:
             copies = [copy for copy in copies if copy.status in statuses]
         copies.sort(key=lambda copy: (copy.created, str(copy.id)))
@@ -770,7 +983,7 @@ class FakeTamossRepository:
     def save_object_copy(self, copy: ObjectCopyRecord) -> None:
         with self._lock:
             copy.error = DomainErrorPayload.from_json_dict(copy.error)
-            self._object_copies[copy.id] = copy
+            self._save_worker_record(copy, self._object_copies)
 
     def claim_object_copies(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -783,6 +996,56 @@ class FakeTamossRepository:
                 limit=limit,
                 lease_seconds=lease_seconds,
             )
+
+    def _worker_store(self, record: WorkerRecord) -> dict:
+        return {
+            WebhookDeliveryRecord: self._webhook_deliveries,
+            DeletionRequestRecord: self._delete_requests,
+            ObjectCleanupRecord: self._object_cleanups,
+            ObjectCopyRecord: self._object_copies,
+        }[type(record)]
+
+    def renew_worker_claim(self, record: WorkerRecord, lease_seconds: int) -> bool:
+        with self._lock:
+            current = self._worker_store(record).get(record.id)
+            if not self._owns_claim(record, current):
+                return False
+            current.claim_expires_at = utc_now() + timedelta(seconds=lease_seconds)
+            return True
+
+    @staticmethod
+    def _owns_claim(record: WorkerRecord, current: WorkerRecord | None) -> bool:
+        return bool(
+            current is not None
+            and record.claim_token is not None
+            and current.claimed_at == record.claim_token
+            and current.claim_expires_at is not None
+            and current.claim_expires_at > utc_now()
+        )
+
+    def _save_worker_record(self, record: WorkerRecord, store: dict) -> None:
+        active = active_worker_claims.get() or {}
+        if (
+            isinstance(record, ObjectCleanupRecord)
+            and record.delete_request_id in active
+        ):
+            parent = active[record.delete_request_id]
+            if not self._owns_claim(parent, self._delete_requests.get(parent.id)):
+                raise WorkerClaimLost(str(parent.id))
+        claim = active.get(record.id, record)
+        current = store.get(record.id)
+        if claim.claim_token is not None:
+            if not self._owns_claim(claim, current):
+                raise WorkerClaimLost(str(record.id))
+        elif current is not None and current.claimed_at is not None:
+            raise WorkerClaimLost(str(record.id))
+        saved = deepcopy(record)
+        if saved.claimed_at is not None and current is not None:
+            saved.claim_expires_at = max(
+                current.claim_expires_at, saved.claim_expires_at
+            )
+        saved.claim_token = saved.claimed_at
+        store[record.id] = saved
 
 
 def _claim_worker_records[WorkerRecordT: WorkerRecord](
@@ -811,10 +1074,11 @@ def _claim_worker_records[WorkerRecordT: WorkerRecord](
             continue
         record.status = "started"
         record.claimed_at = now
+        record.claim_token = now
         record.claimed_by = worker_id
         record.claim_expires_at = lease_expires
         record.updated = now
-        claimed.append(record)
+        claimed.append(deepcopy(record))
     return claimed
 
 

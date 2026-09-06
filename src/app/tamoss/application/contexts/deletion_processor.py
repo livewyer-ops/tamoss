@@ -99,6 +99,7 @@ def delete_matching_segments(
     publish_event: bool = True,
     drain: bool = False,
 ) -> str:
+    repository.lock_flow_segments(delete_filter.flow_id)
     flow = repository.get_flow(delete_filter.flow_id)
     while True:
         deleted_segments = repository.delete_segment_batch(
@@ -130,6 +131,7 @@ def delete_orphan_source(
     repository: DeletionRepository,
     webhook_repository: WebhookEventRepository,
     source_id: UUID | None,
+    source_collected_by_ids: list[str],
 ) -> None:
     if source_id is None:
         return
@@ -140,8 +142,8 @@ def delete_orphan_source(
     if source is not None:
         webhooking.publish_source_deleted(
             repository=webhook_repository,
-            resource_repository=repository,
             source=source,
+            source_collected_by_ids=source_collected_by_ids,
         )
 
 
@@ -263,17 +265,20 @@ def _process_flow_delete_request(
     flow = repository.get_flow(request.flow_id)
     if flow is None:
         return None
+    event_context = webhooking.flow_event_context(repository, flow)
     unlink_flow_collection_references(repository, flow)
     repository.delete_flow(request.flow_id)
     webhooking.publish_flow_deleted(
         repository=webhook_repository,
         resource_repository=repository,
         flow=flow,
+        event_context=event_context,
     )
     delete_orphan_source(
         repository=repository,
         webhook_repository=webhook_repository,
         source_id=flow.source_id,
+        source_collected_by_ids=event_context.source_collected_by_ids,
     )
     return None
 
@@ -314,12 +319,27 @@ def _refresh_deleted_object_references(
     deleted_segments: list[SegmentRecord],
     delete_request_id: UUID | None,
 ) -> None:
-    deleted_object_ids = {segment.object_id for segment in deleted_segments}
+    deleted_object_ids = {
+        object_id
+        for segment in deleted_segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    }
+    repository.lock_objects(deleted_object_ids)
     remaining_segments = repository.list_segments_for_objects(
         flow_id=flow_id,
         object_ids=deleted_object_ids,
     )
-    remaining_object_ids = {segment.object_id for segment in remaining_segments}
+    remaining_object_ids = {
+        object_id
+        for segment in remaining_segments
+        for object_id in (
+            segment.object_id,
+            *([segment.init_object_id] if segment.init_object_id else []),
+        )
+    }
     media_objects = repository.get_objects(deleted_object_ids)
     segments_by_flow_id = {flow_id: remaining_segments}
     for object_id in deleted_object_ids:
@@ -329,10 +349,14 @@ def _refresh_deleted_object_references(
         if object_id not in remaining_object_ids:
             media_object.referenced_by_flows.discard(flow_id)
         if media_object.referenced_by_flows:
-            media_object.timerange = object_timerange(
-                repository,
-                media_object,
-                segments_by_flow_id=segments_by_flow_id,
+            media_object.timerange = (
+                object_timerange(
+                    repository,
+                    media_object,
+                    segments_by_flow_id=segments_by_flow_id,
+                )
+                if media_object.object_kind != "init"
+                else None
             )
             repository.save_object(media_object)
             continue
@@ -420,43 +444,33 @@ def process_object_cleanups(
             _mark_object_cleanup_error(repository, cleanup, exc_info=False)
             failed = True
             continue
-        try:
-            media_object = repository.get_objects([cleanup.object_id]).get(
-                cleanup.object_id
-            )
-        except Exception:
-            _mark_object_cleanup_error(repository, cleanup, exc_info=True)
-            failed = True
-            continue
-        if media_object is not None and _has_controlled_instance(
-            media_object,
-            cleanup.storage_backend_id,
-        ):
-            logger.warning(
-                "skipping object cleanup because backend instance remains advertised",
-                extra={
-                    "object_id": cleanup.object_id,
-                    "storage_backend_id": str(cleanup.storage_backend_id),
-                },
-            )
-            _mark_object_cleanup_done(repository, cleanup)
-            continue
         backends[backend.id] = backend
         cleanup_batches.setdefault(backend.id, []).append(cleanup)
 
     for backend_id, batch in cleanup_batches.items():
         try:
-            object_storage.delete_batch(
-                [cleanup.object_id for cleanup in batch],
-                backend=backends[backend_id],
-            )
+            with repository.unit_of_work():
+                object_ids = [cleanup.object_id for cleanup in batch]
+                # Allocation must wait until the previous bytes have been removed.
+                repository.lock_objects(object_ids)
+                objects = repository.get_objects(object_ids)
+                deletable_ids = [
+                    object_id
+                    for object_id in object_ids
+                    if object_id not in objects
+                    or not _has_controlled_instance(objects[object_id], backend_id)
+                ]
+                if deletable_ids:
+                    object_storage.delete_batch(
+                        deletable_ids, backend=backends[backend_id]
+                    )
+                for cleanup in batch:
+                    _mark_object_cleanup_done(repository, cleanup)
         except Exception:
             for cleanup in batch:
                 _mark_object_cleanup_error(repository, cleanup, exc_info=True)
             failed = True
             continue
-        for cleanup in batch:
-            _mark_object_cleanup_done(repository, cleanup)
 
     if failed:
         raise ObjectCleanupFailed

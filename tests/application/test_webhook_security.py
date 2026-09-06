@@ -73,6 +73,9 @@ def test_webhook_delivery_blocks_redirect_to_private_target(
         status_code = 302
         headers: ClassVar[dict[str, str]] = {"Location": "http://127.0.0.1/internal"}
 
+        def close(self) -> None:
+            pass
+
     class RecordingSession:
         def post(self, *_args: object, **kwargs: object) -> RedirectResponse:
             post_calls.append(kwargs)
@@ -84,7 +87,7 @@ def test_webhook_delivery_blocks_redirect_to_private_target(
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
     recording_session = RecordingSession()
-    monkeypatch.setattr(webhooks, "_http_session", lambda: recording_session)
+    monkeypatch.setattr(webhooks, "_http_session", lambda policy: recording_session)
 
     with pytest.raises(webhooks.WebhookEgressError, match="restricted"):
         webhooks.send_webhook_delivery(
@@ -103,6 +106,9 @@ def test_webhook_delivery_records_success_metric(
         status_code = 202
         headers: ClassVar[dict[str, str]] = {}
 
+        def close(self) -> None:
+            pass
+
     class OkSession:
         def post(self, *_args: object, **_kwargs: object) -> OkResponse:
             return OkResponse()
@@ -112,7 +118,7 @@ def test_webhook_delivery_records_success_metric(
         "_resolve_host_addresses",
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
-    monkeypatch.setattr(webhooks, "_http_session", OkSession)
+    monkeypatch.setattr(webhooks, "_http_session", lambda policy: OkSession())
 
     before_count = _delivery_count("success")
     before_sum = _delivery_observations("success")
@@ -138,7 +144,7 @@ def test_webhook_delivery_records_failure_metric_on_transport_error(
         "_resolve_host_addresses",
         lambda hostname, port: [ipaddress.ip_address("93.184.216.34")],
     )
-    monkeypatch.setattr(webhooks, "_http_session", FailingSession)
+    monkeypatch.setattr(webhooks, "_http_session", lambda policy: FailingSession())
 
     before = _delivery_count("failure")
     with pytest.raises(requests.Timeout):

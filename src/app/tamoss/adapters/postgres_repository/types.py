@@ -21,6 +21,7 @@ class StorageBackendRow(TypedDict, total=False):
     bucket_name: str | None
     endpoint_url: str | None
     public_endpoint_url: str | None
+    tags: dict[str, str | list[str]]
 
 
 class FlowRow(TypedDict, total=False):
@@ -29,6 +30,10 @@ class FlowRow(TypedDict, total=False):
     source_id: str | None
     format: str | None
     container: str | None
+    profile_id: str | None
+    status: str | None
+    init_segments: bool
+    label: str | None
     read_only: bool
     tags: dict[str, str | list[str]]
     created: RecordDateTime
@@ -47,9 +52,12 @@ class ObjectInstanceRow(TypedDict, total=False):
 class MediaObjectRow(TypedDict, total=False):
     id: str
     timerange: str | None
+    init_object_id: str | None
     first_referenced_by_flow: str | None
     allocated_by_flow: str | None
     referenced_by_flows: list[str]
     instances: list[ObjectInstanceRow]
     key_frame_count: int | None
     bytes_written: int
+    object_kind: str
+    content_type: str | None

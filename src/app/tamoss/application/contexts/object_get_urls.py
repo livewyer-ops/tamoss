@@ -10,6 +10,7 @@ from tamoss.domain.model import (
     ObjectInstance,
     StorageBackend,
 )
+from tamoss.domain.tags import tags_match
 from tamoss.ports.object_storage import ObjectStorage
 
 
@@ -21,6 +22,8 @@ def objects_get_urls(
     accept_storage_ids: set[str] | None = None,
     presigned: bool | None = None,
     verbose_storage: bool = False,
+    storage_tag_values: dict[str, set[str]] | None = None,
+    storage_tag_exists: dict[str, bool] | None = None,
 ) -> dict[str, list[JsonPayload]]:
     media_object_list = list(media_objects)
     if accept_get_urls is not None and not accept_get_urls:
@@ -33,6 +36,8 @@ def objects_get_urls(
         accept_get_urls=accept_get_urls,
         accept_storage_ids=accept_storage_ids,
         presigned=presigned,
+        storage_tag_values=storage_tag_values or {},
+        storage_tag_exists=storage_tag_exists or {},
     )
     return {
         media_object.id: _object_get_urls_from_payloads(
@@ -42,6 +47,8 @@ def objects_get_urls(
             accept_storage_ids=accept_storage_ids,
             presigned=presigned,
             verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values or {},
+            storage_tag_exists=storage_tag_exists or {},
         )
         for media_object in media_object_list
     }
@@ -55,10 +62,21 @@ def _object_get_urls_from_payloads(
     accept_storage_ids: set[str] | None,
     presigned: bool | None,
     verbose_storage: bool,
+    storage_tag_values: dict[str, set[str]],
+    storage_tag_exists: dict[str, bool],
 ) -> list[JsonPayload]:
     get_urls: list[JsonPayload] = []
     seen: set[tuple[str | None, str | None, str | None, bool, bool]] = set()
     for instance in media_object.instances:
+        if (storage_tag_values or storage_tag_exists) and (
+            instance.storage_backend is None
+            or not tags_match(
+                instance.storage_backend.tags,
+                storage_tag_values,
+                storage_tag_exists,
+            )
+        ):
+            continue
         for payload in _instance_get_urls(
             object_id=media_object.id,
             instance=instance,
@@ -99,12 +117,20 @@ def _controlled_get_urls_by_object(
     accept_get_urls: set[str] | None,
     accept_storage_ids: set[str] | None,
     presigned: bool | None,
+    storage_tag_values: dict[str, set[str]],
+    storage_tag_exists: dict[str, bool],
 ) -> dict[ObjectGetUrlBatchKey, list[JsonPayload]]:
     url_requests: dict[ObjectGetUrlBatchKey, ObjectGetUrlRequest] = {}
     backends_by_key: dict[ObjectGetUrlBatchKey, StorageBackend] = {}
     for media_object in media_objects:
         for instance in media_object.instances:
             if not instance.controlled or instance.storage_backend is None:
+                continue
+            if (storage_tag_values or storage_tag_exists) and not tags_match(
+                instance.storage_backend.tags,
+                storage_tag_values,
+                storage_tag_exists,
+            ):
                 continue
             storage_id = str(instance.storage_backend.id)
             if accept_storage_ids is not None and storage_id not in accept_storage_ids:
@@ -165,6 +191,7 @@ def _controlled_get_url_payload(
         "provider": storage_backend.provider,
         "region": storage_backend.region,
         "store_product": storage_backend.store_product,
+        "tags": storage_backend.tags,
     }
 
 
@@ -229,6 +256,7 @@ def _payload_response(
                 "provider": payload.get("provider"),
                 "region": payload.get("region"),
                 "store_product": payload.get("store_product"),
+                "tags": payload.get("tags"),
             }
         )
     return without_none(response)

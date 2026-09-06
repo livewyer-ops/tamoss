@@ -14,6 +14,7 @@ from tamoss.api.presenters import (
 from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.api.routes.scalar_properties import register_scalar_property_routes
 from tamoss.application.contexts.sources import SourceUseCases
+from tamoss.domain.listings import SourceSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -35,28 +36,44 @@ def list_sources(
     response: Response,
     label: str | None = None,
     format: str | None = None,
+    reverse_order: bool = False,
+    sort_by: SourceSortBy = SourceSortBy.CREATED,
+    collected_by_ids: str | None = None,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
     validate_query_params(
         request,
-        {"label", "format", "page", "limit"},
+        {
+            "label",
+            "format",
+            "reverse_order",
+            "sort_by",
+            "collected_by_ids",
+            "page",
+            "limit",
+        },
         allowed_prefixes=("tag.", "tag_exists."),
     )
     try:
         tag_values, tag_exists = parse_tag_filters(request.query_params)
     except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
+    collected_ids, top_level_only = parse_collected_by_ids(collected_by_ids)
     source_page = sources.list_sources(
         label=label,
         format=format,
+        collected_by_ids=collected_ids,
+        top_level_only=top_level_only,
+        sort_by=sort_by,
+        reverse_order=reverse_order,
         tag_values=tag_values,
         tag_exists=tag_exists,
         page=page,
         limit=limit,
     )
-    with_page_headers(response, request, source_page)
+    with_page_headers(response, request, source_page, reverse_order=reverse_order)
     if head := head_response(request, response):
         return head
     relationships = sources.source_relationships(

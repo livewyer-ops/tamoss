@@ -12,11 +12,13 @@ from tamoss.application.contexts.flows import (
     unlink_flow_collection_references,
 )
 from tamoss.auth import Identity
+from tamoss.domain.listings import DeleteRequestSortBy
 from tamoss.domain.model import (
     DeletionRequestRecord,
     MediaObjectRecord,
     utc_now,
 )
+from tamoss.domain.pagination import Page
 from tamoss.domain.segments import segment_delete_filter
 from tamoss.errors import BadRequest, NotFound
 from tamoss.ports.object_storage import ObjectStorage
@@ -26,6 +28,7 @@ from tamoss.settings import (
     DEFAULT_WORKER_LEASE_SECONDS,
     Settings,
 )
+from tamoss.worker_claims import WorkerClaimLost, keep_worker_claims
 
 
 class DeletionUseCases:
@@ -52,6 +55,22 @@ class DeletionUseCases:
         requests.sort(key=lambda request: str(request.id))
         return requests
 
+    def list_delete_requests_page(
+        self,
+        *,
+        sort_by: DeleteRequestSortBy,
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[DeletionRequestRecord]:
+        return self.repository.list_delete_requests_page(
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            retention_seconds=self.settings.worker_queue_retention_seconds,
+            page=page,
+            limit=limit,
+        )
+
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord:
         request = self.repository.get_delete_request(request_id)
         if request is None:
@@ -71,17 +90,20 @@ class DeletionUseCases:
         timerange_to_delete = self.repository.segment_delete_timerange(delete_filter)
         if timerange_to_delete == "()":
             with self.repository.unit_of_work():
+                event_context = webhooking.flow_event_context(self.repository, flow)
                 unlink_flow_collection_references(self.repository, flow)
                 self.repository.delete_flow(flow_id)
                 webhooking.publish_flow_deleted(
                     repository=self.webhook_repository,
                     resource_repository=self.repository,
                     flow=flow,
+                    event_context=event_context,
                 )
                 deletion_processor.delete_orphan_source(
                     repository=self.repository,
                     webhook_repository=self.webhook_repository,
                     source_id=flow.source_id,
+                    source_collected_by_ids=event_context.source_collected_by_ids,
                 )
             return None
 
@@ -179,14 +201,20 @@ class DeletionUseCases:
             limit=max_requests,
             lease_seconds=lease_seconds,
         )
-        for request in requests:
-            deletion_processor.process_delete_request(
-                repository=self.repository,
-                webhook_repository=self.webhook_repository,
-                object_storage=self.object_storage,
-                request_id=request.id,
-            )
-            processed += 1
+        with keep_worker_claims(
+            requests,
+            renew=self.repository.renew_worker_claim,
+            lease_seconds=lease_seconds,
+        ):
+            for request in requests:
+                with suppress(WorkerClaimLost):
+                    deletion_processor.process_delete_request(
+                        repository=self.repository,
+                        webhook_repository=self.webhook_repository,
+                        object_storage=self.object_storage,
+                        request_id=request.id,
+                    )
+                    processed += 1
         return processed
 
     def process_pending_object_cleanups(
@@ -201,7 +229,14 @@ class DeletionUseCases:
             limit=max_cleanups,
             lease_seconds=lease_seconds,
         )
-        with suppress(deletion_processor.ObjectCleanupFailed):
+        with (
+            suppress(deletion_processor.ObjectCleanupFailed, WorkerClaimLost),
+            keep_worker_claims(
+                cleanups,
+                renew=self.repository.renew_worker_claim,
+                lease_seconds=lease_seconds,
+            ),
+        ):
             deletion_processor.process_object_cleanups(
                 repository=self.repository,
                 object_storage=self.object_storage,

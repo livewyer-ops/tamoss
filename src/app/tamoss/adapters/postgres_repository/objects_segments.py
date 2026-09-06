@@ -15,6 +15,7 @@ from tamoss.adapters.postgres_repository.mappers import (
     _create_object,
     _create_objects,
     _lock_flow_segments,
+    _lock_media_objects,
     _media_object_from_record,
     _optional_uuid,
     _save_flow,
@@ -83,6 +84,10 @@ class PostgresObjectSegmentMixin:
                 for row in rows
             }
 
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        with self._connect() as conn, conn.cursor() as cur:
+            _lock_media_objects(cur, object_ids)
+
     def save_object(self, media_object: MediaObjectRecord) -> None:
         with self._connect() as conn, conn.cursor() as cur:
             _save_object(cur, media_object)
@@ -147,6 +152,15 @@ class PostgresObjectSegmentMixin:
             )
             return [_segment_from_record(row[0]) for row in cur.fetchall()]
 
+    def has_segments(self, flow_id: UUID) -> bool:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS (SELECT 1 FROM tamoss_segments WHERE flow_id = %s)",
+                (flow_id,),
+            )
+            row = cur.fetchone()
+        return bool(row and row[0])
+
     def list_segments_for_objects(
         self, *, flow_id: UUID, object_ids: Iterable[str]
     ) -> list[SegmentRecord]:
@@ -159,7 +173,10 @@ class PostgresObjectSegmentMixin:
                 SELECT record
                 FROM tamoss_segments
                 WHERE flow_id = %(flow_id)s
-                  AND object_id = ANY(%(object_ids)s)
+                  AND (
+                      object_id = ANY(%(object_ids)s)
+                      OR init_object_id = ANY(%(object_ids)s)
+                  )
                 ORDER BY timerange_end, timerange_start, object_id
                 """,
                 {"flow_id": flow_id, "object_ids": requested_ids},

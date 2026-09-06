@@ -13,11 +13,12 @@ from tests.tams.support import (
     flow_collection_item,
     multi_flow_payload,
     register_segment,
+    upload_allocated_object,
     video_flow_payload,
     webhook_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_webhook_registration_lifecycle_hides_secret_material(
@@ -370,6 +371,73 @@ def test_webhook_segment_payload_omits_object_timerange(
     segment = deliveries[0].payload["event"]["segments"][0]
     assert segment["object_id"] == object_id
     assert "object_timerange" not in segment
+
+
+def test_webhook_segment_payload_includes_object_timerange_and_init_object(
+    tamoss_app: FastAPI,
+    client: TestClient,
+) -> None:
+    source_id = uuid4()
+    flow_id = uuid4()
+    created = client.put(
+        f"/flows/{flow_id}",
+        json=video_flow_payload(
+            flow_id,
+            source_id,
+            essence_parameters={
+                "frame_width": 1920,
+                "frame_height": 1080,
+                "frame_rate": {"numerator": 25, "denominator": 1},
+                "init_segments": True,
+            },
+        ),
+    )
+    assert created.status_code == 201
+    webhook = client.post(
+        "/service/webhooks",
+        json=webhook_payload(
+            events=["flows/segments_added"],
+            include_object_timerange=True,
+            verbose_storage=True,
+        ),
+    )
+    assert webhook.status_code == 201
+
+    media_id = f"bbc/{uuid4()}.m4s"
+    init_id = f"bbc/{uuid4()}.mp4"
+    media_allocation = client.post(
+        f"/flows/{flow_id}/storage",
+        json={"object_ids": [media_id]},
+    )
+    assert media_allocation.status_code == 201
+    init_allocation = client.post(
+        f"/flows/{flow_id}/storage",
+        json={
+            "object_ids": [init_id],
+            "content_type": "video/mp4",
+        },
+    )
+    assert init_allocation.status_code == 201, init_allocation.text
+    upload_allocated_object(client, media_id)
+    upload_allocated_object(client, init_id)
+
+    registered = client.post(
+        f"/flows/{flow_id}/segments",
+        json={
+            "object_id": media_id,
+            "init_object_id": init_id,
+            "timerange": "[20:0_30:0)",
+            "object_timerange": "[10:0_20:0)",
+        },
+    )
+    assert registered.status_code == 201
+
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    segment = deliveries[0].payload["event"]["segments"][0]
+    assert segment["object_timerange"] == "[10:0_20:0)"
+    assert segment["init_object"]["object_id"] == init_id
+    assert segment["init_object"]["get_urls"]
+    assert segment["get_urls"]
 
 
 def test_webhook_source_collection_filter_matches_child_events(

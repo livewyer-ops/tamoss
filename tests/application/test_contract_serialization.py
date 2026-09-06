@@ -24,7 +24,7 @@ def test_generated_contract_models_validate_representative_bbc_payloads() -> Non
     flow_id = uuid4()
     source_id = uuid4()
 
-    contract_models.Flow.model_validate(video_flow_payload(flow_id, source_id))
+    contract_models.FlowPut.model_validate(video_flow_payload(flow_id, source_id))
     contract_models.Source.model_validate(
         {
             "id": str(source_id),
@@ -58,3 +58,24 @@ def test_contract_dump_uses_public_json_model_options() -> None:
         "timerange": "[0:0_1:0)",
         "get_urls": [],
     }
+
+
+def test_contract_dump_preserves_only_explicit_null_extensions() -> None:
+    flow = contract_models.FlowGet.model_validate(
+        {
+            **video_flow_payload(uuid4(), uuid4()),
+            "description": None,
+            "x-top-level": None,
+            "segment_duration": {
+                "numerator": 1,
+                "denominator": 1,
+                "x-duration": None,
+            },
+        }
+    )
+
+    payload = contract_dump(flow, exclude_unset=True)
+
+    assert "description" not in payload
+    assert payload["x-top-level"] is None
+    assert payload["segment_duration"]["x-duration"] is None

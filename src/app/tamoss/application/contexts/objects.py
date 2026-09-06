@@ -19,6 +19,7 @@ from tamoss.ports.repositories import (
     ObjectRepository,
     StorageBackendRepository,
 )
+from tamoss.worker_claims import WorkerClaimLost, keep_worker_claims
 
 
 def reserved_storage_labels(repository: StorageBackendRepository) -> set[str]:
@@ -57,13 +58,15 @@ class ObjectUseCases:
         if has_controlled:
             self._queue_controlled_object_copy(object_id, UUID(str(storage_id)))
             return
-        media_object = self.get_object(object_id)
-        self._register_uncontrolled_object_instance(
-            media_object,
-            url=str(url) if url is not None else None,
-            label=str(label) if label is not None else None,
-        )
-        self.repository.save_object(media_object)
+        with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
+            media_object = self.get_object(object_id)
+            self._register_uncontrolled_object_instance(
+                media_object,
+                url=str(url) if url is not None else None,
+                label=str(label) if label is not None else None,
+            )
+            self.repository.save_object(media_object)
 
     def delete_object_instance(
         self, *, object_id: str, storage_id: UUID | None, label: str | None
@@ -73,6 +76,7 @@ class ObjectUseCases:
         ):
             raise BadRequest("Bad request. Invalid query options.")
         with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
             media_object = self.repository.get_object(object_id)
             if media_object is None or not media_object.referenced_by_flows:
                 raise NotFound("The requested Media Object does not exist.")
@@ -132,7 +136,14 @@ class ObjectUseCases:
             limit=max_copies,
             lease_seconds=lease_seconds,
         )
-        with suppress(object_copy.ObjectCopyFailed):
+        with (
+            suppress(object_copy.ObjectCopyFailed, WorkerClaimLost),
+            keep_worker_claims(
+                copies,
+                renew=self.repository.renew_worker_claim,
+                lease_seconds=lease_seconds,
+            ),
+        ):
             object_copy.process_object_copies(
                 repository=self.repository,
                 object_storage=self.object_storage,
@@ -144,6 +155,7 @@ class ObjectUseCases:
         self, object_id: str, destination_storage_id: UUID
     ) -> None:
         with self.repository.unit_of_work():
+            self.repository.lock_objects([object_id])
             media_object = self.repository.get_object(object_id)
             if media_object is None or not media_object.referenced_by_flows:
                 raise NotFound("The requested Media Object does not exist.")
@@ -172,6 +184,7 @@ class ObjectUseCases:
             object_copy.queue_controlled_object_copy(
                 repository=self.repository,
                 object_id=object_id,
+                object_created=media_object.created,
                 source_storage_backend_id=source_instance.storage_backend.id,
                 destination_storage_backend_id=destination_storage_id,
             )
@@ -207,6 +220,8 @@ class ObjectUseCases:
         accept_storage_ids: set[str] | None = None,
         presigned: bool | None = None,
         verbose_storage: bool = False,
+        storage_tag_values: dict[str, set[str]] | None = None,
+        storage_tag_exists: dict[str, bool] | None = None,
     ) -> list[dict[str, Any]]:
         return objects_get_urls(
             [media_object],
@@ -215,7 +230,16 @@ class ObjectUseCases:
             accept_storage_ids=accept_storage_ids,
             presigned=presigned,
             verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values,
+            storage_tag_exists=storage_tag_exists,
         ).get(media_object.id, [])
+
+    def object_with_init(
+        self, media_object: MediaObjectRecord
+    ) -> MediaObjectRecord | None:
+        if media_object.init_object_id is None:
+            return None
+        return self.repository.get_object(media_object.init_object_id)
 
 
 def _object_instance_matches(

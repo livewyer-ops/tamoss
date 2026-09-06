@@ -18,6 +18,7 @@ from tamoss.api.routes import (
     flows,
     health,
     objects,
+    profiles,
     segments,
     service,
     sources,
@@ -51,6 +52,7 @@ CORS_EXPOSE_HEADERS = [
     "X-Paging-Count",
     "X-Paging-Limit",
     "X-Paging-NextKey",
+    "X-Paging-Reverse-Order",
 ]
 
 
@@ -96,6 +98,7 @@ def create_app(
     record_api_info(resolved_settings)
     application.include_router(health.router)
     application.include_router(service.router)
+    application.include_router(profiles.router)
     application.include_router(webhooks.router)
     application.include_router(delete_requests.router)
     application.include_router(sources.router)

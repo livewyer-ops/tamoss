@@ -23,6 +23,7 @@ from tamoss.domain.segments import SegmentTimerangeBounds, timerange_union
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
+from tests.tams.support import video_flow_payload
 
 pytestmark = pytest.mark.architecture
 
@@ -211,6 +212,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert all(result.error is None for result in results)
     assert repository.list_segments_overlapping_calls == 1
     assert repository.lock_flow_segments_calls == 1
+    assert repository.lock_objects_calls == 1
+    assert repository.locked_object_ids == [
+        {_object_id(index) for index in range(SEGMENT_COUNT)}
+    ]
     # One bounded lookup before the transaction (controlled-object upload
     # verification, keeping S3 round-trips outside the flow lock) and one
     # authoritative lookup inside it.
@@ -257,6 +262,26 @@ def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
     assert repository.flow_timeranges_requests == [[parent_id, child_id]]
 
 
+def test_flow_listing_reuses_loaded_records_for_timeranges() -> None:
+    repository = CountingRepository(_storage_backend())
+    for _ in range(50):
+        flow = _flow(uuid4())
+        flow.data.update(video_flow_payload(flow.id, flow.source_id))
+        repository.save_flow(flow)
+        repository.append_segment(
+            SegmentRecord(flow_id=flow.id, object_id="media", timerange="[0:1_1:2)")
+        )
+    cases = _use_cases(repository, object_storage=InMemoryObjectStorage())
+    repository.reset_counts()
+    with TestClient(create_app(_settings(), use_cases=cases)) as client:
+        response = client.get("/flows", params={"limit": 50, "include_timerange": True})
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 50
+    assert {item["timerange"] for item in response.json()} == {"[0:1_1:2)"}
+    assert repository.get_flow_calls == 0
+    assert len(repository.flow_timeranges_requests) == 1
+
+
 class CountingRepository:
     def __init__(self, storage_backend: StorageBackend):
         self._storage_backend = storage_backend
@@ -278,6 +303,8 @@ class CountingRepository:
         self.append_segment_calls = 0
         self.save_registered_segments_calls = 0
         self.lock_flow_segments_calls = 0
+        self.lock_objects_calls = 0
+        self.locked_object_ids: list[set[str]] = []
 
     @property
     def service_repository(self) -> CountingRepository:
@@ -319,6 +346,10 @@ class CountingRepository:
 
     def lock_flow_segments(self, flow_id: UUID) -> None:
         self.lock_flow_segments_calls += 1
+
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        self.lock_objects_calls += 1
+        self.locked_object_ids.append(set(object_ids))
 
     def default_storage_backend(self) -> StorageBackend:
         return self._storage_backend

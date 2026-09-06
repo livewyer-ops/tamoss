@@ -1,3 +1,3 @@
 package schema
 
-var SupportedTAMSAPIVersion = "8.1"
+var SupportedTAMSAPIVersion = "8.2"
