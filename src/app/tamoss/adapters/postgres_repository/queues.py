@@ -34,10 +34,18 @@ from tamoss.domain.model import (
     ObjectCopyRecord,
     WebhookDeliveryRecord,
     WebhookRecord,
+    utc_now,
 )
 from tamoss.domain.pagination import Page, resolve_page_window
+from tamoss.worker_claims import WorkerClaimLost, WorkerRecord, active_worker_claims
 
 _EMPTY_SQL = sql.SQL("")
+_QUEUE_TABLES = {
+    WebhookDeliveryRecord: "tamoss_webhook_deliveries",
+    DeletionRequestRecord: "tamoss_delete_requests",
+    ObjectCleanupRecord: "tamoss_object_cleanups",
+    ObjectCopyRecord: "tamoss_object_copies",
+}
 
 # Terminal rows are kept for observability but never read by claim queries;
 # without retention the queue tables (webhook deliveries especially: one row
@@ -51,6 +59,91 @@ _PURGEABLE_QUEUE_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 class PostgresQueueMixin:
+    def renew_worker_claim(self, record: WorkerRecord, lease_seconds: int) -> bool:
+        if record.claim_token is None:
+            return False
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    """
+                    UPDATE {table}
+                    SET claim_expires_at = clock_timestamp()
+                        + (%s * INTERVAL '1 second')
+                    WHERE id = %s AND claimed_at = %s
+                      AND claim_expires_at > clock_timestamp()
+                    """
+                ).format(table=sql.Identifier(_QUEUE_TABLES[type(record)])),
+                (lease_seconds, record.id, record.claim_token),
+            )
+            return cur.rowcount == 1
+
+    def _save_worker_record(
+        self, record: WorkerRecord, payload: dict[str, Any], **values: Any
+    ) -> None:
+        table = sql.Identifier(_QUEUE_TABLES[type(record)])
+        active = active_worker_claims.get() or {}
+        claim = active.get(record.id, record)
+        values.update(
+            id=record.id,
+            status=record.status,
+            claimed_at=record.claimed_at,
+            claimed_by=record.claimed_by,
+            claim_expires_at=record.claim_expires_at,
+            record=Jsonb(payload),
+            updated_at=utc_now(),
+        )
+        assignments = sql.SQL(", ").join(
+            sql.SQL("{} = %({})s").format(sql.Identifier(name), sql.SQL(name))
+            if name != "claim_expires_at"
+            else sql.SQL(
+                "claim_expires_at = CASE WHEN %(claimed_at)s::timestamptz IS NULL "
+                "THEN %(claim_expires_at)s ELSE GREATEST("
+                "{table}.claim_expires_at, %(claim_expires_at)s) END"
+            ).format(table=table)
+            for name in values
+            if name != "id"
+        )
+        with self._connect() as conn, conn.transaction(), conn.cursor() as cur:
+            # Child cleanups are owned by the parent deletion claim, not by
+            # their own leases. Check the original parent before saving them.
+            if (
+                isinstance(record, ObjectCleanupRecord)
+                and record.delete_request_id in active
+            ):
+                parent = active[record.delete_request_id]
+                cur.execute(
+                    """
+                    SELECT id FROM tamoss_delete_requests
+                    WHERE id = %s AND claimed_at = %s
+                      AND claim_expires_at > clock_timestamp()
+                    FOR UPDATE
+                    """,
+                    (parent.id, parent.claim_token),
+                )
+                if cur.fetchone() is None:
+                    raise WorkerClaimLost(str(parent.id))
+            if claim.claim_token is None:
+                query = sql.SQL(
+                    "INSERT INTO {table} ({columns}) VALUES ({parameters}) "
+                    "ON CONFLICT (id) DO UPDATE SET {assignments} "
+                    "WHERE {table}.claimed_at IS NULL"
+                ).format(
+                    table=table,
+                    columns=sql.SQL(", ").join(map(sql.Identifier, values)),
+                    parameters=sql.SQL(", ").join(map(sql.Placeholder, values)),
+                    assignments=assignments,
+                )
+            else:
+                query = sql.SQL(
+                    "UPDATE {table} SET {assignments} "
+                    "WHERE id = %(id)s AND claimed_at = %(claim_token)s "
+                    "AND claim_expires_at > clock_timestamp()"
+                ).format(table=table, assignments=assignments)
+                values["claim_token"] = claim.claim_token
+            cur.execute(query, values)
+            if cur.rowcount != 1:
+                raise WorkerClaimLost(str(record.id))
+
     def list_webhooks(self) -> list[WebhookRecord]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT record FROM tamoss_webhooks ORDER BY id")
@@ -172,56 +265,13 @@ class PostgresQueueMixin:
             return _webhook_delivery_from_row(row) if row else None
 
     def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None:
-        record = _webhook_delivery_to_record(delivery)
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO tamoss_webhook_deliveries (
-                    id,
-                    webhook_id,
-                    status,
-                    next_attempt_at,
-                    claimed_at,
-                    claimed_by,
-                    claim_expires_at,
-                    record,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    %(id)s,
-                    %(webhook_id)s,
-                    %(status)s,
-                    %(next_attempt_at)s,
-                    %(claimed_at)s,
-                    %(claimed_by)s,
-                    %(claim_expires_at)s,
-                    %(record)s,
-                    %(created_at)s,
-                    NOW()
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    webhook_id = EXCLUDED.webhook_id,
-                    status = EXCLUDED.status,
-                    next_attempt_at = EXCLUDED.next_attempt_at,
-                    claimed_at = EXCLUDED.claimed_at,
-                    claimed_by = EXCLUDED.claimed_by,
-                    claim_expires_at = EXCLUDED.claim_expires_at,
-                    record = EXCLUDED.record,
-                    updated_at = NOW()
-                """,
-                {
-                    "id": delivery.id,
-                    "webhook_id": delivery.webhook_id,
-                    "status": delivery.status,
-                    "next_attempt_at": delivery.next_attempt_at,
-                    "claimed_at": delivery.claimed_at,
-                    "claimed_by": delivery.claimed_by,
-                    "claim_expires_at": delivery.claim_expires_at,
-                    "record": Jsonb(record),
-                    "created_at": delivery.created,
-                },
-            )
+        self._save_worker_record(
+            delivery,
+            _webhook_delivery_to_record(delivery),
+            webhook_id=delivery.webhook_id,
+            next_attempt_at=delivery.next_attempt_at,
+            created_at=delivery.created,
+        )
 
     def claim_webhook_deliveries(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -336,55 +386,13 @@ class PostgresQueueMixin:
             return _delete_request_from_row(row) if row else None
 
     def save_delete_request(self, request: DeletionRequestRecord) -> None:
-        record = _delete_request_to_record(request)
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO tamoss_delete_requests (
-                    id,
-                    flow_id,
-                    status,
-                    claimed_at,
-                    claimed_by,
-                    claim_expires_at,
-                    record,
-                    updated,
-                    created_at
-                )
-                VALUES (
-                    %(id)s,
-                    %(flow_id)s,
-                    %(status)s,
-                    %(claimed_at)s,
-                    %(claimed_by)s,
-                    %(claim_expires_at)s,
-                    %(record)s,
-                    %(updated)s,
-                    %(created_at)s
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    flow_id = EXCLUDED.flow_id,
-                    status = EXCLUDED.status,
-                    claimed_at = EXCLUDED.claimed_at,
-                    claimed_by = EXCLUDED.claimed_by,
-                    claim_expires_at = EXCLUDED.claim_expires_at,
-                    record = EXCLUDED.record,
-                    updated = EXCLUDED.updated,
-                    created_at = EXCLUDED.created_at,
-                    updated_at = NOW()
-                """,
-                {
-                    "id": request.id,
-                    "flow_id": request.flow_id,
-                    "status": request.status,
-                    "claimed_at": request.claimed_at,
-                    "claimed_by": request.claimed_by,
-                    "claim_expires_at": request.claim_expires_at,
-                    "record": Jsonb(record),
-                    "updated": request.updated,
-                    "created_at": request.created,
-                },
-            )
+        self._save_worker_record(
+            request,
+            _delete_request_to_record(request),
+            flow_id=request.flow_id,
+            updated=request.updated,
+            created_at=request.created,
+        )
 
     def claim_delete_requests(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -439,59 +447,14 @@ class PostgresQueueMixin:
             return [_object_cleanup_from_row(row) for row in cur.fetchall()]
 
     def save_object_cleanup(self, cleanup: ObjectCleanupRecord) -> None:
-        record = _object_cleanup_to_record(cleanup)
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO tamoss_object_cleanups (
-                    id,
-                    delete_request_id,
-                    object_id,
-                    storage_backend_id,
-                    status,
-                    claimed_at,
-                    claimed_by,
-                    claim_expires_at,
-                    record,
-                    updated
-                )
-                VALUES (
-                    %(id)s,
-                    %(delete_request_id)s,
-                    %(object_id)s,
-                    %(storage_backend_id)s,
-                    %(status)s,
-                    %(claimed_at)s,
-                    %(claimed_by)s,
-                    %(claim_expires_at)s,
-                    %(record)s,
-                    %(updated)s
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    delete_request_id = EXCLUDED.delete_request_id,
-                    object_id = EXCLUDED.object_id,
-                    storage_backend_id = EXCLUDED.storage_backend_id,
-                    status = EXCLUDED.status,
-                    claimed_at = EXCLUDED.claimed_at,
-                    claimed_by = EXCLUDED.claimed_by,
-                    claim_expires_at = EXCLUDED.claim_expires_at,
-                    record = EXCLUDED.record,
-                    updated = EXCLUDED.updated,
-                    updated_at = NOW()
-                """,
-                {
-                    "id": cleanup.id,
-                    "delete_request_id": cleanup.delete_request_id,
-                    "object_id": cleanup.object_id,
-                    "storage_backend_id": cleanup.storage_backend_id,
-                    "status": cleanup.status,
-                    "claimed_at": cleanup.claimed_at,
-                    "claimed_by": cleanup.claimed_by,
-                    "claim_expires_at": cleanup.claim_expires_at,
-                    "record": Jsonb(record),
-                    "updated": cleanup.updated,
-                },
-            )
+        self._save_worker_record(
+            cleanup,
+            _object_cleanup_to_record(cleanup),
+            delete_request_id=cleanup.delete_request_id,
+            object_id=cleanup.object_id,
+            storage_backend_id=cleanup.storage_backend_id,
+            updated=cleanup.updated,
+        )
 
     def claim_object_cleanups(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -541,62 +504,14 @@ class PostgresQueueMixin:
             return [_object_copy_from_row(row) for row in cur.fetchall()]
 
     def save_object_copy(self, copy: ObjectCopyRecord) -> None:
-        record = _object_copy_to_record(copy)
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO tamoss_object_copies (
-                    id,
-                    object_id,
-                    source_storage_backend_id,
-                    destination_storage_backend_id,
-                    status,
-                    claimed_at,
-                    claimed_by,
-                    claim_expires_at,
-                    record,
-                    updated
-                )
-                VALUES (
-                    %(id)s,
-                    %(object_id)s,
-                    %(source_storage_backend_id)s,
-                    %(destination_storage_backend_id)s,
-                    %(status)s,
-                    %(claimed_at)s,
-                    %(claimed_by)s,
-                    %(claim_expires_at)s,
-                    %(record)s,
-                    %(updated)s
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    object_id = EXCLUDED.object_id,
-                    source_storage_backend_id = EXCLUDED.source_storage_backend_id,
-                    destination_storage_backend_id =
-                        EXCLUDED.destination_storage_backend_id,
-                    status = EXCLUDED.status,
-                    claimed_at = EXCLUDED.claimed_at,
-                    claimed_by = EXCLUDED.claimed_by,
-                    claim_expires_at = EXCLUDED.claim_expires_at,
-                    record = EXCLUDED.record,
-                    updated = EXCLUDED.updated,
-                    updated_at = NOW()
-                """,
-                {
-                    "id": copy.id,
-                    "object_id": copy.object_id,
-                    "source_storage_backend_id": copy.source_storage_backend_id,
-                    "destination_storage_backend_id": (
-                        copy.destination_storage_backend_id
-                    ),
-                    "status": copy.status,
-                    "claimed_at": copy.claimed_at,
-                    "claimed_by": copy.claimed_by,
-                    "claim_expires_at": copy.claim_expires_at,
-                    "record": Jsonb(record),
-                    "updated": copy.updated,
-                },
-            )
+        self._save_worker_record(
+            copy,
+            _object_copy_to_record(copy),
+            object_id=copy.object_id,
+            source_storage_backend_id=copy.source_storage_backend_id,
+            destination_storage_backend_id=copy.destination_storage_backend_id,
+            updated=copy.updated,
+        )
 
     def purge_finished_worker_records(self, *, older_than: datetime, limit: int) -> int:
         if limit < 1:
@@ -604,6 +519,20 @@ class PostgresQueueMixin:
         purged = 0
         with self._connect() as conn, conn.cursor() as cur:
             for table_name, statuses in _PURGEABLE_QUEUE_TABLES:
+                if purged >= limit:
+                    break
+                preserve_dependencies = _EMPTY_SQL
+                if table_name == "tamoss_object_cleanups":
+                    preserve_dependencies = sql.SQL(
+                        "AND NOT EXISTS (SELECT 1 FROM tamoss_delete_requests "
+                        "WHERE id = tamoss_object_cleanups.delete_request_id)"
+                    )
+                elif table_name == "tamoss_delete_requests":
+                    preserve_dependencies = sql.SQL(
+                        "AND NOT EXISTS (SELECT 1 FROM tamoss_object_cleanups "
+                        "WHERE delete_request_id = tamoss_delete_requests.id "
+                        "AND status <> 'done')"
+                    )
                 cur.execute(
                     sql.SQL(
                         """
@@ -612,6 +541,7 @@ class PostgresQueueMixin:
                             FROM {table}
                             WHERE status = ANY(%(statuses)s::text[])
                               AND updated_at < %(older_than)s
+                              {preserve_dependencies}
                             LIMIT %(limit)s
                             FOR UPDATE SKIP LOCKED
                         )
@@ -619,11 +549,14 @@ class PostgresQueueMixin:
                         USING target
                         WHERE finished.id = target.id
                         """
-                    ).format(table=sql.Identifier(table_name)),
+                    ).format(
+                        table=sql.Identifier(table_name),
+                        preserve_dependencies=preserve_dependencies,
+                    ),
                     {
                         "statuses": list(statuses),
                         "older_than": older_than,
-                        "limit": limit,
+                        "limit": limit - purged,
                     },
                 )
                 purged += cur.rowcount or 0
@@ -685,9 +618,9 @@ def _claim_worker_records[T](
             )
             UPDATE {table} AS {alias}
             SET status = 'started',
-                claimed_at = NOW(),
+                claimed_at = clock_timestamp(),
                 claimed_by = %(worker_id)s,
-                claim_expires_at = NOW()
+                claim_expires_at = clock_timestamp()
                     + (%(lease_seconds)s * INTERVAL '1 second'),
                 {touch_sql}
                 updated_at = NOW()

@@ -28,6 +28,7 @@ from tamoss.settings import (
     DEFAULT_WORKER_LEASE_SECONDS,
     Settings,
 )
+from tamoss.worker_claims import WorkerClaimLost, keep_worker_claims
 
 
 class DeletionUseCases:
@@ -200,14 +201,20 @@ class DeletionUseCases:
             limit=max_requests,
             lease_seconds=lease_seconds,
         )
-        for request in requests:
-            deletion_processor.process_delete_request(
-                repository=self.repository,
-                webhook_repository=self.webhook_repository,
-                object_storage=self.object_storage,
-                request_id=request.id,
-            )
-            processed += 1
+        with keep_worker_claims(
+            requests,
+            renew=self.repository.renew_worker_claim,
+            lease_seconds=lease_seconds,
+        ):
+            for request in requests:
+                with suppress(WorkerClaimLost):
+                    deletion_processor.process_delete_request(
+                        repository=self.repository,
+                        webhook_repository=self.webhook_repository,
+                        object_storage=self.object_storage,
+                        request_id=request.id,
+                    )
+                    processed += 1
         return processed
 
     def process_pending_object_cleanups(
@@ -222,7 +229,14 @@ class DeletionUseCases:
             limit=max_cleanups,
             lease_seconds=lease_seconds,
         )
-        with suppress(deletion_processor.ObjectCleanupFailed):
+        with (
+            suppress(deletion_processor.ObjectCleanupFailed, WorkerClaimLost),
+            keep_worker_claims(
+                cleanups,
+                renew=self.repository.renew_worker_claim,
+                lease_seconds=lease_seconds,
+            ),
+        ):
             deletion_processor.process_object_cleanups(
                 repository=self.repository,
                 object_storage=self.object_storage,

@@ -178,6 +178,7 @@ class WebhookDeliveryRecord:
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
+    claim_token: datetime | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -195,6 +196,7 @@ class DeletionRequestRecord:
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
+    claim_token: datetime | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -211,6 +213,7 @@ class ObjectCleanupRecord:
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
+    claim_token: datetime | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -227,6 +230,7 @@ class ObjectCopyRecord:
     claimed_at: datetime | None = None
     claimed_by: str | None = None
     claim_expires_at: datetime | None = None
+    claim_token: datetime | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass

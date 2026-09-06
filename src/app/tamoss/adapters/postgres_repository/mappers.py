@@ -785,6 +785,7 @@ def _webhook_delivery_from_row(row: DatabaseRow) -> WebhookDeliveryRecord:
     delivery.status = row[1]
     delivery.next_attempt_at = _optional_datetime_from_record(row[2])
     delivery.claimed_at = _optional_datetime_from_record(row[3])
+    delivery.claim_token = delivery.claimed_at
     delivery.claimed_by = row[4]
     delivery.claim_expires_at = _optional_datetime_from_record(row[5])
     return delivery
@@ -831,6 +832,7 @@ def _delete_request_from_row(row: DatabaseRow) -> DeletionRequestRecord:
     request.status = row[1]
     request.updated = _datetime_from_record(row[2])
     request.claimed_at = _optional_datetime_from_record(row[3])
+    request.claim_token = request.claimed_at
     request.claimed_by = row[4]
     request.claim_expires_at = _optional_datetime_from_record(row[5])
     return request
@@ -872,6 +874,7 @@ def _object_cleanup_from_row(row: DatabaseRow) -> ObjectCleanupRecord:
     cleanup.status = row[1]
     cleanup.updated = _datetime_from_record(row[2])
     cleanup.claimed_at = _optional_datetime_from_record(row[3])
+    cleanup.claim_token = cleanup.claimed_at
     cleanup.claimed_by = row[4]
     cleanup.claim_expires_at = _optional_datetime_from_record(row[5])
     return cleanup
@@ -910,6 +913,7 @@ def _object_copy_from_row(row: DatabaseRow) -> ObjectCopyRecord:
     copy.status = row[1]
     copy.updated = _datetime_from_record(row[2])
     copy.claimed_at = _optional_datetime_from_record(row[3])
+    copy.claim_token = copy.claimed_at
     copy.claimed_by = row[4]
     copy.claim_expires_at = _optional_datetime_from_record(row[5])
     return copy

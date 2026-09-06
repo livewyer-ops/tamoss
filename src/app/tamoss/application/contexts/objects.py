@@ -19,6 +19,7 @@ from tamoss.ports.repositories import (
     ObjectRepository,
     StorageBackendRepository,
 )
+from tamoss.worker_claims import WorkerClaimLost, keep_worker_claims
 
 
 def reserved_storage_labels(repository: StorageBackendRepository) -> set[str]:
@@ -135,7 +136,14 @@ class ObjectUseCases:
             limit=max_copies,
             lease_seconds=lease_seconds,
         )
-        with suppress(object_copy.ObjectCopyFailed):
+        with (
+            suppress(object_copy.ObjectCopyFailed, WorkerClaimLost),
+            keep_worker_claims(
+                copies,
+                renew=self.repository.renew_worker_claim,
+                lease_seconds=lease_seconds,
+            ),
+        ):
             object_copy.process_object_copies(
                 repository=self.repository,
                 object_storage=self.object_storage,
