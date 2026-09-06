@@ -24,10 +24,15 @@ from tamoss.domain.model import (
 )
 from tamoss.domain.pagination import Page
 from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
+from tamoss.worker_claims import WorkerRecord
 
 
 class TransactionalRepository(Protocol):
     def unit_of_work(self) -> AbstractContextManager[object]: ...
+
+
+class WorkerQueueRepository(Protocol):
+    def renew_worker_claim(self, record: WorkerRecord, lease_seconds: int) -> bool: ...
 
 
 class StorageBackendRepository(Protocol):
@@ -81,8 +86,6 @@ class FlowLookupRepository(Protocol):
 
 
 class FlowCollectionRepository(FlowLookupRepository, Protocol):
-    def list_flows(self) -> list[FlowRecord]: ...
-
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]: ...
 
     def list_flows_collecting(self, flow_ids: Iterable[UUID]) -> list[FlowRecord]: ...
@@ -147,7 +150,9 @@ class FlowRepository(TransactionalRepository, FlowCollectionRepository, Protocol
     def save_flow(self, flow: FlowRecord) -> None: ...
 
 
-class SourceRepository(Protocol):
+class SourceRepository(TransactionalRepository, Protocol):
+    def lock_source(self, source_id: UUID) -> None: ...
+
     def list_sources_page(
         self,
         *,
@@ -166,8 +171,6 @@ class SourceRepository(Protocol):
     def get_source(self, source_id: UUID) -> SourceRecord | None: ...
 
     def save_source(self, source: SourceRecord) -> None: ...
-
-    def list_flows(self) -> list[FlowRecord]: ...
 
     def source_relationships_for(
         self,
@@ -196,7 +199,11 @@ class WebhookResourceRepository(Protocol):
     ) -> dict[UUID, SourceRelationships]: ...
 
 
-class WebhookRepository(WebhookEventRepository, Protocol):
+class WebhookRepository(WebhookEventRepository, WorkerQueueRepository, Protocol):
+    def purge_finished_worker_records(
+        self, *, older_than: datetime, limit: int
+    ) -> int: ...
+
     def list_webhooks_page(
         self,
         *,
@@ -268,6 +275,7 @@ class SegmentRepository(TransactionalRepository, StorageBackendRepository, Proto
 
 class ObjectRepository(
     TransactionalRepository,
+    WorkerQueueRepository,
     StorageBackendRepository,
     Protocol,
 ):
@@ -308,6 +316,7 @@ class StorageRepository(
 
 class DeletionRepository(
     TransactionalRepository,
+    WorkerQueueRepository,
     StorageBackendRepository,
     FlowCollectionRepository,
     ObjectCleanupRepository,

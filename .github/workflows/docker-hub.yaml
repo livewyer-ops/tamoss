@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   # Push images for trusted release/internal PR branches so deploy tests can
@@ -21,6 +21,50 @@ env:
   PUSH_IMAGES: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
 jobs:
+  release-preflight:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate immutable release target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/scripts/release-metadata.py "${GITHUB_REF_NAME#v}"
+          python3 .github/scripts/release-preflight.py
+
+  release-tests:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+      actions: read
+
+  release-operator-tests:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/operator-ci.yaml
+    permissions:
+      contents: read
+      actions: read
+
+  release-kind-e2e:
+    if: github.ref_type == 'tag'
+    needs: [release-preflight]
+    uses: ./.github/workflows/kind-e2e-run.yaml
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    with:
+      artifact-name: release-kind-e2e-${{ github.run_id }}
+      retention-days: 90
+      summary-title: Release commit Kind E2E
+      summary-description: Builds and tests the exact tagged source commit before publication.
+
   # A tag build is the only path that produces a versioned release, and nothing
   # previously security-scanned the tree it was cut from. Non-tag builds skip
   # this: pull requests are already covered by validate.yaml, and :main images
@@ -34,8 +78,14 @@ jobs:
       actions: read
 
   tamoss-api:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight, release-tests, release-operator-tests, release-kind-e2e]
+    if: >-
+      ${{ !cancelled() && (github.ref_type != 'tag' ||
+      (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success' &&
+      needs.release-tests.result == 'success' && needs.release-operator-tests.result == 'success' &&
+      needs.release-kind-e2e.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # id-token: write is required for cosign keyless signing (Fulcio OIDC).
@@ -45,16 +95,6 @@ jobs:
     steps:
       - name: Git Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Derive PR head image tag
-        id: pr-head-tag
-        shell: bash
-        env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$PR_HEAD_SHA" ]; then
-            echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Resolve operator build metadata
         id: build-version
@@ -84,72 +124,29 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract Git metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: livewyer/tamoss-api
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            ${{ steps.pr-head-tag.outputs.tag }}
-            # set latest tag for default branch
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Login to Docker Hub
-        if: env.PUSH_IMAGES == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-
-      - name: Install cosign
-        if: env.PUSH_IMAGES == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Build and push to Docker Hub
+      - name: Build, publish and sign image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: ./.github/actions/build-image
         with:
-          context: .
+          component: tamoss-api
           file: src/app/tamoss/Dockerfile
-          push: ${{ env.PUSH_IMAGES == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ env.PUSH_IMAGES }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
           build-args: |
             VERSION=${{ steps.build-version.outputs.version }}
             SCHEMA_VERSION=${{ steps.build-version.outputs.schema_revision }}
             TAMS_API_VERSION=${{ steps.build-version.outputs.tams_api }}
-          platforms: "linux/amd64,linux/arm64"
-          provenance: mode=max
-          sbom: true
-          # Keep API and UI build caches independent.
-          cache-from: type=gha,scope=tamoss-api
-          cache-to: type=gha,mode=max,scope=tamoss-api
-
-      - name: Sign image with cosign (keyless)
-        if: env.PUSH_IMAGES == 'true'
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          for tag in ${TAGS}; do
-            cosign sign --yes "${tag}@${DIGEST}"
-          done
 
   tamoss-ui:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight, release-tests, release-operator-tests, release-kind-e2e]
+    if: >-
+      ${{ !cancelled() && (github.ref_type != 'tag' ||
+      (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success' &&
+      needs.release-tests.result == 'success' && needs.release-operator-tests.result == 'success' &&
+      needs.release-kind-e2e.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -159,77 +156,26 @@ jobs:
       - name: Git Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Derive PR head image tag
-        id: pr-head-tag
-        shell: bash
-        env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$PR_HEAD_SHA" ]; then
-            echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Extract Git metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: livewyer/tamoss-ui
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            ${{ steps.pr-head-tag.outputs.tag }}
-            # set latest tag for default branch
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Login to Docker Hub
-        if: env.PUSH_IMAGES == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-
-      - name: Install cosign
-        if: env.PUSH_IMAGES == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Build and push to Docker Hub
+      - name: Build, publish and sign image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: ./.github/actions/build-image
         with:
+          component: tamoss-ui
           context: src/app/frontend
           file: src/app/frontend/Dockerfile
-          push: ${{ env.PUSH_IMAGES == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: "linux/amd64,linux/arm64"
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha,scope=tamoss-ui
-          cache-to: type=gha,mode=max,scope=tamoss-ui
-
-      - name: Sign image with cosign (keyless)
-        if: env.PUSH_IMAGES == 'true'
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          for tag in ${TAGS}; do
-            cosign sign --yes "${tag}@${DIGEST}"
-          done
+          push: ${{ env.PUSH_IMAGES }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
   tamoss-console-api:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight, release-tests, release-operator-tests, release-kind-e2e]
+    if: >-
+      ${{ !cancelled() && (github.ref_type != 'tag' ||
+      (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success' &&
+      needs.release-tests.result == 'success' && needs.release-operator-tests.result == 'success' &&
+      needs.release-kind-e2e.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -239,76 +185,25 @@ jobs:
       - name: Git Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Derive PR head image tag
-        id: pr-head-tag
-        shell: bash
-        env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$PR_HEAD_SHA" ]; then
-            echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Extract Git metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: livewyer/tamoss-console-api
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            ${{ steps.pr-head-tag.outputs.tag }}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Login to Docker Hub
-        if: env.PUSH_IMAGES == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: Install cosign
-        if: env.PUSH_IMAGES == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Build and push to Docker Hub
+      - name: Build, publish and sign image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: ./.github/actions/build-image
         with:
-          context: .
+          component: tamoss-console-api
           file: operator/Dockerfile.console-api
-          push: ${{ env.PUSH_IMAGES == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: "linux/amd64,linux/arm64"
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha,scope=tamoss-console-api
-          cache-to: type=gha,mode=max,scope=tamoss-console-api
-
-      - name: Sign image with cosign (keyless)
-        if: env.PUSH_IMAGES == 'true'
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          for tag in ${TAGS}; do
-            cosign sign --yes "${tag}@${DIGEST}"
-          done
+          push: ${{ env.PUSH_IMAGES }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
   tamoss-operator:
-    needs: [dependency-audit]
-    if: ${{ !cancelled() && needs.dependency-audit.result != 'failure' }}
+    needs: [dependency-audit, release-preflight, release-tests, release-operator-tests, release-kind-e2e]
+    if: >-
+      ${{ !cancelled() && (github.ref_type != 'tag' ||
+      (needs.dependency-audit.result == 'success' && needs.release-preflight.result == 'success' &&
+      needs.release-tests.result == 'success' && needs.release-operator-tests.result == 'success' &&
+      needs.release-kind-e2e.result == 'success')) }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -317,16 +212,6 @@ jobs:
     steps:
       - name: Git Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Derive PR head image tag
-        id: pr-head-tag
-        shell: bash
-        env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$PR_HEAD_SHA" ]; then
-            echo "tag=type=raw,value=sha-${PR_HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Resolve build version
         id: build-version
@@ -361,65 +246,39 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract Git metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: livewyer/tamoss-operator
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=ref,event=pr
-            type=sha,prefix=sha-
-            ${{ steps.pr-head-tag.outputs.tag }}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Login to Docker Hub
-        if: env.PUSH_IMAGES == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-
-      - name: Install cosign
-        if: env.PUSH_IMAGES == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Build and push to Docker Hub
+      - name: Build, publish and sign image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: ./.github/actions/build-image
         with:
-          context: .
+          component: tamoss-operator
           file: operator/Dockerfile
-          push: ${{ env.PUSH_IMAGES == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ env.PUSH_IMAGES }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
           build-args: |
             VERSION=${{ steps.build-version.outputs.version }}
             SCHEMA_VERSION=${{ steps.build-version.outputs.schema_revision }}
             PREVIOUS_SCHEMA_VERSION=${{ steps.build-version.outputs.previous_schema_revision }}
             TAMS_API_VERSION=${{ steps.build-version.outputs.tams_api }}
             OPERAND_VERSION=${{ steps.build-version.outputs.version }}
-          platforms: "linux/amd64,linux/arm64"
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha,scope=tamoss-operator
-          cache-to: type=gha,mode=max,scope=tamoss-operator
 
-      - name: Sign image with cosign (keyless)
-        if: env.PUSH_IMAGES == 'true'
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          for tag in ${TAGS}; do
-            cosign sign --yes "${tag}@${DIGEST}"
-          done
+  release-assets:
+    if: github.ref_type == 'tag'
+    needs:
+      - dependency-audit
+      - release-preflight
+      - release-tests
+      - release-operator-tests
+      - release-kind-e2e
+      - tamoss-api
+      - tamoss-ui
+      - tamoss-console-api
+      - tamoss-operator
+    uses: ./.github/workflows/operator-release.yaml
+    permissions:
+      contents: write
+    with:
+      api-digest: ${{ needs.tamoss-api.outputs.digest }}
+      ui-digest: ${{ needs.tamoss-ui.outputs.digest }}
+      console-api-digest: ${{ needs.tamoss-console-api.outputs.digest }}
+      operator-digest: ${{ needs.tamoss-operator.outputs.digest }}

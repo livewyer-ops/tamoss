@@ -144,6 +144,10 @@ or referenced Secrets rather than editing Deployments directly.
 
 For API runtime variable names, see `src/app/tamoss/settings.py`.
 
+`SERVICE_NAME` and `SERVICE_DESCRIPTION` are legacy startup defaults. Stored
+metadata written through `POST /service` takes precedence; there is no
+`TAMOSS_SERVICE_NAME` alias or `.spec.displayName` field in the current CRD.
+
 Runtime boolean, integer, duration-in-seconds, URL, and comma-separated list
 settings are parsed by the shared settings boundary. Unset values use the
 documented defaults, but invalid explicit values fail startup with the setting
@@ -161,10 +165,24 @@ that decision. Operator-managed API and worker workloads reserve
 `TAMOSS_METRICS_BIND_ADDRESS` and `TAMOSS_METRICS_PORT` because metrics and HTTP
 health probes depend on their rendered values.
 
+Queue leases are renewed while a claimed batch is processed, including queued
+items waiting for a webhook send slot. Queue saves reject stale claims.
+`TAMOSS_WORKER_QUEUE_RETENTION_SECONDS` controls terminal queue history, not
+media retention; unfinished deletion requests retain their child cleanup rows.
+
+`TAMOSS_WEBHOOK_TIMEOUT_SECONDS` bounds socket inactivity, not total elapsed
+delivery time. The sender does not read callback response bodies. Slow DNS or
+response headers can still prolong a poll, so size worker health thresholds for
+the deployment and monitor queue age alongside delivery outcomes.
+
 PostgreSQL URLs derived from `POSTGRES_HOST`, `POSTGRES_USER`,
 `POSTGRES_PASSWORD`, `POSTGRES_DB`, and `POSTGRES_PORT` percent-encode the user,
 password, and database components. Prefer these component variables when the
 operator owns database credentials.
+
+Changing values in a same-named database Secret does not update running pod
+environments. Follow the explicit API/worker rollout procedure in
+[Secret Rotation](../operations/secret-rotation.md).
 
 Forward-auth identity headers are only trusted when
 `TAMOSS_TRUST_FORWARD_AUTH_HEADERS=true` and the proxy sends

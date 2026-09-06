@@ -1,13 +1,14 @@
 name: Operator CI
 
 on:
+  workflow_call:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
   merge_group:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-operator-ci
   cancel-in-progress: true
 
 permissions:

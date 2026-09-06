@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"strings"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -59,6 +60,19 @@ func TestValidateStorageBackendTagsAcceptsTAMSValueUnion(t *testing.T) {
 
 	if err := ValidateStorageBackendTags(tags); err != nil {
 		t.Fatalf("expected scalar and array tag values to be valid: %v", err)
+	}
+}
+
+func TestValidateStorageBackendTagsReportsTheFirstInvalidKey(t *testing.T) {
+	tags := map[string]apiextensionsv1.JSON{
+		"z": {Raw: []byte("null")},
+		"a": {Raw: []byte("7")},
+	}
+	if err := ValidateStorageBackendTags(tags); err == nil || !strings.HasPrefix(err.Error(), `tag "a"`) {
+		t.Fatalf("expected the lexically first invalid tag, got %v", err)
+	}
+	if err := ValidateStorageBackendTags(nil); err != nil {
+		t.Fatalf("nil tags must remain valid: %v", err)
 	}
 }
 

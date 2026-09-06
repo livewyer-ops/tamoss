@@ -16,4 +16,5 @@ diagnosis for operator-led TAMOSS deployments.
   annotations.
 - [Secret Rotation](secret-rotation.md) - runtime secret classes and rotation.
 - [Troubleshooting](troubleshooting.md) - readiness and runtime diagnostics.
+- [Cutting Rooms](cutting-rooms.md) - 8.2 acceptance, webhook diagnosis and recovery.
 - [Upgrades](upgrades.md) - upgrade sequence, checks, and rollback.

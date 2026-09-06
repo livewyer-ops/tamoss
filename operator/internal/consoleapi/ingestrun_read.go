@@ -12,7 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -611,11 +612,7 @@ func projectTAMSFlowProfiles(assignments []tamossv1alpha1.IngestRunTAMSFlowProfi
 }
 
 func projectIngestOutputTags(tags map[string]apiextensionsv1.JSON) map[string]any {
-	keys := make([]string, 0, len(tags))
-	for key := range tags {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(tags))
 	result := make(map[string]any, min(len(keys), maxProjectedOutputTags))
 	for _, key := range keys[:min(len(keys), maxProjectedOutputTags)] {
 		var value any

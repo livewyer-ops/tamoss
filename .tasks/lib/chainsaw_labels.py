@@ -98,7 +98,8 @@ def _validate_native_operations(path: Path) -> list[str]:
     for line_number, line in enumerate(lines, start=1):
         if re.match(r"^\s*-\s+script:\s*$", line):
             failures.append(
-                f"{path}:{line_number}: use a native operation, proxy, or checked command instead of script"
+                f"{path}:{line_number}: use a native operation, proxy, "
+                "or checked command instead of script"
             )
 
     for line_number, entrypoint, args, checked in _command_blocks(lines):
@@ -109,11 +110,13 @@ def _validate_native_operations(path: Path) -> list[str]:
             )
         if not checked:
             failures.append(
-                f"{path}:{line_number}: external-boundary commands require an explicit check"
+                f"{path}:{line_number}: external-boundary commands "
+                "require an explicit check"
             )
         if executable == "kubectl" and not _allowed_kubectl_command(args):
             failures.append(
-                f"{path}:{line_number}: kubectl is limited to exec, logs, and operator environment configuration"
+                f"{path}:{line_number}: kubectl is limited to exec, logs, "
+                "and operator environment configuration"
             )
     return failures
 
@@ -127,7 +130,8 @@ def _validate_no_shell_resources(root: Path) -> list[str]:
         ):
             if shell_item.match(line):
                 failures.append(
-                    f"{path}:{line_number}: shell entrypoints are not allowed in Chainsaw resources"
+                    f"{path}:{line_number}: shell entrypoints are not allowed "
+                    "in Chainsaw resources"
                 )
     return failures
 

@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from typing import Literal
 from uuid import UUID
 
 from tamoss.application import webhooks as webhooking
 from tamoss.application.contexts.flows import validate_content_format_filter
-from tamoss.domain.flow_collections import (
-    collection_child_id,
-    collection_role,
-    flow_collection,
-)
 from tamoss.domain.listings import SourceSortBy
 from tamoss.domain.model import SourceRecord, SourceRelationships, utc_now
 from tamoss.domain.pagination import Page
@@ -72,44 +68,9 @@ class SourceUseCases:
         return source
 
     def source_relationships(
-        self, source_ids: Iterable[UUID] | None = None
+        self, source_ids: Iterable[UUID]
     ) -> dict[UUID, SourceRelationships]:
-        if source_ids is not None:
-            return self.repository.source_relationships_for(source_ids)
-
-        relationships: dict[UUID, SourceRelationships] = {}
-
-        def relationship_for(source_id: UUID) -> SourceRelationships:
-            return relationships.setdefault(source_id, SourceRelationships([], []))
-
-        flows_by_id = {flow.id: flow for flow in self.repository.list_flows()}
-        for parent_flow in flows_by_id.values():
-            if parent_flow.source_id is None:
-                continue
-            collection = flow_collection(parent_flow)
-            if not collection:
-                continue
-
-            parent_relationship = relationship_for(parent_flow.source_id)
-            for item in collection:
-                child_flow_id = collection_child_id(item)
-                if child_flow_id is None:
-                    continue
-                child_flow = flows_by_id.get(child_flow_id)
-                if child_flow is None or child_flow.source_id is None:
-                    continue
-                role = collection_role(item)
-                source_item = {"id": str(child_flow.source_id)}
-                if role is not None:
-                    source_item["role"] = role
-                if source_item not in parent_relationship.source_collection:
-                    parent_relationship.source_collection.append(source_item)
-
-                child_relationship = relationship_for(child_flow.source_id)
-                if parent_flow.source_id not in child_relationship.collected_by:
-                    child_relationship.collected_by.append(parent_flow.source_id)
-
-        return relationships
+        return self.repository.source_relationships_for(source_ids)
 
     def get_source_property(
         self, source_id: UUID, property_name: SourcePropertyName
@@ -129,26 +90,29 @@ class SourceUseCases:
     ) -> None:
         if not isinstance(value, str):
             raise BadRequest("Bad request. Invalid Source property value.")
-        source = self.get_source(source_id)
-        setattr(source, property_name, value)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            setattr(source, property_name, value)
 
     def delete_source_property(
         self, source_id: UUID, property_name: SourcePropertyName
     ) -> None:
-        source = self.get_source(source_id)
-        setattr(source, property_name, None)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            setattr(source, property_name, None)
 
-    def _save_and_publish(self, source: SourceRecord) -> None:
-        source.metadata_updated = utc_now()
-        self.repository.save_source(source)
-        webhooking.publish_source_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="sources/updated",
-            source=source,
-        )
+    @contextmanager
+    def _edit_source(self, source_id: UUID) -> Iterator[SourceRecord]:
+        with self.repository.unit_of_work():
+            self.repository.lock_source(source_id)
+            source = self.get_source(source_id)
+            yield source
+            source.metadata_updated = utc_now()
+            self.repository.save_source(source)
+            webhooking.publish_source_event(
+                repository=self.webhook_repository,
+                resource_repository=self.repository,
+                event_type="sources/updated",
+                source=source,
+            )
 
     def get_source_tags(self, source_id: UUID) -> dict[str, TagValue]:
         return self.get_source(source_id).tags
@@ -162,11 +126,9 @@ class SourceUseCases:
     def set_source_tag(self, source_id: UUID, name: str, value: TagValue) -> None:
         if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Source tag value.")
-        source = self.get_source(source_id)
-        source.tags[name] = value
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            source.tags[name] = value
 
     def delete_source_tag(self, source_id: UUID, name: str) -> None:
-        source = self.get_source(source_id)
-        source.tags.pop(name, None)
-        self._save_and_publish(source)
+        with self._edit_source(source_id) as source:
+            source.tags.pop(name, None)

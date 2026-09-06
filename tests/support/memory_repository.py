@@ -13,6 +13,7 @@ from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
 from tamoss.domain import flow_collections
 from tamoss.domain import segments as segment_domain
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE, SegmentOverlapError
+from tamoss.domain.listing_pagination import page_listing_sequence
 from tamoss.domain.listings import (
     DeleteRequestSortBy,
     FlowSortBy,
@@ -40,13 +41,7 @@ from tamoss.domain.pagination import Page, page_sequence
 from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
 from tamoss.domain.tags import tags_match
 from tamoss.errors import normalize_error_payload
-
-WorkerRecord = (
-    WebhookDeliveryRecord
-    | DeletionRequestRecord
-    | ObjectCleanupRecord
-    | ObjectCopyRecord
-)
+from tamoss.worker_claims import WorkerClaimLost, WorkerRecord, active_worker_claims
 
 
 class FakeTamossRepository:
@@ -145,6 +140,9 @@ class FakeTamossRepository:
                 raise
 
     def lock_flow_segments(self, flow_id: UUID) -> None:
+        return None
+
+    def lock_source(self, source_id: UUID) -> None:
         return None
 
     def lock_profile(self, profile_id: UUID) -> None:
@@ -248,10 +246,6 @@ class FakeTamossRepository:
                 if storage_id == backend.id:
                     return backend
             return None
-
-    def list_flows(self) -> list[FlowRecord]:
-        with self._lock:
-            return list(self._flows.values())
 
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
         with self._lock:
@@ -382,7 +376,16 @@ class FakeTamossRepository:
             descending=sort_by.descending(reverse_order=reverse_order),
             missing_first=reverse_order,
         )
-        return page_sequence(flows, page=page, limit=limit)
+        return page_listing_sequence(
+            flows,
+            page=page,
+            limit=limit,
+            resource="flows",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=flow_sort_value,
+            identity=lambda flow: flow.id,
+        )
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
@@ -474,7 +477,16 @@ class FakeTamossRepository:
             descending=sort_by.descending(reverse_order=reverse_order),
             missing_first=reverse_order,
         )
-        return page_sequence(sources, page=page, limit=limit)
+        return page_listing_sequence(
+            sources,
+            page=page,
+            limit=limit,
+            resource="sources",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+            value=source_sort_value,
+            identity=lambda source: source.id,
+        )
 
     def source_relationships_for(
         self, source_ids: Iterable[UUID]
@@ -551,6 +563,17 @@ class FakeTamossRepository:
                     if purged >= limit:
                         return purged
                     record = store[key]
+                    if (
+                        isinstance(record, ObjectCleanupRecord)
+                        and record.delete_request_id in self._delete_requests
+                    ):
+                        continue
+                    if isinstance(record, DeletionRequestRecord) and any(
+                        cleanup.delete_request_id == record.id
+                        and cleanup.status != "done"
+                        for cleanup in self._object_cleanups.values()
+                    ):
+                        continue
                     updated = getattr(record, "updated", None)
                     if (
                         record.status in statuses
@@ -834,16 +857,16 @@ class FakeTamossRepository:
 
     def list_webhook_deliveries(self) -> list[WebhookDeliveryRecord]:
         with self._lock:
-            return list(self._webhook_deliveries.values())
+            return deepcopy(list(self._webhook_deliveries.values()))
 
     def get_webhook_delivery(self, delivery_id: UUID) -> WebhookDeliveryRecord | None:
         with self._lock:
-            return self._webhook_deliveries.get(delivery_id)
+            return deepcopy(self._webhook_deliveries.get(delivery_id))
 
     def save_webhook_delivery(self, delivery: WebhookDeliveryRecord) -> None:
         with self._lock:
             delivery.error = DomainErrorPayload.from_json_dict(delivery.error)
-            self._webhook_deliveries[delivery.id] = delivery
+            self._save_worker_record(delivery, self._webhook_deliveries)
 
     def claim_webhook_deliveries(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -859,7 +882,7 @@ class FakeTamossRepository:
 
     def list_delete_requests(self) -> list[DeletionRequestRecord]:
         with self._lock:
-            return list(self._delete_requests.values())
+            return deepcopy(list(self._delete_requests.values()))
 
     def list_delete_requests_page(
         self,
@@ -871,7 +894,7 @@ class FakeTamossRepository:
         limit: int | None,
     ) -> Page[DeletionRequestRecord]:
         with self._lock:
-            requests = list(self._delete_requests.values())
+            requests = deepcopy(list(self._delete_requests.values()))
         value = {
             DeleteRequestSortBy.CREATED: lambda request: request.created,
             DeleteRequestSortBy.EXPIRY: lambda request: (
@@ -891,12 +914,12 @@ class FakeTamossRepository:
 
     def get_delete_request(self, request_id: UUID) -> DeletionRequestRecord | None:
         with self._lock:
-            return self._delete_requests.get(request_id)
+            return deepcopy(self._delete_requests.get(request_id))
 
     def save_delete_request(self, request: DeletionRequestRecord) -> None:
         with self._lock:
             request.error = DomainErrorPayload.from_json_dict(request.error)
-            self._delete_requests[request.id] = request
+            self._save_worker_record(request, self._delete_requests)
 
     def claim_delete_requests(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -917,7 +940,7 @@ class FakeTamossRepository:
         statuses: set[str] | None = None,
     ) -> list[ObjectCleanupRecord]:
         with self._lock:
-            cleanups = list(self._object_cleanups.values())
+            cleanups = deepcopy(list(self._object_cleanups.values()))
         if delete_request_id is not None:
             cleanups = [
                 cleanup
@@ -932,7 +955,7 @@ class FakeTamossRepository:
     def save_object_cleanup(self, cleanup: ObjectCleanupRecord) -> None:
         with self._lock:
             cleanup.error = DomainErrorPayload.from_json_dict(cleanup.error)
-            self._object_cleanups[cleanup.id] = cleanup
+            self._save_worker_record(cleanup, self._object_cleanups)
 
     def claim_object_cleanups(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -951,7 +974,7 @@ class FakeTamossRepository:
         self, *, statuses: set[str] | None = None
     ) -> list[ObjectCopyRecord]:
         with self._lock:
-            copies = list(self._object_copies.values())
+            copies = deepcopy(list(self._object_copies.values()))
         if statuses is not None:
             copies = [copy for copy in copies if copy.status in statuses]
         copies.sort(key=lambda copy: (copy.created, str(copy.id)))
@@ -960,7 +983,7 @@ class FakeTamossRepository:
     def save_object_copy(self, copy: ObjectCopyRecord) -> None:
         with self._lock:
             copy.error = DomainErrorPayload.from_json_dict(copy.error)
-            self._object_copies[copy.id] = copy
+            self._save_worker_record(copy, self._object_copies)
 
     def claim_object_copies(
         self, *, worker_id: str, limit: int, lease_seconds: int
@@ -973,6 +996,56 @@ class FakeTamossRepository:
                 limit=limit,
                 lease_seconds=lease_seconds,
             )
+
+    def _worker_store(self, record: WorkerRecord) -> dict:
+        return {
+            WebhookDeliveryRecord: self._webhook_deliveries,
+            DeletionRequestRecord: self._delete_requests,
+            ObjectCleanupRecord: self._object_cleanups,
+            ObjectCopyRecord: self._object_copies,
+        }[type(record)]
+
+    def renew_worker_claim(self, record: WorkerRecord, lease_seconds: int) -> bool:
+        with self._lock:
+            current = self._worker_store(record).get(record.id)
+            if not self._owns_claim(record, current):
+                return False
+            current.claim_expires_at = utc_now() + timedelta(seconds=lease_seconds)
+            return True
+
+    @staticmethod
+    def _owns_claim(record: WorkerRecord, current: WorkerRecord | None) -> bool:
+        return bool(
+            current is not None
+            and record.claim_token is not None
+            and current.claimed_at == record.claim_token
+            and current.claim_expires_at is not None
+            and current.claim_expires_at > utc_now()
+        )
+
+    def _save_worker_record(self, record: WorkerRecord, store: dict) -> None:
+        active = active_worker_claims.get() or {}
+        if (
+            isinstance(record, ObjectCleanupRecord)
+            and record.delete_request_id in active
+        ):
+            parent = active[record.delete_request_id]
+            if not self._owns_claim(parent, self._delete_requests.get(parent.id)):
+                raise WorkerClaimLost(str(parent.id))
+        claim = active.get(record.id, record)
+        current = store.get(record.id)
+        if claim.claim_token is not None:
+            if not self._owns_claim(claim, current):
+                raise WorkerClaimLost(str(record.id))
+        elif current is not None and current.claimed_at is not None:
+            raise WorkerClaimLost(str(record.id))
+        saved = deepcopy(record)
+        if saved.claimed_at is not None and current is not None:
+            saved.claim_expires_at = max(
+                current.claim_expires_at, saved.claim_expires_at
+            )
+        saved.claim_token = saved.claimed_at
+        store[record.id] = saved
 
 
 def _claim_worker_records[WorkerRecordT: WorkerRecord](
@@ -1001,10 +1074,11 @@ def _claim_worker_records[WorkerRecordT: WorkerRecord](
             continue
         record.status = "started"
         record.claimed_at = now
+        record.claim_token = now
         record.claimed_by = worker_id
         record.claim_expires_at = lease_expires
         record.updated = now
-        claimed.append(record)
+        claimed.append(deepcopy(record))
     return claimed
 
 

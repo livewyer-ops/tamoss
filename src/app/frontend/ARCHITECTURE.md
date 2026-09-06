@@ -64,9 +64,9 @@ full set.
 
 ## Catalogs
 
-Sources and Flows keep one response page in component state and a bounded trail of previous cursors, deep enough to reverse a whole hand-driven traversal. The supported TAMS 8.1 exact filters are reflected in the URL. The UI must not download every page to implement search, sorting, or totals.
+Sources, Flows and Profiles retain one response page and a bounded history of opaque cursors. Catalogue filters are reflected in the page URL and use the TAMS 8.2 contract. Empty query values are preserved by the API client because `collected_by_ids=` and `accept_get_urls=` differ from omission; unset UI fields pass `undefined` explicitly.
 
-Full-text search, arbitrary sorting, totals, reverse traversal, saved views, and query-wide bulk actions require a versioned server API. Do not simulate them over a partial client-side result set.
+TAMS 8.2 supports endpoint-specific sorting and reverse listing order; previous-page navigation also uses the saved cursor history. Full-text search, arbitrary sorting, totals, saved views and query-wide bulk actions need server support. Do not simulate them by downloading every page or operating over a partial client-side result set.
 
 ## Runtime stream
 

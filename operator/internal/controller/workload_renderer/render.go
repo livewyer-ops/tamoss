@@ -2,8 +2,8 @@ package workload_renderer
 
 import (
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,10 +108,5 @@ func consoleImage(repository, tag string) string {
 }
 
 func sortedEnv(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(env))
 }

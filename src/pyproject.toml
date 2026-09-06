@@ -41,10 +41,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "pytest-mock>=3.11.0",
     "httpx>=0.24.0",
-    "polyfactory>=2.14.0",
-    "faker>=40.36.0",
     "ruff==0.16.5",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
@@ -53,7 +50,7 @@ dev = [
     "types-PyYAML",
     "playwright>=1.62.0",
     "datamodel-code-generator[ruff]>=0.72.4",
-    "httpx2>=2.9.1",
+    "httpx2>=2.9.1",  # Imported dynamically by Starlette's TestClient.
 ]
 
 [tool.setuptools]

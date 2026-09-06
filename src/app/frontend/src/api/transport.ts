@@ -105,9 +105,7 @@ export class ApiTransport {
       const encodedValue = Array.isArray(value)
         ? value.map(String).join(",")
         : String(value);
-      if (encodedValue.length > 0) {
-        url.searchParams.set(key, encodedValue);
-      }
+      url.searchParams.set(key, encodedValue);
     }
   }
 

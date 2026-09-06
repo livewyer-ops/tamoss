@@ -23,6 +23,7 @@ from tamoss.domain.segments import SegmentTimerangeBounds, timerange_union
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
+from tests.tams.support import video_flow_payload
 
 pytestmark = pytest.mark.architecture
 
@@ -259,6 +260,26 @@ def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
     assert repository.list_flows_calls == 0
     assert repository.get_flow_calls == 2
     assert repository.flow_timeranges_requests == [[parent_id, child_id]]
+
+
+def test_flow_listing_reuses_loaded_records_for_timeranges() -> None:
+    repository = CountingRepository(_storage_backend())
+    for _ in range(50):
+        flow = _flow(uuid4())
+        flow.data.update(video_flow_payload(flow.id, flow.source_id))
+        repository.save_flow(flow)
+        repository.append_segment(
+            SegmentRecord(flow_id=flow.id, object_id="media", timerange="[0:1_1:2)")
+        )
+    cases = _use_cases(repository, object_storage=InMemoryObjectStorage())
+    repository.reset_counts()
+    with TestClient(create_app(_settings(), use_cases=cases)) as client:
+        response = client.get("/flows", params={"limit": 50, "include_timerange": True})
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 50
+    assert {item["timerange"] for item in response.json()} == {"[0:1_1:2)"}
+    assert repository.get_flow_calls == 0
+    assert len(repository.flow_timeranges_requests) == 1
 
 
 class CountingRepository:

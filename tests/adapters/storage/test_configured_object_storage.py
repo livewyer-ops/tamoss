@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from urllib.parse import unquote, urlparse
 from uuid import UUID, uuid4
 
@@ -105,3 +106,40 @@ def test_s3_write_read_and_delete_are_scoped_to_configured_backend(
 
     object_storage.delete(object_id, backend=s3_backend)
     assert object_storage.read(object_id, backend=s3_backend) is None
+
+
+def test_managed_multipart_copy_preserves_bytes_and_metadata(
+    object_storage, s3_backend
+):
+    destination = replace(
+        s3_backend, id=uuid4(), bucket_name=f"tamoss-copy-{uuid4().hex[:12]}"
+    )
+    ensure_bucket(destination)
+    body = bytes(range(256)) * (64 * 1024)
+    object_id = "media/large.ts"
+    source_client = s3_client(s3_backend)
+    source_client.put_object(
+        Bucket=s3_backend.bucket_name,
+        Key=object_id,
+        Body=body,
+        ContentType="video/mp2t",
+        Metadata={"origin": "source"},
+    )
+    parts = []
+    destination_client = object_storage._s3_client(destination)
+    destination_client.meta.events.register(
+        "before-call.s3.UploadPartCopy", lambda **kwargs: parts.append(kwargs)
+    )
+    try:
+        object_storage.copy(
+            object_id, source_backend=s3_backend, destination_backend=destination
+        )
+        assert len(parts) >= 2
+        assert object_storage.read(object_id, backend=destination) == body
+        metadata = destination_client.head_object(
+            Bucket=destination.bucket_name, Key=object_id
+        )
+        assert metadata["ContentType"] == "video/mp2t"
+        assert metadata["Metadata"] == {"origin": "source"}
+    finally:
+        empty_and_delete_bucket(destination)

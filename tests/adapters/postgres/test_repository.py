@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from psycopg import sql
 from tamoss.adapters.postgres import PostgresRepository
 from tamoss.domain.exceptions import SegmentOverlapError
 from tamoss.domain.listings import DeleteRequestSortBy, FlowSortBy, SourceSortBy
@@ -875,20 +876,19 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
         {"id": str(child_flow_id)},
         {"id": str(audio_flow_id), "role": "audio"},
     ]
-    relationships = use_cases.sources.source_relationships()
+    relationships = use_cases.sources.source_relationships(
+        [parent_source_id, child_source_id, audio_source_id]
+    )
     assert relationships[parent_source_id].source_collection == [
         {"id": str(child_source_id)},
         {"id": str(audio_source_id), "role": "audio"},
     ]
     assert relationships[child_source_id].collected_by == [parent_source_id]
     assert relationships[audio_source_id].collected_by == [parent_source_id]
-    scoped_relationships = use_cases.sources.source_relationships(
-        [parent_source_id, child_source_id, audio_source_id]
-    )
-    assert scoped_relationships[parent_source_id].source_collection == [
-        {"id": str(child_source_id)},
-        {"id": str(audio_source_id), "role": "audio"},
-    ]
+    assert use_cases.sources.source_relationships([parent_source_id]) == {
+        parent_source_id: relationships[parent_source_id]
+    }
+    assert use_cases.sources.source_relationships([]) == {}
     assert use_cases.flows.get_flow(child_flow_id, include_collected_by=True).data[
         "collected_by"
     ] == [str(parent_flow_id)]
@@ -1064,6 +1064,7 @@ def test_repository_rejects_open_or_empty_segment_timeranges(
 
 def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
     postgres_repo: PostgresRepository,
+    postgres_connection: psycopg.Connection,
 ) -> None:
     now = datetime.now(UTC)
     flow_id = uuid4()
@@ -1212,38 +1213,18 @@ def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
     )
 
     expired_at = datetime.now(UTC) - timedelta(seconds=1)
-    postgres_repo.webhook_repository.save_webhook_delivery(
-        replace(
-            claimed_delivery,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
+    for table in (
+        "tamoss_webhook_deliveries",
+        "tamoss_delete_requests",
+        "tamoss_object_cleanups",
+        "tamoss_object_copies",
+    ):
+        postgres_connection.execute(
+            sql.SQL("UPDATE {} SET claim_expires_at = %s").format(
+                sql.Identifier(table)
+            ),
+            (expired_at,),
         )
-    )
-    postgres_repo.deletion_repository.save_delete_request(
-        replace(
-            claimed_delete,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
-    postgres_repo.deletion_repository.save_object_cleanup(
-        replace(
-            claimed_cleanup,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
-    postgres_repo.object_repository.save_object_copy(
-        replace(
-            claimed_copy,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
 
     reclaimed_delivery = postgres_repo.webhook_repository.claim_webhook_deliveries(
         worker_id="worker-b",

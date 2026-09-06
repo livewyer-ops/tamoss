@@ -7,7 +7,6 @@ import {
   formatFrameRate,
   formatResolution,
   formatTimerange,
-  truncateId,
 } from "@/utils/format";
 
 describe("formatTimerange", () => {
@@ -102,16 +101,5 @@ describe("formatFrameRate", () => {
     expect(formatFrameRate({ numerator: 30000, denominator: 1001 })).toBe(
       "29.97 fps",
     );
-  });
-});
-
-describe("truncateId", () => {
-  it("returns short strings as-is", () => {
-    expect(truncateId("abc", 8)).toBe("abc");
-  });
-
-  it("truncates long strings", () => {
-    const uuid = "12345678-1234-1234-1234-123456789012";
-    expect(truncateId(uuid, 8)).toBe("12345678...");
   });
 });
