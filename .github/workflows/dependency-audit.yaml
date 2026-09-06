@@ -15,17 +15,7 @@ name: Dependency Audit
 
 on:
   workflow_call:
-    inputs:
-      strict:
-        description: Also fail on the known backlog, not just the enforcing checks.
-        type: boolean
-        default: false
   workflow_dispatch:
-    inputs:
-      strict:
-        description: Also fail on the known backlog, not just the enforcing checks.
-        type: boolean
-        default: false
   schedule:
     - cron: "17 3 * * *"
 
@@ -85,12 +75,9 @@ jobs:
       # The checks live in .tasks/security.yaml so this job and a developer's
       # `task security:audit` cannot report different things.
       - name: Audit dependencies
-        run: task security:audit ${{ inputs.strict && 'STRICT=1' || '' }}
+        run: task security:audit
 
-      # Backlog findings do not fail the build, so Code Scanning is where they
-      # are actually tracked — as individual alerts with history, rather than
-      # one binary pass/fail nobody can triage. Requires the repository
-      # variable ENABLE_CODE_SCANNING_UPLOAD to be set to 'true'.
+      # Retain individual advisory history even when the audit fails.
       - name: Upload OSV-Scanner SARIF to Code Scanning
         if: always() && vars.ENABLE_CODE_SCANNING_UPLOAD == 'true'
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9

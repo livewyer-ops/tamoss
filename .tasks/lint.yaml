@@ -66,7 +66,7 @@ tasks:
   shell:
     silent: true
     cmds:
-      - bash -n .tasks/lib/*.sh
+      - for helper in .tasks/lib/*.sh; do bash -n "$helper" || exit; done
 
   actions:
     desc: Lint GitHub Actions workflows

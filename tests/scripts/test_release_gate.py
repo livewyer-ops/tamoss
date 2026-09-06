@@ -40,8 +40,14 @@ def test_release_publication_requires_every_image_and_tag_validation() -> None:
     assert jobs["release-assets"]["if"] == "github.ref_type == 'tag'"
     for job in images:
         assert jobs[job]["outputs"]["digest"] == "${{ steps.build.outputs.digest }}"
-        assert "release-preflight" in jobs[job]["needs"]
-        assert "needs.dependency-audit.result == 'success'" in jobs[job]["if"]
+        assert set(jobs[job]["needs"]) == gates
+        condition = " ".join(jobs[job]["if"].split())
+        successes = " && ".join(
+            f"needs.{gate}.result == 'success'" for gate in jobs[job]["needs"]
+        )
+        assert condition == (
+            "${{ !cancelled() && (github.ref_type != 'tag' || (" + successes + ")) }}"
+        )
     for filename in ("test.yaml", "operator-ci.yaml"):
         workflow = yaml.safe_load((workflows / filename).read_text())
         assert "workflow_call" in workflow[True]
@@ -49,6 +55,40 @@ def test_release_publication_requires_every_image_and_tag_validation() -> None:
     assert (
         build["concurrency"]["cancel-in-progress"] == "${{ github.ref_type != 'tag' }}"
     )
+
+
+@pytest.mark.parametrize("status", [0, 1, 2, 127])
+@pytest.mark.parametrize("task", ["audit:frontend", "audit:frontend:dev", "audit:osv"])
+def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
+    tasks = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"]
+    command = tasks[task]["cmds"][-1]
+    result = subprocess.run(
+        [
+            "bash",
+            "-eu",
+            "-o",
+            "pipefail",
+            "-c",
+            'npm() { return "$SCANNER_STATUS"; }\n'
+            'osv-scanner() { return "$SCANNER_STATUS"; }\n' + command,
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "SCANNER_STATUS": str(status)},
+        check=False,
+    )
+    assert result.returncode == status
+
+
+def test_shell_lint_checks_later_helpers(tmp_path) -> None:
+    helpers = tmp_path / ".tasks/lib"
+    helpers.mkdir(parents=True)
+    (helpers / "a.sh").write_text("true\n")
+    (helpers / "z.sh").write_text("if\n")
+    command = yaml.safe_load((REPO_ROOT / ".tasks/lint.yaml").read_text())["tasks"][
+        "shell"
+    ]["cmds"][0]
+    result = subprocess.run(["bash", "-c", command], cwd=tmp_path, check=False)
+    assert result.returncode != 0
 
 
 def test_image_builds_share_steps_without_changing_signing_jobs(image_action) -> None:
