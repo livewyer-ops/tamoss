@@ -4,6 +4,7 @@ import io
 import json
 import os
 from dataclasses import replace
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
@@ -363,8 +364,9 @@ def test_delete_batch_deduplicates_and_chunks_s3_requests(monkeypatch) -> None:
     calls: list[dict] = []
 
     class FakeS3Client:
-        def delete_objects(self, **kwargs) -> None:
+        def delete_objects(self, **kwargs) -> dict:
             calls.append(kwargs)
+            return {}
 
     monkeypatch.setattr(
         "tamoss.adapters.object_storage.boto3.client",
@@ -392,7 +394,8 @@ def test_copy_uses_server_side_copy_for_backends_on_same_endpoint(monkeypatch) -
     calls: list[dict] = []
 
     class FakeS3Client:
-        def copy_object(self, **kwargs) -> None:
+        def copy(self, **kwargs) -> None:
+            assert isinstance(kwargs.pop("SourceClient"), FakeS3Client)
             calls.append(kwargs)
 
     monkeypatch.setattr(
@@ -427,7 +430,7 @@ def test_copy_uses_server_side_copy_for_backends_on_same_endpoint(monkeypatch) -
                 "Bucket": "tamoss-test",
                 "Key": "media/object.ts",
             },
-            "MetadataDirective": "COPY",
+            "ExtraArgs": {"MetadataDirective": "COPY"},
         }
     ]
 
@@ -436,7 +439,7 @@ def test_copy_raises_same_endpoint_copy_errors(monkeypatch) -> None:
     get_object_called = False
 
     class FakeS3Client:
-        def copy_object(self, **kwargs) -> None:
+        def copy(self, **kwargs) -> None:
             raise ClientError(
                 {
                     "Error": {
@@ -478,6 +481,24 @@ def test_copy_raises_same_endpoint_copy_errors(monkeypatch) -> None:
         )
 
     assert get_object_called is False
+
+
+@pytest.mark.parametrize("deleted", [[], [{"Key": "first"}]])
+def test_partial_batch_deletion_fails_and_can_be_retried(monkeypatch, deleted) -> None:
+    client = Mock()
+    client.delete_objects.side_effect = [
+        {"Deleted": deleted, "Errors": [{"Key": "second", "Code": "AccessDenied"}]},
+        {"Deleted": [{"Key": "first"}, {"Key": "second"}]},
+    ]
+    backend = _s3_backend()
+    storage = ConfiguredObjectStorage(
+        Settings(auth_required=False, storage_backend=_settings_backend(backend))
+    )
+    monkeypatch.setattr(storage, "_s3_client", lambda _: client)
+    with pytest.raises(RuntimeError, match="incomplete"):
+        storage.delete_batch(["first", "second"], backend=backend)
+    storage.delete_batch(["first", "second"], backend=backend)
+    assert client.delete_objects.call_count == 2
 
 
 def test_copy_streams_between_different_s3_endpoints(monkeypatch) -> None:
