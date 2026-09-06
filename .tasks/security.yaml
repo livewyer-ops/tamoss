@@ -9,8 +9,8 @@ set: [errexit, nounset, pipefail]
 # tasks rather than repeating the commands in workflow YAML, so a local
 # `task security:audit` and a CI run cannot report different things.
 #
-# Findings and scanner failures are fatal. Listing an advisory in
-# KNOWNISSUES.md does not exempt it from the release gate.
+# Scanner failures and findings outside the advisory-specific approvals in
+# each ecosystem's osv-scanner.toml are fatal.
 
 tasks:
   audit:
@@ -18,7 +18,7 @@ tasks:
     cmds:
       - |
         status=0
-        for check in python frontend frontend:signatures frontend:dev osv; do
+        for check in python frontend:signatures osv; do
           task "security:audit:$check" || status=1
         done
         exit "$status"
@@ -35,13 +35,15 @@ tasks:
       - uv run --project src --with pip-audit pip-audit -s osv --no-deps -r reports/requirements-audit.txt
 
   audit:frontend:
-    desc: Audit frontend runtime dependencies
+    desc: Audit frontend runtime and build dependencies
     dir: src/app/frontend
     preconditions:
-      - sh: command -v npm
-        msg: "npm not found"
+      - sh: command -v osv-scanner
+        msg: "osv-scanner is required; run aqua install"
+    # The full audit already scans this lockfile through audit:osv. Keep this
+    # focused entry point on the same advisory policy, including dev packages.
     cmds:
-      - npm audit --omit=dev
+      - osv-scanner --lockfile=package-lock.json
 
   audit:frontend:signatures:
     desc: Verify frontend packages against registry signatures and provenance
@@ -58,33 +60,35 @@ tasks:
       - npm audit signatures
 
   audit:frontend:dev:
-    desc: Audit frontend dev and build dependencies
-    dir: src/app/frontend
-    preconditions:
-      - sh: command -v npm
-        msg: "npm not found"
-    # Build-time packages are where the npm supply-chain compromises of recent
-    # years actually landed: they execute on the build machine with registry
-    # and CI credentials in scope. Excluding them from the audit, as the
-    # production-scope check above must, leaves the more exposed half unwatched.
+    desc: Audit frontend runtime and build dependencies
     cmds:
-      - npm audit
+      - task: audit:frontend
 
   audit:osv:
     desc: Scan every ecosystem for known vulnerabilities via OSV
     preconditions:
       - sh: command -v osv-scanner
         msg: "osv-scanner is required; run aqua install"
-    # The only check covering operator/go.mod — npm audit and pip-audit are
-    # blind to the Go module, so anything it reports there is reported nowhere
-    # else. Go call analysis is deliberately disabled: this is a deterministic
-    # lockfile audit and must not depend on whichever Go toolchain happens to be
-    # installed on the developer machine or runner. Writes SARIF for CI to
-    # upload, and re-runs as a table on failure because SARIF alone tells a
-    # human at a terminal nothing.
+    # Covers Go and all npm dependencies, including build tools. Broad Go call
+    # analysis stays disabled; only the approved OpenPGP exclusion has an
+    # import guard, matching the Linux container build architectures.
     cmds:
       - mkdir -p reports
       - |
+        guard_status=0
+        for arch in amd64 arm64; do
+          if ! packages="$(cd operator && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go list -mod=readonly -deps -test ./...)" || [ -z "$packages" ]; then
+            printf 'OpenPGP exclusion check failed for linux/%s.\n' "$arch" >&2
+            guard_status=1
+            continue
+          fi
+          match_status=0
+          printf '%s\n' "$packages" | grep -E '^golang[.]org/x/crypto/openpgp(/|$)' || match_status=$?
+          if [ "$match_status" -ne 1 ]; then
+            printf 'GO-2026-5932 exclusion is invalid for linux/%s: OpenPGP import or failed import check.\n' "$arch" >&2
+            guard_status=1
+          fi
+        done
         set -- --recursive --no-call-analysis=go --experimental-exclude=src/vendor/bbc-tams/examples
         status=0
         osv-scanner "$@" --format=sarif --output-file=reports/osv-scanner.sarif ./ || status=$?
@@ -92,3 +96,4 @@ tasks:
           osv-scanner "$@" ./ || true
           exit "$status"
         fi
+        exit "$guard_status"

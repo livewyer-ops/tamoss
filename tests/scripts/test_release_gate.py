@@ -9,6 +9,7 @@ import sys
 from unittest.mock import Mock
 
 import pytest
+import tomllib
 import yaml
 
 from tests.support.paths import REPO_ROOT, load_python_module
@@ -58,10 +59,13 @@ def test_release_publication_requires_every_image_and_tag_validation() -> None:
 
 
 @pytest.mark.parametrize("status", [0, 1, 2, 127])
-@pytest.mark.parametrize("task", ["audit:frontend", "audit:frontend:dev", "audit:osv"])
+@pytest.mark.parametrize(
+    "task", ["audit:frontend", "audit:frontend:signatures", "audit:osv"]
+)
 def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
     tasks = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"]
     command = tasks[task]["cmds"][-1]
+    (tmp_path / "operator").mkdir()
     result = subprocess.run(
         [
             "bash",
@@ -70,6 +74,7 @@ def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
             "pipefail",
             "-c",
             'npm() { return "$SCANNER_STATUS"; }\n'
+            'go() { printf "example.org/safe\\n"; }\n'
             'osv-scanner() { return "$SCANNER_STATUS"; }\n' + command,
         ],
         cwd=tmp_path,
@@ -81,11 +86,11 @@ def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
 
 @pytest.mark.parametrize(
     "failed_check",
-    [None, "python", "frontend", "frontend:signatures", "frontend:dev", "osv"],
+    [None, "python", "frontend:signatures", "osv"],
 )
 def test_dependency_audit_finishes_every_check(tmp_path, failed_check) -> None:
     taskfile = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())
-    checks = {name for name in taskfile["tasks"] if name != "audit"}
+    checks = {"audit:python", "audit:frontend:signatures", "audit:osv"}
     for name in checks:
         status = 1 if name == f"audit:{failed_check}" else 0
         taskfile["tasks"][name] = {"cmds": [f"touch '{name}'; exit {status}"]}
@@ -102,6 +107,83 @@ def test_dependency_audit_finishes_every_check(tmp_path, failed_check) -> None:
     )
     assert (result.returncode != 0) == (failed_check is not None)
     assert {path.name for path in tmp_path.glob("audit:*")} == checks
+
+
+@pytest.mark.parametrize("arch", ["amd64", "arm64"])
+@pytest.mark.parametrize(
+    ("package", "go_status", "expected_status"),
+    [
+        ("golang.org/x/crypto/blake2b", 0, 0),
+        ("golang.org/x/crypto/openpgp", 0, 1),
+        ("golang.org/x/crypto/openpgp/packet", 0, 1),
+        ("", 0, 1),
+        ("example.org/safe", 2, 1),
+    ],
+)
+def test_openpgp_exclusion_fails_closed_and_still_scans(
+    tmp_path, arch, package, go_status, expected_status
+) -> None:
+    command = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"][
+        "audit:osv"
+    ]["cmds"][-1]
+    (tmp_path / "operator").mkdir()
+    result = subprocess.run(
+        [
+            "bash",
+            "-eu",
+            "-o",
+            "pipefail",
+            "-c",
+            "go() {\n"
+            '  printf "%s\\n" "$CGO_ENABLED $GOOS $GOARCH $*" >> "$GO_LOG"\n'
+            '  if [ "$GOARCH" = "$TEST_ARCH" ]; then\n'
+            '    printf "%s\\n" "$TEST_PACKAGE"\n'
+            '    if [ "$TEST_PACKAGE" = "golang.org/x/crypto/openpgp" ]; then\n'
+            '      printf "example.org/safe\\n%.0s" {1..10000}\n'
+            "    fi\n"
+            '    return "$GO_STATUS"\n'
+            "  fi\n"
+            '  printf "example.org/safe\\n"\n'
+            "}\n"
+            'osv-scanner() { touch "$SCAN_LOG"; }\n' + command,
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "GO_LOG": str(tmp_path / "go.log"),
+            "SCAN_LOG": str(tmp_path / "scan.log"),
+            "TEST_ARCH": arch,
+            "TEST_PACKAGE": package,
+            "GO_STATUS": str(go_status),
+        },
+        check=False,
+    )
+    assert result.returncode == expected_status
+    assert (tmp_path / "scan.log").exists()
+    assert (tmp_path / "go.log").read_text().splitlines() == [
+        f"0 linux {target} list -mod=readonly -deps -test ./..."
+        for target in ("amd64", "arm64")
+    ]
+
+
+def test_audit_policy_only_excludes_approved_advisories() -> None:
+    for directory, advisory in (
+        ("operator", "GO-2026-5932"),
+        ("src/app/frontend", "GHSA-776f-qx25-q3cc"),
+    ):
+        policy = tomllib.loads((REPO_ROOT / directory / "osv-scanner.toml").read_text())
+        assert set(policy) == {"IgnoredVulns"}
+        assert len(policy["IgnoredVulns"]) == 1
+        assert policy["IgnoredVulns"][0]["id"] == advisory
+        assert policy["IgnoredVulns"][0]["reason"]
+    tasks = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"]
+    assert tasks["audit:frontend"]["cmds"] == [
+        "osv-scanner --lockfile=package-lock.json"
+    ]
+    assert tasks["audit:frontend:dev"]["cmds"] == [{"task": "audit:frontend"}]
+    assert tasks["audit:frontend:signatures"]["cmds"] == ["npm audit signatures"]
+    frontend = json.loads((REPO_ROOT / "src/app/frontend/package.json").read_text())
+    assert frontend["dependencies"]["@byomakase/omakase-player"] == "1.1.1"
 
 
 def test_shell_lint_checks_later_helpers(tmp_path) -> None:

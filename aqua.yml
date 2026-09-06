@@ -41,6 +41,8 @@ packages:
       tags:
           - ci-operator-chainsaw
     - name: golang/go@go1.26.5 # operator/go.mod and controller builds
+      tags:
+          - ci-security
     - name: yannh/kubeconform@v0.6.7 # generated operator CRD/install manifest linting
       tags:
           - ci-operator-crd
