@@ -77,10 +77,30 @@ describe("media URL policy", () => {
     "https://storage.example/clip.ts#fragment",
     "https://storage.example/clip%0a.ts",
     "https://storage.example/clip\n.ts",
+    "https://storage.example/clip%C2%85.ts",
+    "https://storage.example/clip%7f.ts",
+    "https://storage.example/clip%80.ts",
+    "https://storage.example/clip%GG.ts",
+    "https://storage.example/clip%E6%97.ts",
   ])("rejects an unsafe URL without returning it: %s", (url) => {
     expect(
       sanitizeMediaUrl(mediaUrl(url), "https://app.example"),
     ).toBeUndefined();
+  });
+
+  it("preserves UTF-8 paths and the original signed query encoding", () => {
+    const url =
+      "https://storage.example/%E6%97%A5%E6%9C%AC%E8%AA%9E.mp4?X-Signature=a%2fb%2Bc&name=%C3%89t%C3%A9&part=2&part=1";
+    expect(
+      sanitizeMediaUrl(
+        mediaUrl(url, { presigned: true }),
+        "https://app.example",
+      ),
+    ).toEqual({
+      url,
+      credentials: "omit",
+      presigned: true,
+    });
   });
 
   it("does not include candidate URL values in policy errors", () => {
