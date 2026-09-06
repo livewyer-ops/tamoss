@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,6 +30,8 @@ func tamossManagedResourcePolicies() []tamossManagedResourcePolicy {
 		{object: &networkingv1.Ingress{}, list: &networkingv1.IngressList{}},
 		{object: &networkingv1.NetworkPolicy{}, list: &networkingv1.NetworkPolicyList{}},
 		{object: &policyv1.PodDisruptionBudget{}, list: &policyv1.PodDisruptionBudgetList{}},
+		{object: &rbacv1.Role{}, list: &rbacv1.RoleList{}},
+		{object: &rbacv1.RoleBinding{}, list: &rbacv1.RoleBindingList{}},
 		{object: &autoscalingv2.HorizontalPodAutoscaler{}, list: &autoscalingv2.HorizontalPodAutoscalerList{}},
 		{object: &tamossv1alpha1.StorageBackend{}, list: &tamossv1alpha1.StorageBackendList{}},
 	}

@@ -1,0 +1,396 @@
+.page {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 24px 28px 48px;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 680;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.description {
+  max-width: 760px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.actions,
+.toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 47px;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.panelBody {
+  padding: 16px;
+}
+
+.button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button {
+  padding: 6px 11px;
+}
+
+.button:hover {
+  border-color: #87959b;
+  background: var(--surface-soft);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary:hover {
+  border-color: #006b59;
+  background: #006b59;
+}
+
+.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.input,
+.select {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+
+.input {
+  padding: 6px 9px;
+}
+
+.select {
+  padding: 5px 28px 5px 9px;
+}
+
+.input::placeholder {
+  color: var(--subtle);
+}
+
+.badge {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #edf0f1;
+  color: #415058;
+  font-size: 0.71875rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.empty,
+.message {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  padding: 32px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty strong,
+.message strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+
+.errorMessage {
+  color: var(--danger);
+}
+
+.tableWrap {
+  width: 100%;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  background: #eef1f2;
+  color: #46545b;
+  font-size: 0.71875rem;
+  font-weight: 680;
+  text-transform: uppercase;
+}
+
+.table td {
+  min-height: 42px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8ebec;
+  vertical-align: top;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background: #f7fafa;
+}
+
+.resourceLink {
+  color: var(--ink);
+  font-weight: 620;
+  text-decoration: none;
+}
+
+.resourceLink:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.secondary {
+  margin-top: 2px;
+  color: var(--subtle);
+  font-size: 0.71875rem;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
+}
+
+.lookupInput {
+  width: min(100%, 32rem);
+  min-width: 0;
+}
+
+.pager {
+  display: flex;
+  min-height: 49px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.grid2,
+.grid4 {
+  display: grid;
+  gap: 14px;
+}
+
+.grid2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric {
+  min-height: 90px;
+  padding: 14px;
+}
+
+.metricLabel {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 620;
+}
+
+.metricValue {
+  margin-top: 8px;
+  font-size: 1.35rem;
+  font-weight: 680;
+}
+
+.definitionList {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.3fr) minmax(0, 1fr);
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.definitionList dt,
+.definitionList dd {
+  min-width: 0;
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e8ebec;
+}
+
+.definitionList dt {
+  color: var(--muted);
+  font-weight: 620;
+}
+
+.definitionList dd {
+  overflow-wrap: anywhere;
+}
+
+.callout {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #a8c8dd;
+  border-radius: 5px;
+  background: #f0f8fc;
+  color: #254b61;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: 18px 16px 40px;
+  }
+
+  .pageHeader {
+    display: grid;
+    gap: 12px;
+  }
+
+  .panelHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panelHeader > .toolbar {
+    width: 100%;
+  }
+
+  .grid4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .grid2,
+  .grid4 {
+    grid-template-columns: 1fr;
+  }
+
+  .definitionList {
+    grid-template-columns: 1fr;
+  }
+
+  .panelHeader > .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panelHeader > .toolbar > :not(:global(.srOnly)) {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .pager {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .definitionList dt {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}

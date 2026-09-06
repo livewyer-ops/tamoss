@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 	defaultEdgeS3TLSSecretName         = "tamoss-edge-s3-tls"
 	defaultPublicTLSSecretName         = "tamoss-public-tls"
 	defaultPublicS3TLSSecretName       = "tamoss-s3-public-tls"
+	defaultAuthentikAdminGroupName     = "authentik Admins"
 )
 
 // Apply fills omitted Tamoss fields with operator-owned defaults.
@@ -47,6 +49,7 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 	if tamoss.Spec.Ingest.SourcePolicy.Mode == "" {
 		tamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyDisabled
 	}
+	defaultAuthentikGroupBindings(tamoss)
 	applyPublicEndpointDefaults(tamoss)
 	applyBaseComponentDefaults(tamoss)
 }
@@ -70,6 +73,15 @@ func applyImageDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	if tamoss.Spec.UI.Image.PullPolicy == "" {
 		tamoss.Spec.UI.Image.PullPolicy = corev1.PullIfNotPresent
 	}
+	if tamoss.Spec.Console.Image.Repository == "" {
+		tamoss.Spec.Console.Image.Repository = DefaultConsoleRepository
+	}
+	if tamoss.Spec.Console.Image.Tag == "" {
+		tamoss.Spec.Console.Image.Tag = DefaultOperandTag
+	}
+	if tamoss.Spec.Console.Image.PullPolicy == "" {
+		tamoss.Spec.Console.Image.PullPolicy = corev1.PullIfNotPresent
+	}
 	if tamoss.Spec.Images.SchemaMigrationPostgresClient == "" {
 		tamoss.Spec.Images.SchemaMigrationPostgresClient = DefaultPostgresClientImage
 	}
@@ -79,11 +91,35 @@ func applyBaseComponentDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	setBool(&tamoss.Spec.API.Enabled, true)
 	setBool(&tamoss.Spec.Worker.Enabled, false)
 	setBool(&tamoss.Spec.UI.Enabled, true)
+	setBool(&tamoss.Spec.Console.Enabled, false)
 	setReplicas(&tamoss.Spec.API.WorkloadCommonSpec, 1)
 	setReplicas(&tamoss.Spec.Worker.WorkloadCommonSpec, 1)
 	setReplicas(&tamoss.Spec.UI.WorkloadCommonSpec, 1)
+	setReplicas(&tamoss.Spec.Console.WorkloadCommonSpec, 1)
 	defaultAPIProbes(&tamoss.Spec.API.WorkloadCommonSpec)
 	defaultWorkerProbes(&tamoss.Spec.Worker.WorkloadCommonSpec)
+	defaultUIProbes(&tamoss.Spec.UI.WorkloadCommonSpec)
+	defaultConsoleProbes(&tamoss.Spec.Console.WorkloadCommonSpec)
+	defaultWorkloadResources(&tamoss.Spec.Console.WorkloadCommonSpec, "25m", "32Mi", "200m", "128Mi")
+	defaultConsoleSecurity(&tamoss.Spec.Console.WorkloadCommonSpec)
+	defaultConsoleNetworkPolicy(tamoss)
+}
+
+// defaultConsoleNetworkPolicy renders Console rules for every profile, not just
+// multi-server. The rendered policy always declares policyTypes Ingress, so an
+// enabled Console left with no rules is denied all inbound traffic and the UI
+// cannot reach it. Egress is port-scoped by default;
+// spec.networkPolicy.kubernetesAPIIPBlocks is an optional tightening.
+func defaultConsoleNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
+	if !tamoss.Spec.ConsoleEnabled() || !tamoss.Spec.NetworkPolicy.IsEnabled() {
+		return
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Ingress = consoleIngressRules(tamoss, 8080)
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules(tamoss.Spec.NetworkPolicy.KubernetesAPIIPBlocks)
+	}
 }
 
 func applyLocalKind(tamoss *tamossv1alpha1.Tamoss) {
@@ -180,9 +216,11 @@ func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	setReplicas(&tamoss.Spec.API.WorkloadCommonSpec, 2)
 	setReplicas(&tamoss.Spec.Worker.WorkloadCommonSpec, 2)
 	setReplicas(&tamoss.Spec.UI.WorkloadCommonSpec, 2)
+	setReplicas(&tamoss.Spec.Console.WorkloadCommonSpec, 2)
 	setBool(&tamoss.Spec.API.PDB.Enabled, true)
 	setBool(&tamoss.Spec.Worker.PDB.Enabled, true)
 	setBool(&tamoss.Spec.UI.PDB.Enabled, true)
+	setBool(&tamoss.Spec.Console.PDB.Enabled, true)
 	setEnvDefault(&tamoss.Spec.UI.Env, "TAMOSS_API_URL", "/api")
 	defaultWorkloadResources(&tamoss.Spec.API.WorkloadCommonSpec, "250m", "384Mi", "1", "768Mi")
 	defaultWorkloadResources(&tamoss.Spec.Worker.WorkloadCommonSpec, "100m", "128Mi", "500m", "384Mi")
@@ -193,6 +231,7 @@ func applyMultiServer(tamoss *tamossv1alpha1.Tamoss) {
 	defaultAffinity(tamoss, &tamoss.Spec.API.WorkloadCommonSpec, "api")
 	defaultAffinity(tamoss, &tamoss.Spec.Worker.WorkloadCommonSpec, "worker")
 	defaultAffinity(tamoss, &tamoss.Spec.UI.WorkloadCommonSpec, "ui")
+	defaultAffinity(tamoss, &tamoss.Spec.Console.WorkloadCommonSpec, "console")
 	defaultMultiServerNetworkPolicy(tamoss)
 
 	defaultCNPG(tamoss, 3, "100Gi", false, true)
@@ -276,6 +315,23 @@ func defaultAuthentikBlueprints(tamoss *tamossv1alpha1.Tamoss) {
 	}
 }
 
+func defaultAuthentikGroupBindings(tamoss *tamossv1alpha1.Tamoss) {
+	if tamoss.Spec.Auth.Provider() != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		return
+	}
+	if tamoss.Spec.Auth.AuthentikBlueprints == nil {
+		tamoss.Spec.Auth.AuthentikBlueprints = &tamossv1alpha1.AuthentikBlueprintsSpec{}
+	}
+	if len(tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings) == 0 {
+		// Preserve a usable, fail-closed upgrade path for the built-in Authentik
+		// administrator. Production installs should declare narrower groups.
+		tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings = []tamossv1alpha1.AuthentikGroupBindingSpec{{
+			GroupName:   defaultAuthentikAdminGroupName,
+			Permissions: []string{"admin"},
+		}}
+	}
+}
+
 func externalAuthConfigured(external *tamossv1alpha1.AuthExternalSpec) bool {
 	if external == nil {
 		return false
@@ -296,8 +352,12 @@ func applyPublicEndpointDefaults(tamoss *tamossv1alpha1.Tamoss) {
 	endpoints := publicEndpoints{
 		APIHost:      "api." + baseDomain,
 		UIHost:       "app." + baseDomain,
+		UIURL:        "https://app." + baseDomain,
 		S3URL:        "https://s3." + baseDomain,
 		AuthentikURL: "https://auth." + baseDomain,
+	}
+	if tamoss.Spec.PublicEndpoint.UIURL == "" {
+		tamoss.Spec.PublicEndpoint.UIURL = endpoints.UIURL
 	}
 	defaultIngressEndpoints(tamoss, endpoints)
 	defaultHTTPRouteEndpoints(tamoss, endpoints)
@@ -308,6 +368,7 @@ func applyPublicEndpointDefaults(tamoss *tamossv1alpha1.Tamoss) {
 type publicEndpoints struct {
 	APIHost      string
 	UIHost       string
+	UIURL        string
 	S3URL        string
 	AuthentikURL string
 }
@@ -499,6 +560,38 @@ func defaultAPIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
 	}
 }
 
+// defaultUIProbes probes /healthz for every check, including readiness.
+//
+// /readyz reports 503 while browser authentication is unconfigured, and it only
+// exists on images from 8.2 onwards. Using it for readiness would both block
+// rollouts of a pinned earlier UI image, which serves /healthz alone, and pull
+// the Pod out of its Service for a condition the instance reports on
+// BrowserAuthenticationReady. The UI answers that state with an explanatory
+// response, which is more useful than being unroutable.
+func defaultUIProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	if spec.ReadinessProbe == nil {
+		spec.ReadinessProbe = httpProbe("/healthz", 10, 5, 3)
+	}
+	if spec.LivenessProbe == nil {
+		spec.LivenessProbe = httpProbe("/healthz", 30, 5, 3)
+	}
+	if spec.StartupProbe == nil {
+		spec.StartupProbe = httpProbe("/healthz", 10, 5, 12)
+	}
+}
+
+func defaultConsoleProbes(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	if spec.ReadinessProbe == nil {
+		spec.ReadinessProbe = httpProbe("/ui-api/v1/readyz", 10, 5, 3)
+	}
+	if spec.LivenessProbe == nil {
+		spec.LivenessProbe = httpProbe("/ui-api/v1/healthz", 30, 5, 3)
+	}
+	if spec.StartupProbe == nil {
+		spec.StartupProbe = httpProbe("/ui-api/v1/healthz", 10, 5, 12)
+	}
+}
+
 func httpProbe(path string, periodSeconds, timeoutSeconds, failureThreshold int32) *corev1.Probe {
 	return httpProbeOnPort(path, "http", periodSeconds, timeoutSeconds, failureThreshold)
 }
@@ -544,6 +637,13 @@ func defaultRestrictedWorkloadSecurity(spec *tamossv1alpha1.WorkloadCommonSpec) 
 	}
 }
 
+func defaultConsoleSecurity(spec *tamossv1alpha1.WorkloadCommonSpec) {
+	defaultRestrictedWorkloadSecurity(spec)
+	if spec.SecurityContext.ReadOnlyRootFilesystem == nil {
+		spec.SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
+	}
+}
+
 func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 	setBool(&tamoss.Spec.NetworkPolicy.Enabled, true)
 	if !tamoss.Spec.NetworkPolicy.IsEnabled() {
@@ -561,7 +661,21 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 		tamoss.Spec.NetworkPolicy.UI.Ingress = serviceIngressRules(firstContainerPort(tamoss.Spec.UI.Ports, 8080))
 	}
 	if len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 {
-		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(firstServicePort(tamoss.Spec.Service.API.Ports, 8000))
+		forwardAuthPorts := []int32(nil)
+		if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints && tamoss.Spec.Auth.RequiredForRuntime() {
+			_, servicePort := authentik.OutpostExternalService(tamoss)
+			if servicePort == 0 {
+				servicePort = 80
+			}
+			forwardAuthPorts = append(forwardAuthPorts, servicePort, 9000)
+		}
+		tamoss.Spec.NetworkPolicy.UI.Egress = uiEgressRules(
+			firstServicePort(tamoss.Spec.Service.API.Ports, 8000),
+			firstServicePort(tamoss.Spec.Service.Console.Ports, 8080),
+			8080,
+			tamoss.Spec.ConsoleEnabled(),
+			forwardAuthPorts...,
+		)
 	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 {
 		// The worker has no inbound traffic of its own, but the rendered
@@ -572,6 +686,12 @@ func defaultMultiServerNetworkPolicy(tamoss *tamossv1alpha1.Tamoss) {
 	}
 	if len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
 		tamoss.Spec.NetworkPolicy.Worker.Egress = appEgressRules()
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Ingress = consoleIngressRules(tamoss, 8080)
+	}
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
+		tamoss.Spec.NetworkPolicy.Console.Egress = consoleEgressRules(tamoss.Spec.NetworkPolicy.KubernetesAPIIPBlocks)
 	}
 }
 
@@ -598,20 +718,91 @@ func appEgressRules() []networkingv1.NetworkPolicyEgressRule {
 	}
 }
 
-func uiEgressRules(apiPort int32) []networkingv1.NetworkPolicyEgressRule {
+// uiEgressRules keeps default UI egress port-scoped: the DNS ports plus the API,
+// Console, and forward-auth ports the UI must reach. Destination-scoped egress
+// is deferred until it can be verified against an enforcing CNI, so the defaults
+// stay at the 8.1 shape; declare rules under spec.networkPolicy.ui.egress to
+// name destinations for a given cluster.
+func uiEgressRules(
+	apiServicePort, consoleServicePort, consoleTargetPort int32,
+	consoleEnabled bool,
+	forwardAuthPorts ...int32,
+) []networkingv1.NetworkPolicyEgressRule {
+	// Both the Service port and the container target port are allowed, because
+	// CNIs may enforce egress policy before or after Service translation.
+	ports := []int32{apiServicePort, 8000}
+	if consoleEnabled {
+		ports = append(ports, consoleServicePort, consoleTargetPort)
+	}
+	ports = append(ports, forwardAuthPorts...)
 	return []networkingv1.NetworkPolicyEgressRule{
 		dnsEgressRule(),
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				networkPolicyTCPPort(apiPort),
-			},
+		tcpEgressRule(ports...),
+	}
+}
+
+func tcpEgressRule(portNumbers ...int32) networkingv1.NetworkPolicyEgressRule {
+	ports := make([]networkingv1.NetworkPolicyPort, 0, len(portNumbers))
+	seen := make(map[int32]struct{}, len(portNumbers))
+	for _, port := range portNumbers {
+		if _, found := seen[port]; found {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, networkPolicyTCPPort(port))
+	}
+	return networkingv1.NetworkPolicyEgressRule{Ports: ports}
+}
+
+func consoleIngressRules(tamoss *tamossv1alpha1.Tamoss, port int32) []networkingv1.NetworkPolicyIngressRule {
+	appName := defaultAppName
+	if tamoss.Spec.NameOverride != "" {
+		appName = tamoss.Spec.NameOverride
+	}
+	return []networkingv1.NetworkPolicyIngressRule{{
+		From: []networkingv1.NetworkPolicyPeer{{
+			PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/name":      appName,
+				"app.kubernetes.io/instance":  tamoss.Name,
+				"app.kubernetes.io/component": "ui",
+			}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{networkPolicyTCPPort(port)},
+	}}
+}
+
+// consoleEgressRules keeps default Console egress port-scoped: the DNS ports
+// plus the Kubernetes API Service port and the common post-DNAT target port.
+// spec.networkPolicy.kubernetesAPIIPBlocks is optional; supplying it tightens
+// the Kubernetes API rule to those destinations without changing the ports.
+func consoleEgressRules(apiServerIPBlocks []networkingv1.IPBlock) []networkingv1.NetworkPolicyEgressRule {
+	apiServerRule := networkingv1.NetworkPolicyEgressRule{
+		// CNIs may enforce egress policy before or after kubernetes.default.svc
+		// rewrites the Service port to the API server target port.
+		Ports: []networkingv1.NetworkPolicyPort{
+			networkPolicyTCPPort(443),
+			networkPolicyTCPPort(6443),
 		},
 	}
+	for index := range apiServerIPBlocks {
+		apiServerRule.To = append(apiServerRule.To, networkingv1.NetworkPolicyPeer{
+			IPBlock: apiServerIPBlocks[index].DeepCopy(),
+		})
+	}
+	return []networkingv1.NetworkPolicyEgressRule{dnsEgressRule(), apiServerRule}
 }
 
 func dnsEgressRule() networkingv1.NetworkPolicyEgressRule {
 	// Some managed clusters evaluate NetworkPolicy after kube-dns Service DNAT,
 	// where CoreDNS receives traffic on target port 8053 instead of Service port 53.
+	//
+	// The rule stays port-scoped. Naming resolver destinations is only safe if
+	// the peer list covers every resolver a supported cluster may run, and an
+	// unmatched resolver removes DNS from the workload entirely, which presents
+	// as a total outage rather than a policy error. That scoping is deferred
+	// until it can be verified against an enforcing CNI; a cluster that needs it
+	// can declare explicit egress rules for the affected workloads. See
+	// docs/reference/runtime-configuration.md.
 	return networkingv1.NetworkPolicyEgressRule{
 		Ports: []networkingv1.NetworkPolicyPort{
 			networkPolicyTCPPort(53),

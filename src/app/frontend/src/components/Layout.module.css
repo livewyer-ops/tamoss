@@ -1,0 +1,185 @@
+.shell {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  background: var(--nav);
+  color: #fff;
+}
+
+.brand {
+  display: flex;
+  min-height: 65px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.brand strong {
+  display: block;
+  font-size: 0.875rem;
+  letter-spacing: 0;
+}
+
+.brand span {
+  display: block;
+  color: #aeb8bc;
+  font-size: 0.6875rem;
+}
+
+.mark,
+.mobileMark {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+.navigation {
+  flex: 1;
+  overflow-y: auto;
+  padding: 13px 9px 20px;
+}
+
+.navSection {
+  margin-bottom: 18px;
+}
+
+.navSection > p {
+  margin: 0 9px 5px;
+  color: #7f9097;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.navLink {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  color: #c9d0d3;
+  font-size: 0.8125rem;
+  font-weight: 540;
+  text-decoration: none;
+}
+
+.navLink:hover {
+  background: var(--nav-hover);
+  color: #fff;
+}
+
+.navLink.active {
+  background: #dff4ee;
+  color: #075c4e;
+  font-weight: 650;
+}
+
+.workspace {
+  min-width: 0;
+}
+
+.menuButton,
+.closeButton {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.menuButton:hover,
+.closeButton:hover {
+  background: #edf0f1;
+  color: var(--ink);
+}
+
+.main {
+  min-width: 0;
+}
+
+.mobileHeader,
+.closeButton,
+.scrim {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    display: block;
+  }
+
+  .mobileHeader {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+    font-size: 0.8125rem;
+  }
+
+  .mobileMark {
+    width: 30px;
+    height: 30px;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    transform: translateX(-100%);
+    visibility: hidden;
+    width: 224px;
+    transition:
+      transform 150ms ease,
+      visibility 0s linear 150ms;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  .closeButton {
+    display: inline-flex;
+    margin-left: auto;
+    color: #c9d0d3;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.42);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}

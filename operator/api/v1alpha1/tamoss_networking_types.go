@@ -20,9 +20,10 @@ type ServiceSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 	//+kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer;ExternalName
 	//+kubebuilder:default=ClusterIP
-	Type corev1.ServiceType `json:"type,omitempty"`
-	API  ServicePortsSpec   `json:"api,omitempty"`
-	UI   ServicePortsSpec   `json:"ui,omitempty"`
+	Type    corev1.ServiceType `json:"type,omitempty"`
+	API     ServicePortsSpec   `json:"api,omitempty"`
+	UI      ServicePortsSpec   `json:"ui,omitempty"`
+	Console ServicePortsSpec   `json:"console,omitempty"`
 }
 
 type ServicePortsSpec struct {
@@ -34,6 +35,16 @@ type NetworkPolicySpec struct {
 	API     NetworkPolicyRulesSpec `json:"api,omitempty"`
 	UI      NetworkPolicyRulesSpec `json:"ui,omitempty"`
 	Worker  NetworkPolicyRulesSpec `json:"worker,omitempty"`
+	Console NetworkPolicyRulesSpec `json:"console,omitempty"`
+	// KubernetesAPIIPBlocks contains the Kubernetes Service and API-server
+	// endpoint CIDRs that an enabled Console may reach. It is an optional
+	// tightening: when the list is empty the Console's Kubernetes API egress
+	// rule is still rendered but permits any destination on those ports, because
+	// the addresses are cluster-specific and cannot be derived from a Tamoss
+	// spec. Destination-scoped egress remains an optional deployment-specific
+	// tightening.
+	//+kubebuilder:validation:MaxItems=16
+	KubernetesAPIIPBlocks []networkingv1.IPBlock `json:"kubernetesAPIIPBlocks,omitempty"`
 }
 
 type NetworkPolicyRulesSpec struct {

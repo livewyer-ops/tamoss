@@ -20,6 +20,15 @@ rules:
       - patch
       - update
       - watch
+  # The ingest collector reads a finished TAMSin Pod's event stream once, in
+  # whichever namespace the IngestRun lives. Read-only; the Console service
+  # account deliberately never receives this.
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
   - apiGroups:
       - apps
     resources:
@@ -31,6 +40,14 @@ rules:
       - list
       - patch
       - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - replicasets
+    verbs:
+      - get
+      - list
       - watch
   - apiGroups:
       - autoscaling
@@ -55,6 +72,14 @@ rules:
       - list
       - patch
       - update
+      - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
       - watch
   - apiGroups:
       - gateway.networking.k8s.io
@@ -85,6 +110,19 @@ rules:
       - policy
     resources:
       - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+      - roles
     verbs:
       - create
       - delete

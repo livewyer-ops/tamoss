@@ -20,6 +20,9 @@ func renderPDBs(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if tamoss.Spec.Worker.IsEnabled() && tamoss.Spec.Worker.PDB.IsEnabled() {
 		objects = append(objects, pdbFor(tamoss, "worker", tamoss.Spec.Worker.PDB))
 	}
+	if tamoss.Spec.ConsoleEnabled() && tamoss.Spec.Console.PDB.IsEnabled() {
+		objects = append(objects, pdbFor(tamoss, "console", tamoss.Spec.Console.PDB))
+	}
 	return objects
 }
 

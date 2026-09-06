@@ -51,15 +51,20 @@ func (r *StorageBackendReconciler) externalS3Diagnostic(ctx context.Context, tam
 	// bucket URL; probing the bare service endpoint yields false negatives on
 	// stores such as AWS S3 and Backblaze B2.
 	probeURL := strings.TrimRight(endpoint, "/") + "/" + url.PathEscape(bucket)
-	originBase := strings.TrimSpace(tamoss.Spec.PublicEndpoint.BaseDomain)
-	if originBase == "" {
+	origin := strings.TrimSuffix(strings.TrimSpace(tamoss.Spec.PublicEndpoint.UIURL), "/")
+	if origin == "" {
+		originBase := strings.TrimSpace(tamoss.Spec.PublicEndpoint.BaseDomain)
+		if originBase != "" {
+			origin = "https://app." + originBase
+		}
+	}
+	if origin == "" {
 		return &storageBackendDiagnosticResult{
 			Status:  metav1.ConditionUnknown,
 			Reason:  operatorstatus.ReasonExternalS3DiagnosticSkipped,
-			Message: "External S3 diagnostic skipped because publicEndpoint.baseDomain is not configured",
+			Message: "External S3 diagnostic skipped because no public UI origin is configured",
 		}
 	}
-	origin := "https://app." + originBase
 	request, err := http.NewRequestWithContext(ctx, http.MethodOptions, probeURL, nil)
 	if err != nil {
 		return &storageBackendDiagnosticResult{

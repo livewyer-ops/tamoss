@@ -10,3 +10,8 @@ metadata:
   namespace: tams
 spec:
   profile: local-kind
+  ingest:
+    sourcePolicy:
+      mode: PublicHTTPS
+  console:
+    enabled: true

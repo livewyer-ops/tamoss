@@ -75,7 +75,7 @@ Treat first start as one product lifecycle rather than disconnected pods:
 | Schema migration | `Tamoss.status.conditions[SchemaMigrated]` | `True` with the desired schema version in status. |
 | Storage database registration | `StorageBackend.status.conditions[DatabaseReady]` | `True` after the TAMS storage backend row is registered. |
 | Identity | `Tamoss.status.conditions[IdentityReady]` | `True`, `ExternalIdentityConfigured`, or not required when auth is disabled. |
-| Workloads | `Tamoss.status.replicas.{api,ui,worker}` | available replicas match desired replicas for enabled components. |
+| Workloads | `Tamoss.status.replicas.{api,ui,worker,console}` | available replicas match desired replicas for enabled components. |
 | Routes | `Tamoss.status.conditions[RoutingReady]` | `True`, or external routing ownership when routes are not managed. |
 
 `task env:summary` and the support bundle read these phases from Kubernetes
@@ -204,7 +204,7 @@ first-start lifecycle phases so version and startup state are visible without
 opening the full resource dump first.
 
 Secret values, sensitive ConfigMaps such as `oauth2-credentials`, direct token
-fields, webhook API-key values, authorization header values, credential-bearing
+fields, webhook API-key values, `Authorization` header values, credential-bearing
 URLs, last-applied annotations, and known credential-bearing environment values
 are redacted. Generated Secret names from `status.resolved.*` remain visible so
 references can be diagnosed, but generated Secret bodies are not shared. The
@@ -254,11 +254,10 @@ reports `ObjectStoreUnreachable`, inspect the `StorageBackend` `BucketReady`,
 `DatabaseReady`, and external diagnostic conditions plus the mounted runtime
 credentials Secret.
 
-For local [Kind](https://kind.sigs.k8s.io/), browser ingest uploads directly
-to `https://s3.tamoss.localtest.me`. If the browser has accepted the app
-origin
-but not the S3 origin, uploads can fail as a CORS or generic network error even
-though the backend is healthy.
+For local [Kind](https://kind.sigs.k8s.io/), playback reads media from
+`https://s3.tamoss.localtest.me`. Trust the S3 certificate as well as the app
+certificate; otherwise media requests can fail with a CORS or network error
+even when the backend is healthy.
 
 For external S3:
 

@@ -1,154 +1,83 @@
-@import "tailwindcss";
-
-@theme {
-  --font-sans: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-
-  --color-tams-50: #effcf7;
-  --color-tams-100: #d7f8ea;
-  --color-tams-200: #b0f0d7;
-  --color-tams-300: #7ce5bf;
-  --color-tams-400: #45d9ac;
-  --color-tams-500: #13d6a3;
-  --color-tams-600: #07b587;
-  --color-tams-700: #078f6c;
-  --color-tams-800: #096f56;
-  --color-tams-900: #0b5b47;
-  --color-tams-950: #06372c;
-
-  --color-lw-ink-50: #f2f7f9;
-  --color-lw-ink-100: #d7e5eb;
-  --color-lw-ink-200: #b1c9d5;
-  --color-lw-ink-300: #85a7b8;
-  --color-lw-ink-400: #5f879d;
-  --color-lw-ink-500: #466d84;
-  --color-lw-ink-600: #35586d;
-  --color-lw-ink-700: #29485a;
-  --color-lw-ink-800: #183748;
-  --color-lw-ink-900: #002337;
-  --color-lw-ink-950: #001722;
+:root {
+  color-scheme: light;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-synthesis: none;
+  color: #172126;
+  background: #f3f5f5;
+  --ink: #172126;
+  --muted: #5d6a70;
+  --subtle: #66747a;
+  --line: #d6dcde;
+  --line-strong: #b8c2c6;
+  --surface: #ffffff;
+  --surface-soft: #f7f8f8;
+  --nav: #172126;
+  --nav-hover: #29353a;
+  --accent: #007b67;
+  --focus: #006bff;
+  --danger: #b42318;
+  --danger-soft: #feeceb;
+  --warning: #9a6700;
+  --warning-soft: #fff3cd;
+  --success: #067647;
+  --success-soft: #dcfae6;
+  --info: #175cd3;
+  --info-soft: #e8f1ff;
+  line-height: 1.5;
 }
 
-@layer base {
-  html {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    background: var(--color-lw-ink-50);
-  }
-
-  body {
-    min-height: 100vh;
-    font-family: var(--font-sans);
-    color: var(--color-lw-ink-900);
-    background: transparent;
-  }
-
-  code,
-  kbd,
-  samp,
-  pre {
-    font-family: var(--font-mono);
-  }
-
-  :focus-visible {
-    @apply outline-2 outline-offset-2 outline-tams-500;
-  }
+* {
+  box-sizing: border-box;
 }
 
-@layer components {
-  .tamoss-shell {
-    background: transparent;
-  }
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
 
-  .tamoss-panel {
-    background: #ffffff;
-    border: 1px solid var(--color-lw-ink-100);
-    box-shadow:
-      0 1px 2px rgba(0, 35, 55, 0.04),
-      0 4px 12px rgba(0, 35, 55, 0.04);
-  }
+body {
+  min-height: 100vh;
+  background: #f3f5f5;
+}
 
-  .tamoss-panel-strong {
-    background: #ffffff;
-    border: 1px solid var(--color-lw-ink-100);
-    box-shadow:
-      0 1px 2px rgba(0, 35, 55, 0.04),
-      0 4px 12px rgba(0, 35, 55, 0.04);
-  }
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
 
-  .tamoss-toolbar-control {
-    border-radius: 0.75rem;
-    border: 1px solid var(--color-lw-ink-100);
-    background: #ffffff;
-    color: var(--color-lw-ink-800);
-  }
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
 
-  .tamoss-toolbar-control::placeholder {
-    color: var(--color-lw-ink-400);
-  }
+a {
+  color: var(--accent);
+}
 
-  .tamoss-button-primary {
-    border-radius: 0.75rem;
-    background: var(--color-tams-800);
-    color: white;
-  }
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 
-  .tamoss-button-primary:hover {
-    background: var(--color-tams-900);
-  }
+code,
+pre,
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
 
-  .tamoss-button-danger {
-    border-radius: 0.75rem;
-    background: #b91c1c;
-    color: white;
-  }
-
-  .tamoss-button-danger:hover {
-    background: #991b1b;
-  }
-
-  .tamoss-button-secondary {
-    border-radius: 0.75rem;
-    border: 1px solid var(--color-lw-ink-100);
-    background: #ffffff;
-    color: var(--color-lw-ink-800);
-  }
-
-  .tamoss-button-secondary:hover {
-    background: var(--color-lw-ink-50);
-  }
-
-  .tamoss-eyebrow {
-    color: var(--color-tams-700);
-    letter-spacing: 0.18em;
-  }
-
-  .tamoss-grid-bg {
-    background-image:
-      linear-gradient(rgba(0, 35, 55, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 35, 55, 0.035) 1px, transparent 1px);
-    background-size: 30px 30px;
-    background-position: -1px -1px;
-  }
-
-  .tamoss-callout-warn {
-    border-radius: 0.75rem;
-    border: 1px solid #fcd34d;
-    background: #fffbeb;
-    color: var(--color-lw-ink-900);
-  }
-
-  .tamoss-callout-danger {
-    border-radius: 0.75rem;
-    border: 1px solid #fca5a5;
-    background: #fef2f2;
-    color: var(--color-lw-ink-900);
-  }
-
-  .tamoss-callout-info {
-    border-radius: 0.75rem;
-    border: 1px solid #bfdbfe;
-    background: #eff6ff;
-    color: var(--color-lw-ink-900);
-  }
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

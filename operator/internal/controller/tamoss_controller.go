@@ -73,11 +73,14 @@ type TamossReconciler struct {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosshibernations,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,namespace=system,resources=replicasets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=autoscaling,namespace=system,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",namespace=system,resources=configmaps;events;pods;secrets;serviceaccounts;services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=discovery.k8s.io,namespace=system,resources=endpointslices,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,namespace=system,resources=ingresses;networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=policy,namespace=system,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,namespace=system,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=gateway.networking.k8s.io,namespace=system,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=scheduledbackups,verbs=get;list;watch;create;update;patch;delete
@@ -406,6 +409,9 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 	if err := r.prepareAPITokenSecret(ctx, tamoss, desiredObjects); err != nil {
 		return err
 	}
+	if err := r.prepareForwardAuthProofSecret(ctx, tamoss, desiredObjects); err != nil {
+		return err
+	}
 	for _, desired := range schemaResult.ManagedObjects {
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
 	}
@@ -496,8 +502,8 @@ func gateSchemaDependentWorkloads(objects []client.Object, schemaReady bool) []c
 			filtered = append(filtered, obj)
 			continue
 		}
-		component := deployment.Labels["app.kubernetes.io/component"]
-		if component == "api" || component == "worker" {
+		component := deployment.Labels[appComponentLabel]
+		if component == componentAPI || component == "worker" {
 			continue
 		}
 		filtered = append(filtered, obj)
@@ -541,6 +547,22 @@ func readyMessage(ready bool, schemaResult SchemaResult, identityResult identity
 		return routingResult.Message
 	}
 	return "One or more enabled workloads are not yet available"
+}
+
+// browserAuthCondition reports the browser authentication path on its own
+// condition. An instance whose API and worker are healthy is not Degraded
+// merely because its browser surfaces lack a supported identity provider: the
+// UI and Console already refuse to serve data in that state, and folding it
+// into Ready would also block unrelated features such as IngestRun.
+func browserAuthCondition(tamoss *tamossv1alpha1.Tamoss, configured bool) statusConditionValue {
+	if !tamoss.Spec.UI.IsEnabled() && !tamoss.Spec.ConsoleEnabled() {
+		return boolCondition(true, operatorstatus.ReasonBrowserAuthenticationNotRequired, "No browser surface is enabled")
+	}
+	if !configured {
+		return boolCondition(false, operatorstatus.ReasonBrowserAuthenticationUnavailable,
+			"Enabled browser surfaces do not have a supported trusted authentication path, so they refuse browser API requests")
+	}
+	return boolCondition(true, operatorstatus.ReasonBrowserAuthenticationConfigured, "Enabled browser surfaces have a supported trusted authentication path")
 }
 
 func degradedReason(schemaResult SchemaResult) string {

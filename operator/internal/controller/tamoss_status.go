@@ -8,6 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
@@ -67,6 +68,12 @@ type tamossStatusObservation struct {
 	Routing           *routingStatusResult
 	Replicas          *tamossv1alpha1.ReplicaStatus
 
+	// BrowserAuth reports whether enabled browser surfaces have a supported
+	// authentication path. It is reported on its own condition rather than
+	// folded into Ready or Degraded: the API and worker data plane are
+	// unaffected, and the browser surfaces already fail closed without it.
+	BrowserAuth *statusConditionValue
+
 	Ready       statusConditionValue
 	Progressing statusConditionValue
 	Degraded    statusConditionValue
@@ -74,25 +81,29 @@ type tamossStatusObservation struct {
 
 func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, schemaResult SchemaResult, identityResult identityReconcileResult) error {
 	replicas := tamossv1alpha1.ReplicaStatus{
-		API:    r.componentReplicaStatus(ctx, tamoss, "api", tamoss.Spec.API.IsEnabled(), desiredReplicaCount(tamoss.Spec.API.WorkloadCommonSpec)),
-		UI:     r.componentReplicaStatus(ctx, tamoss, "ui", tamoss.Spec.UI.IsEnabled(), desiredReplicaCount(tamoss.Spec.UI.WorkloadCommonSpec)),
-		Worker: r.componentReplicaStatus(ctx, tamoss, "worker", tamoss.Spec.Worker.IsEnabled(), desiredReplicaCount(tamoss.Spec.Worker.WorkloadCommonSpec)),
+		API:     r.componentReplicaStatus(ctx, tamoss, "api", tamoss.Spec.API.IsEnabled(), desiredReplicaCount(tamoss.Spec.API.WorkloadCommonSpec)),
+		UI:      r.componentReplicaStatus(ctx, tamoss, "ui", tamoss.Spec.UI.IsEnabled(), desiredReplicaCount(tamoss.Spec.UI.WorkloadCommonSpec)),
+		Worker:  r.componentReplicaStatus(ctx, tamoss, "worker", tamoss.Spec.Worker.IsEnabled(), desiredReplicaCount(tamoss.Spec.Worker.WorkloadCommonSpec)),
+		Console: r.componentReplicaStatus(ctx, tamoss, "console", tamoss.Spec.ConsoleEnabled(), desiredReplicaCount(tamoss.Spec.Console.WorkloadCommonSpec)),
 	}
 	routingResult, err := r.routingStatus(ctx, tamoss)
 	if err != nil {
 		return err
 	}
 
-	ready := !schemaResult.Degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
-		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker)
+	browserAuthConfigured := workload_renderer.BrowserAuthConfigured(tamoss)
+	degraded := schemaResult.Degraded
+	ready := !degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
+		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker) && replicasReady(replicas.Console)
 	phase := operatorstatus.PhaseProgressing
 	if ready {
 		phase = operatorstatus.PhaseReady
 	}
-	if schemaResult.Degraded {
+	if degraded {
 		phase = operatorstatus.PhaseDegraded
 	}
 
+	browserAuth := browserAuthCondition(tamoss, browserAuthConfigured)
 	identityBlueprint := boolCondition(identityResult.BlueprintSubmitted, identityBlueprintReason(identityResult), identityBlueprintMessage(identityResult))
 	identity := boolCondition(identityResult.Ready, identityResult.Reason, identityResult.Message)
 	return r.patchTamossStatusObservation(ctx, tamoss, tamossStatusObservation{
@@ -104,9 +115,10 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 		Identity:            &identity,
 		Routing:             &routingResult,
 		Replicas:            &replicas,
+		BrowserAuth:         &browserAuth,
 		Ready:               boolCondition(ready, readyReason(ready, schemaResult, identityResult, routingResult), readyMessage(ready, schemaResult, identityResult, routingResult)),
-		Progressing:         boolCondition(!ready && !schemaResult.Degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available"),
-		Degraded:            boolCondition(schemaResult.Degraded, degradedReason(schemaResult), degradedMessage(schemaResult)),
+		Progressing:         boolCondition(!ready && !degraded, operatorstatus.ReasonReconciling, "Waiting for managed workloads to become available"),
+		Degraded:            boolCondition(degraded, degradedReason(schemaResult), degradedMessage(schemaResult)),
 	})
 }
 
@@ -189,7 +201,7 @@ func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamos
 
 func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, observation tamossStatusObservation) error {
 	original := tamoss.DeepCopy()
-	setCommonTamossStatus(tamoss)
+	setCommonTamossStatus(tamoss, r.TAMSinImage)
 	if observation.RefreshBackupPolicy {
 		if err := r.refreshObservedBackupPolicyCondition(ctx, tamoss); err != nil {
 			return err
@@ -230,6 +242,9 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 	}
 	if observation.Identity != nil {
 		setStatusCondition(conditions, generation, operatorstatus.ConditionIdentityReady, *observation.Identity)
+	}
+	if observation.BrowserAuth != nil {
+		setStatusCondition(conditions, generation, operatorstatus.ConditionBrowserAuthReady, *observation.BrowserAuth)
 	}
 	if observation.Routing != nil {
 		setRoutingConditions(conditions, generation, *observation.Routing)
@@ -296,14 +311,14 @@ func (r *TamossReconciler) recordTamossLifecycleEvents(original, tamoss *tamossv
 	}
 }
 
-func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss) {
+func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) {
 	tamoss.Status.ObservedGeneration = tamoss.Generation
 	tamoss.Status.Backends.DB.Provider = tamoss.Spec.Backends.DB.Provider()
 	tamoss.Status.Backends.S3.Provider = tamoss.Spec.Backends.S3.Provider()
 	tamoss.Status.Auth = authStatus(tamoss)
 	tamoss.Status.Endpoints = endpointStatus(tamoss)
 	tamoss.Status.Providers = providerStatus(tamoss)
-	tamoss.Status.Resolved = resolvedTamossStatus(tamoss)
+	tamoss.Status.Resolved = resolvedTamossStatus(tamoss, tamsinImage...)
 	setBackupPolicyCondition(&tamoss.Status.Conditions, tamoss)
 	setUpgradeUnknown(tamoss, operatorstatus.ReasonUpgradeNotEvaluated, "Upgrade readiness has not been evaluated in this reconcile")
 }

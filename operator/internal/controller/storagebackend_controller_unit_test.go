@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,6 +72,26 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 	}
 	if got := string(storageBackend.Spec.Tags["tier"].Raw); got != `"hot"` {
 		t.Fatalf("expected scalar default backend tag to flow through, got %#v", storageBackend.Spec.Tags)
+	}
+}
+
+func TestManagedBucketCORSUsesExactPublicUIOrigin(t *testing.T) {
+	tamoss := tamossFixture()
+	tamoss.Spec.PublicEndpoint.UIURL = "https://app.example.test:30443/"
+	tamoss.Spec.Ingress.UI.Web.Host = "app.example.test"
+	tamoss.Spec.Ingress.TLS = []networkingv1.IngressTLS{{}}
+	tamoss.Spec.API.CORS.AllowedOrigins = []string{
+		"https://app.example.test:30443",
+		"https://tools.example.test",
+	}
+
+	want := []string{
+		"https://app.example.test:30443",
+		"https://app.example.test",
+		"https://tools.example.test",
+	}
+	if got := storageBackendCORSOrigins(tamoss); !slices.Equal(got, want) {
+		t.Fatalf("managed bucket CORS origins = %#v, want %#v", got, want)
 	}
 }
 

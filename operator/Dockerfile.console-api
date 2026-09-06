@@ -1,0 +1,24 @@
+# Build from the repository root with:
+# docker build -f operator/Dockerfile.console-api .
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace/operator
+COPY operator/go.mod operator/go.sum ./
+RUN go mod download
+
+COPY operator/api/ api/
+COPY operator/internal/consoleapi/ internal/consoleapi/
+COPY operator/cmd/console-api/ cmd/console-api/
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -trimpath -o /workspace/console-api ./cmd/console-api
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /workspace/console-api .
+USER 65532:65532
+EXPOSE 8080
+
+ENTRYPOINT ["/console-api"]
