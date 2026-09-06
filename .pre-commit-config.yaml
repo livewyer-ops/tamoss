@@ -6,11 +6,12 @@ repos:
     hooks:
       # Linter
       - id: ruff
-        args: [--fix]
-        exclude: ^src/vendor/
+        args: [--fix, --config, src/pyproject.toml]
+        exclude: ^src/(vendor/|app/tamoss/contract/generated/)
       # Formatter
       - id: ruff-format
-        exclude: ^src/vendor/
+        args: [--config, src/pyproject.toml]
+        exclude: ^src/(vendor/|app/tamoss/contract/generated/)
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

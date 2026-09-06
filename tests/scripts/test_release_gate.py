@@ -6,10 +6,10 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from unittest.mock import Mock
 
 import pytest
-import tomllib
 import yaml
 
 from tests.support.paths import REPO_ROOT, load_python_module
@@ -196,6 +196,18 @@ def test_shell_lint_checks_later_helpers(tmp_path) -> None:
     ]["cmds"][0]
     result = subprocess.run(["bash", "-c", command], cwd=tmp_path, check=False)
     assert result.returncode != 0
+
+
+def test_ruff_hooks_use_the_ci_project_configuration() -> None:
+    config = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
+    hooks = config["repos"][0]["hooks"]
+    for hook in hooks:
+        assert hook["args"][-2:] == ["--config", "src/pyproject.toml"]
+        assert re.match(hook["exclude"], "src/vendor/bbc-tams/example.py")
+        assert re.match(
+            hook["exclude"], "src/app/tamoss/contract/generated/contract_models.py"
+        )
+        assert not re.match(hook["exclude"], "src/app/tamoss/worker.py")
 
 
 def test_image_builds_share_steps_without_changing_signing_jobs(image_action) -> None:
