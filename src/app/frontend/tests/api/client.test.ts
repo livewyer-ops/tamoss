@@ -32,6 +32,59 @@ describe("TamossApiClient", () => {
     mockFetch.mockReset();
   });
 
+  it.each(["", []] as const)(
+    "preserves explicit empty TAMS filters (%j)",
+    async (empty) => {
+      mockFetch.mockResolvedValue(mockResponse([]));
+      const client = createClient();
+      for (const list of [
+        client.getSources.bind(client),
+        client.getFlows.bind(client),
+      ]) {
+        await list({
+          collected_by_ids: empty,
+          label: null,
+          page: undefined,
+          limit: 50,
+        });
+        expect(lastCalledUrl().searchParams.get("collected_by_ids")).toBe("");
+        expect(lastCalledUrl().searchParams.has("label")).toBe(false);
+        expect(lastCalledUrl().searchParams.has("page")).toBe(false);
+        expect(lastCalledUrl().searchParams.get("limit")).toBe("50");
+        await list();
+        expect(lastCalledUrl().searchParams.has("collected_by_ids")).toBe(
+          false,
+        );
+      }
+      for (const get of [
+        (params: {
+          accept_get_urls?: string | readonly string[];
+          accept_storage_ids?: string | readonly string[];
+          presigned?: boolean;
+        }) => client.getFlowSegments("flow-1", params),
+        (params: {
+          accept_get_urls?: string | readonly string[];
+          accept_storage_ids?: string | readonly string[];
+          presigned?: boolean;
+        }) => client.getObject("object/1", params),
+      ]) {
+        await get({
+          accept_get_urls: empty,
+          accept_storage_ids: empty,
+          presigned: false,
+        });
+        expect(lastCalledUrl().searchParams.get("accept_get_urls")).toBe("");
+        expect(lastCalledUrl().searchParams.get("accept_storage_ids")).toBe("");
+        expect(lastCalledUrl().searchParams.get("presigned")).toBe("false");
+        await get({});
+        expect(lastCalledUrl().searchParams.has("accept_get_urls")).toBe(false);
+        expect(lastCalledUrl().searchParams.has("accept_storage_ids")).toBe(
+          false,
+        );
+      }
+    },
+  );
+
   describe("getService", () => {
     it("fetches service information", async () => {
       const serviceData = { name: "Test TAMS", api_version: "8.2" };

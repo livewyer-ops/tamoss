@@ -10,9 +10,6 @@ export interface SanitizedMediaUrl {
   storageId?: string;
 }
 
-const ENCODED_CONTROL_CHARACTER =
-  /%(?:0[0-9a-f]|1[0-9a-f]|7f|8[0-9a-f]|9[0-9a-f])/iu;
-
 function hasControlCharacter(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0);
@@ -62,7 +59,6 @@ export function sanitizeMediaUrl(
     typeof rawUrl !== "string" ||
     rawUrl.length === 0 ||
     hasControlCharacter(rawUrl) ||
-    ENCODED_CONTROL_CHARACTER.test(rawUrl) ||
     rawUrl.includes("#")
   ) {
     return undefined;
@@ -71,6 +67,7 @@ export function sanitizeMediaUrl(
   const pageOrigin = parsePolicyOrigin(locationOrigin);
   let parsed: URL;
   try {
+    if (hasControlCharacter(decodeURIComponent(rawUrl))) return undefined;
     parsed = new URL(rawUrl, pageOrigin);
   } catch {
     return undefined;
