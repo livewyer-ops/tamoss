@@ -1,66 +1,47 @@
 # Known Issues
 
-Accepted deviations from the [Cloud Native Operational Engineering Standards](CLAUDE.md#engineering-standards-canoes)
-and defects we have chosen not to fix yet.
+Known limitations and deferred defects. Listing an issue here does not exempt
+it from security checks or the [release gates](docs/development/releases.md).
 
 Record an entry when a change knowingly breaks a standard, or when a defect is
 understood but deferred. Each entry states the deviation, why it was accepted,
 who it affects, and what resolving it would take. Remove the entry when the
 underlying issue is fixed.
 
-Entries were last re-verified while preparing `8.2.0-oss1-rc4`.
+Configuration and release-policy entries were reviewed on 2026-09-06.
 
-## Service name is not reproducible from the codebase
+## Service metadata is runtime state
 
 **Standard:** Single source of truth; everything reproducible from the codebase.
 
-The service display name has two sources. `.spec.displayName` on the `Tamoss` CR
-renders `TAMOSS_SERVICE_NAME` onto the API deployment and acts as a startup
-default. `POST /service` (`api/routes/service.py:45`) writes a row to
-`tamoss_service_metadata`, and that stored row takes precedence for the life of
-the instance (`adapters/postgres_repository/storage_service.py:31-64`).
+`POST /service` stores the name and description in PostgreSQL, taking precedence
+over the startup defaults in `Settings`. The current CRD has no `displayName`
+field and the runtime has no `TAMOSS_SERVICE_NAME` alias. Restoring only the
+deployment overlay does not restore API-managed service metadata; include the
+database in recovery procedures.
 
-A stored name is therefore not reconciled back by the operator, and the live
-name cannot be rebuilt from the repository. Two operators can disagree: one sets
-`displayName` in Git, another posts a rename, and the stored row wins silently.
+**Why accepted:** service metadata updates are part of the TAMS API contract.
 
-**Why accepted:** the TAMS API exposes `POST /service` as part of the contract,
-so the write path cannot simply be removed. Making the CR authoritative would
-mean refusing a call the specification requires us to accept.
+The console does not offer service renaming and its `/api/` proxy is read-only.
+Direct API clients can update the metadata. An empty update clears those fields
+but does not restore startup defaults, because the stored row still exists.
 
-**Changed by the 8.2 console refresh:** the UI no longer offers a rename. The
-inline edit is gone, the `updateServiceInfo` client method has been deleted, and
-in production the `/api/` proxy permits only `GET`, `HEAD` and `OPTIONS`
-(`src/app/frontend/ARCHITECTURE.md`), so the console cannot reach the write path
-at all. The row is now settable only by a direct API client — and still not
-clearable: an empty save writes `NULL`, and a `NULL` row still shadows the
-configured value, so an instance cannot be returned to its CR-declared name
-without a direct `DELETE FROM tamoss_service_metadata`.
+**Resolving it would take:** a separately reviewed reset-to-default workflow
+that preserves the specified behaviour of `POST /service`.
 
-**Resolving it would take:** treating an empty write as a delete of the row, so
-the stored name becomes a true override-with-reset, and surfacing which source
-is currently in effect on the Service page. Making the CR authoritative instead
-is the larger alternative.
-
-## `service_description` does not follow the `TAMOSS_*` env convention
+## Service defaults retain legacy environment names
 
 **Standard:** Reuse the same tooling, standards and formats; configuration flow.
 
-Every setting in `Settings` binds to an explicit `TAMOSS_*` environment variable
-through `validation_alias`, except `service_description`
-(`src/app/tamoss/settings.py:173`), which has no alias and therefore binds to the
-bare `SERVICE_DESCRIPTION`. The name was given a `TAMOSS_SERVICE_NAME` alias when
-`.spec.displayName` was added; the description was left alone to keep that change
-surgical.
+`service_name` and `service_description` use the legacy environment names
+`SERVICE_NAME` and `SERVICE_DESCRIPTION`, not `TAMOSS_*` aliases. These are
+startup defaults only; API-managed metadata takes precedence.
 
-**Why accepted:** pre-existing, cosmetic, and no deployment path sets the
-variable today.
+**Why accepted:** preserving existing environment configuration avoids an
+unnecessary compatibility change during release hardening.
 
-**Resolving it would take:** adding
-`validation_alias="TAMOSS_SERVICE_DESCRIPTION"` in `src/app/tamoss/settings.py`
-and documenting it alongside `TAMOSS_SERVICE_NAME` in
-`docs/reference/runtime-configuration.md`. Anyone currently relying on
-`SERVICE_DESCRIPTION` would need to rename the variable.
+**Resolving it would take:** compatible aliases with a documented transition,
+not silently renaming existing settings.
 
 ## The TAMS client keeps write methods the console cannot reach
 
