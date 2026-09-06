@@ -73,6 +73,9 @@ def test_webhook_delivery_blocks_redirect_to_private_target(
         status_code = 302
         headers: ClassVar[dict[str, str]] = {"Location": "http://127.0.0.1/internal"}
 
+        def close(self) -> None:
+            pass
+
     class RecordingSession:
         def post(self, *_args: object, **kwargs: object) -> RedirectResponse:
             post_calls.append(kwargs)
@@ -102,6 +105,9 @@ def test_webhook_delivery_records_success_metric(
     class OkResponse:
         status_code = 202
         headers: ClassVar[dict[str, str]] = {}
+
+        def close(self) -> None:
+            pass
 
     class OkSession:
         def post(self, *_args: object, **_kwargs: object) -> OkResponse:

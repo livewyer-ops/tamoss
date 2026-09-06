@@ -698,8 +698,13 @@ def send_webhook_delivery(
             json=payload,
             allow_redirects=False,
             timeout=timeout_seconds,
+            stream=True,
         )
-        _validate_redirect_response(url, response, egress_policy=egress_policy)
+        try:
+            _validate_redirect_response(url, response, egress_policy=egress_policy)
+        finally:
+            # Delivery processing only uses status and reason, never the body.
+            response.close()
     except Exception:
         observe_webhook_delivery("failure", time.perf_counter() - start)
         raise
