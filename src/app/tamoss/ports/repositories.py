@@ -24,10 +24,15 @@ from tamoss.domain.model import (
 )
 from tamoss.domain.pagination import Page
 from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
+from tamoss.worker_claims import WorkerRecord
 
 
 class TransactionalRepository(Protocol):
     def unit_of_work(self) -> AbstractContextManager[object]: ...
+
+
+class WorkerQueueRepository(Protocol):
+    def renew_worker_claim(self, record: WorkerRecord, lease_seconds: int) -> bool: ...
 
 
 class StorageBackendRepository(Protocol):
@@ -194,7 +199,11 @@ class WebhookResourceRepository(Protocol):
     ) -> dict[UUID, SourceRelationships]: ...
 
 
-class WebhookRepository(WebhookEventRepository, Protocol):
+class WebhookRepository(WebhookEventRepository, WorkerQueueRepository, Protocol):
+    def purge_finished_worker_records(
+        self, *, older_than: datetime, limit: int
+    ) -> int: ...
+
     def list_webhooks_page(
         self,
         *,
@@ -266,6 +275,7 @@ class SegmentRepository(TransactionalRepository, StorageBackendRepository, Proto
 
 class ObjectRepository(
     TransactionalRepository,
+    WorkerQueueRepository,
     StorageBackendRepository,
     Protocol,
 ):
@@ -306,6 +316,7 @@ class StorageRepository(
 
 class DeletionRepository(
     TransactionalRepository,
+    WorkerQueueRepository,
     StorageBackendRepository,
     FlowCollectionRepository,
     ObjectCleanupRepository,

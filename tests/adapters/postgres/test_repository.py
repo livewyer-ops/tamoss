@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from psycopg import sql
 from tamoss.adapters.postgres import PostgresRepository
 from tamoss.domain.exceptions import SegmentOverlapError
 from tamoss.domain.listings import DeleteRequestSortBy, FlowSortBy, SourceSortBy
@@ -1063,6 +1064,7 @@ def test_repository_rejects_open_or_empty_segment_timeranges(
 
 def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
     postgres_repo: PostgresRepository,
+    postgres_connection: psycopg.Connection,
 ) -> None:
     now = datetime.now(UTC)
     flow_id = uuid4()
@@ -1211,38 +1213,18 @@ def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
     )
 
     expired_at = datetime.now(UTC) - timedelta(seconds=1)
-    postgres_repo.webhook_repository.save_webhook_delivery(
-        replace(
-            claimed_delivery,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
+    for table in (
+        "tamoss_webhook_deliveries",
+        "tamoss_delete_requests",
+        "tamoss_object_cleanups",
+        "tamoss_object_copies",
+    ):
+        postgres_connection.execute(
+            sql.SQL("UPDATE {} SET claim_expires_at = %s").format(
+                sql.Identifier(table)
+            ),
+            (expired_at,),
         )
-    )
-    postgres_repo.deletion_repository.save_delete_request(
-        replace(
-            claimed_delete,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
-    postgres_repo.deletion_repository.save_object_cleanup(
-        replace(
-            claimed_cleanup,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
-    postgres_repo.object_repository.save_object_copy(
-        replace(
-            claimed_copy,
-            status="started",
-            claimed_by="worker-a",
-            claim_expires_at=expired_at,
-        )
-    )
 
     reclaimed_delivery = postgres_repo.webhook_repository.claim_webhook_deliveries(
         worker_id="worker-b",
