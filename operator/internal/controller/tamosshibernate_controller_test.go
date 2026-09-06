@@ -34,6 +34,7 @@ func TestTamossHibernateLaunchesCNPGBackupAndGatesLifecycle(t *testing.T) {
 	api := hibernateDeploymentFixture(tamoss, "api", 2)
 	worker := hibernateDeploymentFixture(tamoss, "worker", 1)
 	ui := hibernateDeploymentFixture(tamoss, "ui", 1)
+	console := hibernateDeploymentFixture(tamoss, "console", 1)
 	hpa := hibernateHPAFixture(tamoss, "api")
 	scheduled := hibernateScheduledBackupFixture(tamoss)
 	pod := hibernatePodFixture(api)
@@ -43,7 +44,7 @@ func TestTamossHibernateLaunchesCNPGBackupAndGatesLifecycle(t *testing.T) {
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}, &appsv1.Deployment{}).
-			WithObjects(tamoss, destination, hibernate, cluster, api, worker, ui, hpa, scheduled, pod).
+			WithObjects(tamoss, destination, hibernate, cluster, api, worker, ui, console, hpa, scheduled, pod).
 			Build(),
 		Scheme:       scheme,
 		Recorder:     recorder,
@@ -93,7 +94,7 @@ func TestTamossHibernateLaunchesCNPGBackupAndGatesLifecycle(t *testing.T) {
 		t.Fatalf("expected backup creation to wait for quiescence, got %v", err)
 	}
 
-	for _, component := range []string{"api", "worker", "ui"} {
+	for _, component := range []string{"api", "worker", "ui", "console"} {
 		deployment := &appsv1.Deployment{}
 		if err := reconciler.Client.Get(ctx, types.NamespacedName{Name: tamoss.ResourceName(component), Namespace: tamoss.Namespace}, deployment); err != nil {
 			t.Fatalf("get %s deployment: %v", component, err)
@@ -135,7 +136,7 @@ func TestTamossHibernateLaunchesCNPGBackupAndGatesLifecycle(t *testing.T) {
 		t.Fatalf("expected backup creation to wait for observed replicas, got %v", err)
 	}
 
-	for _, component := range []string{"api", "worker", "ui"} {
+	for _, component := range []string{"api", "worker", "ui", "console"} {
 		deployment := &appsv1.Deployment{}
 		key := types.NamespacedName{Name: tamoss.ResourceName(component), Namespace: tamoss.Namespace}
 		if err := reconciler.Client.Get(ctx, key, deployment); err != nil {
@@ -572,6 +573,26 @@ func TestTamossHibernateFailsWhenCNPGBackupFails(t *testing.T) {
 	}
 	if updatedTamoss.Status.Lifecycle.Phase != string(tamossv1alpha1.TamossLifecyclePhaseFailed) {
 		t.Fatalf("expected Tamoss lifecycle Failed, got %#v", updatedTamoss.Status.Lifecycle)
+	}
+
+	updatedHibernate.Annotations = map[string]string{AnnotationOperationRetry: "retry-1"}
+	if err := reconciler.Client.Update(ctx, updatedHibernate); err != nil {
+		t.Fatal(err)
+	}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: hibernate.Name, Namespace: hibernate.Namespace}}
+	for range 3 {
+		if _, err := reconciler.Reconcile(ctx, request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := reconciler.Client.Get(ctx, request.NamespacedName, &cnpgv1.Backup{}); err != nil {
+		t.Fatalf("expected a replacement Backup: %v", err)
+	}
+	if err := reconciler.Client.Get(ctx, request.NamespacedName, updatedHibernate); err != nil {
+		t.Fatal(err)
+	}
+	if updatedHibernate.Status.Phase != string(tamossv1alpha1.TamossOperationPhaseCapturingDatabase) {
+		t.Fatalf("expected retry to capture a new backup, got %#v", updatedHibernate.Status)
 	}
 }
 

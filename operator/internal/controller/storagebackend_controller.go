@@ -168,6 +168,14 @@ func (r *StorageBackendReconciler) resolveStorageBackendSpec(ctx context.Context
 		}))
 		return tamossv1alpha1.StorageBackendSpec{}, stopReconcile(result), err
 	}
+	if err := tamossv1alpha1.ValidateStorageBackendTags(spec.Tags); err != nil {
+		result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+			Reason:   operatorstatus.ReasonInvalidStorageBackendTags,
+			Message:  fmt.Sprintf("StorageBackend tags are invalid: %s", err),
+			Degraded: true,
+		}))
+		return tamossv1alpha1.StorageBackendSpec{}, stopReconcile(result), statusErr
+	}
 	return spec, continueReconcile(), nil
 }
 

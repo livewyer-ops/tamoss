@@ -74,6 +74,7 @@ const (
 	ReasonExternalS3DiagnosticReady             = "ExternalS3DiagnosticReady"
 	ReasonExternalS3DiagnosticSkipped           = "ExternalS3DiagnosticSkipped"
 	ReasonImagePullFailed                       = "ImagePullFailed"
+	ReasonInvalidStorageBackendTags             = "InvalidStorageBackendTags"
 	ReasonIssuerReachable                       = "IssuerReachable"
 	ReasonIssuerUnreachable                     = "IssuerUnreachable"
 	ReasonLifecycleBlocked                      = "LifecycleBlocked"

@@ -177,16 +177,6 @@ rules:
   - postgresql.cnpg.io
   resources:
   - backups
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - postgresql.cnpg.io
-  resources:
   - clusters
   - scheduledbackups
   verbs:

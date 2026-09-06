@@ -76,6 +76,12 @@ task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 
 Upgrade one instance at a time on shared clusters.
 
+The move from `8.1.0-oss6` to 8.2 changes both API and schema. Follow the full
+platform, operator and instance sequence above, using the compatibility metadata
+and image references from the same release. Validate existing Sources, Flows,
+media, webhooks and queued work after the migration. A fresh-install check does
+not exercise this upgrade path.
+
 ## Status Checks
 
 ```bash

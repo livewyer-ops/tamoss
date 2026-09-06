@@ -8,6 +8,7 @@ func storageBackendRegistrationScript() string {
 		`-v region="${TAMOSS_STORAGE_REGION}"`,
 		`-v store_product="${TAMOSS_STORAGE_PRODUCT}"`,
 		`-v store_type="${TAMOSS_STORAGE_TYPE}"`,
+		`-v tags="${TAMOSS_STORAGE_BACKEND_TAGS}"`,
 		`-v default_storage="${TAMOSS_STORAGE_DEFAULT}"`,
 		`-v bucket_name="${TAMOSS_STORAGE_BUCKET}"`,
 		`-v endpoint_url="${TAMOSS_STORAGE_ENDPOINT}"`,
@@ -33,6 +34,7 @@ INSERT INTO tamoss_storage_backends (
   bucket_name,
   endpoint_url,
   public_endpoint_url,
+  tags,
   record,
   updated_at
 )
@@ -47,6 +49,7 @@ VALUES (
   :'bucket_name',
   NULLIF(:'endpoint_url', ''),
   NULLIF(:'public_endpoint_url', ''),
+  :'tags'::jsonb,
   jsonb_build_object(
     'id', :'backend_id',
     'label', :'label',
@@ -54,6 +57,7 @@ VALUES (
     'region', :'region',
     'store_product', :'store_product',
     'store_type', :'store_type',
+    'tags', :'tags'::jsonb,
     'default_storage', :'default_storage'::boolean,
     'bucket_name', :'bucket_name',
     'endpoint_url', NULLIF(:'endpoint_url', ''),
@@ -71,6 +75,7 @@ ON CONFLICT (id) DO UPDATE SET
   bucket_name = EXCLUDED.bucket_name,
   endpoint_url = EXCLUDED.endpoint_url,
   public_endpoint_url = EXCLUDED.public_endpoint_url,
+  tags = EXCLUDED.tags,
   record = EXCLUDED.record,
   updated_at = NOW();`
 }

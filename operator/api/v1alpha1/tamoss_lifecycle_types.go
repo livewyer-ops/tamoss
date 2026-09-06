@@ -64,16 +64,25 @@ type TamossLifecycleStatus struct {
 	// spec.hibernation.resumeFrom (or from the latest hibernation artifact
 	// when waking), plus the retention state of that artifact.
 	ResolvedRestore *TamossResolvedRestore `json:"resolvedRestore,omitempty"`
+
+	// PendingArtifactCleanups preserves unfinished retention work when a later
+	// hibernation replaces the resolved database bootstrap source.
+	// +listType=atomic
+	PendingArtifactCleanups []HibernationArtifactRetention `json:"pendingArtifactCleanups,omitempty"`
 }
 
 // TamossResolvedRestore persists a resolved hibernation artifact so the
 // database renderer can keep emitting the same recovery bootstrap across
 // reconciles without re-reading the manifest from object storage.
 type TamossResolvedRestore struct {
-	Restore            DBCNPGRestoreSpec                `json:"restore,omitempty"`
+	Restore                      DBCNPGRestoreSpec `json:"restore,omitempty"`
+	Checksum                     string            `json:"checksum,omitempty"`
+	HibernationArtifactRetention `json:",inline"`
+}
+
+type HibernationArtifactRetention struct {
 	StorageBackendName string                           `json:"storageBackendName,omitempty"`
 	ManifestKey        string                           `json:"manifestKey,omitempty"`
-	Checksum           string                           `json:"checksum,omitempty"`
 	ResumedAt          *metav1.Time                     `json:"resumedAt,omitempty"`
 	Cleanup            HibernationArtifactCleanupStatus `json:"cleanup,omitempty"`
 }

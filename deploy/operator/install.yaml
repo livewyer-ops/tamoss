@@ -888,6 +888,13 @@ spec:
                 default: http_object_store
                 minLength: 1
                 type: string
+              tags:
+                additionalProperties:
+                  x-kubernetes-preserve-unknown-fields: true
+                description: |-
+                  Tags are read-only TAMS metadata clients can use for storage selection.
+                  Each value is either a string or an array of strings, matching the TAMS API.
+                type: object
               tamossRef:
                 description: TamossRef identifies the Tamoss instance that owns the
                   TAMS database registration.
@@ -6046,6 +6053,13 @@ spec:
                                 minLength: 1
                                 type: string
                             type: object
+                        type: object
+                      tags:
+                        additionalProperties:
+                          x-kubernetes-preserve-unknown-fields: true
+                        description: |-
+                          Tags are advertised on the operator-managed default TAMS storage backend.
+                          Each value is either a string or an array of strings, matching the TAMS API.
                         type: object
                     type: object
                     x-kubernetes-validations:
@@ -16401,6 +16415,37 @@ spec:
                     type: string
                   message:
                     type: string
+                  pendingArtifactCleanups:
+                    description: |-
+                      PendingArtifactCleanups preserves unfinished retention work when a later
+                      hibernation replaces the resolved database bootstrap source.
+                    items:
+                      properties:
+                        cleanup:
+                          properties:
+                            completedAt:
+                              format: date-time
+                              type: string
+                            message:
+                              type: string
+                            objectsDeleted:
+                              format: int64
+                              type: integer
+                            phase:
+                              type: string
+                            reason:
+                              type: string
+                          type: object
+                        manifestKey:
+                          type: string
+                        resumedAt:
+                          format: date-time
+                          type: string
+                        storageBackendName:
+                          type: string
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
                   phase:
                     enum:
                     - Running
@@ -17095,16 +17140,6 @@ rules:
   - postgresql.cnpg.io
   resources:
   - backups
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - postgresql.cnpg.io
-  resources:
   - clusters
   - scheduledbackups
   verbs:
