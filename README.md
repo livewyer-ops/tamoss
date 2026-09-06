@@ -6,20 +6,21 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
-[![BBC TAMS v8.1](https://img.shields.io/badge/BBC%20TAMS-v8.1-green)](https://github.com/bbc/tams)
+[![BBC TAMS v8.2](https://img.shields.io/badge/BBC%20TAMS-v8.2-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the
-[BBC TAMS v8.1 API specification](https://github.com/bbc/tams). It installs as
+[BBC TAMS v8.2 API specification](https://github.com/bbc/tams). It installs as
 an operator-driven product with four supported infrastructure profiles:
 `local-kind`, `edge`, `single-server`, and `multi-server`.
 
-The operator reconciles `Tamoss` and `StorageBackend` custom resources into the
-API, worker, UI, schema migration, generated Secrets, routing, and selected
-backend integrations.
+The operator reconciles `Tamoss`, `StorageBackend`, `FlowProfile`, and
+`IngestRun` custom resources into the API, worker, UI, schema migration,
+generated Secrets, routing, Profile registration, and selected backend
+integrations.
 
 ## Features
 
-- **TAMS-compatible media store**: Implements the BBC TAMS v8.1 API for working
+- **TAMS-compatible media store**: Implements the BBC TAMS v8.2 API for working
   with sources, flows, flow segments, tags, storage backends, webhooks, and
   deletion workflows.
 - **Operator-managed runtime**: Reconciles API, worker, UI, schema migration,
@@ -165,5 +166,5 @@ See [Development Workflow](docs/development/contributing.md) and
 
 Licensed under the [Apache License 2.0](LICENSE).
 
-This project implements the BBC TAMS v8.1 specification. See
+This project implements the BBC TAMS v8.2 specification. See
 [src/vendor/bbc-tams/](src/vendor/bbc-tams/) for upstream license information.

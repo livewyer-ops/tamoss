@@ -17,10 +17,17 @@ spec:
             file: resources/namespaces.yaml
         - apply:
             file: resources/tams-rbac.yaml
-        - script:
-            content: |
-              set -eu
-              kubectl apply --server-side -k ../../../../config/chainsaw-watch-tams
+        - command:
+            entrypoint: kubectl
+            args:
+              - set
+              - env
+              - deployment/operator-controller-manager
+              - --namespace=tamoss-system
+              - WATCH_NAMESPACES=tams
+            timeout: 60s
+            check:
+              ($error == null): true
         - assert:
             file: ../../fixtures/assert/operator-ready.yaml
             timeout: 180s
@@ -29,30 +36,59 @@ spec:
       try:
         - apply:
             file: resources/ignored-tamoss.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              sleep 30
-              ! kubectl -n other get deployment ignored-api >/dev/null 2>&1
-              kubectl -n tamoss-system logs deployment/operator-controller-manager -c manager --tail=200 |
-                grep -q "watching configured namespaces"
+        - sleep:
+            duration: 30s
+        - error:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: ignored-api
+                namespace: other
+            timeout: 5s
+        - command:
+            entrypoint: kubectl
+            args:
+              - -n
+              - tamoss-system
+              - logs
+              - deployment/operator-controller-manager
+              - -c
+              - manager
+              - --tail=200
+            timeout: 30s
+            check:
+              ($error == null): true
+              (contains($stdout, 'watching configured namespaces')): true
       finally:
-        - script:
-            content: |
-              set -eu
-              # chainsaw-script: finally blocks cannot use native assert operations, so cleanup waits inline.
-              kubectl apply --server-side -k ../../../../config/chainsaw >/dev/null
-              kubectl -n tamoss-system rollout status deployment/operator-controller-manager --timeout=180s >/dev/null
-              end=$(($(date +%s) + 60))
-              until [ -n "$(kubectl -n tamoss-system get endpoints operator-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)" ]; do
-                if [ "$(date +%s)" -ge "$end" ]; then
-                  echo "timed out waiting for operator webhook endpoint" >&2
-                  exit 1
-                fi
-                sleep 2
-              done
-              # The endpoint can be published before the webhook listener accepts TLS.
-              sleep 5
+        - command:
+            entrypoint: kubectl
+            args:
+              - set
+              - env
+              - deployment/operator-controller-manager
+              - --namespace=tamoss-system
+              - WATCH_NAMESPACES-
+            timeout: 60s
+            check:
+              ($error == null): true
+        - wait:
+            apiVersion: apps/v1
+            kind: Deployment
+            namespace: tamoss-system
+            name: operator-controller-manager
+            timeout: 180s
+            for:
+              condition:
+                name: Available
+        - wait:
+            apiVersion: v1
+            kind: Endpoints
+            namespace: tamoss-system
+            name: operator-webhook-service
+            timeout: 60s
+            for:
+              jsonPath:
+                path: '{.subsets[0].addresses[0].ip}'
+        - sleep:
+            duration: 5s

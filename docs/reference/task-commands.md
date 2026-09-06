@@ -74,6 +74,7 @@ use stable `reports/junit-*.xml` names.
 | `task test:tams:conformance` | Alias for the complete local TAMS conformance gate. |
 | `task test:tams:inventory` | Generate the current TAMS conformance inventory report. |
 | `task test:tams:coverage` | Generate backend coverage over the TAMS conformance tests. |
+| `task test:tamsin:release` | Exercise the exact TAMSin release image, treatment catalogue, managed fixture plans, and event protocol. |
 | `task lint:mypy` | Run Python mypy checks. |
 | `task lint:ruff:lint` | Check Python import order and formatting. |
 | `task lint:ruff:fix` | Fix Python import order and formatting. |
@@ -85,8 +86,8 @@ use stable `reports/junit-*.xml` names.
 | `task openapi:sync` | Regenerate the vendored BBC OpenAPI derivative. |
 | `task versions:check` | Check platform, compose, and operator-owned operand version pins. |
 | `task security:audit:python` | Run Python dependency audit. |
-| `task security:audit:frontend` | Run frontend dependency audit. |
-| `task security:audit:osv` | Run OSV dependency and repository audit. |
+| `task security:audit:frontend` | Scan frontend runtime and build dependencies with OSV and the approved advisory policy. |
+| `task security:audit:osv` | Scan repository dependencies with OSV and validate the OpenPGP exclusion against both Linux build architectures. |
 
 ### Operator Maintainer Commands
 

@@ -6,10 +6,44 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Added BBC TAMS 8.2 Flow Profiles, Flow status, initialisation Objects,
+  collection filters and deterministic listings, with a database migration
+  from `8.1.0-oss6`.
+- Replaced the preview interface with an operational Console for catalogue
+  browsing, playback, runtime diagnostics and ingest history. Media writes use
+  the TAMS API; the Console no longer provides browser upload controls.
+- Added immutable `FlowProfile` registration and managed `IngestRun` execution
+  through the pinned TAMSin workload. Kubernetes clients create runs; authorised
+  Console operators can cancel active runs.
+- Preserved Object identity across instance registration, deletion and browser
+  navigation, including identifiers containing literal percent sequences.
+- Protected shared media during concurrent cleanup, copying and reallocation,
+  including recovery of copy work interrupted before its metadata was saved.
+- Fixed collection timeranges for cycles and deeply nested collections.
+- Preserved Profile and Storage Backend deletion checks during schema upgrades
+  and Profile registration; prevented automatic replay of failed ingest workloads.
+- Fixed failed hibernation backup retries and repeated hibernate/resume cycles.
+- Preserved pending archive cleanup across later restore cycles.
+- Bounded Console request reads, including incomplete request bodies.
+- Made UI requests to a disabled Console API fail explicitly with a JSON 503
+  response instead of falling through to the single-page application shell.
+- Added complete playback for independently decodable MP4 Object sequences,
+  including split video and audio Flows.
+- Realigned the vendored BBC TAMS contract with the upstream 8.2 bugfix retag,
+  restoring the `codec`, `container`, `avg_bit_rate`, `segment_duration` and
+  `container_mapping` properties on multi-essence Flows, with conformance
+  coverage that validates them. The advertised API version stays 8.2, matching
+  upstream's versioning policy for this fix.
+- Applied the official TAMS Brand Kit to the service page and navigation.
+- Consolidated Python, npm and Go dependency auditing into one reproducible
+  workflow and made versioned image and operator-asset releases depend on it.
+- Refreshed compatible Python, frontend, operator, container and GitHub Actions
+  dependencies while retaining the reviewed Omakase/HLS compatibility pins.
 - Fixed `task kind:up` leaving application workloads on the previous build:
-  operand images are now tagged by `src/` content, so a rebuild changes the
-  rendered Deployment spec and Kubernetes rolls the api, ui and worker pods
-  without an imperative restart.
+  operand image tags include API, UI and Console build inputs, so a rebuild
+  changes the rendered Deployment and rolls the affected workloads. All Kind
+  profiles use the built image tags and enable the Console. Creating and reusing
+  a cluster now use the same supported schema versions.
 
 ## 8.1.0-oss6 - 2026-08-08
 

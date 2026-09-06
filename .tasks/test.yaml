@@ -14,6 +14,8 @@ vars:
   TAMS_INTEGRATION_DIR: tests/tams/integration
   TAMS_DEPLOYED_DIR: tests/tams/deployed
   TAMS_CONFORMANCE_MARK: "tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_CONTRACT_MARK: "tams_contract and tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_SEMANTICS_MARK: "tams_semantics and tams_conformance and not tamoss_extension and not tamoss_security"
 
 tasks:
   tamsin:release:
@@ -77,14 +79,14 @@ tasks:
       - mkdir -p reports
       - printf 'test py.tams.contract\n'
       - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/openapi-parity.txt
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_openapi_contract.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_CONTRACT_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
 
   tams:semantics:
     silent: true
     cmds:
       - mkdir -p reports
       - printf 'test py.tams.semantics\n'
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_service_and_metadata.py {{.TAMS_CONFORMANCE_DIR}}/test_flows_sources_and_segments.py {{.TAMS_CONFORMANCE_DIR}}/test_storage_objects_and_deletion.py {{.TAMS_CONFORMANCE_DIR}}/test_webhooks.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_SEMANTICS_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
 
   tams:integration:
     silent: true
@@ -141,7 +143,10 @@ tasks:
     cmds:
       - mkdir -p reports
       - printf 'test py.fast\n'
-      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_env_summary_helpers.py tests/test_kind_operand_tag.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
+      # The tests/e2e/test_browser.py and tests/e2e/test_target_env.py modules
+      # exercise the e2e harness itself. They need no cluster and no browser, so
+      # they belong in the fast subset rather than behind a deployed marker.
+      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/domain tests/scripts tests/workers tests/e2e/test_browser.py tests/e2e/test_target_env.py tests/test_documented_task_commands.py tests/test_env_summary_helpers.py tests/test_kind_operand_tag.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
 
   application:
     silent: true
@@ -275,6 +280,10 @@ tasks:
       - printf 'test frontend.unit\n'
       - test -d node_modules || npm ci
       - npm run test -- --reporter=default --reporter=junit --outputFile=../../../reports/junit-frontend-unit.xml
+      - printf 'test frontend.entrypoint\n'
+      - npm run test:entrypoint
+      - printf 'test frontend.build-budget\n'
+      - npm run build
 
   media:fixtures:
     silent: true

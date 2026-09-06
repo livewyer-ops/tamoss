@@ -30,14 +30,61 @@ spec:
             timeout: 180s
         - apply:
             file: ../../fixtures/tamoss-external.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: compares generated Secret and rollout checksum before and after the rotation annotation.
-              ./scripts/assert-api-token-rotation.sh
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: tamoss-api-token
+                namespace: ($namespace)
+            timeout: 120s
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: tamoss-api
+                namespace: ($namespace)
+            timeout: 120s
+        - create:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: token-rotation-snapshot
+                namespace: ($namespace)
+              data:
+                token: (x_k8s_get($client, 'v1', 'Secret', $namespace, 'tamoss-api-token').data.TAMOSS_API_TOKEN)
+                checksum: (x_k8s_get($client, 'apps/v1', 'Deployment', $namespace, 'tamoss-api').spec.template.metadata.annotations."checksum/api-token-secret")
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: tamoss
+                namespace: ($namespace)
+                annotations:
+                  tamoss.livewyer.io/api-token-rotate: rotate-1
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: tamoss-api-token
+                namespace: ($namespace)
+                annotations:
+                  tamoss.livewyer.io/api-token-rotate-consumed: rotate-1
+              (data.TAMOSS_API_TOKEN != x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'token-rotation-snapshot').data.token): true
+            timeout: 180s
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: tamoss-api
+                namespace: ($namespace)
+              (spec.template.metadata.annotations."checksum/api-token-secret" != x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'token-rotation-snapshot').data.checksum): true
+            timeout: 180s
         - assert:
             file: assert/api-token-rotation-accepted-event.yaml
             timeout: 1m

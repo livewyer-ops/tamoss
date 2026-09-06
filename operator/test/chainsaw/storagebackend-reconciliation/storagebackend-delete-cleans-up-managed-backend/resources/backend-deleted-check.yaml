@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: archive-backend-deleted-check
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: database
+          image: postgres:18-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGPASSWORD
+              value: tams
+          command:
+            - psql
+          args:
+            - -h
+            - postgresql
+            - -U
+            - tams
+            - -d
+            - tams
+            - -v
+            - ON_ERROR_STOP=1
+            - -c
+            - >-
+              DO $$$$ BEGIN
+                IF EXISTS (SELECT FROM tamoss_storage_backends
+                           WHERE id = '11111111-1111-5111-8111-111111111111'::uuid) THEN
+                  RAISE EXCEPTION 'archive backend row still exists';
+                END IF;
+              END $$$$;
+        - name: bucket
+          image: amazon/aws-cli:2.32.34
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: rustfsadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: rustfsadmin
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+          command:
+            - aws
+          args:
+            - --endpoint-url
+            - http://rustfs-svc:9000
+            - s3api
+            - wait
+            - bucket-not-exists
+            - --bucket
+            - archive

@@ -43,14 +43,26 @@ spec:
 
     - name: simulate rustfs tenant readiness
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: RustFS Tenant status is simulated because no RustFS controller is running in Chainsaw.
-              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: tamoss-s3
+                namespace: ($namespace)
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: tamoss-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
 
     - name: wait for storage backend reconciliation
       try:
@@ -75,68 +87,17 @@ spec:
 
     - name: verify rendered credential payload
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: decodes the runtime credential JSON and compares it with the rendered backend Secret.
-              backend_id="$(kubectl -n "$NAMESPACE" get secret tamoss-backends -o jsonpath='{.data.TAMOSS_STORAGE_BACKEND_ID}' | base64 -d)"
-              kubectl -n "$NAMESPACE" get secret tamoss-storage-backend-credentials -o jsonpath='{.data.credentials\.json}' | base64 -d | grep -q "\"storageBackendId\": \"$backend_id\""
-              kubectl -n "$NAMESPACE" get secret tamoss-backends -o jsonpath='{.data.TAMOSS_S3_PUBLIC_ENDPOINT}' | base64 -d | grep -q "https://s3.tamoss.test"
+        - assert:
+            resource:
+              (parse_json(base64_decode(x_k8s_get($client, 'v1', 'Secret', $namespace, 'tamoss-storage-backend-credentials').data."credentials.json"))):
+                apiVersion: tamoss.livewyer.io/v1
+                kind: StorageBackendCredentials
+                (credentials[?storageBackendId == base64_decode(x_k8s_get($client, 'v1', 'Secret', $namespace, 'tamoss-backends').data.TAMOSS_STORAGE_BACKEND_ID)] | length(@)): 1
+              (contains(base64_decode(x_k8s_get($client, 'v1', 'Secret', $namespace, 'tamoss-backends').data.TAMOSS_S3_PUBLIC_ENDPOINT), 'https://s3.tamoss.test')): true
+            timeout: 30s
 
     - name: complete simulated cleanup
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: the StorageBackend is deleted without waiting because its
-              # finalizer may need the cleanup job below to be completed first; a blocking
-              # delete operation would deadlock against its own next step.
-              kubectl -n "$NAMESPACE" delete storagebackend tamoss-storage-default --wait=false
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: this test deletes the managed StorageBackend directly, so its
-              # database cleanup job must be completed. When the deregister job succeeds on its
-              # own against the fixture database, finalisation completes and both the job and
-              # the StorageBackend vanish before this script sees them — that is success, not
-              # an error, so the wait tolerates the StorageBackend disappearing.
-              complete_job() {
-                job="$1"
-                for _ in $(seq 1 60); do
-                  kubectl -n "$NAMESPACE" get job "$job" >/dev/null 2>&1 && break
-                  if ! kubectl -n "$NAMESPACE" get storagebackend tamoss-storage-default >/dev/null 2>&1; then
-                    echo "StorageBackend already finalised; no job completion needed"
-                    return 0
-                  fi
-                  sleep 1
-                done
-                if ! kubectl -n "$NAMESPACE" get job "$job" >/dev/null 2>&1; then
-                  echo "job $job never appeared but StorageBackend still exists" >&2
-                  return 1
-                fi
-                now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                payload="$(printf '{"status":{"active":0,"ready":0,"succeeded":1,"terminating":0,"conditions":[{"type":"SuccessCriteriaMet","status":"True","lastProbeTime":"%s","lastTransitionTime":"%s"},{"type":"Complete","status":"True","lastProbeTime":"%s","lastTransitionTime":"%s"}],"completionTime":"%s"}}' "$now" "$now" "$now" "$now" "$now")"
-                kubectl -n "$NAMESPACE" patch job "$job" --subresource=status --type=merge -p "$payload" >/dev/null 2>&1 ||
-                  kubectl -n "$NAMESPACE" patch job "$job" --type=merge -p "$payload" >/dev/null
-                kubectl -n "$NAMESPACE" annotate storagebackend tamoss-storage-default "chainsaw.livewyer.io/tick=$(date +%s%N)" --overwrite >/dev/null 2>&1 || true
-              }
-              complete_job tamoss-storage-default-db-deregister
-        - wait:
-            apiVersion: tamoss.livewyer.io/v1alpha1
-            kind: StorageBackend
-            name: tamoss-storage-default
-            timeout: 120s
-            for:
-              deletion: {}
         - delete:
             ref:
               apiVersion: tamoss.livewyer.io/v1alpha1

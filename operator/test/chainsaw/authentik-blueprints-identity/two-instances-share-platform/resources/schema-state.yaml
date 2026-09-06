@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: alpha-schema-state
 data:
-  appliedVersion: "0.0.1"
+  appliedVersion: ($values.schemaVersion)
   fixturesApplied: "false"
 ---
 apiVersion: v1
@@ -11,5 +11,5 @@ kind: ConfigMap
 metadata:
   name: beta-schema-state
 data:
-  appliedVersion: "0.0.1"
+  appliedVersion: ($values.schemaVersion)
   fixturesApplied: "false"

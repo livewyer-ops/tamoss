@@ -29,14 +29,21 @@ spec:
             timeout: 120s
         - apply:
             file: ../../fixtures/cnpg-secrets.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: CNPG status and generated Secret simulation; no CNPG controller is running in Chainsaw.
-              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
+        - patch:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: tamoss-db
+                namespace: ($namespace)
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: ClusterReady
+                    message: Cluster is ready
+            subresource: status
+            timeout: 60s
         - assert:
             file: assert/api-deployment-uses-cnpg-secret.yaml
             timeout: 120s

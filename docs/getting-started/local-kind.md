@@ -77,9 +77,12 @@ application NodePorts or port-forwarding.
 - Authentik: <https://auth.tamoss.localtest.me>
 
 Local Kind uses self-signed TLS. Browser trust is per origin, so accept or
-trust the local certificate warning for each origin you open. Browser ingest
-uploads directly to the S3 origin, so make sure
+trust the local certificate warning for each origin you open. Playback reads
+directly from the S3 origin, so make sure
 `https://s3.tamoss.localtest.me` is accepted as well as the app origin.
+Operator-created [TAMSin](https://github.com/livewyer-ops/tamsin) Jobs disable
+certificate verification only for this disposable profile; every
+remote-capable profile retains strict TLS validation.
 
 Inspect the install:
 

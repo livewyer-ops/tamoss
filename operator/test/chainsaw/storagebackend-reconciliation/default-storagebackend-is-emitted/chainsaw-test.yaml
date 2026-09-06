@@ -25,14 +25,33 @@ spec:
             file: ../../fixtures/assert/postgresql-available.yaml
         - apply:
             file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
-              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: tamoss-s3
+            timeout: 120s
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: tamoss-s3
+                namespace: ($namespace)
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: tamoss-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
         - assert:
             file: assert/tamoss-ready.yaml
             timeout: 5m

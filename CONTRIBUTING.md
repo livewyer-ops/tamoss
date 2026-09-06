@@ -60,8 +60,8 @@ rollout checks.
 ### Operator development
 
 The Kubernetes operator lives under `operator/` and uses Go with
-controller-runtime tooling. The operator has an independent Go
-module and release cadence from the Python API and Node UI.
+controller-runtime tooling. It has an independent Go module, but the operator,
+API, UI and Console API ship together through the [release process](docs/development/releases.md).
 
 Use the root Taskfile wrappers where possible:
 
@@ -81,6 +81,16 @@ documented in
 Work in `src/app/` normally does not require Go. Install the aqua toolchain
 before touching the operator so `go`, `kubeconform`, and
 `chainsaw` match CI.
+
+## Documentation
+
+Documentation follows Diataxis: getting-started tutorials, operations how-to
+guides, reference contracts, and conceptual explanations remain distinct and
+link to one another. Public docs describe current behaviour; unresolved designs
+do not belong in user-facing documentation.
+
+Write prose and commit messages in British English. Preserve literal API field
+names, commands, error codes, and upstream product names exactly.
 
 ## Testing
 
@@ -130,6 +140,8 @@ checks against an existing target file.
 Test markers in use:
 
 - `tams_conformance` — TAMS API, ADR, or AppNote conformance requirement.
+- `tams_contract` — generated and runtime TAMS contract parity requirement.
+- `tams_semantics` — executable TAMS behaviour and capability requirement.
 - `tamoss_extension` — TAMOSS compatibility or operational extension outside core TAMS conformance.
 - `tamoss_security` — TAMOSS authentication, authorisation, or hardening policy.
 - `e2e` — deployed TAMS-facing black-box checks.
@@ -143,6 +155,9 @@ Prefer adding new TAMS-facing behaviour coverage under the contract or semantic
 task that matches the failure mode. Add deployed checks only when the behaviour
 requires a real ingress, browser, object store, or worker deployment.
 
+Use capability-oriented names for enduring tests. Use versioned test names only
+when a release or upgrade boundary is the behaviour under test.
+
 ## Code organisation
 
 - **Runtime**: `src/app/tamoss/`, split into API routes, application use
@@ -151,9 +166,8 @@ requires a real ingress, browser, object store, or worker deployment.
   Runtime implementation lives under `src/app/tamoss/`.
 - **Tests**: maintained TAMS conformance tests live under
   `tests/tams/conformance/`, focused DB/S3 conformance tests under
-  `tests/tams/integration/`, deployed TAMS checks under
-  `tests/tams/deployed/`, and deployed product API/UI checks under
-  `tests/e2e/`.
+  `tests/tams/integration/`, deployed TAMS checks under `tests/tams/deployed/`,
+  and deployed product API/UI checks under `tests/e2e/`.
 - **Database**: canonical SQL assets live under
   `src/app/tamoss/db/migrations/assets/`; Alembic applies those files at
   runtime.
@@ -203,7 +217,7 @@ Include:
 - [ ] Code follows style guide (pre-commit passes).
 - [ ] Tests added or updated.
 - [ ] `task check` and relevant focused suites are green.
-- [ ] Docs updated (README, usage, deployment, or configuration as relevant).
+- [ ] Docs updated and placed in the appropriate Diataxis section.
 
 ## Commit messages
 

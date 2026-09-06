@@ -24,7 +24,7 @@ jobs:
       summary-description: Cluster workflow recreates Kind and runs deployed TAMS/product pytest E2E through ingress. See junit reports in the uploaded artifact.
 
   kind:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: kind-e2e
     if: ${{ always() }}
     steps:

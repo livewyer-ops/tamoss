@@ -4,7 +4,7 @@ metadata:
   name: storagebackend-delete-cleans-up-managed-backend
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: extended
+    test.tamoss.io/tier: release
     test.tamoss.io/domain: storage
     test.tamoss.io/lifecycle: destructive
     test.tamoss.io/provider: rustfs
@@ -34,27 +34,58 @@ spec:
         - assert:
             file: assert/archive-storagebackend-ready.yaml
             timeout: 5m
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: checks real RustFS and PostgreSQL side effects for the managed backend.
-              ./scripts/assert-storagebackend-present.sh
+        - apply:
+            file: resources/backend-present-check.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: archive-backend-present-check
+            timeout: 2m
+            for:
+              condition:
+                name: Complete
 
-    - name: confirmed delete cleans up provider state
+    - name: unconfirmed delete is denied
       try:
         - delete:
             ref:
               apiVersion: tamoss.livewyer.io/v1alpha1
               kind: StorageBackend
               name: archive
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: waits for finalizer cleanup and verifies provider-side deletion.
-              ./scripts/assert-storagebackend-deleted.sh
+            expect:
+              - match:
+                  apiVersion: tamoss.livewyer.io/v1alpha1
+                  kind: StorageBackend
+                  metadata:
+                    name: archive
+                check:
+                  ($error != null): true
+        - assert:
+            file: assert/archive-storagebackend-present.yaml
+
+    - name: confirmed delete cleans up provider state
+      try:
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              metadata:
+                name: archive
+                namespace: ($namespace)
+                annotations:
+                  confirmation.tamoss.livewyer.io/deletion: "true"
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              name: archive
+        - apply:
+            file: resources/backend-deleted-check.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: archive-backend-deleted-check
+            timeout: 2m
+            for:
+              condition:
+                name: Complete

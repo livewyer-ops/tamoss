@@ -1,8 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
-  namespace: system
+  name: operator-controller-manager
+  namespace: tamoss-system
 spec:
   template:
     spec:
@@ -10,4 +10,4 @@ spec:
         - name: manager
           env:
             - name: TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES
-              value: "*"
+              value: auth

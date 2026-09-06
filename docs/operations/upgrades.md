@@ -64,10 +64,10 @@ kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
 
 ## Upgrading a Pinned Environment Instance
 
-Environment instances pin `spec.api.image.tag` and `spec.ui.image.tag` to a
-release. To move an instance to a new release without touching the platform
-or operator layers, update the tags in the instance file, then apply the
-instance layer and wait for `Ready=True`:
+Environment instances can pin `spec.api.image.tag`, `spec.ui.image.tag` and
+`spec.console.image.tag`. Update all configured pins to the candidate's matching
+images; the worker uses the API image. For an image-only update supported by the
+installed operator and schema, apply the instance layer and wait for `Ready=True`:
 
 ```bash
 task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"

@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   operator-render:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -43,7 +43,7 @@ jobs:
         run: task operator:monitoring:check
 
   workflow-surface:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Git Checkout
@@ -83,7 +83,7 @@ jobs:
           kubectl kustomize "deploy/environments/${environment}" >/tmp/tamoss-${environment}.yaml
 
   python:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
@@ -129,7 +129,7 @@ jobs:
 
   python-strict-mypy:
     name: Python strict opt-in mypy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -153,11 +153,13 @@ jobs:
         run: task lint:mypy
 
   node:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Git Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
 
       - name: Set up Node.js
         uses: ./.github/actions/setup-node

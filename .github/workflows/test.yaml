@@ -1,12 +1,13 @@
 name: Tests
 
 on:
+  workflow_call:
   pull_request:
   workflow_dispatch:
   merge_group:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-tests
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +16,7 @@ permissions:
 
 jobs:
   python-fast:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
@@ -56,7 +57,7 @@ jobs:
           paths: reports/junit-py-fast.xml
 
   tams-contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -97,7 +98,7 @@ jobs:
           paths: reports/junit-*.xml
 
   tams-semantics:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Git Checkout
@@ -138,7 +139,7 @@ jobs:
           paths: reports/junit-*.xml
 
   workers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -179,7 +180,7 @@ jobs:
           paths: reports/junit-*.xml
 
   adapters:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
@@ -227,7 +228,7 @@ jobs:
           paths: reports/junit-*.xml
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Git Checkout
@@ -261,7 +262,7 @@ jobs:
           paths: reports/junit-frontend-unit.xml
 
   media-fixtures:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Git Checkout
