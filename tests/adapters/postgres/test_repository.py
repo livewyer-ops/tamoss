@@ -875,20 +875,19 @@ def test_use_cases_project_flow_collection_relationships_with_postgres(
         {"id": str(child_flow_id)},
         {"id": str(audio_flow_id), "role": "audio"},
     ]
-    relationships = use_cases.sources.source_relationships()
+    relationships = use_cases.sources.source_relationships(
+        [parent_source_id, child_source_id, audio_source_id]
+    )
     assert relationships[parent_source_id].source_collection == [
         {"id": str(child_source_id)},
         {"id": str(audio_source_id), "role": "audio"},
     ]
     assert relationships[child_source_id].collected_by == [parent_source_id]
     assert relationships[audio_source_id].collected_by == [parent_source_id]
-    scoped_relationships = use_cases.sources.source_relationships(
-        [parent_source_id, child_source_id, audio_source_id]
-    )
-    assert scoped_relationships[parent_source_id].source_collection == [
-        {"id": str(child_source_id)},
-        {"id": str(audio_source_id), "role": "audio"},
-    ]
+    assert use_cases.sources.source_relationships([parent_source_id]) == {
+        parent_source_id: relationships[parent_source_id]
+    }
+    assert use_cases.sources.source_relationships([]) == {}
     assert use_cases.flows.get_flow(child_flow_id, include_collected_by=True).data[
         "collected_by"
     ] == [str(parent_flow_id)]

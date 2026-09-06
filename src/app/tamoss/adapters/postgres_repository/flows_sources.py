@@ -33,11 +33,6 @@ from tamoss.domain.pagination import Page, resolve_page_window
 
 
 class PostgresFlowSourceMixin:
-    def list_flows(self) -> list[FlowRecord]:
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT record FROM tamoss_flows ORDER BY id")
-            return [_flow_from_record(row[0]) for row in cur.fetchall()]
-
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(

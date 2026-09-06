@@ -253,10 +253,6 @@ class FakeTamossRepository:
                     return backend
             return None
 
-    def list_flows(self) -> list[FlowRecord]:
-        with self._lock:
-            return list(self._flows.values())
-
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
         with self._lock:
             return [

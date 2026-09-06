@@ -3,7 +3,8 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
@@ -11,13 +12,7 @@ import (
 // ValidateTAMSTags enforces the TAMS string-or-string-array tag union after
 // Kubernetes has preserved each value as arbitrary JSON.
 func ValidateTAMSTags(tags map[string]apiextensionsv1.JSON) error {
-	keys := make([]string, 0, len(tags))
-	for key := range tags {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(tags)) {
 		var value any
 		if err := json.Unmarshal(tags[key].Raw, &value); err != nil {
 			return fmt.Errorf("tag %q contains invalid JSON: %w", key, err)

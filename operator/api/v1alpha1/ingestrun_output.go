@@ -3,7 +3,6 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -51,14 +50,9 @@ func IngestRunFlowMetadataJSON(output *IngestRunOutputIntent) (string, error) {
 		metadata["description"] = output.FlowMetadata.Description
 	}
 	if len(output.FlowMetadata.Tags) > 0 {
-		keys := make([]string, 0, len(output.FlowMetadata.Tags))
-		for key := range output.FlowMetadata.Tags {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		tags := make(map[string]json.RawMessage, len(keys))
-		for _, key := range keys {
-			tags[key] = output.FlowMetadata.Tags[key].Raw
+		tags := make(map[string]json.RawMessage, len(output.FlowMetadata.Tags))
+		for key, value := range output.FlowMetadata.Tags {
+			tags[key] = value.Raw
 		}
 		metadata["tags"] = tags
 	}

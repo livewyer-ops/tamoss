@@ -74,6 +74,8 @@ tasks:
     preconditions:
       - sh: command -v actionlint
         msg: "actionlint is required; run aqua install"
+      - sh: command -v yq
+        msg: "yq is required; run aqua install"
     # check-yaml only proves a workflow parses. Actions are SHA-pinned and the
     # release path gates on a job graph, so a bad `needs:` reference or a
     # mistyped expression would otherwise stay invisible until a tag build.
@@ -81,6 +83,13 @@ tasks:
     # which catches defects such as unquoted expansions.
     cmds:
       - actionlint
+      # actionlint expects workflows, so wrap the composite's inputs and steps.
+      - |
+        yq '{
+          "on": {"workflow_call": {"inputs": .inputs}},
+          "jobs": {"image": {"runs-on": "ubuntu-24.04", "steps": .runs.steps}}
+        } | .on.workflow_call.inputs[].type = "string"' \
+          .github/actions/build-image/action.yaml | actionlint -
 
   yamlfmt:
     interactive: true

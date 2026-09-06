@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+import subprocess
 import sys
 from unittest.mock import Mock
 
@@ -9,6 +12,13 @@ import pytest
 import yaml
 
 from tests.support.paths import REPO_ROOT, load_python_module
+
+
+@pytest.fixture
+def image_action():
+    return yaml.safe_load(
+        (REPO_ROOT / ".github/actions/build-image/action.yaml").read_text()
+    )
 
 
 def test_release_publication_requires_every_image_and_tag_validation() -> None:
@@ -39,6 +49,138 @@ def test_release_publication_requires_every_image_and_tag_validation() -> None:
     assert (
         build["concurrency"]["cancel-in-progress"] == "${{ github.ref_type != 'tag' }}"
     )
+
+
+def test_image_builds_share_steps_without_changing_signing_jobs(image_action) -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/docker-hub.yaml").read_text()
+    )
+    for component, dockerfile in {
+        "tamoss-api": "src/app/tamoss/Dockerfile",
+        "tamoss-ui": "src/app/frontend/Dockerfile",
+        "tamoss-console-api": "operator/Dockerfile.console-api",
+        "tamoss-operator": "operator/Dockerfile",
+    }.items():
+        job = workflow["jobs"][component]
+        assert "uses" not in job
+        assert job["permissions"]["id-token"] == "write"
+        assert job["steps"][0]["uses"].startswith("actions/checkout@")
+        build = next(step for step in job["steps"] if step.get("id") == "build")
+        assert build["uses"] == "./.github/actions/build-image"
+        inputs = build["with"]
+        assert inputs["component"] == component
+        assert inputs["file"] == dockerfile
+        assert inputs.get("context", ".") == (
+            "src/app/frontend" if component == "tamoss-ui" else "."
+        )
+        assert inputs["push"] == "${{ env.PUSH_IMAGES }}"
+        assert inputs["dockerhub-token"] == "${{ secrets.DOCKERHUB_TOKEN }}"
+        arguments = {
+            line.partition("=")[0] for line in inputs.get("build-args", "").splitlines()
+        }
+        expected = (
+            {"VERSION", "SCHEMA_VERSION", "TAMS_API_VERSION"}
+            if component in {"tamoss-api", "tamoss-operator"}
+            else set()
+        )
+        if component == "tamoss-operator":
+            expected |= {"PREVIOUS_SCHEMA_VERSION", "OPERAND_VERSION"}
+        assert arguments == expected
+    assert image_action["runs"]["using"] == "composite"
+    assert image_action["outputs"]["digest"]["value"] == (
+        "${{ steps.build.outputs.digest }}"
+    )
+    assert workflow["env"]["PUSH_IMAGES"] == (
+        "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch'"
+        " || (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'"
+        " && github.event.pull_request.head.repo.full_name == github.repository) }}"
+    )
+
+
+def test_shared_image_build_keeps_publish_guards_and_attestations(image_action) -> None:
+    assert image_action["inputs"]["push"]["default"] == "false"
+    steps = image_action["runs"]["steps"]
+    for step in steps:
+        if "uses" in step:
+            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", step["uses"])
+        if "run" in step:
+            assert step["shell"] == "bash"
+        if step.get("uses", "").startswith(("docker/login-action@", "sigstore/")) or (
+            "cosign sign" in step.get("run", "")
+        ):
+            assert step["if"] == "inputs.push == 'true'"
+    build = next(step for step in steps if step.get("id") == "build")["with"]
+    assert build["push"] == "${{ inputs.push == 'true' }}"
+    assert build["platforms"] == "linux/amd64,linux/arm64"
+    assert build["provenance"] == "mode=max"
+    assert build["sbom"] is True
+    assert build["cache-from"] == "type=gha,scope=${{ inputs.component }}"
+    assert build["cache-to"] == "type=gha,mode=max,scope=${{ inputs.component }}"
+    metadata = next(step for step in steps if step.get("id") == "meta")["with"]
+    assert metadata["images"] == "livewyer/${{ inputs.component }}"
+    assert set(metadata["tags"].splitlines()) == {
+        "type=schedule",
+        "type=ref,event=branch",
+        "type=ref,event=tag",
+        "type=semver,pattern={{version}}",
+        "type=ref,event=pr",
+        "type=sha,prefix=sha-",
+        "${{ steps.pr-head-tag.outputs.tag }}",
+        "type=raw,value=latest,enable={{is_default_branch}}",
+    }
+
+
+@pytest.mark.parametrize("head", ["", "abc1234" + "d" * 33])
+def test_shared_image_tags_use_the_pr_head(image_action, tmp_path, head) -> None:
+    step = next(
+        step
+        for step in image_action["runs"]["steps"]
+        if step.get("id") == "pr-head-tag"
+    )
+    output = tmp_path / "output"
+    output.touch()
+    subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        env={**os.environ, "PR_HEAD_SHA": head, "GITHUB_OUTPUT": str(output)},
+        check=True,
+    )
+    assert output.read_text() == (
+        f"tag=type=raw,value=sha-{head[:7]}\n" if head else ""
+    )
+
+
+@pytest.mark.parametrize("sign_status", [0, 23])
+def test_shared_image_signing_signs_each_tag_and_fails_closed(
+    image_action, tmp_path, sign_status
+) -> None:
+    step = image_action["runs"]["steps"][-1]
+    digest = "sha256:" + "a" * 64
+    tags = ["livewyer/tamoss-api:8.2.0-oss1-rc5", "livewyer/tamoss-api:sha-abc1234"]
+    log = tmp_path / "signatures"
+    result = subprocess.run(
+        [
+            "bash",
+            "-e",
+            "-o",
+            "pipefail",
+            "-c",
+            'cosign() { echo "$*" >> "$SIGN_LOG"; return "$SIGN_STATUS"; }\n'
+            + step["run"],
+        ],
+        env={
+            **os.environ,
+            "TAGS": "\n".join(tags),
+            "DIGEST": digest,
+            "SIGN_LOG": str(log),
+            "SIGN_STATUS": str(sign_status),
+        },
+        check=False,
+    )
+    assert result.returncode == sign_status
+    signed = tags if sign_status == 0 else tags[:1]
+    assert log.read_text().splitlines() == [
+        f"sign --yes {tag}@{digest}" for tag in signed
+    ]
 
 
 @pytest.mark.parametrize("draft", [True, False, None])

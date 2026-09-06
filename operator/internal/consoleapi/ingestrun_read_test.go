@@ -256,6 +256,25 @@ func TestIngestRunDetailProjectionRedactsSensitiveFieldsAndDefaults(t *testing.T
 	}
 }
 
+func TestIngestOutputTagsSelectsTheFirstKeysWithinTheLimit(t *testing.T) {
+	tags := make(map[string]apiextensionsv1.JSON)
+	for i := maxProjectedOutputTags + 2; i >= 0; i-- {
+		tags[fmt.Sprintf("tag-%02d", i)] = apiextensionsv1.JSON{Raw: []byte(`"value"`)}
+	}
+	got := projectIngestOutputTags(tags)
+	if len(got) != maxProjectedOutputTags {
+		t.Fatalf("projected %d tags, want %d", len(got), maxProjectedOutputTags)
+	}
+	for i := 0; i < maxProjectedOutputTags; i++ {
+		if got[fmt.Sprintf("tag-%02d", i)] != "value" {
+			t.Fatalf("missing tag at index %d in the sorted prefix", i)
+		}
+	}
+	if empty := projectIngestOutputTags(nil); empty == nil || len(empty) != 0 {
+		t.Fatalf("nil tags must project as an empty object, got %#v", empty)
+	}
+}
+
 func TestIngestRunDetailProjectionToleratesAnUnsetStorageBackend(t *testing.T) {
 	t.Parallel()
 	run := ingestRunFixture("run", "media", tamossv1alpha1.IngestRunPhaseRunning)

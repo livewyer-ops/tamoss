@@ -24,6 +24,18 @@ import (
 	profiledefaults "github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 )
 
+func TestSortedEnv(t *testing.T) {
+	for _, env := range []map[string]string{nil, {}, {"Z": "last", "A": "first"}} {
+		var want []string
+		if len(env) != 0 {
+			want = []string{"A", "Z"}
+		}
+		if got := sortedEnv(env); !slices.Equal(got, want) {
+			t.Fatalf("sorted environment keys = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestRenderToggles(t *testing.T) {
 	cpuTarget := int32(80)
 	maxUnavailable := intstr.FromInt(1)

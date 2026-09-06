@@ -51,6 +51,9 @@ The `Docker Hub` workflow is the sole release orchestrator. It:
 The reusable asset workflow has no independent tag or manual trigger. A
 failed or cancelled prerequisite must leave the release unpublished.
 
+The four image jobs share a composite build/sign action. They remain in
+`docker-hub.yaml` to preserve the signing identity and per-image digest outputs.
+
 `release.json` contains the source SHA, BBC specification SHA, compatibility
 metadata, four immutable image references, worker/API image identity, asset
 SHA-256 checksums, and the validating workflow run and attempt. The worker
