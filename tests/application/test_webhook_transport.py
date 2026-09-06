@@ -3,10 +3,11 @@ from __future__ import annotations
 import ipaddress
 import socket
 import ssl
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from unittest.mock import Mock
 
 import pytest
@@ -16,6 +17,49 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from tamoss.application import webhooks
 from urllib3.exceptions import NewConnectionError
+
+
+@pytest.mark.parametrize("status", [200, 503])
+def test_delivery_closes_an_unfinished_large_response_without_reading_it(status):
+    release_body = Event()
+
+    class Receiver(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.send_response(status)
+            self.send_header("Content-Length", str(1024**3))
+            self.end_headers()
+            release_body.wait(5)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Receiver)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                webhooks.send_webhook_delivery,
+                webhook={"url": f"http://127.0.0.1:{server.server_port}/hook"},
+                payload={"event_type": "flows/created"},
+                timeout_seconds=3,
+                egress_policy=webhooks.WebhookEgressPolicy(
+                    allowed_hosts=("127.0.0.1",)
+                ),
+            )
+            try:
+                response = future.result(timeout=1)
+                assert response.status_code == status
+                assert response.raw.closed
+                assert response._content_consumed is False
+            finally:
+                release_body.set()
+    finally:
+        release_body.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 @pytest.mark.parametrize("scheme", ["http", "https"])
