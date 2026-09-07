@@ -5,8 +5,8 @@ images and their immutable release records.
 
 ## Prepare
 
-1. Agree the release branch and exact commit. The 8.2 candidate branch is
-   `8.2-rc`, assembled from `8.2-preview`.
+1. Agree the release branch and exact commit. The 8.2 release branch is
+   `release/8.2-main`, containing the consolidated candidate changes.
 2. Review dependency and contributor PRs individually. Include compatible
    updates with passing checks; leave major or behaviour-changing updates for
    a separate compatibility review. Do not batch-merge solely by author.

@@ -147,6 +147,12 @@ Cancellation is irreversible. Do not patch `desiredState` back to `Running` or
 modify status. A retry must be a new resource linked to the terminal parent;
 the current Console does not provide a create or retry command.
 
+Before retrying a failed or cancelled run, inspect any recorded output Flows
+and their Segments. A streaming attempt can leave a committed media prefix
+with Flows in `awaiting_content`. Retain the original run when investigating
+an unknown outcome. A change of source revision or input mode can produce new
+identities; see [Remote input handling](../concepts/ingest-runs.md#remote-input-handling).
+
 ## Diagnose a Pending or Failed Run
 
 Read `.status.conditions` first. Common reasons include:

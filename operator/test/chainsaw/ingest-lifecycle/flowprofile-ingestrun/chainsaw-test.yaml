@@ -29,6 +29,23 @@ spec:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
         - apply:
             file: resources/tls-proxies.yaml
+        - command:
+            entrypoint: base64
+            args:
+              - ../../../../../tests/fixtures/e2e/tiny-ingest.mp4
+            check:
+              ($error == null): true
+            outputs:
+              - name: mediaFixture
+                value: (trim_space($stdout))
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: ingest-media-fixture
+              binaryData:
+                tiny-ingest.mp4: ($mediaFixture)
         - apply:
             file: resources/input-fixture.yaml
         - wait:
@@ -133,7 +150,46 @@ spec:
             check:
               ($error == null): true
               (trim_space($stdout)): "1"
+        - apply:
+            file: resources/streamed-ingestrun.yaml
+        - assert:
+            file: assert/streamed-ingestrun-succeeded.yaml
+            timeout: 10m
+        - command:
+            entrypoint: kubectl
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            args:
+              - -n
+              - $NAMESPACE
+              - logs
+              - job/tamsin-streamed-ingest
+              - -c
+              - tamsin
+            check:
+              ($error == null): true
+            outputs:
+              - name: streamEvents
+                value: (map(&json_parse(@), split(trim_space($stdout), `"\n"`)))
+        - assert:
+            timeout: 1s
+            resource:
+              ($streamEvents[?type == 'run.finished'].payload | [0]):
+                outcome: succeeded
+                bytes_staged: 0
+              ($streamEvents[?type == 'input.finished'].payload | [0]):
+                status: ingested
+                (sha256 == null): true
+                (object_count > `0`): true
+                verification: verified
       finally:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: IngestRun
+              name: streamed-ingest
+            timeout: 120s
         - delete:
             ref:
               apiVersion: tamoss.livewyer.io/v1alpha1

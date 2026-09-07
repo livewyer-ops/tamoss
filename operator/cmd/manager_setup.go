@@ -230,7 +230,11 @@ func addHealthChecks(mgr ctrl.Manager) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}
-	return mgr.AddReadyzCheck("readyz", healthz.Ping)
+	ready := healthz.Ping
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		ready = mgr.GetWebhookServer().StartedChecker()
+	}
+	return mgr.AddReadyzCheck("readyz", ready)
 }
 
 func dependencyDiscoveryInterval() time.Duration {

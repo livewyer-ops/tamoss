@@ -79,16 +79,16 @@ spec:
             name: operator-controller-manager
             timeout: 180s
             for:
-              condition:
-                name: Available
+              jsonPath:
+                path: '{.status.observedGeneration}'
+                value: (to_string(x_k8s_get($client, 'apps/v1', 'Deployment', 'tamoss-system', 'operator-controller-manager').metadata.generation))
         - wait:
-            apiVersion: v1
-            kind: Endpoints
+            apiVersion: apps/v1
+            kind: Deployment
             namespace: tamoss-system
-            name: operator-webhook-service
-            timeout: 60s
+            name: operator-controller-manager
+            timeout: 180s
             for:
               jsonPath:
-                path: '{.subsets[0].addresses[0].ip}'
-        - sleep:
-            duration: 5s
+                path: '{.status.conditions[?(@.type=="Progressing")].reason}'
+                value: NewReplicaSetAvailable

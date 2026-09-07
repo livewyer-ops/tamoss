@@ -52,10 +52,10 @@ spec:
           value: ""
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
-        # TAMSin v1.0.0-rc.3, pinned to the published multi-platform index.
+        # TAMSin 8.2.0-in1, pinned to the published multi-platform index.
         # Install overlays may replace this only with another immutable digest.
         - name: TAMOSS_TAMSIN_IMAGE
-          value: ghcr.io/livewyer-ops/tamsin:1.0.0-rc.3@sha256:f764e26601561b8652d80ff34c16ff50598a09fb8735204c65bbf26b62a6e709
+          value: ghcr.io/livewyer-ops/tamsin:8.2.0-in1@sha256:f69ad71d29c2618f6d9e9f7c366c5f72b0cb4034fbbce45fe8a1c87325a92f72
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:

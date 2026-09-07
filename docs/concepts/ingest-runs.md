@@ -8,7 +8,7 @@ the temporary Kubernetes workload that performs the work.
 
 The public resource is `IngestRun`. After validating its immutable intent, the
 operator creates a fixed-purpose
-[TAMSin v1.0.0-rc.3](https://github.com/livewyer-ops/tamsin/releases/tag/v1.0.0-rc.3)
+[TAMSin 8.2.0-in1](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in1)
 Kubernetes `Job` and records the Job's name and UID in `status.jobRef`.
 
 The distinction is deliberate:
@@ -72,6 +72,27 @@ This keeps durable ingest history intelligible without making the run a Profile
 creation surface. The Console displays the selected resource and UUID but does
 not create either `IngestRun` or `FlowProfile` resources.
 
+## Remote Input Handling
+
+TAMSin uses its native `auto` input mode. Eligible segmented HTTP and S3
+inputs stream without staging the whole file. HTTP streaming requires a strong
+ETag, a known length and byte-range support; S3 reads use a Version ID or ETag.
+If streaming is unavailable, TAMSin stages the input before changing TAMS.
+Preserve and whole-file demux treatments also stage their inputs.
+
+Streaming reads stay pinned to the selected source revision. A changed
+validator, authentication failure or invalid range response fails the attempt;
+it does not switch to reading different bytes. Streamed inputs have per-Object
+digests but may have no whole-input SHA-256, and report zero staged bytes.
+`options.verify: true` selects TAMSin's automatic integrity policy, which can
+use storage checksums or readback according to backend support.
+
+Streaming identities derive from the source revision. Staged identities derive
+from the input content, so the same media can receive different Source and Flow
+IDs when its input mode changes. A late streaming failure can leave a valid
+committed prefix with Flows in `awaiting_content`. A failed or cancelled run
+does not imply that no media was written.
+
 ## Immutable Attempt History
 
 Input, profile, size class, options, output metadata, target instance, and retry
@@ -92,7 +113,7 @@ writes. Check the previous attempt's output before requesting another run.
 A single-input run can carry constrained human-facing metadata for the Flow
 graph produced from that input: `label`, `description`, and ordinary TAMS
 tags. TAMOSS translates this intent to TAMSin's
-[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/v1.0.0-rc.3/docs/reference/cli.md)
+[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in1/docs/configuration.md)
 argument. It does not expose arbitrary Flow JSON, technical media overrides,
 FFmpeg arguments, identifiers, or TAMSin's wider CLI.
 
@@ -122,8 +143,9 @@ The operator projects these phases:
 | `Cancelled` | Cancellation was requested and the owned workload has terminated. |
 
 TAMSin emits the versioned `tamsin.ingest.events` 2.1 machine event stream. The
-operator validates it with TAMSin's published reducer and retains only bounded
-counters, stable reasons, attempt identity, output resource identities, and
+operator validates it with the public reducer pinned from TAMSin v1.0.0-rc.3,
+which supports this protocol independently of the executable version. It
+retains bounded counters, stable reasons, attempt identity, output resource identities, and
 verified result metadata on the CR. Free-form Pod logs and raw media locators
 are not exposed by the Console API.
 

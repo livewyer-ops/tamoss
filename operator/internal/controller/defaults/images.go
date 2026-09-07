@@ -13,5 +13,5 @@ const (
 	DefaultPostgresClientImage = "postgres:18-alpine"
 	DefaultCNPGPostgresVersion = "18"
 	DefaultRustFSImage         = "rustfs/rustfs:1.0.0-beta.3"
-	DefaultTAMSinImage         = "ghcr.io/livewyer-ops/tamsin:1.0.0-rc.3@sha256:f764e26601561b8652d80ff34c16ff50598a09fb8735204c65bbf26b62a6e709"
+	DefaultTAMSinImage         = "ghcr.io/livewyer-ops/tamsin:8.2.0-in1@sha256:f69ad71d29c2618f6d9e9f7c366c5f72b0cb4034fbbce45fe8a1c87325a92f72"
 )

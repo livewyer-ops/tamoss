@@ -874,19 +874,10 @@ func ingestResultRequiredForPhase(phase tamossv1alpha1.IngestRunPhase) bool {
 	return phase == tamossv1alpha1.IngestRunPhaseSucceeded || phase == tamossv1alpha1.IngestRunPhasePartiallySucceeded
 }
 
-// ingestResultVerificationRequired reports whether a recorded durable result
-// must pass digest verification before the run is believed.
-//
-// TAMSin v1.0.0-rc.3 publishes a complete, versioned terminal event stream but
-// does not publish a separate durable result artefact. Demanding such an
-// artefact unconditionally would make success unreachable for every run.
-// TAMSin's own --verify pass still reads back and checks each uploaded Media
-// Object, while the operator validates the event lifecycle and matching exit
-// code.
-//
-// The stronger gate stays armed for whatever does record a result: once a key
-// is present it must carry a valid digest, so a collector cannot publish a
-// half-written or unverifiable artefact and have the run claim success on it.
+// ingestResultVerificationRequired requires a digest for any recorded result
+// artefact. TAMSin supplies terminal events without a separate artefact; the
+// operator validates their lifecycle and exit code. TAMSin's verification
+// policy checks uploaded Objects independently of this result check.
 func ingestResultVerificationRequired(result tamossv1alpha1.IngestRunResultStatus) bool {
 	return strings.TrimSpace(result.Key) != ""
 }

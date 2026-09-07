@@ -176,13 +176,15 @@ func TestIngestRunFailsWhenTerminalStreamIsUnobservableAfterDeadline(t *testing.
 
 // Readiness gates admit new work. Re-applying them to an attempt that already
 // has a Job regressed a running run to Pending and ignored the Job's progress.
-func TestIngestRunTracksExistingJobWhenTamossNotReady(t *testing.T) {
+func TestIngestRunPreservesExistingJobWhenConfigurationChanges(t *testing.T) {
 	ctx := context.Background()
 	scheme := ingestRunTestScheme(t)
 	run := ingestRunWithRecordedJob(testIngestRun())
 	tamoss := testIngestTamoss()
 	tamoss.Status.Conditions[0].Status = metav1.ConditionFalse
 	job := ownedIngestJob(run)
+	oldImage := "registry.example/tamsin@sha256:" + strings.Repeat("a", 64)
+	job.Spec.Template.Spec.Containers = []corev1.Container{{Name: "tamsin", Image: oldImage, Args: []string{"ingest", "--verify=auto"}}}
 	job.Status.Active = 1
 	job.Status.StartTime = ptr.To(metav1.Now())
 	k8sClient := fake.NewClientBuilder().
@@ -190,7 +192,10 @@ func TestIngestRunTracksExistingJobWhenTamossNotReady(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, tamoss, job).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme, APIReader: k8sClient}
+	reconciler := &IngestRunReconciler{
+		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		TamsinImage: "registry.example/tamsin@sha256:" + strings.Repeat("b", 64),
+	}
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -202,6 +207,14 @@ func TestIngestRunTracksExistingJobWhenTamossNotReady(t *testing.T) {
 	ready := findIngestCondition(t, reloaded, operatorstatus.ConditionReady)
 	if ready.Reason == "TamossNotReady" {
 		t.Fatal("a transient instance readiness dip must not regress an in-flight run")
+	}
+	remaining := &batchv1.Job{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(job), remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining.UID != job.UID || remaining.Spec.Template.Spec.Containers[0].Image != oldImage ||
+		strings.Join(remaining.Spec.Template.Spec.Containers[0].Args, " ") != "ingest --verify=auto" {
+		t.Fatalf("existing Job changed: %+v", remaining)
 	}
 }
 

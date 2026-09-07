@@ -52,15 +52,23 @@ spec:
             - http://rustfs-svc:9000
             - s3
             - cp
-            - /fixture/tiny.srt
-            - s3://tamoss/input/tiny.srt
-            - --content-type
-            - application/x-subrip
+            - /fixture/
+            - s3://tamoss/input/
+            - --recursive
           volumeMounts:
             - name: fixture
-              mountPath: /fixture
+              mountPath: /fixture/tiny.srt
+              subPath: tiny.srt
+              readOnly: true
+            - name: fixture
+              mountPath: /fixture/tiny-ingest.mp4
+              subPath: tiny-ingest.mp4
               readOnly: true
       volumes:
         - name: fixture
-          configMap:
-            name: ingest-input-fixture
+          projected:
+            sources:
+              - configMap:
+                  name: ingest-input-fixture
+              - configMap:
+                  name: ingest-media-fixture

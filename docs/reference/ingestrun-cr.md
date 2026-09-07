@@ -3,7 +3,7 @@
 `IngestRun` declares one durable attempt to ingest media into a `Tamoss`
 instance. The operator validates its immutable input against the instance's
 source policy and owns the resulting
-[TAMSin v1.0.0-rc.3](https://github.com/livewyer-ops/tamsin/releases/tag/v1.0.0-rc.3)
+[TAMSin 8.2.0-in1](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in1)
 Kubernetes Job.
 
 Group: `tamoss.livewyer.io`
@@ -91,7 +91,7 @@ spec:
 ```
 
 The HTTP credential Secret contains a JSON array accepted by TAMSin's
-[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/v1.0.0-rc.3/docs/reference/configuration.md)
+[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in1/docs/configuration.md#settings)
 setting:
 
 ```yaml
@@ -156,7 +156,7 @@ spec:
       name: archive
 ```
 
-See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/v1.0.0-rc.3/docs/reference/inputs.md)
+See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in1/docs/configuration.md#inputs)
 for selector expansion behaviour.
 
 ## IngestRun Spec Fields
@@ -170,7 +170,7 @@ for selector expansion behaviour.
 | `.spec.profile` | Versioned TAMSin treatment: `preserve@1`, `demux@1`, `muxed-segments@1`, `essence-segments@1`, or `mpegts-segments@1`. Defaults to `essence-segments@1`; immutable. |
 | `.spec.sizeClass` | Operator-owned resource class: `small`, `standard`, or `large`. Defaults to `standard`; immutable. |
 | `.spec.options.storageBackendRef.name` | Optional Ready, media-purpose `StorageBackend` belonging to the target instance. Unset uses the default TAMS backend. |
-| `.spec.options.verify` | Verify uploaded Object bytes. Defaults to `true`, which selects TAMSin `auto`; `false` selects `none`. |
+| `.spec.options.verify` | Enable automatic integrity checks for uploaded Objects. Defaults to `true`, which selects TAMSin `auto`; `false` selects `none`. |
 | `.spec.options.dryRun` | Render and plan without changing TAMS. Defaults to `false`; `true` selects TAMSin `exact`. |
 | `.spec.options.maxInputs` | Maximum S3 prefix expansion, from 1 to 10,000. Defaults to 1,000. |
 | `.spec.options.concurrency` | Parallel inputs, from 0 to 32. Zero selects the size-class default. |

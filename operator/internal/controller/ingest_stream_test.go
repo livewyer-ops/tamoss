@@ -57,9 +57,9 @@ func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string 
 		}
 	}
 	emit(nil, ingestevent.Hello{
-		ToolVersion: "1.0.0-rc.3", ToolCommit: "fe717546", ResultSchemaVersion: "2.1",
+		ToolVersion: "8.2.0-in1", ToolCommit: "39a5e32a612ee5a2ed709f7e4c61f9b5c3e15173", ResultSchemaVersion: "2.1",
 		ProfilePolicyVersion: "1", MaxEventBytes: ingestevent.DefaultMaxEventBytes,
-		Capabilities: []string{"terminal_results", "tams_flow_profiles"},
+		Capabilities: []string{"graceful_cancel", "live_object_results", "progress", "progress_coalescing", "retry_events", "terminal_results"},
 	})
 	total := 1
 	if outcome == ingestevent.RunPartial {
@@ -103,13 +103,21 @@ func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string 
 				FlowID: testRootFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindCollection,
 				Disposition: ingestevent.FlowWritten,
 			})
+			emit(ingestevent.ObjectScope(index, testMemberFlowID, "5c43c970-2a9a-4a3b-9837-9cc5309b0696"), ingestevent.ObjectResult{
+				ObjectID: "5c43c970-2a9a-4a3b-9837-9cc5309b0696", Timerange: "[0:0_1:0)", Bytes: 4367815,
+				SHA256: strings.Repeat("a", 64), Disposition: ingestevent.ObjectDispositionIngested,
+				Verification: ingestevent.ObjectVerificationVerified, VerificationMethod: ingestevent.VerificationMethodStorage,
+			})
 			emit(ingestevent.FlowScope(index, testMemberFlowID), ingestevent.FlowResult{
 				FlowID: testMemberFlowID, SourceID: testSourceID, Kind: ingestevent.FlowKindEssence,
 				Role: "video", Disposition: ingestevent.FlowWritten,
+				ObjectSummary: ingestevent.ObjectSummary{Total: 1, Bytes: 4367815, Ingested: 1, Verified: 1, StorageVerified: 1},
 			})
 			input.Status = ingestevent.InputIngested
 			input.RootFlowID = testRootFlowID
 			input.FlowCount = 2
+			input.ObjectCount = 1
+			input.Verification = ingestevent.VerificationVerified
 			succeeded++
 		}
 		emit(ingestevent.InputScope(index), input)
@@ -132,7 +140,7 @@ func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string 
 	return sink.String()
 }
 
-func TestDecodeIngestStreamUsesPublishedProtocolReducer(t *testing.T) {
+func TestDecodeIngestStreamAcceptsVerifiedObjectsWithoutWholeInputDigest(t *testing.T) {
 	summary, err := decodeIngestStream(strings.NewReader(testIngestEventStream(t, ingestevent.RunSucceeded)))
 	if err != nil {
 		t.Fatal(err)
@@ -187,12 +195,28 @@ func TestDecodeIngestStreamRejectsIncompleteAndMalformedStreams(t *testing.T) {
 	complete := testIngestEventStream(t, ingestevent.RunSucceeded)
 	lastRecord := strings.LastIndex(strings.TrimSuffix(complete, "\n"), "\n")
 	for name, stream := range map[string]string{
-		"incomplete": complete[:lastRecord+1],
-		"malformed":  "not-json\n",
+		"incomplete":            complete[:lastRecord+1],
+		"malformed":             "not-json\n",
+		"sequence gap":          strings.Replace(complete, `"seq":2`, `"seq":99`, 1),
+		"invalid Object digest": strings.Replace(complete, strings.Repeat("a", 64), "invalid", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := decodeIngestStream(strings.NewReader(stream)); !errors.Is(err, errIngestStreamInvalid) {
 				t.Fatalf("error = %v, want invalid stream", err)
+			}
+		})
+	}
+}
+
+func TestDecodeIngestStreamPreservesUnsuccessfulOutcomes(t *testing.T) {
+	for _, outcome := range []ingestevent.RunOutcome{ingestevent.RunPartial, ingestevent.RunFailed, ingestevent.RunInterrupted} {
+		t.Run(string(outcome), func(t *testing.T) {
+			summary, err := decodeIngestStream(strings.NewReader(testIngestEventStream(t, outcome)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary.Outcome != outcome || summary.Failed != 1 || summary.ExitCode == 0 {
+				t.Fatalf("terminal summary = %+v", summary)
 			}
 		})
 	}

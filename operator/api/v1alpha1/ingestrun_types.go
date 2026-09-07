@@ -117,7 +117,7 @@ type IngestRunOptions struct {
 	// reference must not serialise as an empty name that fails admission.
 	StorageBackendRef *IngestStorageBackendReference `json:"storageBackendRef,omitempty"`
 
-	// Verify downloads and verifies uploaded Object bytes.
+	// Verify enables TAMSin's automatic integrity checks for uploaded Objects.
 	//+kubebuilder:default=true
 	Verify *bool `json:"verify,omitempty"`
 

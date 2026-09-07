@@ -190,7 +190,8 @@ spec:
                     x-kubernetes-list-type: map
                   verify:
                     default: true
-                    description: Verify downloads and verifies uploaded Object bytes.
+                    description: Verify enables TAMSin's automatic integrity checks
+                      for uploaded Objects.
                     type: boolean
                 type: object
               output:
