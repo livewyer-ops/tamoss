@@ -26,6 +26,9 @@ worktree. Do not apply the whole IBC kustomization or change child Deployments.
 ```sh
 kubectl -n ibc-tamoss-public patch tamoss ibc-tamoss-public --type=merge \
   --patch-file=deploy/environments/dev-tamoss-1/ibc/ui-playback-candidate.patch.yaml
+kubectl -n ibc-tamoss-public wait --timeout=3m \
+  --for='jsonpath={.spec.template.spec.containers[0].image}=livewyer/tamoss-ui:sha-12b0115@sha256:9a3c91fd6df7a52eb5ec22beb7b42bd3d79f68f23a9714137bef5b791577a64c' \
+  deployment/ibc-tamoss-public-ui
 kubectl -n ibc-tamoss-public rollout status deployment/ibc-tamoss-public-ui --timeout=5m
 ```
 
@@ -53,7 +56,8 @@ Do not restore databases or change private/backend images for a UI rollback.
   delays, and explicit pause during recovery pass. Runtime delays cause a
   coordinated hold, not uninterrupted playback; no media is skipped.
 - Split TS, fMP4 with init objects and muxed TS flash/tone fixtures all measure
-  within 60 ms A/V alignment. Fixtures are generated locally, not uploaded.
+  within 60 ms A/V alignment. Five additional muxed cold starts per browser pass
+  with worst measured alignment of 56 ms. Fixtures are generated locally, not uploaded.
 - Production build tested under the real public CSP before deployment.
 - Repeated object reads: 24 local and 24 GKE, all successful; first-byte p95
   125 ms / 78 ms respectively. This does not rule out slower cold storage reads.
@@ -67,3 +71,21 @@ Raw sanitized evidence is retained in the operational worktree at
 for final listening and interaction in Zen/Firefox. Full tag-only release gates,
 broader partial-object conformance and backup readiness remain separate release
 qualifications; this is not a claim of complete BBC TAMS 8.2 conformity.
+
+## Live verification
+
+Deployed on 2026-09-08 at 16:29 UTC. Public parent generation 8 is Ready;
+UI deployment generation 6 has two Ready replicas with zero restarts.
+Both pods report the verified index and amd64 configuration digests.
+Private, public API/worker/Console/gateway and shared operator generations,
+images and replica counts match the saved baseline. Both full parent YAML
+diffs against the cluster are empty.
+
+All eight live playback runs pass: portrait and Reporter, Chromium and Firefox,
+desktop and mobile, complete duration and objects, non-silent decoded audio,
+zero dropped frames and no measured post-start stalls. Startup was 2.4-4.5 seconds.
+Both browsers also recover from injected storage failures through the explicit
+Retry playback button without a page refresh or uncaught browser errors.
+Four logo/subtitle/portrait-layout checks, 20 protected-navigation cases and
+18 HTTP access/CORS checks pass. Write-rejection probes used a nonexistent
+random Flow ID; no stored recording was changed.
