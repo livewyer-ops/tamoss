@@ -388,12 +388,17 @@ export function createOmakasePreview({
   };
   // Keep user intent separate from the native pauses used to build a reserve.
   const onControl = (event: Event) => {
-    const playButton = event
-      .composedPath()
-      .some(
-        (node) =>
-          node instanceof HTMLElement && node.tagName === "OMAKASE-PLAY-BUTTON",
-      );
+    const path = event.composedPath();
+    const playButton = path.some(
+      (node) =>
+        node instanceof HTMLElement && node.tagName === "OMAKASE-PLAY-BUTTON",
+    );
+    // Omakase's centre overlay delegates to clicks originating on these surfaces.
+    // Do not match their ancestors: volume, seeking and other controls live there.
+    const surfaceClick =
+      event.type === "click" &&
+      path[0] instanceof HTMLElement &&
+      path[0].matches("video, media-controller");
     const keyboard = event instanceof KeyboardEvent;
     if (
       event.type === "mediaplayrequest" ||
@@ -403,8 +408,8 @@ export function createOmakasePreview({
       event.stopImmediatePropagation();
       requestPlayback(event.type === "mediaplayrequest");
     } else if (
-      playButton &&
-      (!keyboard || event.key === " " || event.key === "Enter")
+      surfaceClick ||
+      (playButton && (!keyboard || event.key === " " || event.key === "Enter"))
     ) {
       event.preventDefault();
       event.stopImmediatePropagation();

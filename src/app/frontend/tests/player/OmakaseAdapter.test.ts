@@ -409,39 +409,91 @@ describe("OmakaseAdapter", () => {
     handle.destroy();
   });
 
-  it("holds a low buffer and respects pause during recovery", async () => {
-    vi.useFakeTimers();
-    const onChange = vi.fn();
-    const handle = createOmakasePreview({
-      descriptor: descriptor(),
-      playerElementId: "player",
-      timelineElementId: "timeline",
-      onChange,
-    });
-    const player = mocks.instances[0];
-    await handle.ready;
+  it.each(["omakase-play-button", "video", "media-controller"])(
+    "holds a low buffer and respects %s pause during recovery",
+    async (control) => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const handle = createOmakasePreview({
+        descriptor: descriptor(),
+        playerElementId: "player",
+        timelineElementId: "timeline",
+        onChange,
+      });
+      const player = mocks.instances[0];
+      await handle.ready;
 
-    const button = document.querySelector<HTMLElement>("omakase-play-button");
-    if (!button) throw new Error("Play control missing");
-    button.click();
-    expect(player.player.play).toHaveBeenCalledOnce();
-    player.mainMediaElement.currentTime = 4;
-    player.ranges = [[0, 4.5]];
-    await vi.advanceTimersByTimeAsync(100);
-    expect(player.paused).toBe(true);
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ phase: "buffering", currentTime: 4 }),
-    );
-    button.click();
-    player.ranges = [[0, 12]];
-    await vi.advanceTimersByTimeAsync(100);
-    expect(player.player.play).toHaveBeenCalledOnce();
-    expect(player.mainMediaElement.currentTime).toBe(4);
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ phase: "paused" }),
-    );
-    handle.destroy();
-  });
+      if (control === "media-controller") {
+        document
+          .getElementById("player")
+          ?.append(document.createElement(control));
+      }
+      const button = document.querySelector<HTMLElement>(control);
+      if (!button) throw new Error("Play control missing");
+      button.click();
+      expect(player.player.play).toHaveBeenCalledOnce();
+      player.mainMediaElement.currentTime = 4;
+      player.ranges = [[0, 4.5]];
+      await vi.advanceTimersByTimeAsync(100);
+      expect(player.paused).toBe(true);
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: "buffering", currentTime: 4 }),
+      );
+      button.click();
+      player.ranges = [[0, 12]];
+      await vi.advanceTimersByTimeAsync(100);
+      expect(player.player.play).toHaveBeenCalledOnce();
+      expect(player.mainMediaElement.currentTime).toBe(4);
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: "paused" }),
+      );
+      handle.destroy();
+    },
+  );
+
+  it.each(["video", "media-controller"])(
+    "routes %s surface clicks through playback intent without toggling unrelated controls",
+    async (control) => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const handle = createOmakasePreview({
+        descriptor: descriptor(),
+        playerElementId: "player",
+        timelineElementId: "timeline",
+        onChange,
+      });
+      const player = mocks.instances[0];
+      await handle.ready;
+      const controller = document.createElement("media-controller");
+      document.getElementById("player")?.append(controller);
+      controller.append(player.mainMediaElement);
+      const surface =
+        control === "video" ? player.mainMediaElement : controller;
+      const nativeToggle = vi.fn();
+      controller.addEventListener("click", nativeToggle);
+
+      surface.click();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(player.player.play).toHaveBeenCalledOnce();
+      expect(player.paused).toBe(false);
+      expect(nativeToggle).not.toHaveBeenCalled();
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: "playing" }),
+      );
+
+      const volume = document.createElement("button");
+      controller.append(volume);
+      volume.click();
+      expect(nativeToggle).toHaveBeenCalledOnce();
+      expect(player.paused).toBe(false);
+
+      surface.click();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(player.paused).toBe(true);
+      expect(player.player.play).toHaveBeenCalledOnce();
+      handle.destroy();
+    },
+  );
 
   it("reports when split tracks reduce the playable window", async () => {
     mocks.plan.trimmed = true;
