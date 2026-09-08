@@ -3,7 +3,7 @@
 `IngestRun` declares one durable attempt to ingest media into a `Tamoss`
 instance. The operator validates its immutable input against the instance's
 source policy and owns the resulting
-[TAMSin 8.2.0-in1](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in1)
+[TAMSin 8.2.0-in2](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in2)
 Kubernetes Job.
 
 Group: `tamoss.livewyer.io`
@@ -96,7 +96,7 @@ spec:
 ```
 
 The HTTP credential Secret contains a JSON array accepted by TAMSin's
-[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in1/docs/configuration.md#settings)
+[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#settings)
 setting:
 
 ```yaml
@@ -161,7 +161,7 @@ spec:
       name: archive
 ```
 
-See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in1/docs/configuration.md#inputs)
+See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#inputs)
 for selector expansion behaviour.
 
 ## IngestRun Spec Fields
