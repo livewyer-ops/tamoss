@@ -42,8 +42,10 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
     [],
   );
   const [selectedAudioFlowId, setSelectedAudioFlowId] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => setAttempt((value) => value + 1);
   const preview = useQuery({
-    queryKey: ["api", "preview", flowId, "descriptor"],
+    queryKey: ["api", "preview", flowId, "descriptor", attempt],
     queryFn: ({ signal }) =>
       buildMediaPreviewDescriptor(api, flowId, {
         signal,
@@ -96,7 +98,7 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
   if (preview.error)
     return (
       <Panel>
-        <QueryMessage error={preview.error} onRetry={() => preview.refetch()} />
+        <QueryMessage error={preview.error} onRetry={retry} />
       </Panel>
     );
   if (!preview.data) return null;
@@ -112,7 +114,7 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
             {formatFormat(descriptor.rootFlow.format)}
           </StatusBadge>
           <StatusBadge>{formatCodec(descriptor.rootFlow.codec)}</StatusBadge>
-          <Button type="button" onClick={() => preview.refetch()}>
+          <Button type="button" onClick={retry}>
             <RefreshCw size={14} aria-hidden="true" /> Refresh window
           </Button>
         </>
@@ -158,9 +160,12 @@ export default function MediaPreview({ flowId }: { flowId: string }) {
               </span>
             </div>
             {playback.message ? (
-              <p className={styles.playbackError} role="alert">
+              <div className={styles.playbackError} role="alert">
                 {playback.message}
-              </p>
+                <Button type="button" onClick={retry}>
+                  <RefreshCw size={14} aria-hidden="true" /> Retry playback
+                </Button>
+              </div>
             ) : null}
             {playback.warning ? (
               <p className={styles.playbackWarning} role="status">
