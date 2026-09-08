@@ -5,6 +5,7 @@
 !**/.env.example
 .envrc
 .local/
+/deploy/environments/dev-*
 garden.yaml
 RULES.md
 tests/targets/remote.env
