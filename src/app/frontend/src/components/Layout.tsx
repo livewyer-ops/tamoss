@@ -151,7 +151,6 @@ export default function Layout() {
         <div className={styles.brand}>
           <div className={styles.brandIdentity}>
             <TamossLogo className={styles.logo} />
-            <span>Operations console</span>
           </div>
           <button
             ref={closeButton}

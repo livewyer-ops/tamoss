@@ -447,6 +447,7 @@ describe("operational routes", () => {
     expect(
       document.querySelector('header img[src="/tamoss-icon.svg"]'),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Operations console")).not.toBeInTheDocument();
   });
 
   it("uses document navigation for server-protected entry points", async () => {
