@@ -206,7 +206,11 @@ export default function DashboardPage() {
           <Panel
             title="Attention required"
             actions={
-              <Link className={surfaceStyles.resourceLink} to="/system">
+              <Link
+                className={surfaceStyles.resourceLink}
+                to="/system"
+                reloadDocument
+              >
                 Runtime <ArrowRight size={13} aria-hidden="true" />
               </Link>
             }
@@ -345,7 +349,11 @@ export default function DashboardPage() {
           <Panel
             title="Active operations"
             actions={
-              <Link className={surfaceStyles.resourceLink} to="/ingest">
+              <Link
+                className={surfaceStyles.resourceLink}
+                to="/ingest"
+                reloadDocument
+              >
                 All jobs <ArrowRight size={13} aria-hidden="true" />
               </Link>
             }

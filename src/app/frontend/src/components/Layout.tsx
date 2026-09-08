@@ -36,10 +36,19 @@ function TamsNavigationIcon({
   );
 }
 
+// Document entry points must reach the server's login and deployment redirects.
 const navigation = [
   {
     label: "Workspace",
-    items: [{ to: "/", label: "Overview", icon: Gauge, end: true }],
+    items: [
+      {
+        to: "/",
+        label: "Overview",
+        icon: Gauge,
+        end: true,
+        reloadDocument: true,
+      },
+    ],
   },
   {
     label: "Library",
@@ -54,15 +63,30 @@ const navigation = [
   {
     label: "Operations",
     items: [
-      { to: "/ingest", label: "Ingest runs", icon: FolderInput },
-      { to: "/deletions", label: "Deletion requests", icon: Trash2 },
-      { to: "/webhooks", label: "Webhooks", icon: Webhook },
+      {
+        to: "/ingest",
+        label: "Ingest runs",
+        icon: FolderInput,
+        reloadDocument: true,
+      },
+      {
+        to: "/deletions",
+        label: "Deletion requests",
+        icon: Trash2,
+        reloadDocument: true,
+      },
+      {
+        to: "/webhooks",
+        label: "Webhooks",
+        icon: Webhook,
+        reloadDocument: true,
+      },
     ],
   },
   {
     label: "System",
     items: [
-      { to: "/system", label: "Runtime", icon: Boxes },
+      { to: "/system", label: "Runtime", icon: Boxes, reloadDocument: true },
       { to: "/service", label: "TAMS service", icon: TamsNavigationIcon },
     ],
   },
@@ -148,7 +172,7 @@ export default function Layout() {
                 <NavLink
                   key={to}
                   to={to}
-                  end={"end" in item ? item.end : false}
+                  {...item}
                   onClick={() => setOpen(false)}
                   className={({ isActive }) =>
                     `${styles.navLink} ${isActive ? styles.active : ""}`

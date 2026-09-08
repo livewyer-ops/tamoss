@@ -449,6 +449,45 @@ describe("operational routes", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses document navigation for server-protected entry points", async () => {
+    renderRoute("/");
+    await screen.findByRole("heading", { name: "Overview" });
+    const navigation = within(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    );
+    const links = [
+      ...[
+        "Overview",
+        "Ingest runs",
+        "Deletion requests",
+        "Webhooks",
+        "Runtime",
+      ].map((name) => navigation.getByRole("link", { name })),
+      within(screen.getByRole("main")).getByRole("link", { name: "Runtime" }),
+      within(screen.getByRole("main")).getByRole("link", { name: "All jobs" }),
+    ];
+    for (const link of links) {
+      let routerIntercepted = true;
+      window.addEventListener(
+        "click",
+        (event) => {
+          routerIntercepted = event.defaultPrevented;
+          event.preventDefault();
+        },
+        { once: true },
+      );
+      fireEvent.click(link);
+      expect(
+        routerIntercepted,
+        link.getAttribute("href") || "entry point",
+      ).toBe(false);
+    }
+    expect(
+      fireEvent.click(navigation.getByRole("link", { name: "Flows" })),
+    ).toBe(false);
+    await screen.findByRole("heading", { name: "Flows" });
+  });
+
   it.each([
     ["/", "Overview", "Overview · TAMOSS"],
     ["/service", "TAMS Service", "TAMS Service · TAMOSS"],
