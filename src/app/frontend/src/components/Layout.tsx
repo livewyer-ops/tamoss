@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type AriaAttributes, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router";
+import TamossLogo from "@/components/TamossLogo";
 import TamossMark from "@/components/TamossMark";
 import styles from "./Layout.module.css";
 
@@ -124,9 +125,8 @@ export default function Layout() {
         aria-label={open ? "Navigation" : undefined}
       >
         <div className={styles.brand}>
-          <TamossMark className={styles.mark} />
-          <div>
-            <strong>TAMOSS</strong>
+          <div className={styles.brandIdentity}>
+            <TamossLogo className={styles.logo} />
             <span>Operations console</span>
           </div>
           <button

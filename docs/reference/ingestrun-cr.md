@@ -68,6 +68,11 @@ Public selectors must use HTTPS port 443 and cannot contain user information,
 query strings, or fragments. The operator resolves and validates the selector
 immediately before creating the Job.
 
+For H.264/AAC browser playback, use `profile: mpegts-segments@1`. Source-family
+MP4 segmentation does not create fragmented MP4 HLS Objects. TAMSin `8.2.0-in2`
+corrects rendered Segment timing; re-ingest affected media as a new run rather
+than editing or replaying an existing run. Existing stored Flows are unchanged.
+
 ## Restricted HTTP Source Example
 
 Use `Restricted` when every run must name an operator-approved source. A source

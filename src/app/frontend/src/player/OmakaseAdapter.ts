@@ -20,6 +20,7 @@ import { compilePlaybackPlan, PlaybackPlanError } from "@/player/hls-manifest";
 import { halfOpenTimerange } from "@/utils/tams-time";
 
 const AUDIO_ONLY_TIMELINE_FRAME_RATE = 25;
+export const MEDIA_READY_TIMEOUT_MS = 30_000;
 
 interface SubscriptionLike {
   unsubscribe(): void;
@@ -127,6 +128,7 @@ export function createOmakasePreview({
   let phase: PlaybackPhase = "loading";
   let currentTime = 0;
   let duration = 0;
+  let loadTimeout: number | undefined;
   let warning =
     plan.kind === "hls" && plan.trimmed
       ? "Playback is limited to the timerange shared by video and audio tracks."
@@ -178,6 +180,9 @@ export function createOmakasePreview({
     next: (event) => {
       if (destroyed) return;
       switch (event.type) {
+        case PlayerEventType.PLAYER_MAIN_MEDIA_LOAD_ERROR:
+          reportPlaybackFailure();
+          break;
         case PlayerEventType.PLAYER_PLAY:
           emit("playing");
           break;
@@ -201,10 +206,11 @@ export function createOmakasePreview({
   subscriptions.push(eventSubscription);
   emit("loading");
 
-  const dispose = () => {
+  const dispose = (reason: unknown = abortError()) => {
     if (destroyed) return;
     destroyed = true;
-    for (const reject of pendingRejects) reject(abortError());
+    window.clearTimeout(loadTimeout);
+    for (const reject of pendingRejects) reject(reason);
     pendingRejects.clear();
     pauseMainMedia(player);
     for (const sidecar of audioSidecars.values()) sidecar.destroy();
@@ -240,7 +246,7 @@ export function createOmakasePreview({
       duration,
       message: "Omakase could not load the selected media window.",
     });
-    dispose();
+    dispose(new PreviewPlaybackError());
   };
 
   const frameRate =
@@ -248,6 +254,10 @@ export function createOmakasePreview({
     (plan.kind === "hls" && !descriptor.video && !descriptor.muxed
       ? AUDIO_ONLY_TIMELINE_FRAME_RATE
       : undefined);
+  loadTimeout = window.setTimeout(
+    reportPlaybackFailure,
+    MEDIA_READY_TIMEOUT_MS,
+  );
   const ready = (async () => {
     await observeOne(
       player.loadMainMedia(plan.kind === "hls" ? plan.mainUrl : plan.url, {
@@ -290,6 +300,7 @@ export function createOmakasePreview({
       }
     }
     if (destroyed) throw abortError();
+    window.clearTimeout(loadTimeout);
     emit("ready");
     try {
       await observeOne(
@@ -322,7 +333,9 @@ export function createOmakasePreview({
       emit("ready");
     }
   })().catch((error: unknown) => {
-    if (destroyed || isAbortError(error)) throw abortError();
+    if (isAbortError(error) || (destroyed && phase !== "error")) {
+      throw abortError();
+    }
     reportPlaybackFailure();
     throw new PreviewPlaybackError();
   });

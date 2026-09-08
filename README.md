@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/app/frontend/public/tamoss-icon.png" alt="TAMOSS logo" width="128">
+  <img src="src/app/frontend/public/tamoss-logo-ibc.png" alt="TAMOSS logo" width="320">
 </p>
 
 # TAMOSS

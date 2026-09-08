@@ -437,6 +437,18 @@ describe("operational routes", () => {
     );
   });
 
+  it("uses the IBC TAMOSS artwork in navigation", async () => {
+    renderRoute("/");
+    await screen.findByRole("heading", { name: "Overview" });
+    expect(screen.getByRole("img", { name: "TAMOSS" })).toHaveAttribute(
+      "src",
+      "/tamoss-logo-ibc.png",
+    );
+    expect(
+      document.querySelector('header img[src="/tamoss-icon.svg"]'),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     ["/", "Overview", "Overview · TAMOSS"],
     ["/service", "TAMS Service", "TAMS Service · TAMOSS"],
