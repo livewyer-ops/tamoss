@@ -2,4 +2,4 @@ spec:
   ui:
     image:
       repository: livewyer/tamoss-ui
-      tag: sha-12b0115@sha256:9a3c91fd6df7a52eb5ec22beb7b42bd3d79f68f23a9714137bef5b791577a64c
+      tag: sha-198b094@sha256:f96a54c33dd888dfaf77cedb4309950a3dfc61c2efccfcb62f2b4e3015c43ca4
