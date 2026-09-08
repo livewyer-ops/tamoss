@@ -17,6 +17,9 @@ IBC_CONTAINER=muxed-ts node deploy/environments/dev-tamoss-1/ibc/tests/playback-
 
 Continuity defaults to five cold browser contexts per clip/browser, alternating
 desktop and mobile. `IBC_REPEATS`, `IBC_BROWSERS` and `IBC_FIXTURE` select subsets.
+Run both `IBC_CONTROL=toolbar` (default) and `IBC_CONTROL=surface`. Surface mode
+uses desktop clicks and mobile taps on the video/centre overlay for play, pause
+and replay; toolbar-only checks cannot establish that the centre control works.
 `IBC_PROFILE=8mbps` uses Chromium CDP at 8 Mbps / 120 ms. `delay-audio`,
 `delay-video` and `delay-audio-first` inject a single 12-second object delay or
 an 8-second initial audio delay; use `IBC_FIXTURE=portrait IBC_REPEATS=1`.

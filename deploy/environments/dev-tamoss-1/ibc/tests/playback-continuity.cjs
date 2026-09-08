@@ -7,6 +7,8 @@ const base = process.env.IBC_UI_URL || 'http://127.0.0.1:5180';
 const output = process.env.IBC_EVIDENCE_DIR || '.local/ibc/continuity';
 const repeats = Number(process.env.IBC_REPEATS || 5);
 const profile = process.env.IBC_PROFILE || 'natural';
+const control = process.env.IBC_CONTROL || 'toolbar';
+assert.ok(['toolbar', 'surface'].includes(control));
 const browsers = (process.env.IBC_BROWSERS || 'chromium,firefox').split(',');
 const fixtures = [
   { name: 'portrait', flow: '9b669909-8c56-5fe5-9be6-6fdd0cde2067', duration: 49.666666, frames: 1490, width: 1080, height: 1920, objects: 50, audio: 'efdd1c79-180b-514b-b38a-023a1f0cf9b5', video: 'd55b9c81-f7fd-598e-bdb3-082c806e6fff' },
@@ -55,10 +57,12 @@ function instrument() {
     try {
       for (const fixture of fixtures) for (let run = 0; run < repeats; run++) {
         const viewport = run % 2 ? { width: 390, height: 844 } : { width: 1440, height: 1000 };
-        const id = `${name}-${fixture.name}-${profile}-${run + 1}`;
-        const context = await browser.newContext({ viewport });
+        const id = `${name}-${fixture.name}-${profile}-${run + 1}${control === 'surface' ? '-surface' : ''}`;
+        const context = await browser.newContext({ viewport, hasTouch: run % 2 === 1 });
         context.setDefaultTimeout(15000);
         const page = await context.newPage();
+        const playbackControl = page.locator(control === 'surface' ? 'video' : 'omakase-play-button').first();
+        const activate = () => control === 'surface' && run % 2 ? playbackControl.tap() : playbackControl.click();
         const requests = [];
         const tracked = new Map();
         const pageErrors = [];
@@ -117,20 +121,20 @@ function instrument() {
           await page.addInitScript(instrument);
           const start = Date.now();
           await page.goto(`${base}/playback?flow=${fixture.flow}`, { waitUntil: 'domcontentloaded' });
-          if (profile.includes('first')) await page.locator('omakase-play-button').first().click();
+          if (profile.includes('first')) await activate();
           else {
             await page.waitForFunction(() => [...document.querySelectorAll('[role=status]')].some(n => n.textContent === 'Ready'), null, { timeout: 40000 });
-            await page.locator('omakase-play-button').first().click();
+            await activate();
           }
           await page.waitForFunction(() => document.querySelector('video')?.currentTime > 0.2, null, { timeout: 40000 });
           const startupMs = Date.now() - start;
           if (profile.endsWith('-pause')) {
             await page.waitForFunction(() => document.querySelector('video')?.currentTime > 1 && [...document.querySelectorAll('[role=status]')].some(n => n.textContent === 'Buffering'), null, { timeout: 20000 });
-            await page.locator('omakase-play-button').first().click();
+            await activate();
             const pausedAt = await page.locator('video').evaluate(video => video.currentTime);
             await page.waitForTimeout(12000);
             assert.ok(await page.locator('video').evaluate((video, time) => video.paused && Math.abs(video.currentTime - time) < 0.05, pausedAt), 'User pause survives buffer recovery');
-            await page.locator('omakase-play-button').first().click();
+            await activate();
           }
           await page.waitForFunction(() => document.querySelector('video')?.ended, null, { timeout: (fixture.duration + 65) * 1000 });
           summary = await page.evaluate(() => {
@@ -170,12 +174,15 @@ function instrument() {
           const paused = summary.samples.filter(s => s.paused && s.time > 0.3 && s.time < fixture.duration - 0.3);
           assert.ok(paused.every(s => !s.status.includes('Playing')), 'Paused buffering cannot report Playing');
           await page.screenshot({ path: `${output}/${id}.png`, fullPage: true });
-          // Real keyboard controls, buffered seek, user pause, then route cleanup.
+          // Replay through the surface or keyboard, buffered seek, pause and cleanup.
           const button = page.locator('omakase-play-button').first();
-          await button.focus();
-          await page.keyboard.press('Space');
+          if (control === 'surface') await activate();
+          else {
+            await button.focus();
+            await page.keyboard.press('Space');
+          }
           await page.waitForFunction(() => document.querySelector('video')?.currentTime > 0.3 && !document.querySelector('video').paused);
-          await button.click();
+          await activate();
           await page.waitForFunction(() => document.querySelector('video')?.paused);
           await page.locator('video').evaluate(video => { video.currentTime = Math.min(4, video.duration / 2); });
           await page.waitForTimeout(500);
