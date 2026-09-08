@@ -582,6 +582,24 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
 
     split_flow_id, audio_flow_id = _split_preview_flow_ids(e2e_client)
     context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    # Observe the player's existing main-media graph, not its sync worklet.
+    context.add_init_script(
+        """(() => {
+            window.previewAudioGraphs = [];
+            const createSource = AudioContext.prototype.createMediaElementSource;
+            AudioContext.prototype.createMediaElementSource = function(media) {
+                const source = createSource.call(this, media);
+                const analyser = this.createAnalyser();
+                analyser.fftSize = 2048;
+                source.connect(analyser);
+                window.previewAudioGraphs.push({
+                    media, analyser, decoded: false,
+                    samples: new Float32Array(analyser.fftSize),
+                });
+                return source;
+            };
+        })()"""
+    )
     page = context.new_page()
     page.set_default_timeout(60_000)
     media_requests: list[dict[str, object]] = []
@@ -632,7 +650,6 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
             page,
             e2e_target,
             split_flow_id,
-            expect_sidecar_audio=True,
         )
         page.get_by_role("link", name="Flows", exact=True).click()
         page.wait_for_url(re.compile(r"/flows(?:[?#].*)?$"))
@@ -644,7 +661,6 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
             page,
             e2e_target,
             audio_flow_id,
-            expect_sidecar_audio=False,
         )
     finally:
         context.close()
@@ -678,7 +694,6 @@ def _assert_preview_buffers(
     target: E2ETarget,
     flow_id: str,
     *,
-    expect_sidecar_audio: bool,
     navigate: bool = True,
 ) -> None:
     if navigate:
@@ -701,34 +716,20 @@ def _assert_preview_buffers(
         "alerts": playback_alerts,
     }
     assert not _contains_signed_url_marker(page.locator("body").inner_text())
-    if expect_sidecar_audio:
-        page.wait_for_function(
-            "() => document.querySelectorAll('audio[hidden]').length > 0"
-        )
-    play_result = page.evaluate(
-        """async () => {
-            const media = document.querySelector(
-                'video:not([hidden]), audio:not([hidden])'
-            );
-            if (!media) return {ok: false, reason: 'missing-media'};
-            media.muted = true;
-            media.currentTime = 0;
-            try {
-                await media.play();
-                return {ok: true};
-            } catch (_) {
-                return {ok: false, reason: 'play-rejected'};
-            }
-        }"""
-    )
-    assert play_result == {"ok": True}
+    page.locator("omakase-play-button").first.click()
     page.wait_for_function(
         """() => {
             const media = document.querySelector(
                 'video:not([hidden]), audio:not([hidden])'
             );
+            const graph = window.previewAudioGraphs.find(
+                (candidate) => candidate.media === media
+            );
+            if (!graph) return false;
+            graph.analyser.getFloatTimeDomainData(graph.samples);
+            graph.decoded ||= graph.samples.some((sample) => Math.abs(sample) > 0.001);
             return media && media.readyState >= 2 && media.duration > 0 &&
-                media.currentTime >= Math.min(0.75, media.duration);
+                media.currentTime >= Math.min(0.75, media.duration) && graph.decoded;
         }""",
         timeout=30_000,
     )
