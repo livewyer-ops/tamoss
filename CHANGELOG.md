@@ -6,6 +6,8 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Listed the presigned `get_urls` entry before the direct entry for controlled
+  Objects. Labels, the `presigned` filter and `accept_get_urls` are unchanged.
 - Integrated the TAMOSS logo in the sidebar, mobile navigation and favicon.
 - Kept player controls below the mobile navigation drawer.
 - Made failed or stalled media loads report an error and release player

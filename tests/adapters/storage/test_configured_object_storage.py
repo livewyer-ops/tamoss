@@ -80,7 +80,7 @@ def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
     assert object_storage.read(object_id, backend=s3_backend) == body
 
     get_urls = object_storage.build_get_urls(object_id=object_id, backend=s3_backend)
-    assert [item["presigned"] for item in get_urls] == [False, True]
+    assert [item["presigned"] for item in get_urls] == [True, False]
     assert [item["label"] for item in get_urls] == [
         s3_backend.label,
         s3_backend.label,

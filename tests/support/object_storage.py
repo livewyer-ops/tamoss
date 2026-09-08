@@ -61,12 +61,12 @@ class InMemoryObjectStorage:
             {
                 "url": self.build_get_url(object_id=object_id, backend=backend),
                 "label": backend.label,
-                "presigned": False,
+                "presigned": True,
             },
             {
                 "url": self.build_get_url(object_id=object_id, backend=backend),
                 "label": backend.label,
-                "presigned": True,
+                "presigned": False,
             },
         ]
 

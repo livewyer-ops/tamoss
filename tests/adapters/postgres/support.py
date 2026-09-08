@@ -154,12 +154,12 @@ class RecordingObjectStorage:
             {
                 "url": f"https://objects.example.test/{object_id}",
                 "label": backend.label,
-                "presigned": False,
+                "presigned": True,
             },
             {
                 "url": f"https://objects.example.test/{object_id}",
                 "label": backend.label,
-                "presigned": True,
+                "presigned": False,
             },
         ]
 

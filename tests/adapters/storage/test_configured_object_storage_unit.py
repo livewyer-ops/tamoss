@@ -804,3 +804,37 @@ def test_presigned_get_urls_increment_media_metric(monkeypatch) -> None:
 
     after = REGISTRY.get_sample_value(metric, {"operation": "get"}) or 0.0
     assert after - before == 2
+
+
+def test_build_get_urls_lists_the_presigned_entry_first(monkeypatch) -> None:
+    class FakeS3Client:
+        def generate_presigned_url(self, *args, **kwargs) -> str:
+            return "https://storage.example.test/presigned"
+
+    monkeypatch.setattr(
+        "tamoss.adapters.object_storage.boto3.client",
+        lambda *args, **kwargs: FakeS3Client(),
+    )
+
+    backend = _s3_backend()
+    storage = ConfiguredObjectStorage(
+        Settings(
+            auth_required=False,
+            storage_backend=_settings_backend(backend),
+        )
+    )
+
+    get_urls = storage.build_get_urls(object_id="media/a.ts", backend=backend)
+
+    assert get_urls == [
+        {
+            "url": "https://storage.example.test/presigned",
+            "label": backend.label,
+            "presigned": True,
+        },
+        {
+            "url": "https://storage.public.example.test/tamoss-test/media/a.ts",
+            "label": backend.label,
+            "presigned": False,
+        },
+    ]

@@ -106,15 +106,11 @@ class ConfiguredObjectStorage:
         include_direct: bool = True,
         include_presigned: bool = True,
     ) -> list[dict[str, object]]:
+        # The presigned entry is listed first: it is the URL a client can
+        # fetch without storage credentials. The contract leaves the order
+        # undefined and both entries keep the backend label; clients select
+        # with the ``presigned`` flag or filter rather than by position.
         get_urls: list[dict[str, object]] = []
-        if include_direct:
-            get_urls.append(
-                {
-                    "url": _public_object_url(backend=backend, object_id=object_id),
-                    "label": backend.label,
-                    "presigned": False,
-                }
-            )
         if include_presigned:
             get_urls.append(
                 {
@@ -124,6 +120,14 @@ class ConfiguredObjectStorage:
                     ),
                     "label": backend.label,
                     "presigned": True,
+                }
+            )
+        if include_direct:
+            get_urls.append(
+                {
+                    "url": _public_object_url(backend=backend, object_id=object_id),
+                    "label": backend.label,
+                    "presigned": False,
                 }
             )
         return get_urls

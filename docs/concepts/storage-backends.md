@@ -115,6 +115,14 @@ and object IDs by `TAMOSS_STORAGE_OBJECT_ID_MAX_LENGTH`. Clients must upload,
 finalise, and then register segments; allocated-only controlled objects are not
 referenceable by Flow Segments.
 
+## Get URL Order
+
+Each controlled Object instance advertises a presigned entry followed by a
+direct entry, both under the backend label. The direct URL is only fetchable
+when the bucket allows anonymous reads or the client holds storage
+credentials. Select entries with the `presigned` flag or filter and
+`accept_get_urls`; the contract does not define their order.
+
 ## External S3 Browser Access
 
 Browser clients access external object storage directly through presigned URLs.

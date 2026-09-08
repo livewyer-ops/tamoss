@@ -850,3 +850,15 @@ def test_malformed_flow_id_in_segments_path_returns_404(client: TestClient) -> N
 
     deleted = client.delete("/flows/not-a-uuid/segments")
     assert deleted.status_code == 404
+
+
+def test_segment_get_urls_list_the_presigned_entry_first(client: TestClient) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    register_segment(client, flow_id, object_id=f"bbc/{uuid4()}.ts")
+
+    response = client.get(f"/flows/{flow_id}/segments")
+
+    assert response.status_code == 200
+    assert [
+        (item["label"], item["presigned"]) for item in response.json()[0]["get_urls"]
+    ] == [(PRIMARY_BACKEND_LABEL, True), (PRIMARY_BACKEND_LABEL, False)]
