@@ -25,8 +25,8 @@ func TestPublishedImageProducesCompatibleExactDryRuns(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reduce published TAMSin stream: %v", err)
 			}
-			if state.Hello == nil || state.Hello.ToolVersion != "8.2.0-in1" ||
-				state.Hello.ToolCommit != "39a5e32a612ee5a2ed709f7e4c61f9b5c3e15173" || state.ProtocolVersion != "2.1" {
+			if state.Hello == nil || state.Hello.ToolVersion != "8.2.0-in2" ||
+				state.Hello.ToolCommit != "889a6e7624342e1e502ed74d0f189cf2bc3e7737" || state.ProtocolVersion != "2.1" {
 				t.Fatalf("release identity = protocol %q hello %#v", state.ProtocolVersion, state.Hello)
 			}
 			if state.Started == nil || state.Started.Profile != profile || state.Started.ProfileVersion != "1" ||

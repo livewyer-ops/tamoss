@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaPreviewDescriptor, PreviewTrack } from "@/player/descriptor";
 
 const mocks = vi.hoisted(() => {
@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
     loadUnsubscribe = vi.fn();
     timelineUnsubscribe = vi.fn();
     failLoad = false;
+    stallLoad = false;
     failTimeline = false;
     eventObserver?: Observer;
     player = {
@@ -47,6 +48,7 @@ const mocks = vi.hoisted(() => {
     loadMainMedia = vi.fn(() => ({
       subscribe: ({ next, error }: Observer) => {
         queueMicrotask(() => {
+          if (this.stallLoad) return;
           if (this.failLoad) {
             error?.(
               new Error(
@@ -110,6 +112,7 @@ vi.mock("@byomakase/omakase-player/dist/omakase-player.es.js", () => ({
   OmakasePlayer: mocks.MockPlayer,
   PlayerAudioMode: { SINGLE: "SINGLE" },
   PlayerEventType: {
+    PLAYER_MAIN_MEDIA_LOAD_ERROR: "PLAYER_MAIN_MEDIA_LOAD_ERROR",
     PLAYER_PLAY: "PLAYER_PLAY",
     PLAYER_PAUSE: "PLAYER_PAUSE",
     PLAYER_PLAYBACK_CHANGE: "PLAYER_PLAYBACK_CHANGE",
@@ -202,6 +205,7 @@ function audioDescriptor(): MediaPreviewDescriptor {
 }
 
 describe("OmakaseAdapter", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.replaceChildren();
@@ -273,6 +277,38 @@ describe("OmakaseAdapter", () => {
 
     handle.destroy();
   });
+
+  it.each(["timeout", "load-event"])(
+    "ends a stalled load on %s",
+    async (failure) => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const handle = createOmakasePreview({
+        descriptor: descriptor(),
+        playerElementId: "player",
+        timelineElementId: "timeline",
+        onChange,
+      });
+      const player = mocks.instances[0];
+      player.stallLoad = true;
+      const rejected = expect(handle.ready).rejects.toBeInstanceOf(
+        PreviewPlaybackError,
+      );
+      if (failure === "timeout") {
+        await vi.advanceTimersByTimeAsync(30_000);
+      } else {
+        player.emitEvent({ type: "PLAYER_MAIN_MEDIA_LOAD_ERROR", data: {} });
+      }
+      await rejected;
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: "error" }),
+      );
+      await Promise.resolve();
+      expect(player.destroy).toHaveBeenCalledOnce();
+      expect(mocks.plan.dispose).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it("keeps loaded media available when the canvas timeline fails", async () => {
     const onChange = vi.fn();

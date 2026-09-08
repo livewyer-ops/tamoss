@@ -6,6 +6,14 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Integrated the IBC TAMOSS logo in the sidebar, mobile navigation and favicon.
+- Kept player controls below the mobile navigation drawer.
+- Made failed or stalled media loads report an error and release player
+  resources instead of leaving the preview at `Loading media` indefinitely.
+- Pinned TAMSin `8.2.0-in2`, correcting rendered Segment presentation ranges,
+  per-Object timestamp offsets and negative TAMS timestamps. Re-ingest affected
+  media into new Flows; existing metadata is not rewritten. For H.264/AAC
+  browser playback, select the existing `mpegts-segments@1` treatment.
 - Added BBC TAMS 8.2 Flow Profiles, Flow status, initialisation Objects,
   collection filters and deterministic listings, with a database migration
   from `8.1.0-oss6`.
