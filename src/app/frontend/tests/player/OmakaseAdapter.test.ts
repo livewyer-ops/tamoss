@@ -1,3 +1,4 @@
+import { Events } from "hls.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaPreviewDescriptor, PreviewTrack } from "@/player/descriptor";
 
@@ -9,11 +10,9 @@ const mocks = vi.hoisted(() => {
     mediaKind: "video" as "video" | "audio",
     mimeType: "video/mp4",
     mainUrl: "blob:video",
-    audioSidecars: [] as Array<{
+    audioTracks: [] as Array<{
       flowId: string;
       label: string;
-      offsetSeconds: number;
-      url: string;
     }>,
     trimmed: false,
     masterManifest: "#EXTM3U",
@@ -31,9 +30,38 @@ const mocks = vi.hoisted(() => {
     failLoad = false;
     stallLoad = false;
     failTimeline = false;
+    paused = true;
+    readyState = 4;
+    seeking = false;
+    ranges = [[0, 12]];
+    hlsEvents = new Map<string, (...args: unknown[]) => void>();
+    hls = {
+      config: { maxBufferLength: 30 },
+      audioTrack: 0,
+      on: vi.fn((event: string, listener: (...args: unknown[]) => void) =>
+        this.hlsEvents.set(event, listener),
+      ),
+      off: vi.fn((event: string) => this.hlsEvents.delete(event)),
+    };
     eventObserver?: Observer;
     player = {
       getDuration: vi.fn(() => 12),
+      getPlaybackEngine: vi.fn(() => ({ hls: this.hls })),
+      audio: { audioContext: { resume: vi.fn(() => Promise.resolve()) } },
+      play: vi.fn(() => ({
+        subscribe: ({ complete }: Observer) => {
+          this.paused = false;
+          complete?.();
+          return { unsubscribe: vi.fn() };
+        },
+      })),
+      seekTo: vi.fn((time: number) => ({
+        subscribe: ({ complete }: Observer) => {
+          this.mainMediaElement.currentTime = time;
+          complete?.();
+          return { unsubscribe: vi.fn() };
+        },
+      })),
       htmlMediaElement: this.mainMediaElement,
       playerLocal: {
         htmlMediaElement: this.mainMediaElement,
@@ -74,7 +102,21 @@ const mocks = vi.hoisted(() => {
 
     constructor(config: unknown) {
       this.config = config;
-      this.mainMediaElement.pause = vi.fn();
+      this.mainMediaElement.pause = vi.fn(() => {
+        this.paused = true;
+      });
+      Object.defineProperties(this.mainMediaElement, {
+        paused: { get: () => this.paused },
+        readyState: { get: () => this.readyState },
+        seeking: { get: () => this.seeking },
+        buffered: {
+          get: () => ({
+            length: this.ranges.length,
+            start: (i: number) => this.ranges[i][0],
+            end: (i: number) => this.ranges[i][1],
+          }),
+        },
+      });
       instances.push(this);
       const playerId = (config as { playerHtmlElementId?: string })
         .playerHtmlElementId;
@@ -96,13 +138,7 @@ const mocks = vi.hoisted(() => {
     complete?: () => void;
   }
 
-  const createAudioSidecar = vi.fn((_options: unknown) => ({
-    ready: Promise.resolve(),
-    setEnabled: vi.fn(),
-    destroy: vi.fn(),
-  }));
-
-  return { MockPlayer, createAudioSidecar, instances, plan };
+  return { MockPlayer, instances, plan };
 });
 
 vi.mock("@byomakase/omakase-player/dist/omakase-player.es.js", () => ({
@@ -124,10 +160,6 @@ vi.mock("@byomakase/omakase-player/dist/omakase-player.es.js", () => ({
 vi.mock("@/player/hls-manifest", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/player/hls-manifest")>()),
   compilePlaybackPlan: vi.fn(() => mocks.plan),
-}));
-
-vi.mock("@/player/audio-sidecar", () => ({
-  createSynchronizedAudioSidecar: mocks.createAudioSidecar,
 }));
 
 import { compilePlaybackPlan } from "@/player/hls-manifest";
@@ -208,9 +240,11 @@ describe("OmakaseAdapter", () => {
   afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
-    document.body.replaceChildren();
+    document.body.innerHTML =
+      '<div id="player"><omakase-play-button></omakase-play-button></div>';
     mocks.instances.length = 0;
-    mocks.plan.audioSidecars = [];
+    mocks.plan.audioTracks = [];
+    mocks.plan.url = "blob:master";
     mocks.plan.trimmed = false;
     mocks.plan.kind = "hls";
   });
@@ -227,7 +261,7 @@ describe("OmakaseAdapter", () => {
 
     await handle.ready;
 
-    expect(player.config).toEqual({
+    expect(player.config).toMatchObject({
       playerHtmlElementId: "player",
       playerAudioMode: "SINGLE",
       chromingTheme: "DEFAULT",
@@ -375,7 +409,8 @@ describe("OmakaseAdapter", () => {
     handle.destroy();
   });
 
-  it("derives buffering and paused states from playback snapshots", async () => {
+  it("holds a low buffer and respects pause during recovery", async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const handle = createOmakasePreview({
       descriptor: descriptor(),
@@ -386,33 +421,25 @@ describe("OmakaseAdapter", () => {
     const player = mocks.instances[0];
     await handle.ready;
 
-    player.emitEvent(playbackEvent({ buffering: true, currentTime: 4 }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      phase: "buffering",
-      currentTime: 4,
-      duration: 12,
-    });
-
-    player.emitEvent(playbackEvent({ paused: true, currentTime: 5 }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      phase: "paused",
-      currentTime: 5,
-      duration: 12,
-    });
-
-    player.emitEvent(playbackEvent({ playing: true, currentTime: 6 }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      phase: "playing",
-      currentTime: 6,
-      duration: 12,
-    });
-
-    player.emitEvent(playbackEvent({ ended: true, currentTime: 12 }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      phase: "ended",
-      currentTime: 12,
-      duration: 12,
-    });
+    const button = document.querySelector<HTMLElement>("omakase-play-button");
+    if (!button) throw new Error("Play control missing");
+    button.click();
+    expect(player.player.play).toHaveBeenCalledOnce();
+    player.mainMediaElement.currentTime = 4;
+    player.ranges = [[0, 4.5]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.paused).toBe(true);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: "buffering", currentTime: 4 }),
+    );
+    button.click();
+    player.ranges = [[0, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.player.play).toHaveBeenCalledOnce();
+    expect(player.mainMediaElement.currentTime).toBe(4);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: "paused" }),
+    );
     handle.destroy();
   });
 
@@ -499,7 +526,7 @@ describe("OmakaseAdapter", () => {
     expect(compilePlaybackPlan).not.toHaveBeenCalled();
   });
 
-  it("reports no switchable renditions when playback has no audio sidecar", async () => {
+  it("reports no switchable renditions for a single main track", async () => {
     const handle = createOmakasePreview({
       descriptor: descriptor(),
       playerElementId: "player",
@@ -512,20 +539,16 @@ describe("OmakaseAdapter", () => {
     handle.destroy();
   });
 
-  it("loads synchronised audio and switches renditions", async () => {
+  it("loads a single HLS master and switches native audio renditions", async () => {
     document.body.innerHTML = '<div id="player"></div>';
-    mocks.plan.audioSidecars = [
+    mocks.plan.audioTracks = [
       {
         flowId: "audio-1",
         label: "Programme",
-        offsetSeconds: 2,
-        url: "blob:audio-1",
       },
       {
         flowId: "audio-2",
         label: "Commentary",
-        offsetSeconds: 3,
-        url: "blob:audio-2",
       },
     ];
     const handle = createOmakasePreview({
@@ -541,54 +564,22 @@ describe("OmakaseAdapter", () => {
       { flowId: "audio-1", label: "Programme" },
       { flowId: "audio-2", label: "Commentary" },
     ]);
-    expect(mocks.createAudioSidecar).toHaveBeenCalledTimes(2);
-    expect(mocks.createAudioSidecar).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        enabled: true,
-        label: "Programme",
-        offsetSeconds: 2,
-        playlistUrl: "blob:audio-1",
-      }),
+    expect(mocks.instances[0].loadMainMedia).toHaveBeenCalledWith(
+      "blob:master",
+      expect.any(Object),
     );
-    expect(mocks.createAudioSidecar).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        enabled: false,
-        label: "Commentary",
-        offsetSeconds: 3,
-        playlistUrl: "blob:audio-2",
-      }),
-    );
+    expect(document.querySelectorAll("audio")).toHaveLength(0);
 
     handle.selectAudioTrack("audio-2");
-    const first = mocks.createAudioSidecar.mock.results[0].value;
-    const second = mocks.createAudioSidecar.mock.results[1].value;
-    expect(first.setEnabled).toHaveBeenCalledWith(false);
-    expect(second.setEnabled).toHaveBeenCalledWith(true);
+    expect(mocks.instances[0].hls.audioTrack).toBe(1);
+    handle.selectAudioTrack("unknown");
+    expect(mocks.instances[0].hls.audioTrack).toBe(1);
     handle.destroy();
-    expect(first.destroy).toHaveBeenCalledOnce();
-    expect(second.destroy).toHaveBeenCalledOnce();
+    expect(mocks.instances[0].hlsEvents.size).toBe(0);
   });
 
-  it("does not report ready until every declared audio rendition is ready", async () => {
-    document.body.innerHTML = '<div id="player"></div>';
-    mocks.plan.audioSidecars = [
-      {
-        flowId: "audio-1",
-        label: "Programme",
-        offsetSeconds: 2,
-        url: "blob:audio-1",
-      },
-    ];
-    let resolveAudio: (() => void) | undefined;
-    mocks.createAudioSidecar.mockImplementationOnce(() => ({
-      ready: new Promise<void>((resolve) => {
-        resolveAudio = resolve;
-      }),
-      setEnabled: vi.fn(),
-      destroy: vi.fn(),
-    }));
+  it("queues an early play until eight contiguous seconds are buffered", async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const handle = createOmakasePreview({
       descriptor: descriptor(),
@@ -597,32 +588,29 @@ describe("OmakaseAdapter", () => {
       onChange,
     });
 
-    await vi.waitFor(() => {
-      expect(mocks.createAudioSidecar).toHaveBeenCalledOnce();
-    });
+    const player = mocks.instances[0];
+    player.ranges = [
+      [0, 2],
+      [3, 12],
+    ];
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.player.play).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalledWith(
       expect.objectContaining({ phase: "ready" }),
     );
 
-    resolveAudio?.();
+    player.ranges = [[0, 8]];
+    await vi.advanceTimersByTimeAsync(100);
     await handle.ready;
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ phase: "ready" }),
+    expect(player.player.play).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: "playing" }),
     );
     handle.destroy();
   });
 
-  it("fails closed when synchronised audio fails after readiness", async () => {
-    document.body.innerHTML = '<div id="player"></div>';
-    mocks.plan.audioSidecars = [
-      {
-        flowId: "audio-1",
-        label: "Programme",
-        offsetSeconds: 2,
-        url: "blob:audio-1",
-      },
-    ];
+  it("fails closed on fatal native HLS errors", async () => {
     const onChange = vi.fn();
     const handle = createOmakasePreview({
       descriptor: descriptor(),
@@ -632,10 +620,9 @@ describe("OmakaseAdapter", () => {
     });
     await handle.ready;
 
-    const options = mocks.createAudioSidecar.mock.calls[0][0] as {
-      onError?: (error: Error) => void;
-    };
-    options.onError?.(new Error("signed URL expired"));
+    mocks.instances[0].hlsEvents.get(Events.ERROR)?.(Events.ERROR, {
+      fatal: true,
+    });
 
     expect(onChange).toHaveBeenLastCalledWith({
       phase: "error",
@@ -647,6 +634,154 @@ describe("OmakaseAdapter", () => {
       expect(mocks.instances[0].destroy).toHaveBeenCalledOnce();
       expect(mocks.plan.dispose).toHaveBeenCalledOnce();
     });
+  });
+
+  it("recovers at the same position only after rebuilding the reserve", async () => {
+    vi.useFakeTimers();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+    const player = mocks.instances[0];
+    await handle.ready;
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    player.mainMediaElement.currentTime = 4;
+    player.ranges = [[0, 4.4]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.paused).toBe(true);
+    player.ranges = [[0, 8]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.paused).toBe(true);
+    player.ranges = [[0, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.paused).toBe(false);
+    expect(player.mainMediaElement.currentTime).toBe(4);
+    expect(player.player.play).toHaveBeenCalledTimes(2);
+    handle.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("waits for native audio switching to finish before resuming", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange,
+    });
+    const player = mocks.instances[0];
+    await handle.ready;
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    player.hlsEvents.get(Events.AUDIO_TRACK_SWITCHING)?.();
+    expect(player.paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.paused).toBe(true);
+    player.hlsEvents.get(Events.AUDIO_TRACK_SWITCHED)?.();
+    expect(player.paused).toBe(false);
+    handle.destroy();
+  });
+
+  it("uses the remaining duration after a seek and respects playback rate", async () => {
+    vi.useFakeTimers();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+    const player = mocks.instances[0];
+    await handle.ready;
+    player.mainMediaElement.playbackRate = 2;
+    player.ranges = [[0, 8]];
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    expect(player.player.play).not.toHaveBeenCalled();
+    player.mainMediaElement.currentTime = 10;
+    player.seeking = true;
+    player.ranges = [[10, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.player.play).not.toHaveBeenCalled();
+    player.seeking = false;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.player.play).toHaveBeenCalledOnce();
+    expect(player.mainMediaElement.currentTime).toBe(10);
+    handle.destroy();
+  });
+
+  it("supports keyboard play/pause and cancels queued early play", async () => {
+    vi.useFakeTimers();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+    const player = mocks.instances[0];
+    player.ranges = [];
+    const button = document.querySelector<HTMLElement>("omakase-play-button");
+    if (!button) throw new Error("Play control missing");
+    button.dispatchEvent(
+      new KeyboardEvent("keyup", { key: " ", bubbles: true }),
+    );
+    button.dispatchEvent(
+      new KeyboardEvent("keyup", { key: " ", bubbles: true }),
+    );
+    player.ranges = [[0, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    await handle.ready;
+    expect(player.player.play).not.toHaveBeenCalled();
+    handle.destroy();
+  });
+
+  it("bounds recovery failures and releases pending operations on navigation", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange,
+    });
+    const player = mocks.instances[0];
+    await handle.ready;
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    player.ranges = [];
+    await vi.advanceTimersByTimeAsync(30_100);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: "error" }),
+    );
+    expect(player.destroy).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not resume a delayed play operation after the user pauses", async () => {
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange: vi.fn(),
+    });
+    const player = mocks.instances[0];
+    await handle.ready;
+    let finishPlay: (() => void) | undefined;
+    player.player.play.mockImplementationOnce(() => ({
+      subscribe: (observer) => {
+        finishPlay = () => {
+          player.paused = false;
+          observer.complete?.();
+        };
+        return { unsubscribe: vi.fn() };
+      },
+    }));
+    const button = document.querySelector<HTMLElement>("omakase-play-button");
+    if (!button) throw new Error("Play control missing");
+    button.click();
+    button.click();
+    finishPlay?.();
+    expect(player.paused).toBe(true);
+    handle.destroy();
   });
 
   it("still revokes the playback plan if Omakase teardown throws", async () => {
@@ -684,33 +819,3 @@ describe("OmakaseAdapter", () => {
     );
   });
 });
-
-function playbackEvent(
-  overrides: Partial<{
-    buffering: boolean;
-    currentTime: number;
-    ended: boolean;
-    paused: boolean;
-    pausing: boolean;
-    playing: boolean;
-    waiting: boolean;
-    waitingSyncedMedia: boolean;
-  }>,
-) {
-  return {
-    type: "PLAYER_PLAYBACK_CHANGE",
-    data: {
-      playerPlayback: {
-        buffering: false,
-        currentTime: 0,
-        ended: false,
-        paused: false,
-        pausing: false,
-        playing: false,
-        waiting: false,
-        waitingSyncedMedia: false,
-        ...overrides,
-      },
-    },
-  };
-}

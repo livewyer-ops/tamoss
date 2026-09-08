@@ -7,10 +7,7 @@ import {
   PlayerEventType,
 } from "@byomakase/omakase-player/dist/omakase-player.es.js";
 import "@byomakase/omakase-player/dist/omakase-player.css";
-import {
-  createSynchronizedAudioSidecar,
-  type SynchronizedAudioSidecar,
-} from "@/player/audio-sidecar";
+import { type ErrorData, Events } from "hls.js";
 import { installSensitiveConsoleErrorRedaction } from "@/player/console-redaction";
 import {
   descriptorMediaUrls,
@@ -21,6 +18,8 @@ import { halfOpenTimerange } from "@/utils/tams-time";
 
 const AUDIO_ONLY_TIMELINE_FRAME_RATE = 25;
 export const MEDIA_READY_TIMEOUT_MS = 30_000;
+const START_BUFFER_SECONDS = 8;
+const LOW_BUFFER_SECONDS = 1;
 
 interface SubscriptionLike {
   unsubscribe(): void;
@@ -59,9 +58,8 @@ export interface PreviewAudioTrack {
 export interface OmakasePreviewHandle {
   ready: Promise<void>;
   /**
-   * Audio renditions this player can switch between. Only synchronised
-   * sidecars are switchable, so an audio-only plan reports none: its single
-   * main media element cannot be swapped without reloading the player.
+   * Alternate audio renditions in the HLS master. Audio-only plans retain
+   * their existing single-rendition behaviour.
    */
   audioTracks: readonly PreviewAudioTrack[];
   selectAudioTrack(flowId: string): void;
@@ -108,16 +106,20 @@ export function createOmakasePreview({
     descriptorMediaUrls(descriptor),
   );
   const subscriptions: SubscriptionLike[] = [];
-  const audioSidecars = new Map<string, SynchronizedAudioSidecar>();
   const pendingRejects = new Set<(reason: unknown) => void>();
   let selectedAudioFlowId =
-    plan.kind === "hls" ? plan.audioSidecars[0]?.flowId : undefined;
+    plan.kind === "hls" ? plan.audioTracks[0]?.flowId : undefined;
   let player: OmakasePlayer;
   try {
     player = new OmakasePlayer({
       playerHtmlElementId: playerElementId,
       playerAudioMode: PlayerAudioMode.SINGLE,
       chromingTheme: ChromingTheme.DEFAULT,
+      playerControllerConfig: {
+        [MainMediaType.HLS]: {
+          hlsConfig: { maxBufferLength: 30, backBufferLength: 30 },
+        },
+      },
     });
   } catch {
     plan.dispose();
@@ -129,6 +131,23 @@ export function createOmakasePreview({
   let currentTime = 0;
   let duration = 0;
   let loadTimeout: number | undefined;
+  let playTimeout: number | undefined;
+  let loaded = false;
+  let bufferedReady = false;
+  let wantsPlay = false;
+  let started = false;
+  let holding = true;
+  let playPending = false;
+  let switchingAudio = false;
+  let resolveBuffered: (() => void) | undefined;
+  const domEvents = new AbortController();
+  const container = document.getElementById(playerElementId);
+  const bufferReady = new Promise<void>((resolve, reject) => {
+    resolveBuffered = resolve;
+    pendingRejects.add(reject);
+  });
+  // Teardown can precede main-media loading and the later await of this promise.
+  void bufferReady.catch(() => undefined);
   let warning =
     plan.kind === "hls" && plan.trimmed
       ? "Playback is limited to the timerange shared by video and audio tracks."
@@ -142,6 +161,11 @@ export function createOmakasePreview({
       duration,
       ...(warning ? { warning } : {}),
     });
+    for (const button of container?.querySelectorAll("omakase-play-button") ??
+      []) {
+      button.toggleAttribute("mediapaused", !wantsPlay);
+      button.setAttribute("aria-label", wantsPlay ? "pause" : "play");
+    }
   };
 
   const observeOne = <T>(source: ObservableLike<T>): Promise<T> =>
@@ -184,21 +208,22 @@ export function createOmakasePreview({
           reportPlaybackFailure();
           break;
         case PlayerEventType.PLAYER_PLAY:
-          emit("playing");
+          checkBuffer();
           break;
         case PlayerEventType.PLAYER_PAUSE:
-          emit("paused");
+          checkBuffer();
           break;
         case PlayerEventType.PLAYER_PLAYBACK_CHANGE:
           currentTime = event.data.playerPlayback.currentTime;
-          emit(playbackPhase(event.data.playerPlayback, phase));
+          checkBuffer();
           break;
         case PlayerEventType.PLAYER_ENDED:
+          wantsPlay = false;
           emit("ended");
           break;
         case PlayerEventType.PLAYER_PLAYBACK_PROGRESS:
           currentTime = event.data.currentTime;
-          emit();
+          checkBuffer();
           break;
       }
     },
@@ -210,11 +235,12 @@ export function createOmakasePreview({
     if (destroyed) return;
     destroyed = true;
     window.clearTimeout(loadTimeout);
+    window.clearTimeout(playTimeout);
+    window.clearInterval(bufferInterval);
+    domEvents.abort();
     for (const reject of pendingRejects) reject(reason);
     pendingRejects.clear();
     pauseMainMedia(player);
-    for (const sidecar of audioSidecars.values()) sidecar.destroy();
-    audioSidecars.clear();
     for (const subscription of subscriptions.splice(0)) {
       try {
         subscription.unsubscribe();
@@ -249,6 +275,156 @@ export function createOmakasePreview({
     dispose(new PreviewPlaybackError());
   };
 
+  function checkBuffer() {
+    const media = player.player.htmlMediaElement;
+    if (destroyed || !loaded || !media) return;
+    currentTime = media.currentTime;
+    if (media.ended) {
+      wantsPlay = false;
+      emit("ended");
+      return;
+    }
+    const remaining = Math.max(0, duration - currentTime);
+    const rate = Math.max(0.1, media.playbackRate);
+    if (plan.kind === "hls") {
+      const hls = player.player.getPlaybackEngine(MainMediaType.HLS).hls;
+      if (hls)
+        hls.config.maxBufferLength = Math.max(30, START_BUFFER_SECONDS * rate);
+    }
+    const ahead = bufferedAhead(media);
+    const reserve = Math.min(START_BUFFER_SECONDS * rate, remaining);
+    const ready =
+      !media.seeking &&
+      !switchingAudio &&
+      media.readyState >= 3 &&
+      ahead + 0.05 >= reserve;
+    if (
+      wantsPlay &&
+      (media.seeking ||
+        switchingAudio ||
+        ahead + 0.05 < Math.min(LOW_BUFFER_SECONDS * rate, remaining))
+    ) {
+      holding = true;
+    }
+    if (!bufferedReady && ready) {
+      bufferedReady = true;
+      window.clearTimeout(loadTimeout);
+      loadTimeout = undefined;
+      resolveBuffered?.();
+    }
+    if (holding && !ready) {
+      if (!media.paused) media.pause();
+      if (bufferedReady && wantsPlay && loadTimeout === undefined) {
+        loadTimeout = window.setTimeout(
+          reportPlaybackFailure,
+          MEDIA_READY_TIMEOUT_MS,
+        );
+      }
+      emit(wantsPlay ? "buffering" : bufferedReady ? "paused" : "loading");
+      return;
+    }
+    holding = false;
+    if (bufferedReady) {
+      window.clearTimeout(loadTimeout);
+      loadTimeout = undefined;
+    }
+    if (wantsPlay && media.paused && !playPending) {
+      playPending = true;
+      started = true;
+      playTimeout = window.setTimeout(
+        reportPlaybackFailure,
+        MEDIA_READY_TIMEOUT_MS,
+      );
+      const subscription = player.player.play().subscribe({
+        error: () => {
+          window.clearTimeout(playTimeout);
+          playPending = false;
+          wantsPlay = false;
+          emit("paused");
+        },
+        complete: () => {
+          window.clearTimeout(playTimeout);
+          playPending = false;
+          if (!wantsPlay) pauseMainMedia(player);
+        },
+      });
+      subscriptions.push(subscription);
+    }
+    if (!wantsPlay && !media.paused) media.pause();
+    emit(
+      wantsPlay
+        ? media.paused || media.readyState < 3
+          ? "buffering"
+          : "playing"
+        : started
+          ? "paused"
+          : "ready",
+    );
+  }
+
+  const requestPlayback = (play: boolean) => {
+    if (destroyed) return;
+    wantsPlay = play;
+    if (play) {
+      // Resume Web Audio in the user gesture, before waiting for network data.
+      void player.player.audio.audioContext.resume().catch(() => undefined);
+      holding = true;
+      if (loaded && player.player.htmlMediaElement?.ended) {
+        subscriptions.push(
+          player.player.seekTo(0).subscribe({ error: reportPlaybackFailure }),
+        );
+      }
+    } else {
+      started = true;
+      window.clearTimeout(playTimeout);
+      pauseMainMedia(player);
+      if (bufferedReady) {
+        window.clearTimeout(loadTimeout);
+        loadTimeout = undefined;
+      }
+    }
+    emit(play ? "buffering" : "paused");
+    checkBuffer();
+  };
+  // Keep user intent separate from the native pauses used to build a reserve.
+  const onControl = (event: Event) => {
+    const playButton = event
+      .composedPath()
+      .some(
+        (node) =>
+          node instanceof HTMLElement && node.tagName === "OMAKASE-PLAY-BUTTON",
+      );
+    const keyboard = event instanceof KeyboardEvent;
+    if (
+      event.type === "mediaplayrequest" ||
+      event.type === "mediapauserequest"
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestPlayback(event.type === "mediaplayrequest");
+    } else if (
+      playButton &&
+      (!keyboard || event.key === " " || event.key === "Enter")
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.type !== "keydown") requestPlayback(!wantsPlay);
+    }
+  };
+  for (const type of [
+    "click",
+    "keydown",
+    "keyup",
+    "mediaplayrequest",
+    "mediapauserequest",
+  ]) {
+    container?.addEventListener(type, onControl, {
+      capture: true,
+      signal: domEvents.signal,
+    });
+  }
+  const bufferInterval = window.setInterval(checkBuffer, 100);
+
   const frameRate =
     resolveFrameRate(descriptor) ??
     (plan.kind === "hls" && !descriptor.video && !descriptor.muxed
@@ -260,48 +436,64 @@ export function createOmakasePreview({
   );
   const ready = (async () => {
     await observeOne(
-      player.loadMainMedia(plan.kind === "hls" ? plan.mainUrl : plan.url, {
-        fileFormatType:
-          plan.kind === "hls"
-            ? FileFormatType.HLS
-            : plan.mediaKind === "audio"
-              ? FileFormatType.MP4_AUDIO
-              : FileFormatType.MP4,
-        mainMediaType:
-          plan.kind === "hls"
-            ? MainMediaType.HLS
-            : plan.mediaKind === "audio"
-              ? MainMediaType.AUDIO_FILE
-              : MainMediaType.MP4,
-        ...(frameRate ? { frameRate } : {}),
-      }),
+      player.loadMainMedia(
+        plan.kind === "hls" && plan.audioTracks.length === 0
+          ? plan.mainUrl
+          : plan.url,
+        {
+          fileFormatType:
+            plan.kind === "hls"
+              ? FileFormatType.HLS
+              : plan.mediaKind === "audio"
+                ? FileFormatType.MP4_AUDIO
+                : FileFormatType.MP4,
+          mainMediaType:
+            plan.kind === "hls"
+              ? MainMediaType.HLS
+              : plan.mediaKind === "audio"
+                ? MainMediaType.AUDIO_FILE
+                : MainMediaType.MP4,
+          ...(frameRate ? { frameRate } : {}),
+        },
+      ),
     );
     if (destroyed) throw abortError();
     duration = safeDuration(player);
-    if (plan.kind === "hls" && plan.audioSidecars.length > 0) {
-      const container = document.getElementById(playerElementId);
-      const mainMedia =
-        container?.querySelector<HTMLMediaElement>("video, audio");
-      if (!container || !mainMedia) {
-        throw new Error("Omakase media element is unavailable");
-      }
-      for (const sidecar of plan.audioSidecars) {
-        const handle = createSynchronizedAudioSidecar({
-          container,
-          enabled: sidecar.flowId === selectedAudioFlowId,
-          label: sidecar.label,
-          mainMedia,
-          onError: reportPlaybackFailure,
-          offsetSeconds: sidecar.offsetSeconds,
-          playlistUrl: sidecar.url,
-        });
-        audioSidecars.set(sidecar.flowId, handle);
-        await handle.ready;
-      }
+    loaded = true;
+    if (plan.kind === "hls") {
+      const hls = player.player.getPlaybackEngine(MainMediaType.HLS).hls;
+      if (!hls) throw new Error("HLS playback engine is unavailable");
+      const onError = (_event: Events.ERROR, data: ErrorData) => {
+        if (data.fatal) reportPlaybackFailure();
+      };
+      const onSwitching = () => {
+        switchingAudio = true;
+        holding = true;
+        checkBuffer();
+      };
+      const onSwitched = () => {
+        switchingAudio = false;
+        checkBuffer();
+      };
+      hls.on(Events.ERROR, onError);
+      hls.on(Events.AUDIO_TRACK_SWITCHING, onSwitching);
+      hls.on(Events.AUDIO_TRACK_SWITCHED, onSwitched);
+      subscriptions.push({
+        unsubscribe() {
+          hls.off(Events.ERROR, onError);
+          hls.off(Events.AUDIO_TRACK_SWITCHING, onSwitching);
+          hls.off(Events.AUDIO_TRACK_SWITCHED, onSwitched);
+        },
+      });
+      const selected = plan.audioTracks.findIndex(
+        (track) => track.flowId === selectedAudioFlowId,
+      );
+      if (selected >= 0 && hls.audioTrack !== selected)
+        hls.audioTrack = selected;
     }
+    checkBuffer();
+    await bufferReady;
     if (destroyed) throw abortError();
-    window.clearTimeout(loadTimeout);
-    emit("ready");
     try {
       await observeOne(
         player.createTimeline({
@@ -330,7 +522,7 @@ export function createOmakasePreview({
       ]
         .filter(Boolean)
         .join(" ");
-      emit("ready");
+      checkBuffer();
     }
   })().catch((error: unknown) => {
     if (isAbortError(error) || (destroyed && phase !== "error")) {
@@ -342,45 +534,37 @@ export function createOmakasePreview({
 
   return {
     ready,
-    audioTracks:
-      plan.kind === "hls"
-        ? plan.audioSidecars.map(({ flowId, label }) => ({ flowId, label }))
-        : [],
+    audioTracks: plan.kind === "hls" ? plan.audioTracks : [],
     selectAudioTrack(flowId: string) {
       if (
         plan.kind !== "hls" ||
-        !plan.audioSidecars.some((sidecar) => sidecar.flowId === flowId)
+        !plan.audioTracks.some((track) => track.flowId === flowId)
       ) {
         return;
       }
       selectedAudioFlowId = flowId;
-      for (const [sidecarFlowId, sidecar] of audioSidecars) {
-        sidecar.setEnabled(sidecarFlowId === flowId);
+      if (loaded) {
+        const hls = player.player.getPlaybackEngine(MainMediaType.HLS).hls;
+        const index = plan.audioTracks.findIndex(
+          (track) => track.flowId === flowId,
+        );
+        if (hls && hls.audioTrack !== index) hls.audioTrack = index;
       }
     },
     destroy: dispose,
   };
 }
 
-function playbackPhase(
-  playback: {
-    buffering: boolean;
-    ended: boolean;
-    paused: boolean;
-    pausing: boolean;
-    playing: boolean;
-    waiting: boolean;
-    waitingSyncedMedia: boolean;
-  },
-  fallback: PlaybackPhase,
-): PlaybackPhase {
-  if (playback.ended) return "ended";
-  if (playback.buffering || playback.waiting || playback.waitingSyncedMedia) {
-    return "buffering";
+function bufferedAhead(media: HTMLMediaElement): number {
+  for (let index = 0; index < media.buffered.length; index++) {
+    if (
+      media.buffered.start(index) <= media.currentTime + 0.05 &&
+      media.buffered.end(index) > media.currentTime
+    ) {
+      return media.buffered.end(index) - media.currentTime;
+    }
   }
-  if (playback.playing) return "playing";
-  if (playback.paused || playback.pausing) return "paused";
-  return fallback;
+  return 0;
 }
 
 function resolveFrameRate(

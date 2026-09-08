@@ -20,11 +20,9 @@ export interface HlsPlaybackPlan {
   kind: "hls";
   url: string;
   mainUrl: string;
-  audioSidecars: ReadonlyArray<{
+  audioTracks: ReadonlyArray<{
     flowId: string;
     label: string;
-    offsetSeconds: number;
-    url: string;
   }>;
   trimmed: boolean;
   masterManifest: string;
@@ -691,26 +689,17 @@ export function compilePlaybackPlan(
       })),
     });
     const url = registry.create(masterManifest);
-    const primaryStart = primary
-      ? timedSegments(primary)[0].startNanoseconds
-      : undefined;
     let disposed = false;
     return {
       kind: "hls",
       url,
       mainUrl: trackUrls.get(primary ?? audio[0]) as string,
-      audioSidecars:
-        primary && primaryStart !== undefined
-          ? audio.map((track, index) => ({
-              flowId: track.flow.id,
-              label: trackLabel(track, `Audio ${index + 1}`),
-              offsetSeconds:
-                Number(
-                  primaryStart - timedSegments(track)[0].startNanoseconds,
-                ) / 1_000_000_000,
-              url: trackUrls.get(track) as string,
-            }))
-          : [],
+      audioTracks: primary
+        ? audio.map((track, index) => ({
+            flowId: track.flow.id,
+            label: trackLabel(track, `Audio ${index + 1}`),
+          }))
+        : [],
       trimmed: aligned.trimmed,
       masterManifest,
       mediaManifests,

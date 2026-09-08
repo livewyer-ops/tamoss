@@ -130,12 +130,10 @@ describe("HLS manifest compilation", () => {
     );
     expect(plan.trimmed).toBe(false);
     expect(plan.mainUrl).toBe("blob:manifest-1");
-    expect(plan.audioSidecars).toEqual([
+    expect(plan.audioTracks).toEqual([
       {
         flowId: "audio",
         label: "English main 'mix'",
-        offsetSeconds: 0,
-        url: "blob:manifest-2",
       },
     ]);
     expect(plan.masterManifest).not.toContain('\nmain "mix"');
@@ -251,12 +249,10 @@ describe("HLS manifest compilation", () => {
     if (plan.kind !== "hls") return;
     expect(plan.trimmed).toBe(true);
     expect(plan.mainUrl).toBe("blob:manifest-1");
-    expect(plan.audioSidecars).toEqual([
+    expect(plan.audioTracks).toEqual([
       {
         flowId: "audio",
         label: "Audio 1",
-        offsetSeconds: 2,
-        url: "blob:manifest-2",
       },
     ]);
     expect(plan.mediaManifests.get("video")).not.toContain("video-early.ts");
@@ -343,7 +339,7 @@ describe("HLS manifest compilation", () => {
     if (plan.kind !== "hls") return;
     expect(plan.trimmed).toBe(false);
     expect(plan.mainUrl).toBe("blob:manifest-1");
-    expect(plan.audioSidecars).toEqual([]);
+    expect(plan.audioTracks).toEqual([]);
     expect(plan.masterManifest).toContain("#EXT-X-STREAM-INF:BANDWIDTH=128000");
     expect(plan.masterManifest).not.toContain("#EXT-X-MEDIA:TYPE=AUDIO");
   });
@@ -433,12 +429,10 @@ describe("playback plans", () => {
     expect(plan.kind).toBe("hls");
     if (plan.kind !== "hls") return;
     expect(plan.trimmed).toBe(false);
-    expect(plan.audioSidecars).toEqual([
+    expect(plan.audioTracks).toEqual([
       {
         flowId: "cr-audio",
         label: "Audio 1",
-        offsetSeconds: 0.048333407,
-        url: "blob:manifest-2",
       },
     ]);
     const videoManifest = plan.mediaManifests.get("cr-video") as string;
@@ -487,7 +481,7 @@ describe("playback plans", () => {
     expect(plan.mediaManifests.get("audio-flow")).toContain(
       "https://media.example/audio-two.mp4",
     );
-    expect(plan.audioSidecars).toEqual([]);
+    expect(plan.audioTracks).toEqual([]);
   });
 
   it("builds fragmented MP4 playlists with initialisation Objects", () => {

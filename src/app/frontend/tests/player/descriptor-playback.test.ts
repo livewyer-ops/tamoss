@@ -27,6 +27,14 @@ const mocks = vi.hoisted(() => {
     mainMediaElement = document.createElement("video");
     player = {
       getDuration: vi.fn(() => 12),
+      getPlaybackEngine: vi.fn(() => ({
+        hls: {
+          on: vi.fn(),
+          off: vi.fn(),
+          audioTrack: 0,
+          config: { maxBufferLength: 30 },
+        },
+      })),
       htmlMediaElement: this.mainMediaElement,
       onEvent$: { subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })) },
     };
@@ -45,6 +53,10 @@ const mocks = vi.hoisted(() => {
 
     constructor(config: unknown) {
       this.mainMediaElement.pause = vi.fn();
+      Object.defineProperties(this.mainMediaElement, {
+        readyState: { value: 4 },
+        buffered: { value: { length: 1, start: () => 0, end: () => 12 } },
+      });
       instances.push(this);
       const playerId = (config as { playerHtmlElementId?: string })
         .playerHtmlElementId;
@@ -70,14 +82,6 @@ vi.mock("@byomakase/omakase-player/dist/omakase-player.es.js", () => ({
     PLAYER_ENDED: "PLAYER_ENDED",
     PLAYER_PLAYBACK_PROGRESS: "PLAYER_PLAYBACK_PROGRESS",
   },
-}));
-
-vi.mock("@/player/audio-sidecar", () => ({
-  createSynchronizedAudioSidecar: vi.fn(() => ({
-    ready: Promise.resolve(),
-    setEnabled: vi.fn(),
-    destroy: vi.fn(),
-  })),
 }));
 
 import { createOmakasePreview } from "@/player/OmakaseAdapter";

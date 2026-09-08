@@ -108,6 +108,32 @@ describe("MediaPreview", () => {
     expect(mocks.destroy).toHaveBeenCalledOnce();
   });
 
+  it("recreates failed playback when refreshed metadata is unchanged", async () => {
+    const sameDescriptor = descriptor();
+    mocks.buildDescriptor.mockResolvedValue(sameDescriptor);
+    mocks.createPreview.mockImplementationOnce(({ onChange }) => {
+      onChange({
+        phase: "error",
+        currentTime: 0,
+        duration: 10,
+        message: "Media failed",
+      });
+      return {
+        ready: Promise.resolve(),
+        audioTracks: [],
+        destroy: mocks.destroy,
+      };
+    });
+    renderWithQueryClient(<MediaPreview flowId="video-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry playback" }),
+    );
+    await waitFor(() => expect(mocks.createPreview).toHaveBeenCalledTimes(2));
+    expect(mocks.buildDescriptor).toHaveBeenCalledTimes(2);
+    expect(mocks.destroy).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("Ready");
+  });
+
   it("shows a playback warning while preserving Object inventory", async () => {
     const bounded = descriptor();
     const second = {
