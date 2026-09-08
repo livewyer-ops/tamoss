@@ -17,26 +17,31 @@
 
 .brand {
   display: flex;
-  min-height: 65px;
+  min-height: 98px;
   align-items: center;
   gap: 10px;
   padding: 11px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #fff;
 }
 
-.brand strong {
-  display: block;
-  font-size: 0.875rem;
-  letter-spacing: 0;
+.brandIdentity {
+  min-width: 0;
 }
 
-.brand span {
+.logo {
   display: block;
-  color: #aeb8bc;
+  width: 160px;
+  max-width: 100%;
+  height: auto;
+}
+
+.brandIdentity span {
+  display: block;
+  color: #52666f;
   font-size: 0.6875rem;
 }
 
-.mark,
 .mobileMark {
   width: 36px;
   height: 36px;
@@ -87,6 +92,7 @@
 
 .workspace {
   min-width: 0;
+  isolation: isolate;
 }
 
 .menuButton,
@@ -163,7 +169,7 @@
   .closeButton {
     display: inline-flex;
     margin-left: auto;
-    color: #c9d0d3;
+    color: #52666f;
   }
 
   .scrim {

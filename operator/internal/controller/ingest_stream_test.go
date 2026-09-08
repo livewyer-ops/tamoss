@@ -57,7 +57,7 @@ func testIngestEventStream(t *testing.T, outcome ingestevent.RunOutcome) string 
 		}
 	}
 	emit(nil, ingestevent.Hello{
-		ToolVersion: "8.2.0-in1", ToolCommit: "39a5e32a612ee5a2ed709f7e4c61f9b5c3e15173", ResultSchemaVersion: "2.1",
+		ToolVersion: "8.2.0-in2", ToolCommit: "889a6e7624342e1e502ed74d0f189cf2bc3e7737", ResultSchemaVersion: "2.1",
 		ProfilePolicyVersion: "1", MaxEventBytes: ingestevent.DefaultMaxEventBytes,
 		Capabilities: []string{"graceful_cancel", "live_object_results", "progress", "progress_coalescing", "retry_events", "terminal_results"},
 	})
