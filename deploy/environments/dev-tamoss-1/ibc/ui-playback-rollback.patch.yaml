@@ -1,0 +1,5 @@
+spec:
+  ui:
+    image:
+      repository: livewyer/tamoss-ui
+      tag: sha-5586c17@sha256:ffdc185decf951c7ce3f784cdbabebe560bd49e7a07766f1d2e882aacb1f3f6e
