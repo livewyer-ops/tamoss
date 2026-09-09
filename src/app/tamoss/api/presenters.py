@@ -20,14 +20,23 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
+from tamoss.domain.segments import segment_object_timerange
 from tamoss.errors import normalize_error_payload
 
 JsonPayload = dict[str, object]
 
 
-def with_page_headers(response: Response, request: Request, page: Page[object]) -> None:
+def with_page_headers(
+    response: Response,
+    request: Request,
+    page: Page[object],
+    *,
+    reverse_order: bool | None = None,
+) -> None:
     response.headers["X-Paging-Limit"] = str(page.limit)
     response.headers["X-Paging-Count"] = str(len(page.items))
+    if reverse_order is not None:
+        response.headers["X-Paging-Reverse-Order"] = str(reverse_order).lower()
     if page.next_page is not None:
         response.headers["X-Paging-NextKey"] = page.next_page
         response.headers["Link"] = (
@@ -54,6 +63,7 @@ def storage_backend_response(backend: StorageBackend) -> JsonPayload:
             provider=backend.provider,
             region=backend.region,
             store_product=backend.store_product,
+            tags=backend.tags,
         )
     )
 
@@ -141,6 +151,8 @@ def segment_response(
     segment: SegmentRecord,
     get_urls: list[dict[str, object]],
     *,
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[dict[str, object]] | None = None,
     include_object_timerange: bool = False,
 ) -> JsonPayload:
     return contract_dump(
@@ -149,13 +161,19 @@ def segment_response(
             timerange=segment.timerange,
             ts_offset=segment.ts_offset,
             last_duration=segment.last_duration,
-            object_timerange=segment.object_timerange
+            object_timerange=segment_object_timerange(segment)
             if include_object_timerange
             else None,
             sample_offset=segment.sample_offset,
             sample_count=segment.sample_count,
             get_urls=get_urls,
             key_frame_count=segment.key_frame_count,
+            init_object=contract_models.InitObject(
+                object_id=init_object.id,
+                get_urls=init_get_urls or [],
+            )
+            if init_object is not None
+            else None,
         )
     )
 
@@ -165,8 +183,9 @@ def object_response(
     referenced_by_flows: list[UUID],
     *,
     get_urls: list[dict[str, object]],
+    init_object: MediaObjectRecord | None = None,
+    init_get_urls: list[dict[str, object]] | None = None,
 ) -> JsonPayload:
-    timerange = media_object.timerange or "()"
     return contract_dump(
         contract_models.Object(
             id=media_object.id,
@@ -174,8 +193,14 @@ def object_response(
             first_referenced_by_flow=str(media_object.first_referenced_by_flow)
             if media_object.first_referenced_by_flow is not None
             else None,
-            timerange=timerange,
+            timerange=media_object.timerange,
             get_urls=get_urls,
             key_frame_count=media_object.key_frame_count,
+            init_object=contract_models.InitObject1(
+                id=init_object.id,
+                get_urls=init_get_urls or [],
+            )
+            if init_object is not None
+            else None,
         )
     )

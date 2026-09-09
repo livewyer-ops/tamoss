@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,6 +24,7 @@ from tamoss.settings import (
     DEFAULT_WORKER_LEASE_SECONDS,
     Settings,
 )
+from tamoss.worker_claims import WorkerClaimLost, keep_worker_claims
 
 
 class WebhookUseCases:
@@ -43,12 +45,14 @@ class WebhookUseCases:
         *,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
+        reverse_order: bool,
         page: str | None,
         limit: int | None,
     ) -> Page[WebhookRecord]:
         return self.repository.list_webhooks_page(
             tag_values=tag_values,
             tag_exists=tag_exists,
+            reverse_order=reverse_order,
             page=page,
             limit=limit,
         )
@@ -134,13 +138,22 @@ class WebhookUseCases:
         # Sends are network-bound and independent rows; bounded concurrency
         # stops one slow or black-holed receiver stalling the whole batch.
         max_workers = min(self.settings.webhook_delivery_concurrency, len(deliveries))
-        if max_workers <= 1:
-            for delivery in deliveries:
-                self._process_claimed_delivery(delivery)
-        else:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                list(executor.map(self._process_claimed_delivery, deliveries))
+        with keep_worker_claims(
+            deliveries,
+            renew=self.repository.renew_worker_claim,
+            lease_seconds=lease_seconds,
+        ):
+            if max_workers <= 1:
+                for delivery in deliveries:
+                    self._process_owned_delivery(delivery)
+            else:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    list(executor.map(self._process_owned_delivery, deliveries))
         return len(deliveries)
+
+    def _process_owned_delivery(self, delivery: WebhookDeliveryRecord) -> None:
+        with suppress(WorkerClaimLost):
+            self._process_claimed_delivery(delivery)
 
     def process_webhook_delivery(
         self, delivery_id: UUID

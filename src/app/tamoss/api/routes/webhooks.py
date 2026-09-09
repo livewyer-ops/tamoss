@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
@@ -11,10 +11,28 @@ from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.application.contexts.webhooks import WebhookUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.tags import parse_tag_filters
 from tamoss.errors import BadRequest
 
 router = APIRouter(tags=["Webhooks"])
+
+
+def _validated_webhook_payload(
+    payload: dict[str, Any],
+    *,
+    update: bool,
+) -> dict[str, Any]:
+    model_type = contract_models.WebhookPut if update else contract_models.WebhookPost
+    try:
+        webhook = strict_contract_model(
+            model_type,
+            payload,
+            recursive_non_nullable_fields=model_type.model_fields,
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Webhook JSON.") from exc
+    return cast(dict[str, Any], contract_dump(webhook))
 
 
 @router.get(
@@ -30,13 +48,14 @@ router = APIRouter(tags=["Webhooks"])
 def list_webhooks(
     request: Request,
     response: Response,
+    reverse_order: bool = False,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     validate_query_params(
         request,
-        {"page", "limit"},
+        {"reverse_order", "page", "limit"},
         allowed_prefixes=("tag.", "tag_exists."),
     )
     try:
@@ -46,10 +65,11 @@ def list_webhooks(
     webhook_page = webhooks.list_webhooks(
         tag_values=tag_values,
         tag_exists=tag_exists,
+        reverse_order=reverse_order,
         page=page,
         limit=limit,
     )
-    with_page_headers(response, request, webhook_page)
+    with_page_headers(response, request, webhook_page, reverse_order=reverse_order)
     if head := head_response(request, response):
         return head
     return [webhook_response(webhook) for webhook in webhook_page.items]
@@ -64,10 +84,12 @@ def list_webhooks(
     },
 )
 def post_webhook(
-    webhook: contract_models.WebhookPost,
+    webhook: dict[str, Any],
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
-    return webhook_response(webhooks.create_webhook(contract_dump(webhook)))
+    return webhook_response(
+        webhooks.create_webhook(_validated_webhook_payload(webhook, update=False))
+    )
 
 
 @router.get(
@@ -101,13 +123,13 @@ def get_webhook(
 )
 def put_webhook(
     webhook_id: Annotated[UUID, Path(alias="webhookId")],
-    webhook: contract_models.WebhookPut,
+    webhook: dict[str, Any],
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
     return webhook_response(
         webhooks.put_webhook(
             webhook_id=webhook_id,
-            webhook=contract_dump(webhook),
+            webhook=_validated_webhook_payload(webhook, update=True),
         )
     )
 

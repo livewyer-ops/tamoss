@@ -23,6 +23,8 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
+from tamoss.domain.listings import FlowSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -50,9 +52,15 @@ def list_flows(
     ),
     format: str | None = None,
     codec: str | None = None,
+    profile_id: UUID | None = None,
     label: str | None = None,
+    reverse_order: bool = False,
+    sort_by: FlowSortBy = FlowSortBy.CREATED,
+    status: contract_models.FlowStatus | None = None,
     frame_width: int | None = None,
     frame_height: int | None = None,
+    init_segments: bool | None = None,
+    collected_by_ids: str | None = None,
     page: str | None = None,
     limit: int | None = Query(default=None, gt=0),
     flows: FlowUseCases = Depends(get_flow_use_cases),
@@ -65,9 +73,15 @@ def list_flows(
             "include_timerange",
             "format",
             "codec",
+            "profile_id",
             "label",
+            "reverse_order",
+            "sort_by",
+            "status",
             "frame_width",
             "frame_height",
+            "init_segments",
+            "collected_by_ids",
             "page",
             "limit",
         },
@@ -77,10 +91,18 @@ def list_flows(
         tag_values, tag_exists = parse_tag_filters(request.query_params)
     except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
+    collected_ids, top_level_only = parse_collected_by_ids(collected_by_ids)
     flow_page = flows.list_flows(
         source_id=source_id,
         timerange=timerange,
         format=format,
+        profile_id=profile_id,
+        status=status,
+        init_segments=init_segments,
+        collected_by_ids=collected_ids,
+        top_level_only=top_level_only,
+        sort_by=sort_by,
+        reverse_order=reverse_order,
         codec=codec,
         label=label,
         frame_width=frame_width,
@@ -90,11 +112,13 @@ def list_flows(
         page=page,
         limit=limit,
     )
-    with_page_headers(response, request, flow_page)
+    with_page_headers(response, request, flow_page, reverse_order=reverse_order)
     if head := head_response(request, response):
         return head
     timeranges = (
-        flows.flow_timeranges(flow.id for flow in flow_page.items)
+        flows.flow_timeranges(
+            (flow.id for flow in flow_page.items), seed_flows=flow_page.items
+        )
         if include_timerange
         else {}
     )
@@ -140,6 +164,7 @@ def get_flow(
 @router.put(
     "/flows/{flowId}",
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_json_body)],
     responses={
         204: {"description": "No content. The Flow has been updated."},
         400: {"description": "Bad request. Invalid Flow JSON."},
@@ -149,15 +174,15 @@ def get_flow(
 )
 def put_flow(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    flow: contract_models.Flow,
     request: Request,
+    flow: dict[str, Any] = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     identity = identify_request(request)
     stored, created = flows.put_flow(
         flow_id=flow_id,
-        flow=contract_dump(flow),
-        supplied_fields=set(flow.root.model_fields_set),
+        flow=flow,
+        supplied_fields=set(flow),
         identity=identity,
     )
     if not created:
@@ -223,14 +248,24 @@ def get_flow_collection(
 )
 def put_flow_collection(
     flow_id: Annotated[UUID, Path(alias="flowId")],
-    collection: list[contract_models.FlowCollectionItem],
     request: Request,
+    collection: object = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
+    try:
+        validated_collection = strict_contract_model(
+            contract_models.FlowCollection,
+            collection,
+            recursive_non_nullable_fields=(
+                contract_models.FlowCollectionItem.model_fields
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Flow collection.") from exc
     identity = identify_request(request)
     flows.set_flow_collection(
         flow_id=flow_id,
-        collection=[contract_dump(item) for item in collection],
+        collection=contract_dump(validated_collection),
         identity=identity,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

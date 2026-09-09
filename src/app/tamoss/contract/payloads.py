@@ -28,9 +28,8 @@ def flow_payload(flow: FlowRecord, *, timerange: str | None = None) -> JsonPaylo
         payload["timerange"] = timerange
     if flow.segments_updated is not None:
         payload["segments_updated"] = flow.segments_updated.isoformat()
-    payload = without_none(payload)
     return cast(
-        JsonPayload, contract_dump(contract_models.Flow.model_validate(payload))
+        JsonPayload, contract_dump(contract_models.FlowGet.model_validate(payload))
     )
 
 

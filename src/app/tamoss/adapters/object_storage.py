@@ -35,17 +35,26 @@ class ConfiguredObjectStorage:
         self._lock = RLock()
 
     def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
+        self,
+        *,
+        object_id: str,
+        content_type: str,
+        backend: StorageBackend,
+        presigned: bool,
     ) -> dict[str, object]:
         backend = self._resolve_backend(backend)
         return {
-            "url": self._presign_put_url(
-                backend=backend,
-                object_id=object_id,
-                content_type=flow_container,
+            "url": (
+                self._presign_put_url(
+                    backend=backend,
+                    object_id=object_id,
+                    content_type=content_type,
+                )
+                if presigned
+                else _public_object_url(backend=backend, object_id=object_id)
             ),
-            "content-type": flow_container,
-            "headers": {"Content-Type": flow_container},
+            "content-type": content_type,
+            "headers": {"Content-Type": content_type},
         }
 
     def build_get_urls(
@@ -180,14 +189,15 @@ class ConfiguredObjectStorage:
         source = self._resolve_backend(source_backend)
         destination = self._resolve_backend(destination_backend)
         if _same_storage_endpoint(source, destination):
-            self._s3_client(destination).copy_object(
+            self._s3_client(destination).copy(
                 Bucket=_require_bucket(destination),
                 Key=object_id,
                 CopySource={
                     "Bucket": _require_bucket(source),
                     "Key": object_id,
                 },
-                MetadataDirective="COPY",
+                ExtraArgs={"MetadataDirective": "COPY"},
+                SourceClient=self._s3_client(source),
             )
             return
 
@@ -228,10 +238,12 @@ class ConfiguredObjectStorage:
         client = self._s3_client(resolved_backend)
         bucket = _require_bucket(resolved_backend)
         for delete_batch in _chunked(unique_object_ids, 1000):
-            client.delete_objects(
+            response = client.delete_objects(
                 Bucket=bucket,
                 Delete={"Objects": [{"Key": object_id} for object_id in delete_batch]},
             )
+            if response.get("Errors"):
+                raise RuntimeError("S3 batch deletion was incomplete; retry required")
 
     def check_backend(self, backend: StorageBackend) -> None:
         resolved_backend = self._resolve_backend(backend)

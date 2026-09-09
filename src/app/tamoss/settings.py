@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import socket
@@ -12,6 +13,7 @@ from uuid import UUID
 from mediatimestamp import Timestamp
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     ValidationInfo,
     field_validator,
@@ -28,6 +30,7 @@ DEFAULT_WORKER_LEASE_SECONDS = 300
 NANOSECONDS_PER_SECOND = 1_000_000_000
 MIN_OBJECT_TIMEOUT_SECONDS = 300
 MIN_PRESIGNED_URL_TIMEOUT_SECONDS = 30
+MIN_FORWARD_AUTH_SECRET_LENGTH = 32
 
 _OAUTH2_JWT_ALGORITHMS = frozenset(
     {
@@ -43,6 +46,10 @@ _OAUTH2_JWT_ALGORITHMS = frozenset(
         "EdDSA",
     }
 )
+
+_FORWARD_AUTH_PERMISSIONS = frozenset({"admin", "viewer", "operator", "ingest-runner"})
+_MAX_FORWARD_AUTH_GROUPS = 256
+_MAX_FORWARD_AUTH_GROUP_NAME_LENGTH = 512
 
 
 class SecretFileError(ValueError):
@@ -66,6 +73,7 @@ class StorageBackendSettings(BaseModel):
     public_endpoint_url: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
+    tags: dict[str, str | list[str]] = Field(default_factory=dict)
 
     def to_storage_backend(self) -> StorageBackend:
         return StorageBackend(
@@ -81,7 +89,40 @@ class StorageBackendSettings(BaseModel):
             public_endpoint_url=self.public_endpoint_url,
             access_key=self.access_key,
             secret_key=self.secret_key,
+            tags=self.tags,
         )
+
+
+class ForwardAuthGroupBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    group_name: str = Field(alias="groupName")
+    permissions: frozenset[str]
+
+    @field_validator("group_name")
+    @classmethod
+    def validate_group_name(cls, value: str) -> str:
+        if (
+            not value
+            or value != value.strip()
+            or len(value) > _MAX_FORWARD_AUTH_GROUP_NAME_LENGTH
+            or "|" in value
+            or not value.isprintable()
+        ):
+            raise ValueError("forward-auth group name is invalid")
+        return value
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions(cls, value: frozenset[str]) -> frozenset[str]:
+        if not value:
+            raise ValueError("forward-auth group permissions must not be empty")
+        invalid = sorted(value - _FORWARD_AUTH_PERMISSIONS)
+        if invalid:
+            raise ValueError(
+                "unsupported forward-auth group permission(s): " + ", ".join(invalid)
+            )
+        return value
 
 
 def _s3_backend_from_env() -> StorageBackendSettings | None:
@@ -101,6 +142,13 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
             str(DEFAULT_TAMOSS_S3_STORAGE_BACKEND_ID),
         )
     )
+    raw_tags = _env_str("TAMOSS_STORAGE_BACKEND_TAGS", "{}")
+    try:
+        tags = json.loads(raw_tags)
+    except ValueError as exc:
+        raise ValueError("TAMOSS_STORAGE_BACKEND_TAGS must be valid JSON") from exc
+    if not isinstance(tags, dict):
+        raise ValueError("TAMOSS_STORAGE_BACKEND_TAGS must be a JSON object")
     return StorageBackendSettings(
         id=storage_backend_id,
         label=label,
@@ -114,6 +162,7 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
         public_endpoint_url=public_endpoint_url,
         access_key=access_key,
         secret_key=secret_key,
+        tags=tags,
     )
 
 
@@ -169,6 +218,10 @@ class Settings(BaseSettings):
     forward_auth_shared_secret_file: str | None = Field(
         default=None,
         validation_alias="TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE",
+    )
+    forward_auth_group_bindings: list[ForwardAuthGroupBinding] = Field(
+        default_factory=list,
+        validation_alias="TAMOSS_FORWARD_AUTH_GROUP_BINDINGS",
     )
     oauth2_enabled: bool = Field(
         default=False,
@@ -538,14 +591,36 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_forward_auth_boundary(self) -> Settings:
-        if (
-            self.trust_forward_auth_headers
-            and not self.forward_auth_shared_secret_value()
-        ):
+        if not self.trust_forward_auth_headers:
+            return self
+        forward_auth_secret = self.forward_auth_shared_secret_value()
+        if not forward_auth_secret:
             raise ValueError(
                 "TAMOSS_TRUST_FORWARD_AUTH_HEADERS requires "
                 "TAMOSS_FORWARD_AUTH_SHARED_SECRET or "
                 "TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE"
+            )
+        if len(forward_auth_secret.strip()) < MIN_FORWARD_AUTH_SECRET_LENGTH:
+            raise ValueError(
+                "TAMOSS forward-auth shared secret must contain at least "
+                f"{MIN_FORWARD_AUTH_SECRET_LENGTH} characters"
+            )
+        if not self.forward_auth_group_bindings:
+            raise ValueError(
+                "TAMOSS_TRUST_FORWARD_AUTH_HEADERS requires "
+                "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS"
+            )
+        if len(self.forward_auth_group_bindings) > _MAX_FORWARD_AUTH_GROUPS:
+            raise ValueError(
+                "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS exceeds the "
+                f"{_MAX_FORWARD_AUTH_GROUPS}-group limit"
+            )
+        group_names = [
+            binding.group_name for binding in self.forward_auth_group_bindings
+        ]
+        if len(group_names) != len(set(group_names)):
+            raise ValueError(
+                "TAMOSS_FORWARD_AUTH_GROUP_BINDINGS contains duplicate group names"
             )
         return self
 

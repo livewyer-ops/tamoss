@@ -34,16 +34,14 @@ dependencies = [
 
 [project.scripts]
 tamoss-db = "tamoss.db.cli:main"
+tamoss-profile = "tamoss.profile_cli:main"
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "pytest-mock>=3.11.0",
     "httpx>=0.24.0",
-    "polyfactory>=2.14.0",
-    "faker>=40.36.0",
     "ruff==0.16.5",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
@@ -52,7 +50,7 @@ dev = [
     "types-PyYAML",
     "playwright>=1.62.0",
     "datamodel-code-generator[ruff]>=0.72.4",
-    "httpx2>=2.9.1",
+    "httpx2>=2.9.1",  # Imported dynamically by Starlette's TestClient.
 ]
 
 [tool.setuptools]
@@ -86,7 +84,7 @@ select = [
 ]
 ignore = [
     "TRY003",  # Domain/API errors intentionally carry BBC-facing messages.
-    "TRY004",  # Validation functions normalize external payload errors to ValueError.
+    "TRY004",  # Validation functions normalise external payload errors to ValueError.
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -195,6 +193,8 @@ python_functions = ["test_*"]
 norecursedirs = [".git", ".venv", "venv", "build", "dist"]
 markers = [
     "tams_conformance: TAMS API, ADR, or AppNote conformance requirement",
+    "tams_contract: Generated and runtime TAMS contract parity requirement",
+    "tams_semantics: Executable TAMS behaviour and capability requirement",
     "tamoss_extension: TAMOSS compatibility or operational extension outside core TAMS conformance",
     "tamoss_security: TAMOSS authentication, authorisation, or hardening policy",
     "e2e: Deployed TAMS-facing black-box checks",

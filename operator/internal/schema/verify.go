@@ -5,7 +5,12 @@ import (
 	"strings"
 )
 
-const DevelopmentSchemaVersion = "dev"
+const (
+	DevelopmentSchemaVersion = "dev"
+	// CurrentDatabaseRevision binds migration Jobs to the Alembic revision
+	// shipped in the matching API image.
+	CurrentDatabaseRevision = "20260810_0007"
+)
 
 var (
 	SchemaVersion                  = DevelopmentSchemaVersion

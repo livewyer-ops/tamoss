@@ -211,7 +211,7 @@ def test_private_metrics_listener_exposes_common_api_metrics() -> None:
             "tamoss_api_info",
             {
                 "version": _settings().service_version,
-                "tams_api_version": "8.1",
+                "tams_api_version": "8.2",
                 "schema_revision": CURRENT_SCHEMA_REVISION,
             },
         )

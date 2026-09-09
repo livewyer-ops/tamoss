@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.application.contexts.objects import ObjectUseCases
+from tamoss.application.contexts.profiles import ProfileUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.application.contexts.sources import SourceUseCases
@@ -22,6 +23,7 @@ class TamossUseCases:
     object_storage: ConfiguredObjectStorage
     settings: Settings
     service: ServiceUseCases
+    profiles: ProfileUseCases
     webhooks: WebhookUseCases
     deletion: DeletionUseCases
     sources: SourceUseCases
@@ -40,10 +42,12 @@ class TamossUseCases:
         self.repository = repository
         self.object_storage = object_storage
         self.settings = settings
+        profile_repository = getattr(repository, "profile_repository", repository)
         self.service = ServiceUseCases(
             repository=repository.service_repository,
             settings=settings,
         )
+        self.profiles = ProfileUseCases(repository=profile_repository)
         self.webhooks = WebhookUseCases(
             repository=repository.webhook_repository,
             settings=settings,
@@ -60,6 +64,7 @@ class TamossUseCases:
         )
         self.flows = FlowUseCases(
             repository=repository.flow_repository,
+            profile_repository=profile_repository,
             webhook_repository=repository.webhook_repository,
         )
         self.storage = StorageUseCases(

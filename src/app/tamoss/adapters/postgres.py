@@ -12,6 +12,7 @@ from tamoss.adapters.postgres_repository.flows_sources import PostgresFlowSource
 from tamoss.adapters.postgres_repository.objects_segments import (
     PostgresObjectSegmentMixin,
 )
+from tamoss.adapters.postgres_repository.profiles import PostgresProfileMixin
 from tamoss.adapters.postgres_repository.queues import PostgresQueueMixin
 from tamoss.adapters.postgres_repository.storage_service import (
     PostgresStorageServiceMixin,
@@ -44,6 +45,10 @@ class _PostgresServiceStore(PostgresStorageServiceMixin, _PostgresStoreBase):
     pass
 
 
+class _PostgresProfileStore(PostgresProfileMixin, _PostgresStoreBase):
+    pass
+
+
 class _PostgresWebhookStore(PostgresQueueMixin, _PostgresStoreBase):
     pass
 
@@ -63,6 +68,7 @@ class _PostgresSourceStore(PostgresFlowSourceMixin, _PostgresStoreBase):
 
 
 class _PostgresFlowStore(
+    PostgresStorageServiceMixin,
     PostgresFlowSourceMixin,
     PostgresObjectSegmentMixin,
     _PostgresStoreBase,
@@ -100,6 +106,7 @@ class PostgresRepository(PostgresConnectionMixin):
     """PostgreSQL connection manager and focused repository bundle."""
 
     service_repository: _PostgresServiceStore
+    profile_repository: _PostgresProfileStore
     webhook_repository: _PostgresWebhookStore
     deletion_repository: _PostgresDeletionStore
     source_repository: _PostgresSourceStore
@@ -130,6 +137,7 @@ class PostgresRepository(PostgresConnectionMixin):
             pool_max_size=pool_max_size,
         )
         self.service_repository = _PostgresServiceStore(self)
+        self.profile_repository = _PostgresProfileStore(self)
         self.webhook_repository = _PostgresWebhookStore(self)
         self.deletion_repository = _PostgresDeletionStore(self)
         self.source_repository = _PostgresSourceStore(self)

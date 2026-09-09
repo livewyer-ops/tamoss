@@ -15,6 +15,9 @@ spec:
   backends:
     s3:
       providedBy: rustfs-operator
+      tags:
+        access: [programme, archive]
+        tier: hot
 ```
 
 The built-in profiles use [CNPG](https://cloudnative-pg.io/) and
@@ -46,6 +49,9 @@ spec:
   tamossRef:
     name: tamoss-kind
   provider: external-s3
+  tags:
+    access: [programme, archive]
+    tier: cold
   region: eu-west-2
   bucketName: archive
   endpoint:
@@ -59,6 +65,13 @@ spec:
       accessKey: accessKeyID
       secretKey: secretAccessKey
 ```
+
+Storage backend tags are freeform TAMS metadata whose values can be either a
+single string or an array of strings. Both forms are preserved when exposed
+read-only by `/service/storage-backends` and can be used by clients to filter
+backend listings, object download URLs, and storage allocation choices. Keep
+authorisation decisions in the API or storage provider; tags describe policy
+inputs and are not credentials.
 
 ## Runtime Credentials
 
@@ -132,10 +145,11 @@ TAMOSS does not configure bucket CORS for `external-s3` backends.
 ## Managed RustFS Browser Access
 
 For managed RustFS backends the operator configures bucket CORS automatically,
-including the UI web host from `.spec.ingress.ui.web.host` (`https` when
-`.spec.ingress.tls` is set, otherwise `http`) and exact origins from
-`.spec.api.cors.allowedOrigins`. When no exact origins are configured, the
-operator falls back to a wildcard (`*`) bucket CORS origin.
+including the exact `.spec.publicEndpoint.uiURL`, the UI web host from
+`.spec.ingress.ui.web.host` (`https` when `.spec.ingress.tls` is set, otherwise
+`http`), and exact origins from `.spec.api.cors.allowedOrigins`. The exact
+public UI URL preserves non-standard ports. When no exact origins are
+configured, the operator falls back to a wildcard (`*`) bucket CORS origin.
 
 Regex origins from `.spec.api.cors.allowedOriginRegexes` are supported by the
 API and at the [Traefik](https://traefik.io/) S3 ingress layer. They are not
