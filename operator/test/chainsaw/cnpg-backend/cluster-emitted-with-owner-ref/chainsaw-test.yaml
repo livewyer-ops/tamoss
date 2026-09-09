@@ -4,7 +4,7 @@ metadata:
   name: cluster-emitted-with-owner-ref
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: standard
+    test.tamoss.io/tier: extended
     test.tamoss.io/domain: db
     test.tamoss.io/lifecycle: ephemeral
     test.tamoss.io/provider: cnpg

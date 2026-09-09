@@ -1,7 +1,0 @@
-apiVersion: tamoss.livewyer.io/v1alpha1
-kind: Tamoss
-metadata:
-  name: tamoss
-(status.conditions[?type == 'Ready'] | [0].status): "True"
-(status.conditions[?type == 'SchemaMigrated'] | [0].status): "True"
-(status.phase): Ready

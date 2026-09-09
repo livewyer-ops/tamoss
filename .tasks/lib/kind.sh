@@ -9,16 +9,8 @@ fi
 # shellcheck source=.tasks/lib/progress.sh
 . "$task_lib_dir/progress.sh"
 
-# Content-derived tag for the operand images built from src/. A static tag leaves
-# the Deployment spec unchanged after a rebuild, so Kubernetes has no reason to
-# roll the pods and a local code change never reaches the cluster. Deriving the
-# tag from source content makes the rendered spec differ whenever the code does.
-# This triggers rollout.
-# Anchored to the work tree root rather than the caller's directory: resolving
-# src/ relative to the cwd would match nothing when called from elsewhere and
-# return a constant tag, which is the staleness this function exists to prevent.
-# Outside a work tree there is no content to hash, so "dev" is the honest answer
-# and matches the tag used before content addressing.
+# Hash API, UI and Console build inputs so a rebuild changes the Deployment.
+# Resolve paths from the work tree root, regardless of the caller's directory.
 task_kind_operand_tag() {
   local root paths gitlinks
 
@@ -30,31 +22,26 @@ task_kind_operand_tag() {
 
   paths="$(
     cd "$root" || exit 1
-    git ls-files --cached --others --exclude-standard -- src \
+    git ls-files --cached --others --exclude-standard -- src operator .dockerignore \
       | sort -u \
       | while IFS= read -r path; do
-          # An "if" rather than "&&": git lists the src/vendor/bbc-tams
-          # submodule as a gitlink, which is not a regular file and sorts last,
-          # so a short-circuiting test would leave the loop — and under
-          # pipefail the whole assignment — with a non-zero status.
+          # Skip gitlinks without failing the pipeline under pipefail.
           if [ -f "$path" ]; then
             printf '%s\n' "$path"
           fi
         done
   )"
 
-  # gitlinks are not regular files, so hash their staged object IDs explicitly.
-  # A BBC TAMS contract update can consist solely of moving this pointer; that
-  # must still change the API/UI image tag and roll the running workloads.
+  # Include reference updates represented only by a staged submodule pointer.
   gitlinks="$(
     cd "$root" || exit 1
-    git ls-files --stage -- src \
+    git ls-files --stage -- src operator .dockerignore \
       | awk '$1 == "160000" { print $4 "\t" $2 }' \
       | sort
   )"
 
   if [ -z "$paths" ] && [ -z "$gitlinks" ]; then
-    printf 'task_kind_operand_tag: no operand sources found under %s/src\n' \
+    printf 'task_kind_operand_tag: no operand build inputs found under %s\n' \
       "$root" >&2
     return 1
   fi

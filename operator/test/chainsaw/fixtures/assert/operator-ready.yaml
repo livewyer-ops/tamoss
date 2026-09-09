@@ -4,6 +4,10 @@ metadata:
   name: operator-controller-manager
   namespace: tamoss-system
 (status.conditions[?type == 'Available'] | [0].status): "True"
+(status.observedGeneration == metadata.generation): true
+(status.updatedReplicas == spec.replicas): true
+(status.availableReplicas == spec.replicas): true
+(status.replicas == spec.replicas): true
 ---
 apiVersion: v1
 kind: Endpoints

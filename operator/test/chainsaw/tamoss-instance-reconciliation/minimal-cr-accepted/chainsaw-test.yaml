@@ -33,3 +33,6 @@ spec:
         - assert:
             file: assert/minimal-observed.yaml
             timeout: 2m
+        - assert:
+            file: assert/minimal-ready.yaml
+            timeout: 5m

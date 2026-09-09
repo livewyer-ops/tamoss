@@ -1,11 +1,9 @@
 .local/
+/*.md
 .tmp/
 tmp/
 vendor/
 **/__pycache__/
-.claude/
-.codex
-.codex/
 .env
 .env.*
 garden.yaml
@@ -36,4 +34,4 @@ tests/
 src/.venv/
 src/.pytest_cache/
 src/.mypy_cache/
-src/app/frontend/node_modules/
+src/app/frontend/

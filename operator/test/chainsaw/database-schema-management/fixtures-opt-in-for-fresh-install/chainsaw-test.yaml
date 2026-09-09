@@ -4,7 +4,7 @@ metadata:
   name: fixtures-opt-in-for-fresh-install
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: standard
+    test.tamoss.io/tier: extended
     test.tamoss.io/domain: schema
     test.tamoss.io/lifecycle: ephemeral
     test.tamoss.io/provider: mixed
@@ -27,24 +27,36 @@ spec:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
         - apply:
             file: resources/tamoss.yaml
-        - script:
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            selector: app.kubernetes.io/instance=tamoss,app.kubernetes.io/component=schema,app.kubernetes.io/managed-by=tamoss-operator
+            timeout: 240s
+            for:
+              condition:
+                name: Complete
+        - command:
+            entrypoint: kubectl
             env:
               - name: NAMESPACE
                 value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: schema Job name follows the runtime schema version.
-              schema_version="${SCHEMA_VERSION:-0.0.1}"
-              job_suffix="$(printf '%s' "$schema_version" | tr . -)"
-              end=$(($(date +%s) + 120))
-              until kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1; do
-                if [ "$(date +%s)" -ge "$end" ]; then
-                  echo "timed out waiting for schema migration Job" >&2
-                  exit 1
-                fi
-                sleep 2
-              done
-              kubectl -n "$NAMESPACE" wait --for=condition=Complete "job/tamoss-schema-migrate-${job_suffix}" --timeout=240s
+            args:
+              - -n
+              - $NAMESPACE
+              - exec
+              - deployment/postgresql
+              - --
+              - psql
+              - -U
+              - tams
+              - -d
+              - tams
+              - -Atc
+              - SELECT count(*) FROM tamoss_storage_backends WHERE id = 'f1ab5b54-9703-42ed-b181-11ba1c794a7f' AND label = 'tamoss.us-east-1:s3:tamoss';
+            timeout: 30s
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "1"
         - assert:
             file: assert/schema-state-fixtures-applied.yaml
             timeout: 120s

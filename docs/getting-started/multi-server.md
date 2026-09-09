@@ -20,6 +20,9 @@ Before applying the profile, confirm:
   token material.
 - The CNI enforces Kubernetes NetworkPolicy if you rely on the profile's
   default traffic restrictions.
+- If Console is enabled, the Tamoss overlay includes destination-scoped
+  `spec.networkPolicy.kubernetesAPIIPBlocks` for the Kubernetes Service and API
+  server endpoints; see [Runtime Configuration](../reference/runtime-configuration.md).
 - PostgreSQL and object-storage backup/restore ownership is decided before
   users write durable data.
 

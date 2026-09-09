@@ -24,7 +24,9 @@ task_operator_chainsaw_up() {
   local install_authentik_fixture="${CHAINSAW_INSTALL_AUTHENTIK_FIXTURE:-false}"
   local platform_helmfile="${CHAINSAW_PLATFORM_HELMFILE:-deploy/platform/helmfile.yaml.gotmpl}"
   local schema_version="${SCHEMA_VERSION:-$version}"
-  local tams_api_version="${TAMS_API_VERSION:-8.1}"
+  local previous_schema_version="${PREVIOUS_SCHEMA_VERSION:-}"
+  local tams_api_version="${TAMS_API_VERSION:-8.2}"
+  local operand_version="${OPERAND_VERSION:-dev}"
   local kind_bin
 
   kind_bin="$(task_resolve_aqua_binary "${KIND_BIN:-kind}")" || {
@@ -37,7 +39,7 @@ task_operator_chainsaw_up() {
   task_operator_chainsaw_register_cleanup "$kind_bin" "$cluster" "$keep_cluster"
 
   task_step "Operator Chainsaw: build operator image" \
-    make -C operator docker-build IMG="$operator_image" VERSION="$version" SCHEMA_VERSION="$schema_version" TAMS_API_VERSION="$tams_api_version"
+    make -C operator docker-build IMG="$operator_image" VERSION="$version" SCHEMA_VERSION="$schema_version" PREVIOUS_SCHEMA_VERSION="$previous_schema_version" TAMS_API_VERSION="$tams_api_version" OPERAND_VERSION="$operand_version"
   docker tag "$operator_image" "$chainsaw_image"
 
   task_step "Operator Chainsaw: build API image" \
@@ -73,6 +75,7 @@ task_operator_chainsaw_up() {
     REPORT_PATH="${CHAINSAW_REPORT_PATH:-reports}" \
     CHAINSAW_SELECTOR="${CHAINSAW_SELECTOR:-}" \
     CHAINSAW_EXTRA_ARGS="${CHAINSAW_EXTRA_ARGS:-}" \
+    SCHEMA_VERSION="$schema_version" \
     ${CHAINSAW_TASK_ARGS:-}
 }
 
@@ -167,7 +170,9 @@ task_operator_chainsaw_apply_operator() {
   local kubeconfig="$1"
 
   kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/gateway-api-crds.yaml
-  kubectl --kubeconfig "$kubeconfig" apply --server-side -k operator/config/chainsaw
+  kubectl kustomize operator/config/chainsaw \
+    --load-restrictor=LoadRestrictionsNone | \
+    kubectl --kubeconfig "$kubeconfig" apply --server-side -f -
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \

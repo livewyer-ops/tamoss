@@ -118,11 +118,14 @@ curl -k -H "Authorization: Bearer $TAMOSS_API_TOKEN" https://api.tamoss.edge/
 trust the issuing CA on the client (for example with `--cacert`) instead of
 disabling verification.
 
+Bearer-token mode supports API clients. Enable managed OAuth below for browser
+catalogue, playback and runtime views; the Console does not accept pasted API
+tokens.
+
 ### Auth: managed OAuth
 
 Declaring the Authentik provider runs the full OAuth stack on the node.
-OAuth on edge needs the operator release that ships the spec-driven edge
-Authentik defaults: the next release after 8.1.0-oss4.
+Managed OAuth on edge is supported from `8.1.0-oss5`.
 
 On a live instance, apply the change in this order.
 
@@ -172,23 +175,24 @@ token as a bearer credential alongside Authentik-issued OAuth2 tokens.
 
 ### Memory budget
 
-Steady-state memory use on a 4 GB ARM64 node:
+The 8.1 measurements provide a planning baseline for a 4 GB ARM64 node:
 
 | Mode | Node memory used |
 | --- | --- |
 | Bearer token | ~1.9 GiB |
 | Managed OAuth | ~3.2 GiB |
 
-Bearer mode fits a 4 GB node as installed. For OAuth mode, configure
-SSD-backed swap before enabling Authentik; on a 4 GB node it is a
-requirement, not a safety margin. The generated platform values bound the
-Authentik components to fit this budget; do not lower the Authentik
+Measure the complete 8.2 deployment on the target node before accepting a
+workload. The Console and managed ingest add processes beyond that baseline.
+
+For OAuth mode on a 4 GB node, configure SSD-backed swap before enabling
+Authentik. The generated platform values bound the Authentik components for
+this target; do not lower the Authentik
 PostgreSQL memory limit, which also carries the Authentik task queue.
 
 ### UI on and off
 
-The UI serves static assets from nginx and holds ~3 MiB resident, so leaving
-it enabled costs almost nothing. To disable it, add one line to the spec in
+The UI serves static assets from nginx. To disable it, add this to the spec in
 `tamoss-patch.yaml`:
 
 ```yaml

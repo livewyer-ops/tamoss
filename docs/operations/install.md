@@ -25,7 +25,8 @@ CRDs, controller, RBAC, and webhooks. The environment layer applies one or more
 namespaced `Tamoss` custom resources.
 
 For multiple tenant namespaces, install the platform and operator once, then
-apply namespace-local `Tamoss` and `StorageBackend` resources in each tenant
+apply namespace-local `Tamoss`, `StorageBackend`, and optional `FlowProfile`
+resources in each tenant
 namespace.
 
 Storage provisioning is `StorageBackend`-driven. The operator creates the
