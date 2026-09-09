@@ -1,0 +1,105 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ingest-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingest-tls-proxy-config
+data:
+  nginx.conf: |
+    pid /tmp/nginx.pid;
+    events {}
+    http {
+      client_max_body_size 0;
+      proxy_request_buffering off;
+
+      server {
+        listen 8443 ssl;
+        ssl_certificate /tls/tls.crt;
+        ssl_certificate_key /tls/tls.key;
+        location / {
+          proxy_set_header Host $http_host;
+          proxy_pass http://tamoss-api:8000;
+        }
+      }
+
+      server {
+        listen 9443 ssl;
+        ssl_certificate /tls/tls.crt;
+        ssl_certificate_key /tls/tls.key;
+        location / {
+          proxy_set_header Host $http_host;
+          proxy_pass http://rustfs-svc:9000;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-tls-proxies
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingest-tls-proxies
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ingest-tls-proxies
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.29.5-alpine
+          ports:
+            - name: api-tls
+              containerPort: 8443
+            - name: s3-tls
+              containerPort: 9443
+          readinessProbe:
+            tcpSocket:
+              port: api-tls
+            periodSeconds: 2
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: ingest-tls-proxy-config
+        - name: tls
+          secret:
+            secretName: ingest-proxy-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tamoss-api-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: ingest-tls-proxies
+  ports:
+    - name: https
+      port: 443
+      targetPort: api-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs-tls
+spec:
+  selector:
+    app.kubernetes.io/name: ingest-tls-proxies
+  ports:
+    - name: https
+      port: 443
+      targetPort: s3-tls

@@ -1,0 +1,12 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: FlowProfile
+metadata:
+  name: chainsaw-timed-text
+  namespace: ($namespace)
+(status.observedGeneration): 1
+(status.phase): Ready
+(status.profileID): 8e35dbf7-d42b-55af-99ce-4a986b456f3b
+(status.resolved.format): urn:x-nmos:format:data
+(status.resolved.codec): application/x-subrip
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): FlowProfileReady
