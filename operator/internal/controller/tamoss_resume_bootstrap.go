@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -42,7 +43,7 @@ func bootstrapFailure(reason, message string) resumeBootstrapOutcome {
 // semantics: once the database cluster exists the source is ignored.
 func (r *TamossReconciler) reconcileResumeBootstrap(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (reconcileControl, error) {
 	source, waking := r.resumeBootstrapSource(tamoss)
-	if source == nil || tamoss.Status.Lifecycle.ResolvedRestore != nil {
+	if source == nil || (tamoss.Status.Lifecycle.ResolvedRestore != nil && !waking) {
 		return continueReconcile(), nil
 	}
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
@@ -89,6 +90,15 @@ func (r *TamossReconciler) reconcileResumeBootstrap(ctx context.Context, tamoss 
 	operatorstatus.EmitNormalEvent(r.Recorder, tamoss, operatorstatus.ReasonTamossResuming,
 		fmt.Sprintf("Bootstrapping the managed database from hibernation artifact %s", outcome.resolved.ManifestKey))
 	err = patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
+		lifecycle.PendingArtifactCleanups = slices.DeleteFunc(lifecycle.PendingArtifactCleanups, func(pending tamossv1alpha1.HibernationArtifactRetention) bool {
+			return pending.ManifestKey == outcome.resolved.ManifestKey && pending.StorageBackendName == outcome.resolved.StorageBackendName
+		})
+		previous := lifecycle.ResolvedRestore
+		if previous != nil && previous.ResumedAt != nil &&
+			!hibernationArtifactCleanupFinished(previous.Cleanup.Phase) &&
+			(previous.ManifestKey != outcome.resolved.ManifestKey || previous.StorageBackendName != outcome.resolved.StorageBackendName) {
+			lifecycle.PendingArtifactCleanups = append(lifecycle.PendingArtifactCleanups, *previous.HibernationArtifactRetention.DeepCopy())
+		}
 		lifecycle.ResolvedRestore = outcome.resolved
 		setLifecycleOperationState(lifecycle,
 			tamossv1alpha1.TamossLifecyclePhaseResuming,
@@ -109,16 +119,15 @@ func (r *TamossReconciler) resumeBootstrapSource(tamoss *tamossv1alpha1.Tamoss) 
 	if tamoss.Spec.Hibernation.Enabled {
 		return nil, false
 	}
-	if tamoss.Spec.Hibernation.ResumeFrom != nil {
-		return tamoss.Spec.Hibernation.ResumeFrom, false
-	}
-	if tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase) == tamossv1alpha1.TamossLifecyclePhaseHibernated &&
-		tamoss.Status.Lifecycle.LastHibernateRef != nil {
+	phase := tamossv1alpha1.TamossLifecyclePhase(tamoss.Status.Lifecycle.Phase)
+	if tamoss.Status.Lifecycle.LastHibernateRef != nil &&
+		(phase == tamossv1alpha1.TamossLifecyclePhaseHibernated || phase == tamossv1alpha1.TamossLifecyclePhaseFailed) {
+		// A later hibernation supersedes the original bootstrap, including after a failed manifest read.
 		return &tamossv1alpha1.TamossResumeSource{
 			HibernationRef: &tamossv1alpha1.LocalObjectReference{Name: tamoss.Status.Lifecycle.LastHibernateRef.Name},
 		}, true
 	}
-	return nil, false
+	return tamoss.Spec.Hibernation.ResumeFrom, false
 }
 
 func (r *TamossReconciler) resolveResumeBootstrapSource(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, source *tamossv1alpha1.TamossResumeSource) resumeBootstrapOutcome {
@@ -213,9 +222,11 @@ func (r *TamossReconciler) resolveResumeBootstrapSource(ctx context.Context, tam
 				SecretKeys:      spec.Credentials.SecretKeys,
 			},
 		},
-		StorageBackendName: storageBackend.Name,
-		ManifestKey:        manifestKey,
-		Checksum:           checksum,
+		HibernationArtifactRetention: tamossv1alpha1.HibernationArtifactRetention{
+			StorageBackendName: storageBackend.Name,
+			ManifestKey:        manifestKey,
+		},
+		Checksum: checksum,
 	}}
 }
 

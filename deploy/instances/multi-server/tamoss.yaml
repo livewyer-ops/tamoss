@@ -10,3 +10,6 @@ metadata:
   namespace: tams
 spec:
   profile: multi-server
+  ingest:
+    sourcePolicy:
+      mode: Disabled

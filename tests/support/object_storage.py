@@ -37,12 +37,17 @@ class InMemoryObjectStorage:
         self._objects: dict[tuple[UUID, str], bytes] = {}
 
     def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
+        self,
+        *,
+        object_id: str,
+        content_type: str,
+        backend: StorageBackend,
+        presigned: bool,
     ) -> dict[str, object]:
         return {
             "url": self._object_url(object_id=object_id, backend=backend),
-            "content-type": flow_container,
-            "headers": {"Content-Type": flow_container},
+            "content-type": content_type,
+            "headers": {"Content-Type": content_type},
         }
 
     def build_get_url(self, *, object_id: str, backend: StorageBackend) -> str:

@@ -17,21 +17,22 @@ from tamoss.adapters.postgres_repository.mappers import (
     _timerange_from_bounds,
 )
 from tamoss.adapters.postgres_repository.query_filters import (
+    _append_flow_collected_by_filter,
     _append_flow_timerange_filter,
+    _append_listing_cursor_filter,
+    _append_source_collected_by_filter,
     _append_tag_filter_clauses,
     _flows_with_collected_by,
+    _listing_order_sql,
     _where_sql,
 )
+from tamoss.domain.listing_pagination import listing_page, listing_window
+from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import FlowRecord, SourceRecord, SourceRelationships
 from tamoss.domain.pagination import Page, resolve_page_window
 
 
 class PostgresFlowSourceMixin:
-    def list_flows(self) -> list[FlowRecord]:
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT record FROM tamoss_flows ORDER BY id")
-            return [_flow_from_record(row[0]) for row in cur.fetchall()]
-
     def list_flows_by_source(self, source_id: UUID) -> list[FlowRecord]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -44,15 +45,11 @@ class PostgresFlowSourceMixin:
         requested_ids = list(dict.fromkeys(flow_ids))
         if not requested_ids:
             return []
-        # Containment (@>) per child id is satisfiable by the GIN index on the
-        # flow_collection expression; the expression must stay identical to
-        # idx_tamoss_flows_flow_collection for the planner to use it. A
-        # missing flow_collection key yields NULL, which excludes the row.
         clause = sql.SQL(" OR ").join(
-            sql.SQL("(flow.record->'data'->'flow_collection') @> %s")
+            sql.SQL("flow.flow_collection_ids @> ARRAY[%s]::uuid[]")
             for _ in requested_ids
         )
-        params = [Jsonb([{"id": str(flow_id)}]) for flow_id in requested_ids]
+        params = requested_ids
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -78,6 +75,13 @@ class PostgresFlowSourceMixin:
         format: str | None,
         codec: str | None,
         label: str | None,
+        profile_id: UUID | None,
+        status: str | None,
+        init_segments: bool | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: FlowSortBy,
+        reverse_order: bool,
         frame_width: int | None,
         frame_height: int | None,
         tag_values: dict[str, set[str]],
@@ -85,7 +89,13 @@ class PostgresFlowSourceMixin:
         page: str | None,
         limit: int | None,
     ) -> Page[FlowRecord]:
-        window = resolve_page_window(page=page, limit=limit)
+        window = listing_window(
+            page=page,
+            limit=limit,
+            resource="flows",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+        )
         clauses: list[sql.Composable] = []
         params: dict[str, Any] = {
             "offset": window.offset,
@@ -101,8 +111,17 @@ class PostgresFlowSourceMixin:
             clauses.append(sql.SQL("flow.record #>> '{data,codec}' = %(codec)s"))
             params["codec"] = codec
         if label is not None:
-            clauses.append(sql.SQL("flow.record #>> '{data,label}' = %(label)s"))
+            clauses.append(sql.SQL("flow.label = %(label)s"))
             params["label"] = label
+        if profile_id is not None:
+            clauses.append(sql.SQL("flow.profile_id = %(profile_id)s"))
+            params["profile_id"] = profile_id
+        if status is not None:
+            clauses.append(sql.SQL("flow.status = %(status)s"))
+            params["status"] = status
+        if init_segments is not None:
+            clauses.append(sql.SQL("flow.init_segments = %(init_segments)s"))
+            params["init_segments"] = init_segments
         if frame_width is not None:
             clauses.append(
                 sql.SQL(
@@ -134,7 +153,33 @@ class PostgresFlowSourceMixin:
             value_filters=tag_values,
             existence_filters=tag_exists,
         )
+        _append_flow_collected_by_filter(
+            clauses,
+            params,
+            collected_by_ids=collected_by_ids,
+            top_level_only=top_level_only,
+        )
+        sort_expression = {
+            FlowSortBy.CREATED: sql.SQL("flow.created"),
+            FlowSortBy.METADATA_UPDATED: sql.SQL("flow.metadata_updated"),
+            FlowSortBy.LABEL: sql.SQL("flow.label"),
+        }[sort_by]
+        _append_listing_cursor_filter(
+            clauses,
+            params,
+            window,
+            value_sql=sort_expression,
+            identity_sql=sql.SQL("flow.id"),
+            timestamp=sort_by != FlowSortBy.LABEL,
+        )
         where_sql = _where_sql(clauses)
+        descending = sort_by.descending(reverse_order=reverse_order)
+        order_sql = _listing_order_sql(
+            sort_expression,
+            sql.SQL("flow.id"),
+            descending=descending,
+            missing_first=reverse_order,
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -142,20 +187,26 @@ class PostgresFlowSourceMixin:
                     SELECT flow.record
                     FROM tamoss_flows AS flow
                     {}
-                    ORDER BY flow.id
+                    ORDER BY {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, order_sql),
                 params,
             )
             rows = cur.fetchall()
-            flows = [_flow_from_record(row[0]) for row in rows[: window.limit]]
+            flows = [_flow_from_record(row[0]) for row in rows]
             flows = _flows_with_collected_by(cur, flows)
-        next_page = (
-            str(window.offset + window.limit) if len(rows) > window.limit else None
+        return listing_page(
+            flows,
+            window,
+            value=lambda flow: {
+                FlowSortBy.CREATED: flow.created,
+                FlowSortBy.METADATA_UPDATED: flow.metadata_updated,
+                FlowSortBy.LABEL: flow.data.get("label"),
+            }[sort_by],
+            identity=lambda flow: flow.id,
         )
-        return Page(items=flows, limit=window.limit, next_page=next_page)
 
     def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
@@ -193,6 +244,14 @@ class PostgresFlowSourceMixin:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM tamoss_flows WHERE id = %s", (flow_id,))
 
+    def lock_source(self, source_id: UUID) -> None:
+        if self._transaction_connection.get() is None:
+            raise RuntimeError("Source locks require a unit of work.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM tamoss_sources WHERE id = %s FOR UPDATE", (source_id,)
+            )
+
     def get_source(self, source_id: UUID) -> SourceRecord | None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT record FROM tamoss_sources WHERE id = %s", (source_id,))
@@ -211,6 +270,7 @@ class PostgresFlowSourceMixin:
                     tags,
                     record,
                     metadata_updated,
+                    created,
                     updated_at
                 )
                 VALUES (
@@ -220,6 +280,7 @@ class PostgresFlowSourceMixin:
                     %(tags)s,
                     %(record)s,
                     %(metadata_updated)s,
+                    %(created)s,
                     NOW()
                 )
                 ON CONFLICT (id) DO UPDATE SET
@@ -228,6 +289,7 @@ class PostgresFlowSourceMixin:
                     tags = EXCLUDED.tags,
                     record = EXCLUDED.record,
                     metadata_updated = EXCLUDED.metadata_updated,
+                    created = EXCLUDED.created,
                     updated_at = NOW()
                 """,
                 {
@@ -237,6 +299,7 @@ class PostgresFlowSourceMixin:
                     "tags": Jsonb(source.tags),
                     "record": Jsonb(record),
                     "metadata_updated": source.metadata_updated,
+                    "created": source.created,
                 },
             )
 
@@ -254,12 +317,22 @@ class PostgresFlowSourceMixin:
         *,
         label: str | None,
         format: str | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: SourceSortBy,
+        reverse_order: bool,
         tag_values: dict[str, set[str]],
         tag_exists: dict[str, bool],
         page: str | None,
         limit: int | None,
     ) -> Page[SourceRecord]:
-        window = resolve_page_window(page=page, limit=limit)
+        window = listing_window(
+            page=page,
+            limit=limit,
+            resource="sources",
+            sort_by=sort_by,
+            reverse_order=reverse_order,
+        )
         clauses: list[sql.Composable] = []
         params: dict[str, Any] = {
             "offset": window.offset,
@@ -278,7 +351,33 @@ class PostgresFlowSourceMixin:
             value_filters=tag_values,
             existence_filters=tag_exists,
         )
+        _append_source_collected_by_filter(
+            clauses,
+            params,
+            collected_by_ids=collected_by_ids,
+            top_level_only=top_level_only,
+        )
+        sort_expression = {
+            SourceSortBy.CREATED: sql.SQL("source.created"),
+            SourceSortBy.UPDATED: sql.SQL("source.metadata_updated"),
+            SourceSortBy.LABEL: sql.SQL("source.label"),
+        }[sort_by]
+        _append_listing_cursor_filter(
+            clauses,
+            params,
+            window,
+            value_sql=sort_expression,
+            identity_sql=sql.SQL("source.id"),
+            timestamp=sort_by != SourceSortBy.LABEL,
+        )
         where_sql = _where_sql(clauses)
+        descending = sort_by.descending(reverse_order=reverse_order)
+        order_sql = _listing_order_sql(
+            sort_expression,
+            sql.SQL("source.id"),
+            descending=descending,
+            missing_first=reverse_order,
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -286,19 +385,25 @@ class PostgresFlowSourceMixin:
                     SELECT source.record
                     FROM tamoss_sources AS source
                     {}
-                    ORDER BY source.id
+                    ORDER BY {}
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql),
+                ).format(where_sql, order_sql),
                 params,
             )
             rows = cur.fetchall()
-        sources = [_source_from_record(row[0]) for row in rows[: window.limit]]
-        next_page = (
-            str(window.offset + window.limit) if len(rows) > window.limit else None
+        sources = [_source_from_record(row[0]) for row in rows]
+        return listing_page(
+            sources,
+            window,
+            value=lambda source: {
+                SourceSortBy.CREATED: source.created,
+                SourceSortBy.UPDATED: source.metadata_updated,
+                SourceSortBy.LABEL: source.label,
+            }[sort_by],
+            identity=lambda source: source.id,
         )
-        return Page(items=sources, limit=window.limit, next_page=next_page)
 
     def source_relationships_for(
         self, source_ids: Iterable[UUID]
@@ -332,7 +437,6 @@ class PostgresFlowSourceMixin:
                   ON child.id::text = item.value->>'id'
                 WHERE parent.source_id IS NOT NULL
                   AND child.source_id IS NOT NULL
-                  AND item.value->>'role' IS NOT NULL
                   AND (
                     parent.source_id = ANY(%(source_ids)s::uuid[])
                     OR child.source_id = ANY(%(source_ids)s::uuid[])
@@ -345,7 +449,9 @@ class PostgresFlowSourceMixin:
 
         for parent_source_id, child_source_id, role in rows:
             if parent_source_id in relationships:
-                source_item = {"id": str(child_source_id), "role": str(role)}
+                source_item = {"id": str(child_source_id)}
+                if role is not None:
+                    source_item["role"] = str(role)
                 source_collection = relationships[parent_source_id].source_collection
                 if source_item not in source_collection:
                     source_collection.append(source_item)

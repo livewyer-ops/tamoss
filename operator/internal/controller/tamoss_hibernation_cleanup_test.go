@@ -40,10 +40,12 @@ func retentionTamossFixture(mode tamossv1alpha1.HibernationRetentionMode) (*tamo
 		Phase:  string(tamossv1alpha1.TamossLifecyclePhaseResuming),
 		Reason: operatorstatus.ReasonTamossResuming,
 		ResolvedRestore: &tamossv1alpha1.TamossResolvedRestore{
-			Restore:            tamossv1alpha1.DBCNPGRestoreSpec{Enabled: true, Source: "source-db"},
-			StorageBackendName: "archive",
-			ManifestKey:        "hibernate/example/snap-1/manifest.json",
-			Checksum:           bootstrapTestChecksum,
+			Restore: tamossv1alpha1.DBCNPGRestoreSpec{Enabled: true, Source: "source-db"},
+			HibernationArtifactRetention: tamossv1alpha1.HibernationArtifactRetention{
+				StorageBackendName: "archive",
+				ManifestKey:        "hibernate/example/snap-1/manifest.json",
+			},
+			Checksum: bootstrapTestChecksum,
 		},
 	}
 	destination := hibernateDestinationFixture()
@@ -209,5 +211,50 @@ func TestResumeArtifactRetentionTTLSchedulesAndRetries(t *testing.T) {
 	}
 	if cleaner.calls != 2 {
 		t.Fatalf("expected a second deletion attempt, got %d", cleaner.calls)
+	}
+}
+
+func TestResumeArtifactRetentionCompletesPreviousCycle(t *testing.T) {
+	ctx := context.Background()
+	scheme := hibernateTestScheme(t)
+	tamoss, destination, _ := retentionTamossFixture(tamossv1alpha1.HibernationRetentionModeTTL)
+	destination.Spec.Hibernate.Retention.TTLSecondsAfterResume = 3600
+	previous := tamoss.Status.Lifecycle.ResolvedRestore.DeepCopy()
+	resumedAt := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	previous.ResumedAt = &resumedAt
+	tamoss.Status.Lifecycle.PendingArtifactCleanups = []tamossv1alpha1.HibernationArtifactRetention{previous.HibernationArtifactRetention}
+	tamoss.Status.Lifecycle.ResolvedRestore.ManifestKey = "hibernate/example/snap-2/manifest.json"
+	cleaner := &fakeHibernationArtifactCleaner{err: fmt.Errorf("temporary storage failure")}
+	reconciler := &TamossReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
+			WithObjects(tamoss, destination).Build(),
+		Scheme: scheme, ArtifactCleaner: cleaner,
+	}
+	result, err := reconciler.reconcileResumeArtifactRetention(ctx, tamoss)
+	if err != nil || result.RequeueAfter != hibernationCleanupRetryInterval {
+		t.Fatalf("expected previous cleanup to retry, got %#v, %v", result, err)
+	}
+	key := types.NamespacedName{Name: tamoss.Name, Namespace: tamoss.Namespace}
+	if err := reconciler.Client.Get(ctx, key, tamoss); err != nil {
+		t.Fatal(err)
+	}
+	if len(tamoss.Status.Lifecycle.PendingArtifactCleanups) != 1 ||
+		tamoss.Status.Lifecycle.PendingArtifactCleanups[0].Cleanup.Reason != operatorstatus.ReasonArtifactCleanupRetrying {
+		t.Fatalf("expected durable pending cleanup, got %#v", tamoss.Status.Lifecycle.PendingArtifactCleanups)
+	}
+	cleaner.err = nil
+	if _, err := reconciler.reconcileResumeArtifactRetention(ctx, tamoss); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Client.Get(ctx, key, tamoss); err != nil {
+		t.Fatal(err)
+	}
+	if len(tamoss.Status.Lifecycle.PendingArtifactCleanups) != 0 || cleaner.calls != 2 || cleaner.prefix != "hibernate/example/snap-1/" {
+		t.Fatalf("expected previous archive removed once, got pending %#v, cleaner %#v", tamoss.Status.Lifecycle.PendingArtifactCleanups, cleaner)
+	}
+	current := tamoss.Status.Lifecycle.ResolvedRestore
+	if current.ManifestKey != "hibernate/example/snap-2/manifest.json" || current.ResumedAt != nil || current.Cleanup.Phase != "" {
+		t.Fatalf("cleanup changed the active restore: %#v", current)
 	}
 }

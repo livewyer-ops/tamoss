@@ -1,6 +1,7 @@
 # Operator
 
-The TAMOSS operator reconciles `Tamoss` and `StorageBackend` custom resources.
+The TAMOSS operator reconciles `Tamoss`, `StorageBackend`, `FlowProfile`, and
+`IngestRun` custom resources.
 Operator guidance is split across the following pages:
 
 - [Architecture](concepts/architecture.md)

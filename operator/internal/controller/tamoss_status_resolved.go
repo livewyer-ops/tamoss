@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
@@ -65,13 +66,19 @@ func routingProviderStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Provide
 	return providerDomainStatus("external", tamossv1alpha1.ProviderOwnershipExternal)
 }
 
-func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.ResolvedStatus {
+func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) tamossv1alpha1.ResolvedStatus {
+	resolvedTAMSinImage := defaults.DefaultTAMSinImage
+	if len(tamsinImage) > 0 && strings.TrimSpace(tamsinImage[0]) != "" {
+		resolvedTAMSinImage = strings.TrimSpace(tamsinImage[0])
+	}
 	status := tamossv1alpha1.ResolvedStatus{
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			UI:                            resolvedImageRef(tamoss.Spec.UI.Image, defaults.DefaultUIRepository),
+			Console:                       resolvedImageRef(tamoss.Spec.Console.Image, defaults.DefaultConsoleRepository),
 			Worker:                        resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			SchemaMigrationPostgresClient: schemaMigrationPostgresClientImage(tamoss),
+			TAMSin:                        resolvedTAMSinImage,
 		},
 		Versions: tamossv1alpha1.ResolvedVersionStatus{
 			Schema:  schemabundle.SchemaVersion,
@@ -93,6 +100,9 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 	}
 	if tamoss.Spec.Worker.IsEnabled() {
 		status.Resources.Worker = tamossResourceName(tamoss, "worker")
+	}
+	if tamoss.Spec.ConsoleEnabled() {
+		status.Resources.Console = tamossResourceName(tamoss, "console")
 	}
 	if tamossUsesManagedS3(tamoss) {
 		status.Resources.DefaultStorageBackend = defaultStorageBackendName(tamoss)
@@ -148,16 +158,23 @@ func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {
 }
 
 func endpointStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.EndpointStatus {
+	publicUIURL := strings.TrimSuffix(strings.TrimSpace(tamoss.Spec.PublicEndpoint.UIURL), "/")
 	if tamoss.Spec.HTTPRoute.Enabled {
+		if publicUIURL == "" {
+			publicUIURL = firstHostnameURL(tamoss.Spec.HTTPRoute.UI.Hostnames, "https")
+		}
 		return tamossv1alpha1.EndpointStatus{
 			API: firstHostnameURL(tamoss.Spec.HTTPRoute.API.Hostnames, "https"),
-			UI:  firstHostnameURL(tamoss.Spec.HTTPRoute.UI.Hostnames, "https"),
+			UI:  publicUIURL,
 		}
 	}
 	if tamoss.Spec.Ingress.IsEnabled() {
+		if publicUIURL == "" {
+			publicUIURL = ingressURL(tamoss.Spec.Ingress.UI.Web.Host, len(tamoss.Spec.Ingress.TLS) > 0)
+		}
 		return tamossv1alpha1.EndpointStatus{
 			API: ingressURL(tamoss.Spec.Ingress.API.Host, len(tamoss.Spec.Ingress.TLS) > 0),
-			UI:  ingressURL(tamoss.Spec.Ingress.UI.Web.Host, len(tamoss.Spec.Ingress.TLS) > 0),
+			UI:  publicUIURL,
 		}
 	}
 	return tamossv1alpha1.EndpointStatus{}

@@ -123,12 +123,32 @@ func ProxyApplicationSlug(tamoss *tamossv1alpha1.Tamoss) string {
 	return tamoss.Spec.Auth.ApplicationSlug(tamoss.Namespace, tamoss.Name) + "-ui"
 }
 
-func UIProxyExternalHost(tamoss *tamossv1alpha1.Tamoss) string {
+func UIProxyExternalHost(tamoss *tamossv1alpha1.Tamoss) (string, error) {
 	scheme := "http"
 	if len(tamoss.Spec.Ingress.TLS) > 0 {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s", scheme, strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host))
+	host := strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host)
+	rawURL := strings.TrimSpace(tamoss.Spec.PublicEndpoint.UIURL)
+	if rawURL == "" {
+		return fmt.Sprintf("%s://%s", scheme, host), nil
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.User != nil || parsed.Hostname() == "" ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("publicEndpoint.uiURL must be an absolute HTTP(S) origin")
+	}
+	if host != "" && !strings.EqualFold(parsed.Hostname(), host) {
+		return "", fmt.Errorf("publicEndpoint.uiURL host must match ingress.ui.web.host")
+	}
+	if port := parsed.Port(); port != "" {
+		value, parseErr := strconv.ParseUint(port, 10, 16)
+		if parseErr != nil || value == 0 {
+			return "", fmt.Errorf("publicEndpoint.uiURL contains an invalid port")
+		}
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + parsed.Host, nil
 }
 
 func UIProxyInternalHost(tamoss *tamossv1alpha1.Tamoss) string {
@@ -136,12 +156,20 @@ func UIProxyInternalHost(tamoss *tamossv1alpha1.Tamoss) string {
 }
 
 func OutpostForwardAuthAddress(tamoss *tamossv1alpha1.Tamoss) string {
+	return outpostForwardAuthAddress(tamoss, "traefik")
+}
+
+func OutpostNginxAuthAddress(tamoss *tamossv1alpha1.Tamoss) string {
+	return outpostForwardAuthAddress(tamoss, "nginx")
+}
+
+func outpostForwardAuthAddress(tamoss *tamossv1alpha1.Tamoss, provider string) string {
 	base := authentikBaseURL(tamoss)
-	joined, err := url.JoinPath(base, "outpost.goauthentik.io", "auth", "traefik")
+	joined, err := url.JoinPath(base, "outpost.goauthentik.io", "auth", provider)
 	if err == nil {
 		return joined
 	}
-	return strings.TrimRight(base, "/") + "/outpost.goauthentik.io/auth/traefik"
+	return strings.TrimRight(base, "/") + "/outpost.goauthentik.io/auth/" + provider
 }
 
 func OutpostExternalService(tamoss *tamossv1alpha1.Tamoss) (string, int32) {
@@ -308,12 +336,16 @@ func findProxyProvider(ctx context.Context, api ManagedBlueprintClient, name str
 
 func upsertProxyProvider(ctx context.Context, api ManagedBlueprintClient, tamoss *tamossv1alpha1.Tamoss, oauth oauthProvider) (proxyProvider, error) {
 	name := ProxyProviderName(tamoss)
+	externalHost, err := UIProxyExternalHost(tamoss)
+	if err != nil {
+		return proxyProvider{}, err
+	}
 	request := proxyProviderRequest{
 		Name:                      name,
 		AuthorizationFlow:         oauth.AuthorizationFlow,
 		InvalidationFlow:          oauth.InvalidationFlow,
 		PropertyMappings:          append([]string(nil), oauth.PropertyMappings...),
-		ExternalHost:              UIProxyExternalHost(tamoss),
+		ExternalHost:              externalHost,
 		InternalHost:              UIProxyInternalHost(tamoss),
 		InternalHostSSLValidation: false,
 		Mode:                      "forward_single",

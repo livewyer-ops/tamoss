@@ -75,7 +75,7 @@ Treat first start as one product lifecycle rather than disconnected pods:
 | Schema migration | `Tamoss.status.conditions[SchemaMigrated]` | `True` with the desired schema version in status. |
 | Storage database registration | `StorageBackend.status.conditions[DatabaseReady]` | `True` after the TAMS storage backend row is registered. |
 | Identity | `Tamoss.status.conditions[IdentityReady]` | `True`, `ExternalIdentityConfigured`, or not required when auth is disabled. |
-| Workloads | `Tamoss.status.replicas.{api,ui,worker}` | available replicas match desired replicas for enabled components. |
+| Workloads | `Tamoss.status.replicas.{api,ui,worker,console}` | available replicas match desired replicas for enabled components. |
 | Routes | `Tamoss.status.conditions[RoutingReady]` | `True`, or external routing ownership when routes are not managed. |
 
 `task env:summary` and the support bundle read these phases from Kubernetes
@@ -107,6 +107,60 @@ The API separates process health from dependency readiness:
 Readiness checks are read-only. They query database and storage metadata state
 and perform a lightweight object-store bucket check. They do not create schema,
 create buckets, register storage backends, write media, or mutate queue state.
+
+## Webhook Delivery
+
+Check registration time, active status and selectors before changing delivery
+configuration. An absent `flow_collected_by_ids` selects all collections;
+`[]` selects only top-level Flows. The same distinction applies to Sources.
+
+For retained delivery history, run the read-only diagnostic with the target's
+existing `POSTGRES_*` configuration:
+
+```bash
+umask 077
+uv run --project src python scripts/webhook_diagnostics.py \
+  --webhook-id 00000000-0000-4000-8000-000000000001 \
+  > webhook-diagnostics.json
+```
+
+Use a read-only database identity where available. The script enforces a
+read-only, repeatable-read transaction with a five-second statement timeout.
+It reports queue counts, expired claims, activity timestamps and at most 20
+recent deliveries without callback keys, full URLs, payloads or raw errors.
+Rows expire under `TAMOSS_WORKER_QUEUE_RETENTION_SECONDS` (seven days by
+default), so a missing success timestamp does not prove delivery never worked.
+`last_attempt_activity_at` is a state update, not an HTTP request start time.
+
+- No queued event: inspect registration time, status and selectors.
+- Pending or expired claim: inspect worker readiness, queue age and leases.
+- HTTP 401/403: compare callback authentication with the receiver's expected key.
+- Target blocked: inspect DNS and egress policy. Delivery pins the checked
+  destination and ignores ambient proxies and netrc credentials. Do not enable
+  all private destinations to work around an unexplained failure.
+- HTTP 2xx but missing records: inspect receiver processing and query filters.
+- Unplayable media: inspect fresh GET URLs, CORS, Object availability,
+  Profile/initialisation metadata and Segment timeranges.
+
+### Recover a Webhook
+
+Fix the receiver or credentials first. Preserve the webhook ID where possible:
+with a write-authorised API token, PUT the full registration to
+`/service/webhooks/{webhookId}` with `status: "created"`, intended filters and
+credentials from their original secret source. Redacted GET output is not a
+replacement for those secrets. Confirm a new event reaches the receiver.
+
+Reactivation does not replay dead rows or reconstruct events never queued.
+Reconcile the receiver against current Source, Flow, Object and Segment
+listings, including collections and deletions. Follow opaque pagination links,
+upsert by resource identity, use fresh media URLs and tolerate duplicate events.
+Delivery is at least once. Do not reset old queue rows to pending: payload URLs
+and registration settings may have changed, and old events can overwrite newer
+state.
+
+Listings are live, not snapshots. Prefer `sort_by=created` for reconciliation
+and recheck concurrent changes separately; quiesce writers when a definitive
+snapshot is required.
 
 ## API Returns 503 StorageBackendMetadataMissing
 
@@ -204,7 +258,7 @@ first-start lifecycle phases so version and startup state are visible without
 opening the full resource dump first.
 
 Secret values, sensitive ConfigMaps such as `oauth2-credentials`, direct token
-fields, webhook API-key values, authorization header values, credential-bearing
+fields, webhook API-key values, `Authorization` header values, credential-bearing
 URLs, last-applied annotations, and known credential-bearing environment values
 are redacted. Generated Secret names from `status.resolved.*` remain visible so
 references can be diagnosed, but generated Secret bodies are not shared. The
@@ -254,11 +308,10 @@ reports `ObjectStoreUnreachable`, inspect the `StorageBackend` `BucketReady`,
 `DatabaseReady`, and external diagnostic conditions plus the mounted runtime
 credentials Secret.
 
-For local [Kind](https://kind.sigs.k8s.io/), browser ingest uploads directly
-to `https://s3.tamoss.localtest.me`. If the browser has accepted the app
-origin
-but not the S3 origin, uploads can fail as a CORS or generic network error even
-though the backend is healthy.
+For local [Kind](https://kind.sigs.k8s.io/), playback reads media from
+`https://s3.tamoss.localtest.me`. Trust the S3 certificate as well as the app
+certificate; otherwise media requests can fail with a CORS or network error
+even when the backend is healthy.
 
 For external S3:
 

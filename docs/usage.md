@@ -1,7 +1,7 @@
 # Using TAMOSS
 
-Use the web UI for operational browsing and selected API-backed actions. Use the
-BBC TAMS API as the authoritative protocol contract.
+Use the Console to browse media and inspect instance operations. Use the BBC
+TAMS API for media writes and Kubernetes resources for managed ingest.
 
 ## Web UI
 
@@ -14,9 +14,14 @@ https://app.tamoss.localtest.me
 The UI supports the following actions:
 
 - Browse flows, segments, objects, and service state.
-- Allocate storage and register uploaded media.
-- Select from registered storage backends where supported.
+- Browse Flow Profiles, follow Profile-backed Flows, and filter by Flow status.
+- Inspect initialisation Objects linked to fragmented media.
+- Inspect registered storage backends and Object locations.
 - Inspect deletion requests and runtime health.
+- Inspect paginated `IngestRun` history and cancel active runs when authorised.
+
+See [Manage Ingest Runs](operations/manage-ingest-runs.md) for the Console and
+`kubectl` workflow. The current Console does not create or retry runs.
 
 ## API
 
@@ -54,12 +59,12 @@ curl -k -H "Authorization: Bearer $TAMOSS_TOKEN" \
 conversion tools. Set `KIND_DEMO_INGEST=false` when you need a clean validation
 target with no seeded flow/source. The demo segment is registered with probe-derived
 `object_timerange`, `ts_offset`, `last_duration`, and `key_frame_count`
-metadata. Browser-managed ingest also probes finalised MPEG-TS segments before
-registering them, so registered segment timeranges come from measured media
-duration rather than desired segment length.
+metadata. For managed ingest, create an `IngestRun`; the operator starts the
+pinned TAMSin workload and records its progress and results. See
+[Manage Ingest Runs](operations/manage-ingest-runs.md).
 
 `task ingest` is the optional helper for arbitrary local media files, not the
-public deployment path:
+public deployment path and not an `IngestRun` producer:
 
 ```bash
 task ingest VIDEO=/path/to/video.mp4 LABEL="Example"
@@ -86,14 +91,13 @@ task e2e:deployed PROFILE=local-kind KUBECONFIG=tams.kubeconfig
 Presigned URLs are temporary credentials. Do not paste complete URLs into public
 issues, logs, or documentation.
 
-Browser uploads and playback against external S3-compatible buckets require
-provider-side CORS for every browser origin that dereferences presigned object
-URLs. API CORS is configured separately on the `Tamoss` resource. See
+Playback against external S3-compatible buckets requires provider-side CORS
+for every browser origin that reads presigned Object URLs. API CORS is
+configured separately on the `Tamoss` resource. See
 [Troubleshooting](operations/troubleshooting.md).
 
-For local Kind, browser uploads use presigned URLs on
-`https://s3.tamoss.localtest.me`. Accept or trust the local self-signed TLS
-certificate for that S3 origin, not only the app origin.
+For local Kind, playback reads media from `https://s3.tamoss.localtest.me`.
+Trust the local self-signed TLS certificate for both the app and S3 origins.
 
 ## Media Deletion
 

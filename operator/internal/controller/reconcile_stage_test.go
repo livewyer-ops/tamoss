@@ -20,7 +20,7 @@ func TestTamossCompletionResultRequeuesForManagedAuthentik(t *testing.T) {
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 45*time.Second {
 		t.Fatalf("expected Authentik completion to requeue after probe interval, got %#v", result)
 	}
@@ -33,9 +33,22 @@ func TestTamossCompletionResultDoesNotRequeueForExternalAuth(t *testing.T) {
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 0 {
 		t.Fatalf("did not expect external-auth completion to requeue, got %#v", result)
+	}
+}
+
+func TestTamossCompletionResultRequeuesSchemaCleanupForExternalDependencies(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
+		},
+	}
+
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 2*time.Second)
+	if result.RequeueAfter != 2*time.Second {
+		t.Fatalf("expected schema cleanup to schedule a retry, got %#v", result)
 	}
 }
 
@@ -48,7 +61,7 @@ func TestTamossCompletionResultRequeuesForProviderManagedBackends(t *testing.T) 
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 5*time.Minute {
 		t.Fatalf("expected provider-managed backend completion to requeue after dependency probe interval, got %#v", result)
 	}
@@ -64,7 +77,7 @@ func TestTamossCompletionResultUsesShortestManagedProbeInterval(t *testing.T) {
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 45*time.Second {
 		t.Fatalf("expected shortest managed probe interval, got %#v", result)
 	}

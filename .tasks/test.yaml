@@ -14,8 +14,63 @@ vars:
   TAMS_INTEGRATION_DIR: tests/tams/integration
   TAMS_DEPLOYED_DIR: tests/tams/deployed
   TAMS_CONFORMANCE_MARK: "tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_CONTRACT_MARK: "tams_contract and tams_conformance and not tamoss_extension and not tamoss_security"
+  TAMS_SEMANTICS_MARK: "tams_semantics and tams_conformance and not tamoss_extension and not tamoss_security"
 
 tasks:
+  tamsin:release:
+    desc: "Validation: exercise the pinned TAMSin release asset and event contract"
+    silent: true
+    vars:
+      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3
+      EVENT_DIR: '{{.ROOT_DIR}}/reports/tamsin-release-events'
+    preconditions:
+      - sh: command -v docker
+        msg: "docker binary not found"
+      - sh: command -v go
+        msg: "go binary not found"
+    cmds:
+      - rm -rf '{{.EVENT_DIR}}'
+      - mkdir -p '{{.EVENT_DIR}}'
+      - docker pull '{{.TAMSIN_IMAGE}}'
+      - |
+        version="$(docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --version)"
+        test "$version" = "tamsin version 8.2.0-in2 (889a6e7624342e1e502ed74d0f189cf2bc3e7737, 2026-09-08T09:59:50+01:00)"
+        printf '%s\n' "$version" > '{{.EVENT_DIR}}/version.txt'
+      - |
+        docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --format json profiles > '{{.EVENT_DIR}}/profiles.json'
+        python3 - '{{.EVENT_DIR}}/profiles.json' <<'PY'
+        import json
+        import sys
+
+        report = json.load(open(sys.argv[1], encoding="utf-8"))
+        assert report["schema_version"] == "1.0"
+        assert report["profile_policy_version"] == "1"
+        assert [profile["selection"] for profile in report["profiles"]] == [
+            "preserve@1",
+            "demux@1",
+            "muxed-segments@1",
+            "essence-segments@1",
+            "mpegts-segments@1",
+        ]
+        PY
+      - |
+        for profile in preserve demux muxed-segments essence-segments mpegts-segments; do
+          docker run --rm --pull=never \
+            -v '{{.ROOT_DIR}}/tests/fixtures/e2e:/fixtures:ro' \
+            '{{.TAMSIN_IMAGE}}' ingest \
+            --profile "${profile}@1" \
+            --format json \
+            --log-format json \
+            --progress none \
+            --dry-run=exact \
+            --verify=none \
+            --input /fixtures/tiny-ingest.mp4 \
+            > "{{.EVENT_DIR}}/${profile}.ndjson" \
+            2> "{{.EVENT_DIR}}/${profile}.log"
+        done
+      - TAMOSS_TAMSIN_EVENT_DIR='{{.EVENT_DIR}}' go -C operator test ./test/tamsinrelease -count=1
+
   # TAMS gates validate the contract separately from TAMOSS extensions.
   tams:contract:
     silent: true
@@ -24,14 +79,14 @@ tasks:
       - mkdir -p reports
       - printf 'test py.tams.contract\n'
       - uv run --project src python src/scripts/check_tamoss_openapi_parity.py | tee reports/openapi-parity.txt
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_openapi_contract.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_CONTRACT_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-contract.xml"
 
   tams:semantics:
     silent: true
     cmds:
       - mkdir -p reports
       - printf 'test py.tams.semantics\n'
-      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}}/test_service_and_metadata.py {{.TAMS_CONFORMANCE_DIR}}/test_flows_sources_and_segments.py {{.TAMS_CONFORMANCE_DIR}}/test_storage_objects_and_deletion.py {{.TAMS_CONFORMANCE_DIR}}/test_webhooks.py -m '{{.TAMS_CONFORMANCE_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
+      - "{{.PYTEST}} {{.TAMS_CONFORMANCE_DIR}} -m '{{.TAMS_SEMANTICS_MARK}} and not needs_db and not needs_s3' -ra --junitxml=reports/junit-py-tams-semantics.xml"
 
   tams:integration:
     silent: true
@@ -88,7 +143,10 @@ tasks:
     cmds:
       - mkdir -p reports
       - printf 'test py.fast\n'
-      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/scripts tests/workers tests/test_documented_task_commands.py tests/test_env_summary_helpers.py tests/test_kind_operand_tag.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
+      # The tests/e2e/test_browser.py and tests/e2e/test_target_env.py modules
+      # exercise the e2e harness itself. They need no cluster and no browser, so
+      # they belong in the fast subset rather than behind a deployed marker.
+      - "{{.PYTEST}} tests/tams/conformance tests/adapters/postgres/test_connection_pool_reload.py tests/adapters/postgres/test_mappers.py tests/adapters/storage/test_configured_object_storage_unit.py tests/application tests/domain tests/scripts tests/workers tests/e2e/test_browser.py tests/e2e/test_target_env.py tests/test_documented_task_commands.py tests/test_env_summary_helpers.py tests/test_kind_operand_tag.py tests/test_support_bundle_redaction.py -m 'not needs_db and not needs_s3 and not needs_media and not e2e and not operator_kind and not slow' -ra --junitxml=reports/junit-py-fast.xml"
 
   application:
     silent: true
@@ -222,6 +280,10 @@ tasks:
       - printf 'test frontend.unit\n'
       - test -d node_modules || npm ci
       - npm run test -- --reporter=default --reporter=junit --outputFile=../../../reports/junit-frontend-unit.xml
+      - printf 'test frontend.entrypoint\n'
+      - npm run test:entrypoint
+      - printf 'test frontend.build-budget\n'
+      - npm run build
 
   media:fixtures:
     silent: true

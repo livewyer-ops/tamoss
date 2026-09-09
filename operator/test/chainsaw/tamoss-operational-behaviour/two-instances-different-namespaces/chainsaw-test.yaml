@@ -25,12 +25,46 @@ spec:
             file: assert/postgres-available.yaml
         - apply:
             file: resources/tamoss.yaml
-        - script:
-            content: |
-              set -eu
-              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
-              NAMESPACE=tamoss-cross-alpha ../../scripts/simulate-rustfs-tenant-ready.sh alpha-s3 tamoss
-              NAMESPACE=tamoss-cross-beta ../../scripts/simulate-rustfs-tenant-ready.sh beta-s3 tamoss
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: alpha-s3
+                namespace: tamoss-cross-alpha
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: alpha-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: beta-s3
+                namespace: tamoss-cross-beta
+              status:
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: beta-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
         - assert:
             file: assert/tamoss-ready.yaml
             timeout: 5m

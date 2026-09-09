@@ -4,8 +4,9 @@ import os
 import shlex
 import subprocess
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import urllib3
@@ -49,24 +50,26 @@ class E2ETarget:
     api_url: str
     ui_url: str
     auth_url: str
+    s3_url: str | None
     namespace: str
     kubeconfig: str | None
     auth_namespace: str
     ui_auth_username: str
-    ui_auth_password: str
+    ui_auth_password: str = field(repr=False)
     ui_expected_statuses: set[int]
     verify_tls: bool
-    auth_headers: dict[str, str]
-    basic_auth: HTTPBasicAuth | None
+    auth_headers: dict[str, str] = field(repr=False)
+    basic_auth: HTTPBasicAuth | None = field(repr=False)
     certificate_refs: tuple[str, ...]
     oauth2_enabled: bool
     oauth_issuer_url: str
     oauth_client_id: str
-    oauth_client_secret: str | None
+    oauth_client_secret: str | None = field(repr=False)
     readiness_mode: str
     upload_checksum_header: bool
     timeout_seconds: float = 10.0
     memory_budget_mib: int | None = None
+    browser_api_available: bool = True
 
     @classmethod
     def from_file(cls, path: Path) -> E2ETarget:
@@ -103,6 +106,7 @@ class E2ETarget:
             api_url=api_url.rstrip("/"),
             ui_url=ui_url.rstrip("/"),
             auth_url=auth_url.rstrip("/"),
+            s3_url=_optional_origin(values.get("TEST_TAMOSS_S3", ""), "TEST_TAMOSS_S3"),
             namespace=namespace,
             kubeconfig=kubeconfig,
             auth_namespace=auth_namespace,
@@ -148,7 +152,43 @@ class E2ETarget:
             memory_budget_mib=_memory_budget_mib(
                 values.get("TEST_TAMOSS_MEMORY_BUDGET_MIB")
             ),
+            browser_api_available=_env_bool(
+                values.get("TEST_TAMOSS_BROWSER_API_AVAILABLE", "true")
+            ),
         )
+
+    def is_ui_origin(self, url: str) -> bool:
+        """Whether url is served by the TAMOSS UI origin."""
+        return _url_origin(url) == _url_origin(self.ui_url)
+
+    def is_media_origin(self, url: str) -> bool:
+        """Whether url is served by the media origin the target declares.
+
+        Matching is by origin rather than string prefix so a CDN or ingress in
+        front of object storage only has to be named once in TEST_TAMOSS_S3,
+        whatever bucket or path layout it exposes.
+        """
+        if not self.s3_url:
+            return False
+        return _url_origin(url) == _url_origin(self.s3_url)
+
+
+def _optional_origin(value: str, key: str) -> str | None:
+    candidate = value.strip().rstrip("/")
+    if not candidate:
+        return None
+    parts = urlsplit(candidate)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise pytest.UsageError(
+            f"{key} must be an absolute http(s) origin such as "
+            f"https://s3.example.com; got {value!r}."
+        )
+    return candidate
+
+
+def _url_origin(url: str) -> tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.lower()
 
 
 def _load_env_file(path: Path, seen: set[Path] | None = None) -> dict[str, str]:

@@ -27,24 +27,46 @@ spec:
         - assert:
             file: assert/tamoss-db-cluster.yaml
             timeout: 120s
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: dynamic schema Job name and CNPG status simulation.
-              schema_version="${SCHEMA_VERSION:-0.0.1}"
-              job_suffix="$(printf '%s' "$schema_version" | tr . -)"
-              ! kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1
-              ../../scripts/patch-cnpg-cluster-status.sh tamoss-db tamoss
-              end=$(($(date +%s) + 120))
-              until kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" >/dev/null 2>&1; do
-                if [ "$(date +%s)" -ge "$end" ]; then
-                  echo "timed out waiting for schema migration Job" >&2
-                  exit 1
-                fi
-                sleep 2
-              done
-              kubectl -n "$NAMESPACE" get "job/tamoss-schema-migrate-${job_suffix}" -o jsonpath='{.spec.template.spec.containers[0].args[*]}' |
-                grep -q "tamoss-db migrate --apply-cnpg-ownership"
+        - error:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                namespace: ($namespace)
+                labels:
+                  app.kubernetes.io/instance: tamoss
+                  app.kubernetes.io/component: schema
+                  app.kubernetes.io/managed-by: tamoss-operator
+            timeout: 5s
+        - patch:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: tamoss-db
+                namespace: ($namespace)
+              status:
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: ClusterReady
+                    message: Cluster is ready
+            subresource: status
+            timeout: 60s
+        - assert:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                namespace: ($namespace)
+                labels:
+                  app.kubernetes.io/instance: tamoss
+                  app.kubernetes.io/component: schema
+                  app.kubernetes.io/managed-by: tamoss-operator
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: schema-migrate
+                        (contains(args, '--apply-cnpg-ownership')): true
+            timeout: 120s

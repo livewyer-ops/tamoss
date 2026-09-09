@@ -12,6 +12,8 @@ import (
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 )
 
+const advancedPatchNameField = "name"
+
 func applyAdvancedResourcePatches(tamoss *tamossv1alpha1.Tamoss, obj client.Object) error {
 	if len(tamoss.Spec.Advanced.ResourcePatches) == 0 {
 		return nil
@@ -91,7 +93,7 @@ func validateAdvancedResourcePatch(patch map[string]interface{}) error {
 	if !ok {
 		return nil
 	}
-	for _, field := range []string{"name", "namespace", "ownerReferences"} {
+	for _, field := range []string{advancedPatchNameField, "namespace", "ownerReferences"} {
 		if _, ok := metadata[field]; ok {
 			return fmt.Errorf("advanced resource patch must not set metadata.%s", field)
 		}

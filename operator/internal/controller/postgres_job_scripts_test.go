@@ -64,7 +64,7 @@ func TestSchemaMigrationJobUsesRuntimeMigrationCommand(t *testing.T) {
 	if image := container.Image; image != "registry.example.com/tamoss-api:v1.2.3" {
 		t.Fatalf("expected configured API image, got %q", image)
 	}
-	if got := strings.Join(append(container.Command, container.Args...), " "); got != "uv run tamoss-db migrate --apply-fixtures --apply-cnpg-ownership" {
+	if got := strings.Join(append(container.Command, container.Args...), " "); got != "uv run tamoss-db migrate --revision 20260810_0007 --apply-fixtures --apply-cnpg-ownership" {
 		t.Fatalf("expected migration CLI command, got %q", got)
 	}
 }

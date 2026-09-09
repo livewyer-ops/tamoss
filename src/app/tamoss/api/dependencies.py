@@ -7,6 +7,7 @@ from fastapi import Request
 from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.application.contexts.objects import ObjectUseCases
+from tamoss.application.contexts.profiles import ProfileUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.application.contexts.sources import SourceUseCases
@@ -34,6 +35,10 @@ def get_app_settings(request: Request) -> Settings:
 
 def get_service_use_cases(request: Request) -> ServiceUseCases:
     return get_use_cases(request).service
+
+
+def get_profile_use_cases(request: Request) -> ProfileUseCases:
+    return get_use_cases(request).profiles
 
 
 def get_webhook_use_cases(request: Request) -> WebhookUseCases:

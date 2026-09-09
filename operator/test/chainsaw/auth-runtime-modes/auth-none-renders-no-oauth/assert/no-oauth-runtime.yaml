@@ -11,6 +11,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: auth-none-ui
-(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_AUTH_REQUIRED'] | [0].value): "false"
-(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_ENABLED'] | [0].value): "false"
-(spec.template.spec.containers[?name == 'ui'] | [0].envFrom[?secretRef.name == 'auth-none-oauth2-creds'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_UI_AUTH_MODE'] | [0].value): none
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_AUTH_REQUIRED'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_ENABLED'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_API_TOKEN'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_CLIENT_ID'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_OAUTH2_CLIENT_SECRET'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_AUTHENTIK_AUTH_REQUEST_URL'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_API_FORWARD_AUTH_SHARED_SECRET_FILE'] | length(@)): 0
+(spec.template.spec.containers[?name == 'ui'] | [0].env[?name == 'TAMOSS_CONSOLE_FORWARD_AUTH_SHARED_SECRET_FILE'] | length(@)): 0
+(length(not_null(spec.template.spec.containers[?name == 'ui'] | [0].envFrom, `[]`))): 0

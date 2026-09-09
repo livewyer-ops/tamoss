@@ -34,19 +34,71 @@ spec:
 
     - name: verify distinct platform blueprints
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: checks the Authentik fixture debug API for per-instance Blueprint content.
-              check_blueprint() {
-                name="$1"
-                redirect="$2"
-                ../../scripts/assert-authentik-apply-count.sh "$name" 1 120
-                ../../scripts/print-authentik-blueprint.sh "$name" |
-                  grep -q "$redirect"
-              }
-              check_blueprint tamoss-alpha https://alpha.tamoss.test/auth/callback
-              check_blueprint tamoss-beta https://beta.tamoss.test/auth/callback
+        - command:
+            entrypoint: kubectl
+            args:
+              - -n
+              - auth
+              - exec
+              - deployment/authentik-chainsaw
+              - --
+              - wget
+              - -qO-
+              - -T
+              - "10"
+              - http://127.0.0.1:9000/debug/applies/tamoss-alpha
+            timeout: 30s
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "1"
+        - command:
+            entrypoint: kubectl
+            args:
+              - -n
+              - auth
+              - exec
+              - deployment/authentik-chainsaw
+              - --
+              - wget
+              - -qO-
+              - -T
+              - "10"
+              - http://127.0.0.1:9000/debug/blueprints/tamoss-alpha
+            timeout: 30s
+            check:
+              ($error == null): true
+              (contains($stdout, 'https://alpha.tamoss.test/auth/callback')): true
+        - command:
+            entrypoint: kubectl
+            args:
+              - -n
+              - auth
+              - exec
+              - deployment/authentik-chainsaw
+              - --
+              - wget
+              - -qO-
+              - -T
+              - "10"
+              - http://127.0.0.1:9000/debug/applies/tamoss-beta
+            timeout: 30s
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "1"
+        - command:
+            entrypoint: kubectl
+            args:
+              - -n
+              - auth
+              - exec
+              - deployment/authentik-chainsaw
+              - --
+              - wget
+              - -qO-
+              - -T
+              - "10"
+              - http://127.0.0.1:9000/debug/blueprints/tamoss-beta
+            timeout: 30s
+            check:
+              ($error == null): true
+              (contains($stdout, 'https://beta.tamoss.test/auth/callback')): true

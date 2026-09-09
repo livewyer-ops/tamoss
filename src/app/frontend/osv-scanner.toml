@@ -1,0 +1,7 @@
+[[IgnoredVulns]]
+id = "GHSA-776f-qx25-q3cc"
+reason = """
+Risk accepted by maintainer on 2026-09-06: retain Omakase Player 1.1.1, including
+its embedded xml2js parser, without blocking release for this advisory.
+This is not a fix; reassess when upgrading the player.
+"""

@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tamoss.db.migrations import CURRENT_SCHEMA_REVISION
+
 from tests.support.paths import REPO_ROOT
 
 SCRIPT = REPO_ROOT / ".github/scripts/release-metadata.py"
@@ -48,6 +50,95 @@ def test_release_metadata_emits_corrected_80_release_metadata() -> None:
     assert metadata["previous_schema_revision"] == "8.0.0-oss1"
     assert metadata["tams_api"] == "8.0"
     assert metadata["upgrade_from"] == "8.0.0-oss1"
+
+
+def test_release_metadata_emits_tams_82_schema_upgrade() -> None:
+    result = run_metadata("8.2.0-oss1")
+
+    assert result.returncode == 0, result.stderr
+    metadata = parse_output(result.stdout)
+    assert metadata == {
+        "version": "8.2.0-oss1",
+        "prerelease": "false",
+        "schema_revision": "8.2.0-oss1",
+        "previous_schema_revision": "8.1.0-oss2",
+        "tams_api": "8.2",
+        "upgrade_class": "SchemaAndAPI",
+        "upgrade_from": "8.1.0-oss6",
+    }
+
+
+def test_release_metadata_derives_first_release_candidate() -> None:
+    result = run_metadata("8.2.0-oss1-rc0")
+
+    assert result.returncode == 0, result.stderr
+    metadata = parse_output(result.stdout)
+    assert metadata == {
+        "version": "8.2.0-oss1-rc0",
+        "prerelease": "true",
+        "schema_revision": "8.2.0-oss1",
+        "previous_schema_revision": "8.1.0-oss2",
+        "tams_api": "8.2",
+        "upgrade_class": "SchemaAndAPI",
+        "upgrade_from": "8.1.0-oss6",
+    }
+
+
+def test_release_metadata_rejects_unknown_or_malformed_release_candidates() -> None:
+    for version in (
+        "8.3.0-oss1-rc0",
+        "8.2.0-oss1-rc",
+        "8.2.0-oss1-rc00",
+        "8.2.0-oss1-rcx",
+    ):
+        result = run_metadata(version)
+
+        assert result.returncode == 1
+        assert f"release {version} not found" in result.stderr
+
+
+def test_operator_release_marks_release_candidates_as_prereleases() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/operator-release.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "prerelease: ${{ steps.version.outputs.prerelease }}" in workflow
+    assert "steps.version.outputs.prerelease == 'true'" in workflow
+    assert "draft: true" in workflow
+    assert 'gh release edit "${GITHUB_REF_NAME}"' in workflow
+    assert "--draft=false" in workflow
+
+
+def test_local_operator_builds_forward_release_metadata() -> None:
+    taskfile = (REPO_ROOT / ".tasks/operator.yaml").read_text(encoding="utf-8")
+    chainsaw = (REPO_ROOT / ".tasks/lib/operator_chainsaw.sh").read_text(
+        encoding="utf-8"
+    )
+    kind_taskfile = (REPO_ROOT / ".tasks/kind.yaml").read_text(encoding="utf-8")
+
+    for content in (taskfile, chainsaw, kind_taskfile):
+        assert "PREVIOUS_SCHEMA_VERSION" in content
+        assert "OPERAND_VERSION" in content
+
+    assert 'PREVIOUS_SCHEMA_VERSION: \'{{default "0.0.1"' in kind_taskfile
+    assert 'SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"' in taskfile
+    assert '--set-string "schemaVersion={{.SCHEMA_VERSION}}"' in taskfile
+    assert 'SCHEMA_VERSION="$schema_version"' in chainsaw
+
+    for content in (taskfile, chainsaw):
+        assert "docker-build" in content
+    assert ":operator:image:build" in kind_taskfile
+
+
+def test_operator_migration_target_matches_api_database_head() -> None:
+    operator_schema = (REPO_ROOT / "operator/internal/schema/verify.go").read_text(
+        encoding="utf-8"
+    )
+    kind_taskfile = (REPO_ROOT / ".tasks/kind.yaml").read_text(encoding="utf-8")
+
+    assert f'CurrentDatabaseRevision = "{CURRENT_SCHEMA_REVISION}"' in operator_schema
+    kind_revision = CURRENT_SCHEMA_REVISION.replace("_", "-")
+    assert f'default "dev-{kind_revision}"' in kind_taskfile
 
 
 def test_release_metadata_rejects_multiple_previous_schema_revisions(

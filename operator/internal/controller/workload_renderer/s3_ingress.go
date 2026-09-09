@@ -142,14 +142,20 @@ func s3CORSMiddleware(tamoss *tamossv1alpha1.Tamoss) client.Object {
 func s3CORSOrigins(tamoss *tamossv1alpha1.Tamoss) []string {
 	seen := map[string]struct{}{}
 	origins := []string{}
+	if origin := strings.TrimSuffix(strings.TrimSpace(tamoss.Spec.PublicEndpoint.UIURL), "/"); origin != "" {
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+	}
 	if host := strings.TrimSpace(tamoss.Spec.Ingress.UI.Web.Host); host != "" {
 		scheme := "http"
 		if len(tamoss.Spec.Ingress.TLS) > 0 {
 			scheme = "https"
 		}
 		origin := fmt.Sprintf("%s://%s", scheme, host)
-		seen[origin] = struct{}{}
-		origins = append(origins, origin)
+		if _, ok := seen[origin]; !ok {
+			seen[origin] = struct{}{}
+			origins = append(origins, origin)
+		}
 	}
 	for _, origin := range tamoss.Spec.API.CORS.AllowedOrigins {
 		origin = strings.TrimSpace(origin)

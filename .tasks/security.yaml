@@ -9,32 +9,19 @@ set: [errexit, nounset, pipefail]
 # tasks rather than repeating the commands in workflow YAML, so a local
 # `task security:audit` and a CI run cannot report different things.
 #
-# Checks sit in one of two tiers:
-#
-#   enforcing — clean today; a new finding fails the build
-#   backlog   — known outstanding findings recorded in KNOWNISSUES.md; prints
-#               them without failing, so the gate people rely on is not red on
-#               day one and does not train them to ignore it
-#
-# `task security:audit STRICT=1` enforces everything. Once the backlog is
-# cleared, STRICT becomes the default and this distinction goes away.
-
-vars:
-  STRICT: '{{.STRICT | default "0"}}'
+# Scanner failures and findings outside the advisory-specific approvals in
+# each ecosystem's osv-scanner.toml are fatal.
 
 tasks:
   audit:
     desc: Audit dependencies for known vulnerabilities
     cmds:
-      - task: audit:python
-      - task: audit:frontend
-      - task: audit:frontend:signatures
-      - task: audit:frontend:dev
-        vars: { STRICT: "{{.STRICT}}" }
-      - task: audit:osv
-        vars: { STRICT: "{{.STRICT}}" }
-
-  # --- enforcing -----------------------------------------------------------
+      - |
+        status=0
+        for check in python frontend:signatures osv; do
+          task "security:audit:$check" || status=1
+        done
+        exit "$status"
 
   audit:python:
     desc: Audit the locked Python dependency set
@@ -48,13 +35,15 @@ tasks:
       - uv run --project src --with pip-audit pip-audit -s osv --no-deps -r reports/requirements-audit.txt
 
   audit:frontend:
-    desc: Audit frontend runtime dependencies
+    desc: Audit frontend runtime and build dependencies
     dir: src/app/frontend
     preconditions:
-      - sh: command -v npm
-        msg: "npm not found"
+      - sh: command -v osv-scanner
+        msg: "osv-scanner is required; run aqua install"
+    # The full audit already scans this lockfile through audit:osv. Keep this
+    # focused entry point on the same advisory policy, including dev packages.
     cmds:
-      - npm audit --audit-level=high --omit=dev
+      - osv-scanner --lockfile=package-lock.json
 
   audit:frontend:signatures:
     desc: Verify frontend packages against registry signatures and provenance
@@ -70,53 +59,41 @@ tasks:
     cmds:
       - npm audit signatures
 
-  # --- backlog -------------------------------------------------------------
-
   audit:frontend:dev:
-    desc: Audit frontend dev and build dependencies
-    dir: src/app/frontend
-    preconditions:
-      - sh: command -v npm
-        msg: "npm not found"
-    # Build-time packages are where the npm supply-chain compromises of recent
-    # years actually landed: they execute on the build machine with registry
-    # and CI credentials in scope. Excluding them from the audit, as the
-    # production-scope check above must, leaves the more exposed half unwatched.
+    desc: Audit frontend runtime and build dependencies
     cmds:
-      - |
-        status=0
-        npm audit --audit-level=high || status=$?
-        if [ "$status" -ne 0 ]; then
-          if [ "{{.STRICT}}" = "1" ]; then
-            exit "$status"
-          fi
-          echo
-          echo "dev-dependency advisories above are the known backlog (KNOWNISSUES.md); not failing."
-        fi
+      - task: audit:frontend
 
   audit:osv:
     desc: Scan every ecosystem for known vulnerabilities via OSV
     preconditions:
       - sh: command -v osv-scanner
         msg: "osv-scanner is required; run aqua install"
-    # The only check covering operator/go.mod — npm audit and pip-audit are
-    # blind to the Go module, so anything it reports there is reported nowhere
-    # else. Go call analysis is deliberately disabled: this is a deterministic
-    # lockfile audit and must not depend on whichever Go toolchain happens to be
-    # installed on the developer machine or runner. Writes SARIF for CI to
-    # upload, and re-runs as a table on failure because SARIF alone tells a
-    # human at a terminal nothing.
+    # Covers Go and all npm dependencies, including build tools. Broad Go call
+    # analysis stays disabled; only the approved OpenPGP exclusion has an
+    # import guard, matching the Linux container build architectures.
     cmds:
       - mkdir -p reports
       - |
+        guard_status=0
+        for arch in amd64 arm64; do
+          if ! packages="$(cd operator && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go list -mod=readonly -deps -test ./...)" || [ -z "$packages" ]; then
+            printf 'OpenPGP exclusion check failed for linux/%s.\n' "$arch" >&2
+            guard_status=1
+            continue
+          fi
+          match_status=0
+          printf '%s\n' "$packages" | grep -E '^golang[.]org/x/crypto/openpgp(/|$)' || match_status=$?
+          if [ "$match_status" -ne 1 ]; then
+            printf 'GO-2026-5932 exclusion is invalid for linux/%s: OpenPGP import or failed import check.\n' "$arch" >&2
+            guard_status=1
+          fi
+        done
         set -- --recursive --no-call-analysis=go --experimental-exclude=src/vendor/bbc-tams/examples
         status=0
         osv-scanner "$@" --format=sarif --output-file=reports/osv-scanner.sarif ./ || status=$?
         if [ "$status" -ne 0 ]; then
           osv-scanner "$@" ./ || true
-          if [ "{{.STRICT}}" = "1" ]; then
-            exit "$status"
-          fi
-          echo
-          echo "OSV findings above are the known backlog (KNOWNISSUES.md); not failing."
+          exit "$status"
         fi
+        exit "$guard_status"

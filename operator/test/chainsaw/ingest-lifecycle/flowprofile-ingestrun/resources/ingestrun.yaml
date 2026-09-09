@@ -1,0 +1,28 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: IngestRun
+metadata:
+  name: profiled-ingest
+spec:
+  tamossRef:
+    name: tamoss
+  input:
+    kind: S3
+    uri: s3://tamoss/input/tiny.srt
+    sourceRef:
+      name: fixture-s3
+  profile: preserve@1
+  sizeClass: small
+  options:
+    maxInputs: 1
+    verify: true
+    tamsFlowProfiles:
+      - format: data
+        index: 0
+        profileRef:
+          name: chainsaw-timed-text
+  output:
+    flowMetadata:
+      label: Chainsaw profiled timed text
+      description: TAMSin ingest using an operator-managed TAMS Flow Profile
+      tags:
+        test-purpose: integration

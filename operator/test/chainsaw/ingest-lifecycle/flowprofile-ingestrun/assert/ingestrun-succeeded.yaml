@@ -1,0 +1,17 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: IngestRun
+metadata:
+  name: profiled-ingest
+  namespace: ($namespace)
+(status.observedGeneration): 1
+(status.phase): Succeeded
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): IngestSucceeded
+(status.resolvedSource.name): fixture-s3
+(status.resolvedSource.policyDigest != ''): true
+(status.resolvedTamsFlowProfiles[0].format): data
+(status.resolvedTamsFlowProfiles[0].index): 0
+(status.resolvedTamsFlowProfiles[0].profileID): 8e35dbf7-d42b-55af-99ce-4a986b456f3b
+(status.resolvedTamsFlowProfiles[0].profileRef): chainsaw-timed-text
+(status.output.rootFlowID != ''): true
+(status.output.sourceID != ''): true

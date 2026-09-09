@@ -35,6 +35,16 @@ spec:
     baseDomain: tamoss.example.com
 ```
 
+Set `publicEndpoint.uiURL` when the public UI uses a non-standard external
+port. It is an exact origin, not a path:
+
+```yaml
+spec:
+  publicEndpoint:
+    baseDomain: tamoss.example.com
+    uiURL: https://app.tamoss.example.com:30443
+```
+
 ## Common Spec Areas
 
 | Field | Purpose |
@@ -43,12 +53,16 @@ spec:
 | `.spec.publicEndpoint` | Derives public API, UI, S3, and [Authentik](https://goauthentik.io/) endpoint defaults when the selected auth mode uses Authentik. |
 | `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
 | `.spec.backends.s3` | Selects managed [RustFS](https://github.com/rustfs/rustfs) Operator or external S3-compatible storage for the default backend. |
+| `.spec.backends.s3.tags` | Freeform metadata with string or string-array values, advertised on the operator-managed default TAMS storage backend. |
 | `.spec.auth` | Selects Authentik Blueprints, external OAuth/OIDC, or no authentication. |
-| `.spec.api`, `.spec.ui`, `.spec.worker` | Component enablement, replicas, images, resources, scheduling, probes, env, volumes, and security context. |
+| `.spec.api`, `.spec.ui`, `.spec.worker`, `.spec.console` | Component enablement, replicas, images, resources, scheduling, probes, env, volumes, and security context. |
 | `.spec.service`, `.spec.ingress`, `.spec.httpRoute` | Service and public routing configuration. |
-| `.spec.networkPolicy` | Profile default NetworkPolicy settings and overrides. |
+| `.spec.networkPolicy` | Profile default NetworkPolicy settings, component overrides, and destination-scoped Kubernetes API IP blocks for Console. |
 | `.spec.secrets.apiToken` | Generated or explicit API token configuration. |
 | `.spec.images` | Shared helper images that are not owned by one component. |
+| `.spec.ingest.sourcePolicy.mode` | Ingest source mode: `Disabled`, `PublicHTTPS`, or `Restricted`. Production profiles default to `Disabled`; `local-kind` defaults to `PublicHTTPS`. |
+| `.spec.ingest.sources` | Reusable named HTTP and S3 source boundaries, including optional source-owned credential Secret references. See [IngestRun CR](ingestrun-cr.md). |
+| `.spec.hibernation` | Captures managed CNPG state to an archive StorageBackend and removes database compute; disabling it resumes the instance. See [Hibernate and Resume](../operations/hibernate-resume.md). |
 | `.spec.advanced` | Advanced resource patches and additional resources for provider fields that do not have first-class TAMOSS fields. |
 | `.spec.paused` | Stops reconcile writes while still allowing status updates. |
 
@@ -89,8 +103,10 @@ API then allows browser preflight and authenticated requests from matching
 origins. Exact origin values must be absolute `http` or `https` origins without
 a path, query string, or fragment.
 
-For managed RustFS backends, the operator also applies exact allowed origins to
-bucket CORS and to [Traefik](https://traefik.io/) S3 ingress middleware.
+For managed RustFS backends, the operator also applies
+`spec.publicEndpoint.uiURL` and exact allowed origins to bucket CORS and to
+[Traefik](https://traefik.io/) S3 ingress middleware. This preserves a
+non-standard external UI port for browser media requests.
 `allowedOriginRegexes` is
 also applied to Traefik S3 ingress middleware, but not to S3 bucket CORS. For
 `external-s3` backends, update the bucket CORS policy separately for every
@@ -113,7 +129,7 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | `.status.conditions` | Readiness, backend, identity, routing, schema, upgrade, and degraded conditions. |
 | `.status.endpoints` | Effective API and UI URLs after profile defaults and endpoint overrides. |
 | `.status.providers` | Selected provider and ownership model for database, S3, authentication, and routing. |
-| `.status.resolved.images` | Effective API, UI, worker, schema helper, CNPG Postgres, and RustFS image references where rendered. |
+| `.status.resolved.images` | Effective API, UI, worker, Console, TAMSin, schema helper, CNPG Postgres, and RustFS image references where rendered. |
 | `.status.resolved.versions` | Effective TAMOSS schema, runtime, and BBC TAMS API compatibility versions. |
 | `.status.resolved.generatedSecrets` | Generated Secret names only. Secret values are never exposed. |
 | `.status.resolved.resources` | Generated workload and default StorageBackend resource names. |
@@ -122,5 +138,6 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | `.status.schemaMigration` | Migration phase, attempts, applied revision, and final result. |
 | `.status.upgrade` | Upgrade readiness summary. |
 | `.status.lifecycle` | Hibernate/resume lifecycle phase (`Running`, `Hibernating`, `Hibernated`, `Resuming`, `Failed`), the active operation reference, and the last hibernate and resume references. `.status.phase` also reports `Hibernating`, `Hibernated`, and `Resuming` while the lifecycle gate is active. See [Hibernate and Resume](../operations/hibernate-resume.md). |
+| `.status.lifecycle.pendingArtifactCleanups` | Archive retention work from earlier restore cycles, including expiry timestamps and unresolved cleanup failures. |
 
 Use [CRD Versioning](crd-versioning.md) for API stability and migration policy.

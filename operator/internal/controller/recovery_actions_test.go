@@ -61,7 +61,8 @@ func TestSchemaRetryDuplicateAnnotationDoesNotResetAgain(t *testing.T) {
 	tamoss := recoveryTamoss()
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "retry-1")
-	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()), tamoss.Namespace)
+	job := schemaMigrationJob(tamoss, false)
+	job.Status = failedJobFixture(job.Name, job.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, job).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
@@ -124,8 +125,8 @@ func TestSchemaRetryConsumedMarkerSurvivesSuccessState(t *testing.T) {
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
 	state := terminalSchemaState(tamoss, "retry-1")
-	jobName := tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName())
-	succeeded := succeededJobFixture(jobName, tamoss.Namespace)
+	succeeded := schemaMigrationJob(tamoss, false)
+	succeeded.Status = succeededJobFixture(succeeded.Name, succeeded.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, succeeded).Build()
 	controller := SchemaController{Client: client, Scheme: scheme}
 
@@ -170,9 +171,11 @@ func TestGeneratedAPITokenRotationReplacesTokenAndAnnotatesRollout(t *testing.T)
 	if secret.Annotations[annotationAPITokenDone] != "rotate-1" {
 		t.Fatalf("expected rotation consumed annotation, got %#v", secret.Annotations)
 	}
-	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" ||
-		uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
-		t.Fatalf("expected checksum annotations on API and UI deployments")
+	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
+		t.Fatal("expected API checksum annotation")
+	}
+	if uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] != "" {
+		t.Fatal("UI must not roll when the server-side API token rotates")
 	}
 	assertEventContains(t, drainRecorder(recorder), operatorstatus.ReasonAPITokenRotationAccepted)
 }

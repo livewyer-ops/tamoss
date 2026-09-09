@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from tamoss.domain.model import (
@@ -26,6 +27,7 @@ def queue_controlled_object_copy(
     *,
     repository: ObjectRepository,
     object_id: str,
+    object_created: datetime,
     source_storage_backend_id: UUID,
     destination_storage_backend_id: UUID,
 ) -> None:
@@ -33,6 +35,7 @@ def queue_controlled_object_copy(
         ObjectCopyRecord(
             id=uuid4(),
             object_id=object_id,
+            object_created=object_created,
             source_storage_backend_id=source_storage_backend_id,
             destination_storage_backend_id=destination_storage_backend_id,
             status="pending",
@@ -68,48 +71,55 @@ def _process_object_copy(
     object_storage: ObjectStorage,
     copy: ObjectCopyRecord,
 ) -> None:
-    media_object = repository.get_object(copy.object_id)
-    if media_object is None or not media_object.referenced_by_flows:
-        _mark_object_copy_done(repository, copy)
-        return
-    source_backend = repository.get_storage_backend(copy.source_storage_backend_id)
-    destination_backend = repository.get_storage_backend(
-        copy.destination_storage_backend_id
-    )
-    if source_backend is None or destination_backend is None:
-        raise RuntimeError("Object copy references an unknown storage backend.")
-    if _controlled_instance(media_object.instances, destination_backend.id):
-        _mark_object_copy_done(repository, copy)
-        return
-    if not _controlled_instance(media_object.instances, source_backend.id):
-        raise RuntimeError("Object copy source instance no longer exists.")
-
-    object_storage.copy(
-        copy.object_id,
-        source_backend=source_backend,
-        destination_backend=destination_backend,
-    )
-
-    should_delete_copied_object = False
     with repository.unit_of_work():
+        # Keep deletion and reallocation out until the copied instance is advertised.
+        repository.lock_objects([copy.object_id])
         media_object = repository.get_object(copy.object_id)
-        if media_object is None or not media_object.referenced_by_flows:
-            should_delete_copied_object = True
-        elif not _controlled_instance(media_object.instances, destination_backend.id):
-            media_object.instances.append(
-                ObjectInstance(
-                    storage_backend=destination_backend,
-                    url=None,
-                    label=destination_backend.label,
-                    controlled=True,
-                )
+        destination_backend = repository.get_storage_backend(
+            copy.destination_storage_backend_id
+        )
+        if (
+            media_object is None
+            or not media_object.referenced_by_flows
+            or (
+                media_object.created != copy.object_created
+                if copy.object_created is not None
+                else media_object.created > copy.created
             )
-            repository.save_object(media_object)
-        if not should_delete_copied_object:
+        ):
+            # Recover bytes copied before a crash without touching a newer allocation.
+            if destination_backend is not None and (
+                media_object is None
+                or not _controlled_instance(
+                    media_object.instances, destination_backend.id
+                )
+            ):
+                object_storage.delete(copy.object_id, backend=destination_backend)
             _mark_object_copy_done(repository, copy)
+            return
+        source_backend = repository.get_storage_backend(copy.source_storage_backend_id)
+        if source_backend is None or destination_backend is None:
+            raise RuntimeError("Object copy references an unknown storage backend.")
+        if _controlled_instance(media_object.instances, destination_backend.id):
+            _mark_object_copy_done(repository, copy)
+            return
+        if not _controlled_instance(media_object.instances, source_backend.id):
+            raise RuntimeError("Object copy source instance no longer exists.")
 
-    if should_delete_copied_object:
-        object_storage.delete(copy.object_id, backend=destination_backend)
+        object_storage.copy(
+            copy.object_id,
+            source_backend=source_backend,
+            destination_backend=destination_backend,
+        )
+        media_object.instances.append(
+            ObjectInstance(
+                storage_backend=destination_backend,
+                url=None,
+                label=destination_backend.label,
+                controlled=True,
+            )
+        )
+        repository.save_object(media_object)
         _mark_object_copy_done(repository, copy)
 
 

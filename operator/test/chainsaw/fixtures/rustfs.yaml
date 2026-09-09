@@ -114,16 +114,11 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: us-east-1
           command:
-            - /bin/sh
-            - -ec
-            - |
-              for i in $(seq 1 60); do
-                if aws --endpoint-url http://rustfs-svc:9000 s3api head-bucket --bucket tamoss >/dev/null 2>&1; then
-                  exit 0
-                fi
-                if aws --endpoint-url http://rustfs-svc:9000 s3api create-bucket --bucket tamoss >/dev/null 2>&1; then
-                  exit 0
-                fi
-                sleep 2
-              done
-              aws --endpoint-url http://rustfs-svc:9000 s3api create-bucket --bucket tamoss
+            - aws
+          args:
+            - --endpoint-url
+            - http://rustfs-svc:9000
+            - s3api
+            - create-bucket
+            - --bucket
+            - tamoss

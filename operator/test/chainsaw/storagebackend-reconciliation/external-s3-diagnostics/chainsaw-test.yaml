@@ -35,12 +35,19 @@ spec:
         - assert:
             file: assert/endpoint-unreachable-event.yaml
             timeout: 1m
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: confirms external providers do not get TAMOSS bucket lifecycle Jobs.
-              ! kubectl -n "$NAMESPACE" get job external-bucket-init
-              ! kubectl -n "$NAMESPACE" get job external-bucket-delete
+        - error:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: external-bucket-init
+                namespace: ($namespace)
+            timeout: 5s
+        - error:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: external-bucket-delete
+                namespace: ($namespace)
+            timeout: 5s

@@ -27,7 +27,7 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
 def test_video_flow_write_creates_source_and_supports_read_filters(
@@ -107,7 +107,7 @@ def test_core_api_responses_validate_against_contract_models(
     object_id = register_segment(client, flow_id, object_id=f"bbc/{uuid4()}.ts")
 
     contract_models.Service.model_validate(client.get("/service").json())
-    contract_models.Flow.model_validate(client.get(f"/flows/{flow_id}").json())
+    contract_models.FlowGet.model_validate(client.get(f"/flows/{flow_id}").json())
     contract_models.Source.model_validate(client.get(f"/sources/{source_id}").json())
     contract_models.FlowSegment.model_validate(
         client.get(f"/flows/{flow_id}/segments").json()[0]

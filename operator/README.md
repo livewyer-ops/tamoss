@@ -2,7 +2,7 @@
 
 This directory contains the TAMOSS Kubernetes operator. Public install and
 operations guidance lives under `../docs/`; this README is for maintainers
-working on operator code and generated artifacts.
+working on operator code and generated artefacts.
 
 ## Public Docs
 
@@ -71,7 +71,7 @@ task operator:e2e:chainsaw:focus KUBECONFIG=/path/to/kubeconfig -- <test-dir-nam
 task operator:e2e:chainsaw:focus KUBECONFIG=/path/to/kubeconfig SELECTOR='test.tamoss.io/suite=smoke'
 ```
 
-## Generated Artifacts
+## Generated Artefacts
 
 - CRDs, RBAC, and webhook manifests are generated from Go API/controller code.
 - The public operator Kustomize install is rendered under `deploy/operator`.
