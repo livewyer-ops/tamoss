@@ -1,7 +1,8 @@
 # Tenancy
 
 TAMOSS tenancy is namespace-based. A tenant is a Kubernetes namespace containing
-one or more `Tamoss` resources, their `StorageBackend` resources, referenced
+one or more `Tamoss` resources, their `StorageBackend`, `FlowProfile`, and
+`IngestRun` resources, referenced
 Secrets, and the workloads reconciled by the operator.
 
 TAMOSS does not provide a `Tenant`, `TamossTenant`, or `TamossPlatform` CRD.
@@ -126,6 +127,12 @@ spec:
 The operator can run cluster-wide or with `WATCH_NAMESPACES` set to a
 comma-separated namespace list. Cluster-wide mode avoids maintaining a
 namespace list for a shared operator.
+
+Include namespaces containing referenced platform Secrets as well as tenant
+namespaces. For example, an instance in `tams` using managed Authentik in `auth`
+needs `WATCH_NAMESPACES=tams,auth` and permission to read the platform Secrets.
+`TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES` controls which Authentik namespaces are
+allowed; it does not expand the watch cache.
 
 When watch scope is restricted, a `Tamoss` resource outside that namespace set
 is ignored. The operator logs the ignored namespace and does not update that

@@ -2,8 +2,8 @@ package workload_renderer
 
 import (
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -20,11 +20,13 @@ const (
 func Render(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	return slices.Concat(
 		renderServiceAccount(tamoss),
+		renderConsoleRBAC(tamoss),
 		renderSecrets(tamoss),
 		renderServices(tamoss),
 		renderAPIDeployment(tamoss),
 		renderWorkerDeployment(tamoss),
 		renderUIDeployment(tamoss),
+		renderConsoleDeployment(tamoss),
 		renderIngresses(tamoss),
 		renderHTTPRoutes(tamoss),
 		renderNetworkPolicies(tamoss),
@@ -98,11 +100,13 @@ func uiImage(repository, tag string) string {
 	return image(repository, tag)
 }
 
-func sortedEnv(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
+func consoleImage(repository, tag string) string {
+	if repository == "" {
+		repository = defaults.DefaultConsoleRepository
 	}
-	sort.Strings(keys)
-	return keys
+	return image(repository, tag)
+}
+
+func sortedEnv(env map[string]string) []string {
+	return slices.Sorted(maps.Keys(env))
 }

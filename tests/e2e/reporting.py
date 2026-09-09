@@ -9,6 +9,9 @@ _E2E_CHECK_IDS = {
     "test_deployed_storage_object_lifecycle_and_async_delete": (
         "tams deployed.storage-object-lifecycle"
     ),
+    "test_deployed_profile_and_init_object_workflow": (
+        "tams deployed.profile-init-object"
+    ),
     "test_deployed_rejects_duplicate_controlled_object_instance": (
         "e2e api.duplicate-controlled-object"
     ),
@@ -18,6 +21,7 @@ _E2E_CHECK_IDS = {
     "test_deployed_ui_ingress_authenticates_and_proxies_api": (
         "e2e ui.ingress-auth-proxy"
     ),
+    "test_deployed_ui_preserves_encoded_object_identity": "e2e ui.object-identity",
     "test_deployed_cert_manager_certificates_are_ready": "e2e platform.certificates",
     "test_deployed_node_memory_usage_stays_within_budget": (
         "e2e platform.memory-budget"
@@ -29,7 +33,10 @@ _E2E_CHECK_IDS = {
         "e2e auth.oauth2-client-default"
     ),
     "test_deployed_oidc_metadata_and_jwks_are_ready": "e2e auth.oidc-discovery",
-    "test_deployed_ui_ingest_uploads_and_registers_media": "e2e ui.ingest-upload",
+    "test_deployed_ui_ingest_run_history_is_read_only": "e2e ui.ingest-run-read-only",
+    "test_deployed_browser_session_cannot_mutate_same_origin_paths": (
+        "e2e ui.same-origin-write-denied"
+    ),
     "test_deployed_ui_playback_preview_buffers_demo_media": "e2e ui.playback-preview",
     "test_operator_kind_zero_to_ready_api_ingest_and_ui_load": (
         "e2e operator.kind-install"
@@ -39,6 +46,10 @@ _E2E_CHECK_IDS = {
 
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> None:
     _ = nextitem
+    # Helper unit tests share this package but are not deployed checks, so they
+    # must not be announced as unclassified e2e coverage.
+    if item.get_closest_marker("e2e") is None:
+        return
     terminal = item.config.pluginmanager.get_plugin("terminalreporter")
     message = _e2e_check_id(item.name)
     if terminal is not None:

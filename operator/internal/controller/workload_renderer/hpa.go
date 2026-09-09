@@ -17,6 +17,9 @@ func renderHPAs(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if tamoss.Spec.UI.IsEnabled() && tamoss.Spec.UI.Autoscaling.Enabled {
 		objects = append(objects, hpaFor(tamoss, "ui", tamoss.ResourceName("ui"), tamoss.Spec.UI.Autoscaling))
 	}
+	if tamoss.Spec.ConsoleEnabled() && tamoss.Spec.Console.Autoscaling.Enabled {
+		objects = append(objects, hpaFor(tamoss, "console", tamoss.ResourceName("console"), tamoss.Spec.Console.Autoscaling))
+	}
 	return objects
 }
 

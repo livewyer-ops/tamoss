@@ -28,14 +28,19 @@ func TestKindSampleRendersOperatorOnlyResources(t *testing.T) {
 
 	want := []string{
 		"Deployment/api",
+		"Deployment/console",
 		"Deployment/ui",
 		"Deployment/worker",
 		"Ingress/api",
 		"Ingress/ui",
+		"Role/console",
+		"RoleBinding/console",
 		"Secret/api-token",
 		"Secret/backends",
 		"Service/api",
+		"Service/console",
 		"Service/ui",
+		"ServiceAccount/console",
 		"ServiceAccount/workload",
 	}
 	sort.Strings(want)
@@ -110,6 +115,8 @@ func logicalID(kind, name, base string) string {
 			return "Deployment/ui"
 		case base + "-worker":
 			return "Deployment/worker"
+		case base + "-console":
+			return "Deployment/console"
 		}
 	case "HorizontalPodAutoscaler":
 		return componentSuffixID(kind, name, base)
@@ -118,7 +125,7 @@ func logicalID(kind, name, base string) string {
 			return "HTTPRoute/ui"
 		}
 		return componentSuffixID(kind, name, base)
-	case "Ingress", "NetworkPolicy", "PodDisruptionBudget", "Service":
+	case "Ingress", "NetworkPolicy", "PodDisruptionBudget", "Role", "RoleBinding", "Service":
 		return componentSuffixID(kind, name, base)
 	case "Secret":
 		switch name {
@@ -131,12 +138,15 @@ func logicalID(kind, name, base string) string {
 		if name == base || name == base+"-workload" {
 			return "ServiceAccount/workload"
 		}
+		if name == base+"-console" {
+			return "ServiceAccount/console"
+		}
 	}
 	return ""
 }
 
 func componentSuffixID(kind, name, base string) string {
-	for _, component := range []string{"api", "ui", "worker"} {
+	for _, component := range []string{"api", "ui", "worker", "console"} {
 		if name == base+"-"+component {
 			return kind + "/" + component
 		}

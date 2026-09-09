@@ -66,12 +66,3 @@ export function formatFrameRate(frameRate?: {
   const fps = frameRate.numerator / denom;
   return `${Number.isInteger(fps) ? fps : fps.toFixed(2)} fps`;
 }
-
-export function truncateId(id: string, chars = 8): string {
-  if (id.length <= chars) return id;
-  return `${id.substring(0, chars)}...`;
-}
-
-export function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text);
-}

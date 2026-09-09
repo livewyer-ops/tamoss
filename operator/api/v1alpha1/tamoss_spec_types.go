@@ -30,6 +30,10 @@ type TamossSpec struct {
 	Worker WorkerComponentSpec `json:"worker,omitempty"`
 	//+kubebuilder:default={image:{repository:livewyer/tamoss-ui,pullPolicy:IfNotPresent}}
 	UI UIComponentSpec `json:"ui,omitempty"`
+	// Console exposes the namespace- and instance-scoped Kubernetes runtime API
+	// used by the UI. It remains opt-in until end-user authorization is enforced.
+	//+kubebuilder:default={image:{repository:livewyer/tamoss-console-api,pullPolicy:IfNotPresent}}
+	Console ConsoleComponentSpec `json:"console,omitempty"`
 
 	Images ComponentImagesSpec `json:"images,omitempty"`
 
@@ -40,6 +44,10 @@ type TamossSpec struct {
 	// Hibernation declares the desired lifecycle state of this instance and,
 	// optionally, a hibernation artifact to bootstrap the database from.
 	Hibernation TamossHibernationSpec `json:"hibernation,omitempty"`
+
+	// Ingest defines reusable source trust boundaries for IngestRuns. Omitted
+	// configuration defaults to Disabled outside the local-kind profile.
+	Ingest IngestSpec `json:"ingest,omitempty"`
 
 	Ingress IngressSpec `json:"ingress,omitempty"`
 	//+kubebuilder:default={enabled:false}
@@ -72,6 +80,10 @@ type PublicEndpointSpec struct {
 	// BaseDomain is used to derive api.<baseDomain>, app.<baseDomain>, s3.<baseDomain>, and auth.<baseDomain>.
 	//+kubebuilder:validation:MinLength=1
 	BaseDomain string `json:"baseDomain,omitempty"`
+	// UIURL is the exact public UI origin, including a non-standard external port when required.
+	//+kubebuilder:validation:MinLength=1
+	//+kubebuilder:validation:Pattern=`^https?://[^/?#]+/?$`
+	UIURL string `json:"uiURL,omitempty"`
 	// TLSSecretName is the default TLS Secret for API and UI public routes.
 	TLSSecretName string `json:"tlsSecretName,omitempty"`
 	// S3TLSSecretName is the default TLS Secret for managed S3 public routes.
@@ -176,6 +188,14 @@ type UIComponentSpec struct {
 	//+kubebuilder:default={repository:livewyer/tamoss-ui,pullPolicy:IfNotPresent}
 	Image              ImageSpec              `json:"image,omitempty"`
 	Ports              []corev1.ContainerPort `json:"ports,omitempty"`
+	WorkloadCommonSpec `json:",inline"`
+}
+
+type ConsoleComponentSpec struct {
+	//+kubebuilder:default=false
+	Enabled *bool `json:"enabled,omitempty"`
+	//+kubebuilder:default={repository:livewyer/tamoss-console-api,pullPolicy:IfNotPresent}
+	Image              ImageSpec `json:"image,omitempty"`
 	WorkloadCommonSpec `json:",inline"`
 }
 

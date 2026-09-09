@@ -19,6 +19,7 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - flowprofiles
   - storagebackends
   - tamosshibernations
   verbs:
@@ -32,6 +33,7 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - flowprofiles/finalizers
   - storagebackends/finalizers
   - tamosses/finalizers
   - tamosshibernations/finalizers
@@ -40,6 +42,8 @@ rules:
 - apiGroups:
   - tamoss.livewyer.io
   resources:
+  - flowprofiles/status
+  - ingestruns/status
   - storagebackends/status
   - tamosses/status
   - tamosshibernations/status
@@ -47,6 +51,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - tamoss.livewyer.io
+  resources:
+  - ingestruns
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
 - apiGroups:
   - tamoss.livewyer.io
   resources:
@@ -82,6 +95,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
   - apps
   resources:
   - deployments
@@ -92,6 +111,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - autoscaling
@@ -116,6 +143,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - gateway.networking.k8s.io
@@ -158,18 +193,21 @@ rules:
   - postgresql.cnpg.io
   resources:
   - backups
+  - clusters
+  - scheduledbackups
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
   - update
   - watch
 - apiGroups:
-  - postgresql.cnpg.io
+  - rbac.authorization.k8s.io
   resources:
-  - clusters
-  - scheduledbackups
+  - rolebindings
+  - roles
   verbs:
   - create
   - delete

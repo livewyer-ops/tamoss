@@ -55,6 +55,9 @@ func renderSecrets(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		}
 		objects = append(objects, secret)
 	}
+	if secret := forwardAuthProofSecret(tamoss); secret != nil {
+		objects = append(objects, secret)
+	}
 
 	return objects
 }
