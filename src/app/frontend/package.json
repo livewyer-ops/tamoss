@@ -26,14 +26,14 @@
   "dependencies": {
     "@byomakase/omakase-player": "1.1.1",
     "@tanstack/react-query": "^5.102.8",
-    "hls.js": "1.6.17",
+    "hls.js": "1.7.1",
     "lucide-react": "^0.468.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.7",
+    "@biomejs/biome": "2.5.11",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.6",
