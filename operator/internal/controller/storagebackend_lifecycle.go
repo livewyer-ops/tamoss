@@ -32,6 +32,9 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if found && tamoss.DeletionTimestamp.IsZero() && !spec.IsHibernateDestination() && !r.schemaStateReady(ctx, tamoss) {
+		return ctrl.Result{RequeueAfter: defaultProviderReadinessProbeInterval}, nil
+	}
 	if shouldDeleteBucket {
 		result, err := r.reconcileStorageBackendBucketDeletion(ctx, storageBackend, tamoss, spec)
 		if err != nil || !result.Ready {

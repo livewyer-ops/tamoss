@@ -1,12 +1,12 @@
 # Build the manager binary. This Dockerfile is intended to be built from the
 # repository root with `docker build -f operator/Dockerfile .`.
-FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.0.1
 ARG SCHEMA_VERSION
 ARG PREVIOUS_SCHEMA_VERSION
-ARG TAMS_API_VERSION=8.1
+ARG TAMS_API_VERSION=8.2
 # Operand image tag the operator defaults to when a Tamoss spec omits one.
 # CI passes the image tag it publishes for the build (release version, :main,
 # or :pr-N); plain local builds fall back to "dev".

@@ -64,10 +64,10 @@ kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
 
 ## Upgrading a Pinned Environment Instance
 
-Environment instances pin `spec.api.image.tag` and `spec.ui.image.tag` to a
-release. To move an instance to a new release without touching the platform
-or operator layers, update the tags in the instance file, then apply the
-instance layer and wait for `Ready=True`:
+Environment instances can pin `spec.api.image.tag`, `spec.ui.image.tag` and
+`spec.console.image.tag`. Update all configured pins to the candidate's matching
+images; the worker uses the API image. For an image-only update supported by the
+installed operator and schema, apply the instance layer and wait for `Ready=True`:
 
 ```bash
 task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
@@ -75,6 +75,12 @@ task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 ```
 
 Upgrade one instance at a time on shared clusters.
+
+The move from `8.1.0-oss6` to 8.2 changes both API and schema. Follow the full
+platform, operator and instance sequence above, using the compatibility metadata
+and image references from the same release. Validate existing Sources, Flows,
+media, webhooks and queued work after the migration. A fresh-install check does
+not exercise this upgrade path.
 
 ## Status Checks
 
