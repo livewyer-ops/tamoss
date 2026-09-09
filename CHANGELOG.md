@@ -4,12 +4,38 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
-## Unreleased
+## 8.2.0-oss1 - 2026-09-09
 
-- Fixed `task kind:up` leaving application workloads on the previous build:
-  operand images are now tagged by `src/` content, so a rebuild changes the
-  rendered Deployment spec and Kubernetes rolls the api, ui and worker pods
-  without an imperative restart.
+TAMOSS 8.2.0-oss1 is the first stable TAMOSS release implementing BBC TAMS 8.2.
+It brings richer media lifecycle metadata, reusable Flow Profiles and
+declarative, Kubernetes-managed ingest.
+
+### Added
+
+- BBC TAMS 8.2 Profiles, first-class Flow lifecycle status, initialisation
+  Objects, collection filters and deterministic listings.
+- Declarative `IngestRun` resources: durable requests, progress, cancellation,
+  retry lineage and output identities.
+- Managed TAMSin `8.2.0-in2` ingest: controlled HTTPS/S3 sources and
+  streaming/staged handling.
+- Kubernetes `FlowProfile` management integrated with ingest.
+- Console views for Profiles, ingest history, runtime information and media
+  playback.
+
+### Improved
+
+- Joint audio/video buffering and supported multi-Object playback.
+- Portrait sizing, play/pause controls, stalled-load handling and player cleanup.
+- Storage concurrency, deletion guards, hibernation retries and repeated restore
+  handling.
+- Dependency updates and signed multi-architecture release packaging.
+
+### Upgrade Notes
+
+- The declared direct upgrade starts at `8.1.0-oss6` and requires a database
+  migration. Existing 8.2 candidates retain the same schema revision.
+- Browser upload controls are replaced by API-client or managed `IngestRun`
+  workflows.
 
 ## 8.1.0-oss6 - 2026-08-08
 
