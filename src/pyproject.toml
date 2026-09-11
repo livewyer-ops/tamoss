@@ -42,7 +42,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "httpx>=0.24.0",
-    "ruff==0.16.5",
+    "ruff==0.16.6",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
     "mypy>=2.3.0",
