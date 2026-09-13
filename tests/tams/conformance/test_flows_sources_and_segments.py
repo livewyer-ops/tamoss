@@ -720,18 +720,39 @@ def test_segment_overlap_and_queries_respect_timerange_boundaries(
 
 
 @pytest.mark.tamoss_extension
-def test_segment_coverage_gap_header_is_separate_from_flow_extent(
+def test_segment_gaps_do_not_expand_response_headers(
     client: TestClient,
 ) -> None:
     flow_id, _, _ = create_video_flow(client)
-    register_segment(client, flow_id, timerange="[0:0_10:0)")
-    register_segment(client, flow_id, timerange="[20:0_30:0)")
+    epoch = 1_789_230_957
+    timeranges = [
+        f"[{epoch + index}:123456789_{epoch + index + 1}:123456788)"
+        for index in range(100)
+    ]
+    object_ids = [
+        register_segment(client, flow_id, timerange=timerange)
+        for timerange in timeranges
+    ]
 
-    listed = client.get(f"/flows/{flow_id}/segments")
+    for method in ("GET", "HEAD"):
+        listed = client.request(
+            method, f"/flows/{flow_id}/segments", params={"limit": 300}
+        )
 
-    assert listed.status_code == 200
-    assert listed.headers["x-paging-timerange"] == "[0:0_30:0)"
-    assert listed.headers["x-tamoss-coverage-gaps"] == "[10:0_20:0)"
+        assert listed.status_code == 200
+        assert "x-tamoss-coverage-gaps" not in listed.headers
+        assert listed.headers["x-paging-count"] == "100"
+        assert listed.headers["x-paging-limit"] == "300"
+        assert listed.headers["x-paging-reverse-order"] == "false"
+        assert listed.headers["x-paging-timerange"] == (
+            f"[{epoch}:123456789_{epoch + 100}:123456788)"
+        )
+        assert "x-paging-nextkey" not in listed.headers
+        if method == "GET":
+            assert [segment["object_id"] for segment in listed.json()] == object_ids
+            assert [segment["timerange"] for segment in listed.json()] == timeranges
+        else:
+            assert listed.content == b""
 
 
 def test_read_only_flow_rejects_writes_with_403(client: TestClient) -> None:
