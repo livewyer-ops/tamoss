@@ -7,7 +7,7 @@ from contextlib import suppress
 from string import Template
 from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 from uuid import uuid4
 
 import pytest
@@ -255,6 +255,55 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
     proxied_service = json.loads(proxied["body"])
     assert proxied_service["api_version"] == "8.2"
     assert {"name": "webhooks"} in proxied_service["event_stream_mechanisms"]
+
+
+@pytest.mark.smoke
+def test_deployed_ui_pages_with_long_query_filters(
+    e2e_client: E2EClient, e2e_target: E2ETarget, e2e_browser: Browser
+) -> None:
+    if not e2e_target.browser_api_available:
+        pytest.skip("target does not provide browser API access")
+    marker = f"{uuid4()}{'x' * 7500}"
+    created = []
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    try:
+        for _ in range(2):
+            flow_id, source_id = str(uuid4()), str(uuid4())
+            payload = _video_flow_payload(flow_id, source_id)
+            payload["tags"] = {"proxy-header-test": marker}
+            e2e_client.request("PUT", f"/flows/{flow_id}", json=payload, expected=201)
+            created.append(flow_id)
+        _login_through_ui_ingress(context.new_page(), e2e_target)
+
+        for resource in ("flows", "sources"):
+            params = {"tag.proxy-header-test": marker, "limit": "1"}
+            baseline = e2e_client.request_json(
+                "GET", f"/{resource}", params={**params, "limit": "100"}
+            )
+            assert len(baseline) == 2
+            seen = []
+            for _ in baseline:
+                url = f"{e2e_target.ui_url}/api/{resource}"
+                response = context.request.get(url, params=params)
+                head = context.request.head(url, params=params)
+                for page in (response, head):
+                    assert page.status == 200, page.text()
+                    assert page.headers["x-paging-count"] == "1"
+                assert head.headers.get("link") == response.headers.get("link")
+                seen.extend(response.json())
+                link = response.headers.get("link")
+                if not link:
+                    break
+                query = parse_qs(urlsplit(link.split(">", 1)[0][1:]).query)
+                assert query["tag.proxy-header-test"] == [marker]
+                assert query["page"] == [response.headers["x-paging-nextkey"]]
+                params["page"] = query["page"][0]
+            assert seen == baseline
+            assert "link" not in response.headers
+    finally:
+        context.close()
+        for flow_id in created:
+            e2e_client.request("DELETE", f"/flows/{flow_id}", expected={204, 404})
 
 
 def test_deployed_cert_manager_certificates_are_ready(e2e_target: E2ETarget) -> None:
