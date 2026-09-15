@@ -332,8 +332,6 @@ class DeletionRepository(
 
     def delete_source(self, source_id: UUID) -> None: ...
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]: ...
-
     def list_delete_requests_page(
         self,
         *,

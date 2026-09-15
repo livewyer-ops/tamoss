@@ -880,10 +880,6 @@ class FakeTamossRepository:
                 lease_seconds=lease_seconds,
             )
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]:
-        with self._lock:
-            return deepcopy(list(self._delete_requests.values()))
-
     def list_delete_requests_page(
         self,
         *,

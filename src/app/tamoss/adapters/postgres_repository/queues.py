@@ -292,23 +292,6 @@ class PostgresQueueMixin:
                 ),
             )
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]:
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    record,
-                    status,
-                    updated,
-                    claimed_at,
-                    claimed_by,
-                    claim_expires_at
-                FROM tamoss_delete_requests
-                ORDER BY created_at, id
-                """
-            )
-            return [_delete_request_from_row(row) for row in cur.fetchall()]
-
     def list_delete_requests_page(
         self,
         *,

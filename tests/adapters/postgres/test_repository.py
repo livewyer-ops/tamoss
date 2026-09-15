@@ -1138,10 +1138,6 @@ def test_repository_claims_delete_requests_and_webhook_deliveries_with_leases(
         postgres_repo.deletion_repository.get_delete_request(delete_request_id)
         is not None
     )
-    assert (
-        postgres_repo.deletion_repository.list_delete_requests()[0].id
-        == delete_request_id
-    )
     assert postgres_repo.deletion_repository.list_object_cleanups()[0].id == cleanup_id
     assert postgres_repo.object_repository.list_object_copies()[0].id == copy_id
 
