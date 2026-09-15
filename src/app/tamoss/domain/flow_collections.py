@@ -59,15 +59,6 @@ def collection_child_id(item: object) -> UUID | None:
         return None
 
 
-def collection_role(item: object) -> str | None:
-    if not isinstance(item, dict):
-        return None
-    raw_role = item.get("role")
-    if raw_role is None:
-        return None
-    return str(raw_role)
-
-
 def collection_aware_flow_timeranges(
     flows: Iterable[FlowRecord],
     direct_timeranges: Mapping[UUID, str],
