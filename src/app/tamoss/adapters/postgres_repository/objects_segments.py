@@ -10,9 +10,7 @@ from uuid import UUID
 from psycopg import sql
 
 from tamoss.adapters.postgres_repository.mappers import (
-    _append_segment,
     _append_segments,
-    _create_object,
     _create_objects,
     _lock_flow_segments,
     _lock_media_objects,
@@ -94,7 +92,7 @@ class PostgresObjectSegmentMixin:
 
     def create_object(self, media_object: MediaObjectRecord) -> bool:
         with self._connect() as conn, conn.cursor() as cur:
-            return _create_object(cur, media_object)
+            return bool(_create_objects(cur, [media_object]))
 
     def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
         with self._connect() as conn, conn.cursor() as cur:
@@ -364,7 +362,7 @@ class PostgresObjectSegmentMixin:
 
     def append_segment(self, segment: SegmentRecord) -> None:
         with self._connect() as conn, conn.cursor() as cur:
-            _append_segment(cur, segment)
+            _append_segments(cur, [segment])
 
     def save_registered_segments(
         self,
