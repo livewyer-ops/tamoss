@@ -403,6 +403,7 @@ class FlowUseCases:
     ) -> list[FlowRecord]:
         flows_by_id = {flow.id: flow for flow in seed_flows}
         pending = list(dict.fromkeys(flow_ids))
+        queued = set(pending)
         index = 0
         while index < len(pending):
             flow_id = pending[index]
@@ -415,7 +416,8 @@ class FlowUseCases:
                 flows_by_id[flow.id] = flow
             for item in flow_collection(flow):
                 child_id = collection_child_id(item)
-                if child_id is not None and child_id not in flows_by_id:
+                if child_id is not None and child_id not in queued:
+                    queued.add(child_id)
                     pending.append(child_id)
         return list(flows_by_id.values())
 
