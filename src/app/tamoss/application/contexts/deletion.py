@@ -50,11 +50,6 @@ class DeletionUseCases:
         self.webhook_repository = webhook_repository
         self.settings = settings
 
-    def list_delete_requests(self) -> list[DeletionRequestRecord]:
-        requests = self.repository.list_delete_requests()
-        requests.sort(key=lambda request: str(request.id))
-        return requests
-
     def list_delete_requests_page(
         self,
         *,
