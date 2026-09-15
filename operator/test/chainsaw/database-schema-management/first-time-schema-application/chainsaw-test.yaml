@@ -27,17 +27,9 @@ spec:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
         - apply:
             file: ../../fixtures/tamoss-external.yaml
-        - wait:
-            apiVersion: batch/v1
-            kind: Job
-            selector: app.kubernetes.io/instance=tamoss,app.kubernetes.io/component=schema,app.kubernetes.io/managed-by=tamoss-operator
-            timeout: 240s
-            for:
-              condition:
-                name: Complete
         - assert:
             file: assert/schema-state-applied.yaml
-            timeout: 120s
+            timeout: 240s
         - assert:
             file: assert/api-deployment-present.yaml
             timeout: 120s

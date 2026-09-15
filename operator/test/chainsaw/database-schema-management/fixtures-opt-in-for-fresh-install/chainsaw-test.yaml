@@ -27,14 +27,9 @@ spec:
             file: ../../fixtures/assert/rustfs-bucket-ready.yaml
         - apply:
             file: resources/tamoss.yaml
-        - wait:
-            apiVersion: batch/v1
-            kind: Job
-            selector: app.kubernetes.io/instance=tamoss,app.kubernetes.io/component=schema,app.kubernetes.io/managed-by=tamoss-operator
+        - assert:
+            file: assert/schema-state-fixtures-applied.yaml
             timeout: 240s
-            for:
-              condition:
-                name: Complete
         - command:
             entrypoint: kubectl
             env:
@@ -57,6 +52,3 @@ spec:
             check:
               ($error == null): true
               (trim_space($stdout)): "1"
-        - assert:
-            file: assert/schema-state-fixtures-applied.yaml
-            timeout: 120s
