@@ -168,6 +168,23 @@ label changes can cause skips or repeats between those pages. Continue using
 the returned `Link` or `X-Paging-NextKey`; previously issued label keysets remain
 accepted. Timestamp-sorted listings retain keyset pagination.
 
+## Paginated Listings Return 502 Through a Proxy
+
+If a long filtered query succeeds without pagination but returns 502 with a
+smaller `limit`, check the proxy logs for `upstream sent too big header`.
+Pagination links retain the query filters and can exceed Nginx's default
+response-header buffer. The bundled UI proxy uses a 16 KiB buffer. Apply the
+same settings to any additional Nginx API gateway:
+
+```nginx
+proxy_buffer_size 16k;
+proxy_busy_buffers_size 16k;
+```
+
+Validate with `nginx -t` before reloading. Check both GET and HEAD, then follow
+the next page with the original filters. Request-line limits still apply;
+increasing them also requires enough response-header space for the next link.
+
 ## API Returns 503 StorageBackendMetadataMissing
 
 An instance with `spec.backends.s3.providedBy: external` has no default
