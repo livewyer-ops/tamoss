@@ -57,15 +57,6 @@ class ConfiguredObjectStorage:
             "headers": {"Content-Type": content_type},
         }
 
-    def build_get_urls(
-        self, *, object_id: str, backend: StorageBackend
-    ) -> list[dict[str, object]]:
-        backend = self._resolve_backend(backend)
-        return self._build_get_urls_for_resolved_backend(
-            object_id=object_id,
-            backend=backend,
-        )
-
     def build_get_urls_batch(
         self, requests: Iterable[ObjectGetUrlRequest]
     ) -> dict[ObjectGetUrlBatchKey, list[dict[str, object]]]:
