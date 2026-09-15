@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
-from mediatimestamp import TimeRange, Timestamp
 
 from tamoss import metrics
 from tamoss.api.dependencies import get_deletion_use_cases, get_segment_use_cases
@@ -27,8 +26,6 @@ from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.validation import strict_contract_model
-from tamoss.domain.model import SegmentRecord
-from tamoss.domain.timeranges import finite_normalized_timerange_bounds
 from tamoss.errors import BadRequest, NotFound, error_payload
 
 router = APIRouter(tags=["FlowSegments"])
@@ -109,9 +106,6 @@ def list_segments(
     with_page_headers(response, request, segment_page)
     response.headers["X-Paging-Reverse-Order"] = str(reverse_order).lower()
     response.headers["X-Paging-Timerange"] = segment_page.timerange or "()"
-    coverage_gaps = segment_coverage_gaps(segment_page.items)
-    if coverage_gaps:
-        response.headers["X-TAMOSS-Coverage-Gaps"] = ",".join(coverage_gaps)
     if head := head_response(request, response):
         return head
     objects_by_id = segments.segment_objects(segment_page.items)
@@ -260,32 +254,3 @@ def delete_segments(
     if delete_request is not None:
         return deletion_request_accepted_response(delete_request, request)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def segment_coverage_gaps(segments: list[SegmentRecord]) -> list[str]:
-    bounds: list[tuple[int, int]] = []
-    for segment in segments:
-        try:
-            parsed = TimeRange.from_str(segment.timerange)
-            normalized = finite_normalized_timerange_bounds(parsed)
-        except Exception as exc:
-            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
-        assert normalized.start is not None
-        assert normalized.end is not None
-        bounds.append((normalized.start, normalized.end))
-
-    if not bounds:
-        return []
-
-    bounds.sort()
-    gaps: list[str] = []
-    covered_end = bounds[0][1]
-    for start, end in bounds[1:]:
-        if start > covered_end:
-            gaps.append(
-                f"[{Timestamp.from_nanosec(covered_end)}_"
-                f"{Timestamp.from_nanosec(start)})"
-            )
-        if end > covered_end:
-            covered_end = end
-    return gaps
