@@ -423,10 +423,6 @@ class FakeTamossRepository:
         with self._lock:
             self._sources.pop(source_id, None)
 
-    def list_sources(self) -> list[SourceRecord]:
-        with self._lock:
-            return list(self._sources.values())
-
     def list_sources_page(
         self,
         *,
