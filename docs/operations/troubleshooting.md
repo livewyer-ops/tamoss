@@ -162,6 +162,12 @@ Listings are live, not snapshots. Prefer `sort_by=created` for reconciliation
 and recheck concurrent changes separately; quiesce writers when a definitive
 snapshot is required.
 
+Flow and Source listings sorted by `label` use offset pagination, whose tokens
+do not contain label text. Concurrent inserts, deletions or
+label changes can cause skips or repeats between those pages. Continue using
+the returned `Link` or `X-Paging-NextKey`; previously issued label keysets remain
+accepted. Timestamp-sorted listings retain keyset pagination.
+
 ## API Returns 503 StorageBackendMetadataMissing
 
 An instance with `spec.backends.s3.providedBy: external` has no default

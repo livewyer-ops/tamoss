@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -15,11 +17,16 @@ from tests.tams.support import video_flow_payload
 pytestmark = pytest.mark.needs_db
 
 
-def seed_listing(repository: PostgresRepository, resource: str) -> None:
-    for index, label in enumerate([None, None, "Alpha", "Alpha", "Beta", "Beta"]):
+def seed_listing(
+    repository: PostgresRepository,
+    resource: str,
+    labels: tuple[str | None, ...] = (None, None, "Alpha", "Alpha", "Beta", "Beta"),
+) -> None:
+    for index, label in enumerate(labels):
         timestamp = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(days=index // 2)
         identity = UUID(int=index + 1, version=4)
         source_id = UUID(int=100, version=4)
+        tags = {"cursor-suite": "keep" if index != 2 else "other"}
         if resource == "flows":
             repository.flow_repository.save_flow(
                 FlowRecord(
@@ -27,7 +34,11 @@ def seed_listing(repository: PostgresRepository, resource: str) -> None:
                     source_id=source_id,
                     format="urn:x-nmos:format:video",
                     container="video/mp4",
-                    data={**video_flow_payload(identity, source_id), "label": label},
+                    data={
+                        **video_flow_payload(identity, source_id, tags=tags),
+                        "label": label,
+                    },
+                    tags=tags,
                     created=timestamp,
                     metadata_updated=timestamp,
                 )
@@ -38,6 +49,7 @@ def seed_listing(repository: PostgresRepository, resource: str) -> None:
                     id=identity,
                     format="urn:x-nmos:format:video",
                     label=label,
+                    tags=tags,
                     created=timestamp,
                     metadata_updated=timestamp,
                 )
@@ -46,8 +58,8 @@ def seed_listing(repository: PostgresRepository, resource: str) -> None:
 
 @pytest.mark.parametrize(
     ("resource", "sort_by"),
-    [("flows", sort) for sort in ("created", "metadata_updated", "label")]
-    + [("sources", sort) for sort in ("created", "updated", "label")],
+    [("flows", sort) for sort in ("created", "metadata_updated")]
+    + [("sources", sort) for sort in ("created", "updated")],
 )
 @pytest.mark.parametrize("reverse_order", [False, True])
 def test_cursor_survives_deleting_every_preceding_page_including_anchor(
@@ -128,3 +140,94 @@ def test_invalid_and_wrong_context_cursors_return_bad_request(
         assert client.get(next_url.replace("/flows?", "/sources?")).status_code == 400
         assert client.get(next_url + "&sort_by=label").status_code == 400
         assert client.get(next_url + "&reverse_order=true").status_code == 400
+
+
+@pytest.mark.parametrize("resource", ["flows", "sources"])
+@pytest.mark.parametrize("reverse_order", [False, True])
+def test_long_label_pages_keep_order_and_bound_response_headers(
+    postgres_repo: PostgresRepository, resource: str, reverse_order: bool
+) -> None:
+    seed_listing(
+        postgres_repo,
+        resource,
+        (None, None, "A" * 6000, "A" * 6000, "é" * 800, "é" * 800),
+    )
+    with TestClient(create_app(use_cases=use_cases(postgres_repo))) as client:
+        params = {
+            "sort_by": "label",
+            "reverse_order": str(reverse_order).lower(),
+            "tag.cursor-suite": "keep",
+        }
+        baseline = client.get(f"/{resource}", params=params).json()
+        assert len(baseline) == 5
+        response = client.get(f"/{resource}", params={**params, "limit": 1})
+        seen = []
+        for _ in baseline:
+            assert response.status_code == 200
+            seen.extend(response.json())
+            head = client.head(str(response.request.url))
+            assert head.status_code == 200
+            for page in (response, head):
+                assert sum(len(k) + len(v) + 4 for k, v in page.headers.items()) < 2048
+                assert page.headers["x-paging-count"] == "1"
+            assert head.headers.get("x-paging-nextkey") == response.headers.get(
+                "x-paging-nextkey"
+            )
+            if "next" not in response.links:
+                break
+            assert response.headers["x-paging-nextkey"].isdigit()
+            response = client.get(response.links["next"]["url"])
+        assert seen == baseline
+        assert "next" not in response.links
+
+
+@pytest.mark.parametrize("resource", ["flows", "sources"])
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize("anchor_index", [0, 2, 3])
+@pytest.mark.parametrize("delete_preceding", [False, True])
+def test_old_label_keysets_convert_to_filtered_offsets(
+    postgres_repo: PostgresRepository,
+    resource: str,
+    reverse_order: bool,
+    anchor_index: int,
+    delete_preceding: bool,
+) -> None:
+    seed_listing(postgres_repo, resource)
+    delete = (
+        postgres_repo.flow_repository.delete_flow
+        if resource == "flows"
+        else postgres_repo.source_repository.delete_source
+    )
+    with TestClient(create_app(use_cases=use_cases(postgres_repo))) as client:
+        params = {
+            "sort_by": "label",
+            "reverse_order": str(reverse_order).lower(),
+            "tag.cursor-suite": "keep",
+        }
+        baseline = client.get(f"/{resource}", params=params).json()
+        assert len(baseline) == 5
+        anchor = baseline[anchor_index]
+        payload = json.dumps(
+            [
+                f"{resource}:label:{int(reverse_order)}",
+                anchor.get("label"),
+                anchor["id"],
+            ]
+        )
+        token = "k1." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+        if delete_preceding:
+            for item in baseline[: anchor_index + 1]:
+                delete(UUID(item["id"]))
+        response = client.get(
+            f"/{resource}", params={**params, "limit": 1, "page": token}
+        )
+        seen = []
+        for _ in baseline:
+            assert response.status_code == 200
+            seen.extend(response.json())
+            if "next" not in response.links:
+                break
+            assert response.headers["x-paging-nextkey"].isdigit()
+            response = client.get(response.links["next"]["url"])
+        assert seen == baseline[anchor_index + 1 :]
+        assert "next" not in response.links
