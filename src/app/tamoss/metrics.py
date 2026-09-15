@@ -4,6 +4,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from http import HTTPMethod
 from threading import Thread
 from wsgiref.simple_server import WSGIServer
 
@@ -132,13 +133,17 @@ class MetricsServer:
         self.thread.join(timeout=5)
 
 
+def _metric_method(method: str) -> str:
+    return method if method in HTTPMethod else "OTHER"
+
+
 def install_http_metrics(application: FastAPI) -> None:
     @application.middleware("http")
     async def tamoss_metrics_middleware(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        method = request.method
+        method = _metric_method(request.method)
         start = time.perf_counter()
         HTTP_REQUESTS_IN_PROGRESS.labels(method=method).inc()
         try:
@@ -196,7 +201,7 @@ def start_metrics_server(settings: Settings) -> MetricsServer | None:
 
 def record_http_exception(request: Request, exc: Exception) -> None:
     HTTP_EXCEPTIONS_TOTAL.labels(
-        method=request.method,
+        method=_metric_method(request.method),
         route=_route_template(request),
         exception=type(exc).__name__ or _UNKNOWN_EXCEPTION,
     ).inc()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import socket
 import urllib.request
+from http import HTTPMethod
 from uuid import UUID
 
 import psycopg
@@ -253,6 +254,52 @@ def test_http_metrics_use_route_templates_for_dynamic_paths() -> None:
         == 1
     )
     assert "abc123" not in metrics
+
+
+@pytest.mark.parametrize("expected_status", [401, 405, 500])
+def test_http_metrics_bound_nonstandard_methods(expected_status: int) -> None:
+    app = _app(
+        _Repository([_storage_backend()]),
+        settings=_settings(metrics_port=0, auth_required=expected_status == 401),
+    )
+    methods = [f"TAMOSS{index}" for index in range(20)]
+
+    @app.api_route(
+        "/metrics-method-test", methods=methods if expected_status == 500 else ["GET"]
+    )
+    def explode() -> None:
+        raise RuntimeError("method test")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        for method in methods:
+            assert (
+                client.request(method, "/metrics-method-test").status_code
+                == expected_status
+            )
+        samples = [
+            sample
+            for family in text_string_to_metric_families(_private_metrics_text(app))
+            for sample in family.samples
+        ]
+
+    observed_methods = {
+        sample.labels["method"] for sample in samples if "method" in sample.labels
+    }
+    assert observed_methods <= {*HTTPMethod, "OTHER"}
+    assert sum(
+        sample.value
+        for sample in samples
+        if sample.name == "tamoss_api_http_requests_total"
+        and sample.labels["method"] == "OTHER"
+        and sample.labels["status"] == str(expected_status)
+    ) == len(methods)
+    if expected_status == 500:
+        assert sum(
+            sample.value
+            for sample in samples
+            if sample.name == "tamoss_api_http_exceptions_total"
+            and sample.labels["method"] == "OTHER"
+        ) == len(methods)
 
 
 def test_metrics_server_disabled_when_port_unavailable() -> None:
