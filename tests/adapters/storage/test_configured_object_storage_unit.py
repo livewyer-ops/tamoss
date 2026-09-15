@@ -224,7 +224,9 @@ def test_presigned_put_urls_do_not_outlive_allocated_object_timeout(
         backend=backend,
         presigned=True,
     )
-    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object.ts", backend=backend)]
+    )
 
     assert presign_calls == [("put_object", 300), ("get_object", 3600)]
 
@@ -266,7 +268,9 @@ def test_runtime_credentials_file_takes_precedence_over_persisted_credentials(
         )
     )
 
-    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object.ts", backend=backend)]
+    )
 
     assert created_clients[0]["aws_access_key_id"] == "runtime-access"
     assert created_clients[0]["aws_secret_access_key"] == "runtime-secret"
@@ -603,7 +607,9 @@ def test_runtime_credentials_file_reloads_on_mtime_change(
         )
     )
 
-    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object.ts", backend=backend)]
+    )
     _write_credentials_file(
         credentials_file,
         backend.id,
@@ -611,7 +617,9 @@ def test_runtime_credentials_file_reloads_on_mtime_change(
         secret_key="external-secret-2",
     )
     os.utime(credentials_file, ns=(2_000_000_000, 2_000_000_000))
-    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object.ts", backend=backend)]
+    )
 
     assert [item["aws_access_key_id"] for item in created_clients] == [
         "external-access-1",
@@ -685,10 +693,14 @@ def test_invalid_runtime_credentials_file_keeps_previous_valid_credentials(
         )
     )
 
-    storage.build_get_urls(object_id="media/object.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object.ts", backend=backend)]
+    )
     credentials_file.write_text("{not-json", encoding="utf-8")
     os.utime(credentials_file, ns=(3_000_000_000, 3_000_000_000))
-    storage.build_get_urls(object_id="media/object-2.ts", backend=backend)
+    storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id="media/object-2.ts", backend=backend)]
+    )
 
     assert len(created_clients) == 1
     assert created_clients[0]["aws_access_key_id"] == "external-access"
@@ -703,9 +715,12 @@ def test_missing_runtime_credentials_raises_clear_configuration_error() -> None:
     )
 
     with pytest.raises(ConfigurationError, match="missing S3 endpoint or credentials"):
-        storage.build_get_urls(
-            object_id="media/object.ts",
-            backend=_external_backend(),
+        storage.build_get_urls_batch(
+            [
+                ObjectGetUrlRequest(
+                    object_id="media/object.ts", backend=_external_backend()
+                )
+            ]
         )
 
 

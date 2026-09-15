@@ -9,7 +9,7 @@ import pytest
 import requests
 from botocore.exceptions import BotoCoreError, ClientError
 from tamoss.adapters.object_storage import ConfiguredObjectStorage
-from tamoss.domain.model import StorageBackend
+from tamoss.domain.model import ObjectGetUrlRequest, StorageBackend
 from tamoss.settings import Settings
 
 from tests.support.s3_storage import (
@@ -79,7 +79,9 @@ def test_s3_presigned_put_and_get_urls_round_trip_uploaded_object(
     assert put_response.status_code in {200, 201, 204}
     assert object_storage.read(object_id, backend=s3_backend) == body
 
-    get_urls = object_storage.build_get_urls(object_id=object_id, backend=s3_backend)
+    get_urls = object_storage.build_get_urls_batch(
+        [ObjectGetUrlRequest(object_id=object_id, backend=s3_backend)]
+    )[(s3_backend.id, object_id)]
     assert [item["presigned"] for item in get_urls] == [False, True]
     assert [item["label"] for item in get_urls] == [
         s3_backend.label,
