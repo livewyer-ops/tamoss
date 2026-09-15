@@ -310,45 +310,6 @@ def _save_objects(
     )
 
 
-def _create_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> bool:
-    record = _media_object_to_record(media_object)
-    cur.execute(
-        """
-        INSERT INTO tamoss_media_objects (
-            id,
-            first_referenced_by_flow,
-            referenced_by_flows,
-            object_kind,
-            content_type,
-            record,
-            updated_at
-        )
-        VALUES (
-            %(id)s,
-            %(first_referenced_by_flow)s,
-            %(referenced_by_flows)s,
-            %(object_kind)s,
-            %(content_type)s,
-            %(record)s,
-            NOW()
-        )
-        ON CONFLICT (id) DO NOTHING
-        RETURNING id
-        """,
-        {
-            "id": media_object.id,
-            "first_referenced_by_flow": media_object.first_referenced_by_flow,
-            "referenced_by_flows": [
-                str(flow_id) for flow_id in media_object.referenced_by_flows
-            ],
-            "object_kind": media_object.object_kind,
-            "content_type": media_object.content_type,
-            "record": Jsonb(record),
-        },
-    )
-    return cur.fetchone() is not None
-
-
 def _create_objects(
     cur: PostgresCursor, media_objects: Sequence[MediaObjectRecord]
 ) -> set[str]:
@@ -435,60 +396,6 @@ def _lock_media_objects(cur: PostgresCursor, object_ids: Iterable[str]) -> None:
             "SELECT id FROM tamoss_media_objects WHERE id = %s FOR UPDATE",
             (object_id,),
         )
-
-
-def _append_segment(
-    cur: PostgresCursor, segment: SegmentRecord, *, reject_overlaps: bool = False
-) -> None:
-    record = _segment_to_record(segment)
-    timerange_start, timerange_end = _timerange_bounds(segment.timerange)
-    if reject_overlaps:
-        _raise_if_segment_overlaps(
-            cur,
-            flow_id=segment.flow_id,
-            timerange_start=timerange_start,
-            timerange_end=timerange_end,
-        )
-    cur.execute(
-        """
-        INSERT INTO tamoss_segments (
-            flow_id,
-            object_id,
-            init_object_id,
-            timerange,
-            timerange_start,
-            timerange_end,
-            record,
-            created
-        )
-        VALUES (
-            %(flow_id)s,
-            %(object_id)s,
-            %(init_object_id)s,
-            %(timerange)s,
-            %(timerange_start)s,
-            %(timerange_end)s,
-            %(record)s,
-            %(created)s
-        )
-        ON CONFLICT (flow_id, object_id, timerange) DO UPDATE SET
-            init_object_id = EXCLUDED.init_object_id,
-            timerange_start = EXCLUDED.timerange_start,
-            timerange_end = EXCLUDED.timerange_end,
-            record = EXCLUDED.record,
-            updated_at = NOW()
-        """,
-        {
-            "flow_id": segment.flow_id,
-            "object_id": segment.object_id,
-            "init_object_id": segment.init_object_id,
-            "timerange": segment.timerange,
-            "timerange_start": timerange_start,
-            "timerange_end": timerange_end,
-            "record": Jsonb(record),
-            "created": segment.created,
-        },
-    )
 
 
 def _append_segments(
@@ -583,28 +490,6 @@ def _raise_if_segments_overlap(
             "flow_id": flow_id,
             "starts": [start for start, _ in bounds],
             "ends": [end for _, end in bounds],
-        },
-    )
-    if cur.fetchone() is not None:
-        raise SegmentOverlapError(SEGMENT_OVERLAP_MESSAGE)
-
-
-def _raise_if_segment_overlaps(
-    cur: PostgresCursor, *, flow_id: UUID, timerange_start: int, timerange_end: int
-) -> None:
-    cur.execute(
-        """
-        SELECT 1
-        FROM tamoss_segments
-        WHERE flow_id = %(flow_id)s
-          AND timerange_start < %(timerange_end)s
-          AND timerange_end > %(timerange_start)s
-        LIMIT 1
-        """,
-        {
-            "flow_id": flow_id,
-            "timerange_start": timerange_start,
-            "timerange_end": timerange_end,
         },
     )
     if cur.fetchone() is not None:
