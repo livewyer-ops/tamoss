@@ -155,14 +155,6 @@ class WebhookUseCases:
         with suppress(WorkerClaimLost):
             self._process_claimed_delivery(delivery)
 
-    def process_webhook_delivery(
-        self, delivery_id: UUID
-    ) -> WebhookDeliveryRecord | None:
-        delivery = self.repository.get_webhook_delivery(delivery_id)
-        if delivery is None:
-            return None
-        return self._process_claimed_delivery(delivery)
-
     def _process_claimed_delivery(
         self, delivery: WebhookDeliveryRecord
     ) -> WebhookDeliveryRecord | None:
