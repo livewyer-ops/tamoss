@@ -4,6 +4,23 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## 8.2.0-oss2-rc1 - 2026-09-15
+
+Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
+
+- Fix playback failures caused by oversized Segment response headers.
+- Bound collection timerange traversal across cyclic and deeply nested collections.
+- Preserve listing filters while keeping labels out of pagination tokens, and
+  increase UI proxy response-header buffers for long pagination links.
+- Bound HTTP method metric labels and remove unused repository, storage,
+  collection and webhook helpers.
+- Wait for recorded schema completion in fresh-install checks and compile UI
+  assets on the native builder for multi-architecture images.
+
+Upgrades from `8.2.0-oss1` retain schema revision `8.2.0-oss1` and require no
+database migration. Deployments with an additional Nginx gateway must also apply
+the [pagination response-header settings](https://github.com/livewyer-ops/tamoss/blob/8.2.0-oss2-rc1/docs/operations/troubleshooting.md#paginated-listings-return-502-through-a-proxy).
+
 ## 8.2.0-oss1 - 2026-09-09
 
 TAMOSS 8.2.0-oss1 is the first stable TAMOSS release implementing BBC TAMS 8.2.
