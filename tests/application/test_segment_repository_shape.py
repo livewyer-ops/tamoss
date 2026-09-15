@@ -393,9 +393,6 @@ class CountingRepository:
     def get_source(self, source_id: UUID) -> SourceRecord | None:
         return None
 
-    def list_sources(self) -> list[SourceRecord]:
-        return []
-
     def list_sources_page(self, **kwargs) -> Page[SourceRecord]:
         limit = kwargs.get("limit") or 100
         return Page(items=[], limit=limit)

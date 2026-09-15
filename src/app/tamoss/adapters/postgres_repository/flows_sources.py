@@ -308,11 +308,6 @@ class PostgresFlowSourceMixin:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM tamoss_sources WHERE id = %s", (source_id,))
 
-    def list_sources(self) -> list[SourceRecord]:
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT record FROM tamoss_sources ORDER BY id")
-            return [_source_from_record(row[0]) for row in cur.fetchall()]
-
     def list_sources_page(
         self,
         *,
