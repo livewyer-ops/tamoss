@@ -4,7 +4,7 @@ import base64
 import binascii
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -28,6 +28,7 @@ class ListingWindow:
     missing_first: bool
     anchor_id: UUID | None = None
     anchor_value: str | None = None
+    offset_paging: bool = False
 
     def follows(self, value: datetime | str | None, identity: UUID) -> bool:
         if self.anchor_id is None:
@@ -51,6 +52,8 @@ class ListingWindow:
         )
 
     def next_page(self, value: datetime | str | None, identity: UUID) -> str:
+        if self.offset_paging:
+            return str(self.offset + self.limit)
         payload = json.dumps([self.context, listing_value(value), str(identity)])
         return _PREFIX + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
@@ -110,6 +113,7 @@ def listing_window(
         reverse_order,
         anchor_id,
         anchor_value,
+        offset_paging=sort_by.value == "label",
     )
 
 
@@ -148,8 +152,11 @@ def page_listing_sequence[T](
         reverse_order=reverse_order,
     )
     remaining = [item for item in items if window.follows(value(item), identity(item))]
+    chunk = remaining[window.offset : window.offset + window.limit + 1]
+    if window.offset_paging and window.anchor_id is not None:
+        window = replace(window, offset=window.offset + len(items) - len(remaining))
     return listing_page(
-        remaining[window.offset : window.offset + window.limit + 1],
+        chunk,
         window,
         value=value,
         identity=identity,

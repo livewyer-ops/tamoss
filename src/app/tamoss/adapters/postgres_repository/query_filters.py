@@ -37,17 +37,19 @@ def _listing_order_sql(
     )
 
 
-def _append_listing_cursor_filter(
+def _apply_listing_cursor(
+    cur: PostgresCursor,
     clauses: list[sql.Composable],
     params: dict[str, Any],
     window: ListingWindow,
     *,
+    from_sql: sql.Composable,
     value_sql: sql.Composable,
     identity_sql: sql.Composable,
     timestamp: bool,
-) -> None:
+) -> ListingWindow:
     if window.anchor_id is None:
-        return
+        return window
     operator = sql.SQL("<") if window.descending else sql.SQL(">")
     params["cursor_id"] = window.anchor_id
     tie = sql.SQL("{} {} %(cursor_id)s").format(identity_sql, operator)
@@ -66,7 +68,21 @@ def _append_listing_cursor_filter(
         )
         if not timestamp and not window.missing_first:
             predicate += sql.SQL(" OR {} IS NULL").format(value_sql)
+    if window.offset_paging:
+        # Old label keysets still identify a boundary even if the anchor was deleted.
+        cur.execute(
+            sql.SQL("SELECT COUNT(*) FROM {} {}").format(
+                from_sql,
+                _where_sql([*clauses, sql.SQL("({}) IS NOT TRUE").format(predicate)]),
+            ),
+            params,
+        )
+        row = cur.fetchone()
+        assert row is not None
+        params["offset"] = int(row[0])
+        return replace(window, offset=params["offset"])
     clauses.append(sql.SQL("(") + predicate + sql.SQL(")"))
+    return window
 
 
 def _append_flow_collected_by_filter(

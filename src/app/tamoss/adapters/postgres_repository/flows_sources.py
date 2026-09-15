@@ -19,9 +19,9 @@ from tamoss.adapters.postgres_repository.mappers import (
 from tamoss.adapters.postgres_repository.query_filters import (
     _append_flow_collected_by_filter,
     _append_flow_timerange_filter,
-    _append_listing_cursor_filter,
     _append_source_collected_by_filter,
     _append_tag_filter_clauses,
+    _apply_listing_cursor,
     _flows_with_collected_by,
     _listing_order_sql,
     _where_sql,
@@ -164,15 +164,6 @@ class PostgresFlowSourceMixin:
             FlowSortBy.METADATA_UPDATED: sql.SQL("flow.metadata_updated"),
             FlowSortBy.LABEL: sql.SQL("flow.label"),
         }[sort_by]
-        _append_listing_cursor_filter(
-            clauses,
-            params,
-            window,
-            value_sql=sort_expression,
-            identity_sql=sql.SQL("flow.id"),
-            timestamp=sort_by != FlowSortBy.LABEL,
-        )
-        where_sql = _where_sql(clauses)
         descending = sort_by.descending(reverse_order=reverse_order)
         order_sql = _listing_order_sql(
             sort_expression,
@@ -181,6 +172,16 @@ class PostgresFlowSourceMixin:
             missing_first=reverse_order,
         )
         with self._connect() as conn, conn.cursor() as cur:
+            window = _apply_listing_cursor(
+                cur,
+                clauses,
+                params,
+                window,
+                from_sql=sql.SQL("tamoss_flows AS flow"),
+                value_sql=sort_expression,
+                identity_sql=sql.SQL("flow.id"),
+                timestamp=sort_by != FlowSortBy.LABEL,
+            )
             cur.execute(
                 sql.SQL(
                     """
@@ -191,7 +192,7 @@ class PostgresFlowSourceMixin:
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql, order_sql),
+                ).format(_where_sql(clauses), order_sql),
                 params,
             )
             rows = cur.fetchall()
@@ -362,15 +363,6 @@ class PostgresFlowSourceMixin:
             SourceSortBy.UPDATED: sql.SQL("source.metadata_updated"),
             SourceSortBy.LABEL: sql.SQL("source.label"),
         }[sort_by]
-        _append_listing_cursor_filter(
-            clauses,
-            params,
-            window,
-            value_sql=sort_expression,
-            identity_sql=sql.SQL("source.id"),
-            timestamp=sort_by != SourceSortBy.LABEL,
-        )
-        where_sql = _where_sql(clauses)
         descending = sort_by.descending(reverse_order=reverse_order)
         order_sql = _listing_order_sql(
             sort_expression,
@@ -379,6 +371,16 @@ class PostgresFlowSourceMixin:
             missing_first=reverse_order,
         )
         with self._connect() as conn, conn.cursor() as cur:
+            window = _apply_listing_cursor(
+                cur,
+                clauses,
+                params,
+                window,
+                from_sql=sql.SQL("tamoss_sources AS source"),
+                value_sql=sort_expression,
+                identity_sql=sql.SQL("source.id"),
+                timestamp=sort_by != SourceSortBy.LABEL,
+            )
             cur.execute(
                 sql.SQL(
                     """
@@ -389,7 +391,7 @@ class PostgresFlowSourceMixin:
                     OFFSET %(offset)s
                     LIMIT %(limit)s
                     """
-                ).format(where_sql, order_sql),
+                ).format(_where_sql(clauses), order_sql),
                 params,
             )
             rows = cur.fetchall()
