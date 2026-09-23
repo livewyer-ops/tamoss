@@ -396,8 +396,8 @@ class SegmentUseCases:
             ts_offset=segment_post.get("ts_offset"),
             object_timerange=None,
         )
-        if not TimeRange.from_str(effective_object_timerange).contains_subrange(
-            TimeRange.from_str(object_segment_timerange)
+        if not parse_timerange(effective_object_timerange).contains_subrange(
+            parse_timerange(object_segment_timerange)
         ):
             raise BadRequest(
                 "Bad request. Segment timerange must be contained within the "

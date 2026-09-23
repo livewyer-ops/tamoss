@@ -17,6 +17,13 @@ def parse_uuid(value: object) -> UUID:
 ContractUUID = Annotated[UUID, BeforeValidator(parse_uuid)]
 
 
+def _timerange_string(value: object) -> str:
+    return contract_models.Timerange.model_validate(value).root
+
+
+ContractTimerange = Annotated[str, BeforeValidator(_timerange_string)]
+
+
 def validate_mime_filter(value: str | None) -> None:
     if value is not None:
         contract_models.MimeType.model_validate(value)

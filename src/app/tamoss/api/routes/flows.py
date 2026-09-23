@@ -24,7 +24,11 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
-from tamoss.contract.validation import ContractUUID, strict_contract_model
+from tamoss.contract.validation import (
+    ContractTimerange,
+    ContractUUID,
+    strict_contract_model,
+)
 from tamoss.domain.listings import FlowSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
@@ -46,7 +50,7 @@ def list_flows(
     request: Request,
     response: Response,
     source_id: ContractUUID | None = None,
-    timerange: str | None = None,
+    timerange: ContractTimerange | None = None,
     include_timerange: bool = Query(
         default=False,
         description="Include each listed Flow's computed content timerange.",
@@ -147,7 +151,7 @@ def get_flow(
     flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     include_timerange: bool = False,
-    timerange: str | None = None,
+    timerange: ContractTimerange | None = None,
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
     validate_query_params(request, {"include_timerange", "timerange"})

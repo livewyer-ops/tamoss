@@ -60,6 +60,8 @@ def parse_timerange(
 ) -> TimeRange:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a timerange string")
+    if "_" not in value and value != "()" and ("(" in value or ")" in value):
+        raise ValueError(f"{field_name} instantaneous ranges cannot be exclusive")
     try:
         parsed = TimeRange.from_str(value)
     except Exception as exc:
@@ -83,10 +85,7 @@ def timerange_union_strings(timeranges: Iterable[str | None]) -> str | None:
     for timerange_value in timeranges:
         if timerange_value is None:
             continue
-        try:
-            parsed = TimeRange.from_str(timerange_value)
-        except Exception as exc:
-            raise ValueError("timerange is invalid") from exc
+        parsed = parse_timerange(timerange_value)
         if not parsed.is_empty():
             ranges.append(parsed)
     if not ranges:

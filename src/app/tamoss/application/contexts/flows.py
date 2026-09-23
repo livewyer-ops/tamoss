@@ -32,7 +32,7 @@ from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
-from tamoss.domain.timeranges import normalized_timerange_bounds
+from tamoss.domain.timeranges import normalized_timerange_bounds, parse_timerange
 from tamoss.errors import BadRequest, Forbidden, NotFound
 from tamoss.ports.repositories import (
     FlowCollectionRepository,
@@ -109,8 +109,9 @@ def parse_query_timerange(timerange: str | None) -> TimeRange | None:
     if timerange is None or timerange in {"", "_"}:
         return None
     try:
-        return TimeRange.from_str(timerange)
-    except Exception as exc:
+        contract_models.Timerange.model_validate(timerange)
+        return parse_timerange(timerange)
+    except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
 
 
@@ -364,7 +365,7 @@ class FlowUseCases:
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
         flow = self.get_flow(flow_id)
         try:
-            flow_range = TimeRange.from_str(
+            flow_range = parse_timerange(
                 self._flow_timeranges([flow_id], seed_flows=[flow])[flow_id]
             )
         except ValueError as exc:

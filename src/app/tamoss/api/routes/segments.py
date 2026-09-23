@@ -28,7 +28,7 @@ from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
-from tamoss.contract.validation import strict_contract_model
+from tamoss.contract.validation import ContractTimerange, strict_contract_model
 from tamoss.errors import BadRequest, error_payload
 
 router = APIRouter(tags=["FlowSegments"])
@@ -55,7 +55,7 @@ def list_segments(
     request: Request,
     response: Response,
     object_id: str | None = None,
-    timerange: str | None = None,
+    timerange: ContractTimerange | None = None,
     reverse_order: bool = False,
     verbose_storage: bool = False,
     accept_get_urls: str | None = None,
@@ -228,7 +228,7 @@ def post_segments(
 def delete_segments(
     flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
-    timerange: str | None = None,
+    timerange: ContractTimerange | None = None,
     object_id: str | None = None,
     deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
