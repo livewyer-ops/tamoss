@@ -61,6 +61,12 @@ spec:
               ($error == null): true
               (contains($stdout, 'watching configured namespaces')): true
       finally:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: ignored
+              namespace: other
         - command:
             entrypoint: kubectl
             args:

@@ -40,7 +40,7 @@ packages:
     - name: kyverno/chainsaw@v0.2.15 # operator/test/chainsaw
       tags:
           - ci-operator-chainsaw
-    - name: golang/go@go1.26.5 # operator/go.mod and controller builds
+    - name: golang/go@go1.27.1 # operator/go.mod and controller builds
       tags:
           - ci-security
     - name: yannh/kubeconform@v0.8.0 # generated operator CRD/install manifest linting

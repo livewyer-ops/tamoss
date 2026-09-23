@@ -269,7 +269,7 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if !apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	return r.setIngestRunJobPhase(ctx, run, desired, tamossv1alpha1.IngestRunPhaseQueued, "JobCreated", "The TAMSin Job was created", true, resolved.ExpectedInputs, attempt)
 }
@@ -285,7 +285,7 @@ func (r *IngestRunReconciler) resolveIngestFlowProfilesStage(ctx context.Context
 			return nil, ctrl.Result{}, true, err
 		}
 		if changed {
-			return nil, ctrl.Result{Requeue: true}, true, nil
+			return nil, ctrl.Result{RequeueAfter: time.Second}, true, nil
 		}
 		result, err := r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, reason, message, false)
 		return nil, result, true, err
@@ -295,7 +295,7 @@ func (r *IngestRunReconciler) resolveIngestFlowProfilesStage(ctx context.Context
 		return nil, ctrl.Result{}, true, err
 	}
 	if changed {
-		return nil, ctrl.Result{Requeue: true}, true, nil
+		return nil, ctrl.Result{RequeueAfter: time.Second}, true, nil
 	}
 	return resolved, ctrl.Result{}, false, nil
 }
