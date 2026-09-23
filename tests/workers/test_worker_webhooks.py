@@ -218,13 +218,18 @@ def test_webhook_workers_split_active_leases_without_duplicate_delivery(
         assert delivery.claim_expires_at is not None
 
 
-def test_webhook_worker_retries_then_marks_terminal_failures(
+@pytest.mark.parametrize("status_code", [401, 403, 503])
+@pytest.mark.parametrize("recover", [False, True])
+def test_webhook_worker_retries_until_success_or_attempt_limit(
     tamoss_app: FastAPI,
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    recover: bool,
 ) -> None:
     use_cases = route_worker_to_app(tamoss_app)
     use_cases.settings.webhook_max_attempts = 2
+    responses = iter([status_code, 202 if recover else status_code])
 
     def send_unavailable(
         *,
@@ -233,7 +238,7 @@ def test_webhook_worker_retries_then_marks_terminal_failures(
         timeout_seconds: float,
         egress_policy: object | None = None,
     ):
-        return WebhookResponse(status_code=503, reason="Service Unavailable")
+        return WebhookResponse(status_code=next(responses), reason="Test response")
 
     monkeypatch.setattr(webhooking, "send_webhook_delivery", send_unavailable)
     webhook = client.post(
@@ -264,11 +269,12 @@ def test_webhook_worker_retries_then_marks_terminal_failures(
     assert retrying is not None
     assert retrying.status == "pending"
     assert retrying.attempt_count == 1
-    assert retrying.response_status == 503
+    assert retrying.response_status == status_code
     assert retrying.error is not None
     assert retrying.error.type == "HTTPError"
-    assert "HTTP 503" in retrying.error.summary
+    assert f"HTTP {status_code}" in retrying.error.summary
     assert retrying.next_attempt_at is not None
+    assert retrying.next_attempt_at > utc_now()
     assert retrying.claimed_by is None
     active_webhook = use_cases.repository.get_webhook(webhook_id)
     assert active_webhook is not None
@@ -287,15 +293,17 @@ def test_webhook_worker_retries_then_marks_terminal_failures(
     )
     dead = use_cases.repository.get_webhook_delivery(delivery.id)
     assert dead is not None
-    assert dead.status == "dead"
+    assert dead.status == ("done" if recover else "dead")
     assert dead.attempt_count == 2
-    assert dead.response_status == 503
+    assert dead.response_status == (202 if recover else status_code)
     assert dead.next_attempt_at is None
     assert dead.claimed_by is None
     errored_webhook = use_cases.repository.get_webhook(webhook_id)
     assert errored_webhook is not None
-    assert errored_webhook.status == "error"
-    assert errored_webhook.data["error"]["type"] == "HTTPError"
+    assert errored_webhook.status == ("started" if recover else "error")
+    if not recover:
+        assert errored_webhook.data["error"]["type"] == "HTTPError"
+    assert worker.drain_webhook_deliveries(use_cases, max_deliveries=1) == 0
 
 
 def test_webhook_worker_retries_transport_failures(

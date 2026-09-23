@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -198,6 +199,7 @@ class SegmentUseCases:
             known_timeranges.append(candidate_range)
             accepted_segments.append(segment)
             for media_object in media_objects:
+                media_objects_by_id[media_object.id] = media_object
                 updated_media_objects[media_object.id] = media_object
             results[index] = SegmentWriteResult(segment=segment)
 
@@ -284,7 +286,7 @@ class SegmentUseCases:
         )
         if requested_init_object_id == object_id:
             raise BadRequest("Bad request. Invalid Flow Segment JSON.")
-        media_object = media_objects_by_id.get(object_id)
+        media_object = deepcopy(media_objects_by_id.get(object_id))
         existing_object_references = False
         if media_object is None:
             if not segment_post.get("get_urls"):
@@ -293,7 +295,6 @@ class SegmentUseCases:
                     "with get_urls."
                 )
             media_object = MediaObjectRecord(id=object_id)
-            media_objects_by_id[media_object.id] = media_object
         else:
             if media_object.object_kind == "init":
                 raise BadRequest("Bad request. Init Objects cannot be used as media.")
@@ -341,7 +342,7 @@ class SegmentUseCases:
                     "Bad request. Media Object already references a different "
                     "init Object."
                 )
-            init_object = media_objects_by_id.get(resolved_init_object_id)
+            init_object = deepcopy(media_objects_by_id.get(resolved_init_object_id))
             if resolved_init_object_id not in locked_object_ids:
                 raise BadRequest(
                     "Bad request. init_object_id is required for this Flow."
@@ -381,11 +382,6 @@ class SegmentUseCases:
             except ValueError as exc:
                 raise BadRequest("Bad request. Invalid Flow Segment JSON.") from exc
 
-        if media_object.first_referenced_by_flow is None:
-            media_object.first_referenced_by_flow = flow.id
-        media_object.allocated_by_flow = None
-        media_object.referenced_by_flows.add(flow.id)
-        media_object.object_kind = "media"
         effective_object_timerange = object_timerange_from_segment_fields(
             timerange=str(segment_post["timerange"]),
             ts_offset=segment_post.get("ts_offset"),
@@ -395,6 +391,24 @@ class SegmentUseCases:
                 else segment_post.get("object_timerange")
             ),
         )
+        object_segment_timerange = object_timerange_from_segment_fields(
+            timerange=str(segment_post["timerange"]),
+            ts_offset=segment_post.get("ts_offset"),
+            object_timerange=None,
+        )
+        if not TimeRange.from_str(effective_object_timerange).contains_subrange(
+            TimeRange.from_str(object_segment_timerange)
+        ):
+            raise BadRequest(
+                "Bad request. Segment timerange must be contained within the "
+                "Object timerange after applying ts_offset."
+            )
+
+        if media_object.first_referenced_by_flow is None:
+            media_object.first_referenced_by_flow = flow.id
+        media_object.allocated_by_flow = None
+        media_object.referenced_by_flows.add(flow.id)
+        media_object.object_kind = "media"
         if not existing_object_references:
             media_object.timerange = timerange_union_strings(
                 [

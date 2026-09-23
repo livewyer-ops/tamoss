@@ -365,6 +365,7 @@ def test_webhook_segment_payload_omits_object_timerange(
         client,
         flow_id,
         object_timerange="[10:0_20:0)",
+        ts_offset="-10:0",
     )
 
     deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
@@ -427,6 +428,7 @@ def test_webhook_segment_payload_includes_object_timerange_and_init_object(
             "object_id": media_id,
             "init_object_id": init_id,
             "timerange": "[20:0_30:0)",
+            "ts_offset": "10:0",
             "object_timerange": "[10:0_20:0)",
         },
     )

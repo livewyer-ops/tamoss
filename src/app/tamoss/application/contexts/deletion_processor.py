@@ -257,7 +257,6 @@ def _process_flow_delete_request(
         repository=repository,
         webhook_repository=webhook_repository,
         delete_filter=delete_filter,
-        publish_event=False,
         delete_request_id=request.id,
     )
     if remaining_timerange != "()":

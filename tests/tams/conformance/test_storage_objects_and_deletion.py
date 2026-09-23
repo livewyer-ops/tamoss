@@ -299,7 +299,7 @@ def test_object_instance_updates_are_visible_to_all_reused_object_segments(
     second_flow_id, _, _ = create_video_flow(client)
     reused = client.post(
         f"/flows/{second_flow_id}/segments",
-        json=segment_payload(object_id, "[10:0_20:0)"),
+        json=segment_payload(object_id, "[10:0_20:0)", ts_offset="10:0"),
     )
     assert reused.status_code == 201
 

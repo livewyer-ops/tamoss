@@ -49,10 +49,12 @@ def test_deployed_webhook_registration_and_event_status(
     receiver = _start_webhook_receiver(e2e_target)
 
     try:
+        payload = _webhook_payload(receiver["url"], source_id)
+        payload["events"].extend(["flows/segments_deleted", "flows/deleted"])
         created = e2e_client.request_json(
             "POST",
             "/service/webhooks",
-            json=_webhook_payload(receiver["url"], source_id),
+            json=payload,
             expected=201,
         )
         webhook_id = created["id"]
@@ -93,12 +95,41 @@ def test_deployed_webhook_registration_and_event_status(
             deliveries_by_type["flows/created"]["body"]["event"]["flow"]["id"]
             == flow_id
         )
+        e2e_client.request(
+            "POST",
+            f"/flows/{flow_id}/segments",
+            expected=201,
+            json={
+                "object_id": str(uuid4()),
+                "timerange": "[0:0_1:0)",
+                "get_urls": [
+                    {"url": "https://media.example/segment.ts", "label": "external"}
+                ],
+            },
+        )
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected=202)
+        deliveries = _poll_webhook_receiver_events(
+            e2e_target,
+            receiver["pod"],
+            expected_event_types={
+                "sources/created",
+                "flows/created",
+                "flows/segments_deleted",
+                "flows/deleted",
+            },
+        )
+        deleted_segments = [
+            delivery["body"]["event"]
+            for delivery in deliveries
+            if delivery["body"]["event_type"] == "flows/segments_deleted"
+        ]
+        assert deleted_segments == [{"flow_id": flow_id, "timerange": "[0:0_1:0)"}]
     finally:
         if webhook_id is not None:
             e2e_client.request(
                 "DELETE", f"/service/webhooks/{webhook_id}", expected={204, 404}
             )
-        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={204, 404})
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={202, 204, 404})
         _delete_webhook_receiver(e2e_target, receiver["name"])
 
 

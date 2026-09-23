@@ -4,6 +4,15 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## Unreleased
+
+- Keep rejected Segment registrations from changing Objects or later entries in
+  the same batch. Check that Segment ranges fit within their Objects after
+  applying timestamp offsets, including when reusing media.
+- Emit `flows/segments_deleted` webhooks during full Flow deletion, retaining
+  collection filters until deletion completes. Retry HTTP 401 and 403 responses
+  within the existing webhook attempt limit and backoff.
+
 ## 8.2.0-oss2-rc1 - 2026-09-15
 
 Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.

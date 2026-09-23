@@ -525,6 +525,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
                 object_two,
                 "[10:0_20:0)",
                 object_timerange="[100:0_110:0)",
+                ts_offset="-90:0",
                 sample_offset=10,
                 sample_count=250,
                 key_frame_count=5,
