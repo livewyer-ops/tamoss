@@ -58,7 +58,7 @@ packages:
           - ci-security
 
     # Languages & runtimes
-    - name: nodejs/node@v25.3.0 # frontend local npm scripts
+    - name: nodejs/node@v26.8.2 # frontend local npm scripts
     # uv manages the Python 3.14 toolchain used by CI and the API container.
     # Go is pinned with Kubernetes tooling above because only the operator uses it.
 

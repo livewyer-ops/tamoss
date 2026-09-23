@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM --platform=$BUILDPLATFORM node:26-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26.8.2-alpine AS build
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production
-FROM nginx:1.31.5-alpine
+FROM nginx:1.31.6-alpine
 
 # Remove default nginx config and the top-level user directive, which is only
 # valid when the nginx master process starts as root.

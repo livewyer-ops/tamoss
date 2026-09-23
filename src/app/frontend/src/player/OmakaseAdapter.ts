@@ -134,6 +134,7 @@ export function createOmakasePreview({
   let playTimeout: number | undefined;
   let loaded = false;
   let bufferedReady = false;
+  let initialMediaTime: number | undefined;
   let wantsPlay = false;
   let started = false;
   let holding = true;
@@ -279,6 +280,21 @@ export function createOmakasePreview({
     const media = player.player.htmlMediaElement;
     if (destroyed || !loaded || !media) return;
     currentTime = media.currentTime;
+    if (initialMediaTime === undefined && media.buffered.length > 0) {
+      initialMediaTime = media.buffered.start(0);
+    }
+    if (
+      initialMediaTime !== undefined &&
+      currentTime < initialMediaTime &&
+      !media.seeking
+    ) {
+      subscriptions.push(
+        player.player
+          .seekTo(initialMediaTime)
+          .subscribe({ error: reportPlaybackFailure }),
+      );
+      return;
+    }
     if (media.ended) {
       wantsPlay = false;
       emit("ended");
@@ -371,7 +387,9 @@ export function createOmakasePreview({
       holding = true;
       if (loaded && player.player.htmlMediaElement?.ended) {
         subscriptions.push(
-          player.player.seekTo(0).subscribe({ error: reportPlaybackFailure }),
+          player.player
+            .seekTo(initialMediaTime ?? 0)
+            .subscribe({ error: reportPlaybackFailure }),
         );
       }
     } else {

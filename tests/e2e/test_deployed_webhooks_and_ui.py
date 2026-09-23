@@ -4,13 +4,15 @@ import json
 import re
 import time
 from contextlib import suppress
+from pathlib import Path
 from string import Template
-from subprocess import CalledProcessError, CompletedProcess
+from subprocess import CalledProcessError, CompletedProcess, run
 from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import uuid4
 
 import pytest
+from mediatimestamp import Timestamp
 from playwright.sync_api import (
     Browser,
     Locator,
@@ -767,6 +769,116 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
         for response in media_responses
     )
     assert not signed_url_console_leak
+
+
+def test_deployed_ui_plays_iso_segments_with_shared_init_object(
+    e2e_client: E2EClient,
+    e2e_target: E2ETarget,
+    e2e_browser: Browser,
+    tmp_path: Path,
+) -> None:
+    if not e2e_target.browser_api_available:
+        pytest.skip("target does not provide browser API access")
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-stream_loop",
+            "2",
+            "-i",
+            str(REPO_ROOT / "tests/fixtures/e2e/tiny-ingest.mp4"),
+            "-c",
+            "copy",
+            "-hls_time",
+            "1",
+            "-hls_segment_type",
+            "fmp4",
+            "stream.m3u8",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    flow_id, source_id = str(uuid4()), str(uuid4())
+    flow = _video_flow_payload(flow_id, source_id)
+    flow["container"] = "video/iso.segment"
+    flow["essence_parameters"].update(
+        init_segments=True,
+        frame_width=64,
+        frame_height=64,
+        frame_rate={"numerator": 10, "denominator": 1},
+    )
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    try:
+        e2e_client.request("PUT", f"/flows/{flow_id}", json=flow, expected=201)
+        for path in sorted([tmp_path / "init.mp4", *tmp_path.glob("*.m4s")]):
+            allocation = e2e_client.request_json(
+                "POST",
+                f"/flows/{flow_id}/storage",
+                expected=201,
+                json={
+                    "object_ids": [f"{flow_id}/{path.name}"],
+                    **({"content_type": "video/mp4"} if path.suffix == ".mp4" else {}),
+                },
+            )["media_objects"][0]["put_url"]
+            e2e_client.upload_put_url(
+                allocation["url"],
+                body=path.read_bytes(),
+                headers=allocation.get("headers"),
+            )
+        probe = run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=start_time",
+                "-of",
+                "json",
+                "stream.m3u8",
+            ],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        start = Timestamp.from_str(json.loads(probe.stdout)["streams"][0]["start_time"])
+        segments = []
+        for duration, name in re.findall(
+            r"#EXTINF:([\d.]+),\n([^\n]+)", (tmp_path / "stream.m3u8").read_text()
+        ):
+            end = start + Timestamp.from_str(duration)
+            segments.append(
+                {
+                    "object_id": f"{flow_id}/{name}",
+                    "init_object_id": f"{flow_id}/init.mp4",
+                    "timerange": f"[{start}_{end})",
+                }
+            )
+            start = end
+        assert len(segments) >= 2
+        e2e_client.request(
+            "POST", f"/flows/{flow_id}/segments", json=segments, expected=201
+        )
+        page = context.new_page()
+        page.set_default_timeout(60_000)
+        _login_through_ui_ingress(page, e2e_target)
+        page.goto(f"{e2e_target.ui_url}/playback?flow={flow_id}")
+        expect(page.get_by_role("status").filter(has_text="Ready")).to_be_visible(
+            timeout=30_000
+        )
+        page.locator("omakase-play-button").first.click()
+        page.wait_for_function(
+            """() => {
+            const video = document.querySelector('video:not([hidden])');
+            return video && video.videoWidth === 64 && video.currentTime > 1.5 &&
+                video.buffered.length > 0 && video.buffered.end(0) > 1.5;
+        }""",
+            timeout=30_000,
+        )
+    finally:
+        context.close()
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={202, 204, 404})
 
 
 def _assert_preview_buffers(

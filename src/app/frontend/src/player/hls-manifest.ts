@@ -263,13 +263,18 @@ function isMpegTransportStream(container: string | undefined): boolean {
 }
 
 function isMp4(container: string | undefined): boolean {
-  return container?.toLowerCase().endsWith("/mp4") ?? false;
+  return container?.toLowerCase().endsWith("/mp4") || isIsoSegment(container);
+}
+
+function isIsoSegment(container: string | undefined): boolean {
+  return container?.toLowerCase().endsWith("/iso.segment") ?? false;
 }
 
 function usesMp4InitialisationObjects(track: PreviewTrack): boolean {
   return (
     isMp4(track.flow.container) &&
-    track.flow.essence_parameters?.init_segments === true
+    (isIsoSegment(track.flow.container) ||
+      track.flow.essence_parameters?.init_segments === true)
   );
 }
 

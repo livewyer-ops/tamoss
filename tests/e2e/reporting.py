@@ -39,6 +39,9 @@ _E2E_CHECK_IDS = {
         "e2e ui.same-origin-write-denied"
     ),
     "test_deployed_ui_playback_preview_buffers_demo_media": "e2e ui.playback-preview",
+    "test_deployed_ui_plays_iso_segments_with_shared_init_object": (
+        "e2e ui.iso-segment-playback"
+    ),
     "test_operator_kind_zero_to_ready_api_ingest_and_ui_load": (
         "e2e operator.kind-install"
     ),

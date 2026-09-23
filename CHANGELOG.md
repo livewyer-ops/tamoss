@@ -12,6 +12,12 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 - Emit `flows/segments_deleted` webhooks during full Flow deletion, retaining
   collection filters until deletion completes. Retry HTTP 401 and 403 responses
   within the existing webhook attempt limit and backoff.
+- Play `video/iso.segment` and `audio/iso.segment` media through the
+  initialisation-aware HLS preview, rejecting media without an init Object.
+  Start playback and replay at the first sample when media begins after zero.
+
+These fixes retain schema revision `8.2.0-oss1`. Upgrade `8.1.0-oss6`
+deployments to `8.2.0-oss1` before applying this update.
 
 ## 8.2.0-oss2-rc1 - 2026-09-15
 
