@@ -15,9 +15,11 @@ from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
 from tamoss.contract.validation import (
+    parse_uuid,
     reject_explicit_nulls,
     reject_model_explicit_nulls,
     strict_contract_model,
+    validate_mime_filter,
 )
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
@@ -331,6 +333,7 @@ class FlowUseCases:
     ) -> Page[FlowRecord]:
         try:
             validate_content_format_filter(format)
+            validate_mime_filter(codec)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid query options.") from exc
         requested_timerange = query_timerange(timerange)
@@ -624,9 +627,10 @@ class FlowUseCases:
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
         try:
-            body_flow_id = UUID(str(flow.get("id")))
+            body_flow_id = parse_uuid(flow.get("id"))
+            parse_uuid(flow.get("source_id"))
         except TypeError, ValueError:
-            raise NotFound("The requested Flow ID in the path is invalid.") from None
+            raise BadRequest("Bad request. Invalid Flow JSON.") from None
         if body_flow_id != flow_id:
             raise NotFound("The requested Flow ID in the path is invalid.")
         supplied_fields = supplied_fields or set(flow)

@@ -8,6 +8,8 @@ from uuid import UUID
 
 from tamoss.application.contexts import deletion_processor, object_copy
 from tamoss.application.contexts.object_get_urls import objects_get_urls
+from tamoss.contract.generated import contract_models
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.model import (
     MediaObjectRecord,
     ObjectInstance,
@@ -48,23 +50,33 @@ class ObjectUseCases:
     def register_object_instance(
         self, *, object_id: str, registration: Mapping[str, Any]
     ) -> None:
-        storage_id = registration.get("storage_id")
-        url = registration.get("url")
-        label = registration.get("label")
-        has_controlled = storage_id is not None
-        has_uncontrolled = url is not None or label is not None
-        if has_controlled == has_uncontrolled:
+        matches: list[
+            contract_models.ObjectsInstancesPost1
+            | contract_models.ObjectsInstancesPost2
+        ] = []
+        # JSON Schema oneOf requires exactly one valid alternative, including
+        # its required fields. Other properties remain permitted extensions.
+        for model_type in (
+            contract_models.ObjectsInstancesPost1,
+            contract_models.ObjectsInstancesPost2,
+        ):
+            with suppress(ValueError):
+                matches.append(strict_contract_model(model_type, dict(registration)))
+        if len(matches) != 1:
             raise BadRequest("Bad request. Invalid request JSON.")
-        if has_controlled:
-            self._queue_controlled_object_copy(object_id, UUID(str(storage_id)))
+        validated = matches[0]
+        if isinstance(validated, contract_models.ObjectsInstancesPost1):
+            self._queue_controlled_object_copy(
+                object_id, UUID(validated.storage_id.root)
+            )
             return
         with self.repository.unit_of_work():
             self.repository.lock_objects([object_id])
             media_object = self.get_object(object_id)
             self._register_uncontrolled_object_instance(
                 media_object,
-                url=str(url) if url is not None else None,
-                label=str(label) if label is not None else None,
+                url=validated.url,
+                label=validated.label,
             )
             self.repository.save_object(media_object)
 

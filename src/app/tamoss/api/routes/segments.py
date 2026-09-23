@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
-from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from tamoss import metrics
-from tamoss.api.dependencies import get_deletion_use_cases, get_segment_use_cases
+from tamoss.api.dependencies import (
+    ResourceUUID,
+    get_deletion_use_cases,
+    get_segment_use_cases,
+)
 from tamoss.api.presenters import (
     deletion_request_accepted_response,
     head_response,
@@ -26,18 +29,9 @@ from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.validation import strict_contract_model
-from tamoss.errors import BadRequest, NotFound, error_payload
+from tamoss.errors import BadRequest, error_payload
 
 router = APIRouter(tags=["FlowSegments"])
-
-
-def _flow_id_or_404(value: str, message: str) -> UUID:
-    # The spec documents only 404 for this path parameter, so malformed
-    # Flow IDs resolve to 404 rather than the 400 used elsewhere.
-    try:
-        return UUID(value)
-    except ValueError:
-        raise NotFound(message) from None
 
 
 @router.get(
@@ -57,7 +51,7 @@ def _flow_id_or_404(value: str, message: str) -> UUID:
     dependencies=[Depends(storage_backend_tag_filter_parameters)],
 )
 def list_segments(
-    flow_id_path: Annotated[str, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     response: Response,
     object_id: str | None = None,
@@ -72,7 +66,6 @@ def list_segments(
     limit: int | None = Query(default=None, gt=0),
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
-    flow_id = _flow_id_or_404(flow_id_path, "The Flow ID in the path is invalid.")
     validate_query_params(
         request,
         {
@@ -150,11 +143,10 @@ def list_segments(
     },
 )
 def post_segments(
-    flow_id_path: Annotated[str, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     body: object = Body(...),
     segments: SegmentUseCases = Depends(get_segment_use_cases),
 ) -> Any:
-    flow_id = _flow_id_or_404(flow_id_path, "The requested Flow does not exist.")
     try:
         validated_body = (
             [
@@ -234,15 +226,12 @@ def post_segments(
     },
 )
 def delete_segments(
-    flow_id_path: Annotated[str, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     timerange: str | None = None,
     object_id: str | None = None,
     deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
-    flow_id = _flow_id_or_404(
-        flow_id_path, "The requested Flow ID in the path is invalid."
-    )
     validate_query_params(request, {"timerange", "object_id"})
     identity = identify_request(request)
     delete_request = deletion.delete_segments(

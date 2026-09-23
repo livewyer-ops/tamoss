@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
 from tamoss.api.dependencies import (
+    ResourceUUID,
     get_deletion_use_cases,
     get_flow_use_cases,
     require_json_body,
@@ -23,7 +24,7 @@ from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.auth import identify_request
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
-from tamoss.contract.validation import strict_contract_model
+from tamoss.contract.validation import ContractUUID, strict_contract_model
 from tamoss.domain.listings import FlowSortBy, parse_collected_by_ids
 from tamoss.domain.tags import TagValue, parse_tag_filters
 from tamoss.errors import BadRequest
@@ -44,7 +45,7 @@ router = APIRouter(tags=["Flows"])
 def list_flows(
     request: Request,
     response: Response,
-    source_id: UUID | None = None,
+    source_id: ContractUUID | None = None,
     timerange: str | None = None,
     include_timerange: bool = Query(
         default=False,
@@ -52,7 +53,7 @@ def list_flows(
     ),
     format: str | None = None,
     codec: str | None = None,
-    profile_id: UUID | None = None,
+    profile_id: ContractUUID | None = None,
     label: str | None = None,
     reverse_order: bool = False,
     sort_by: FlowSortBy = FlowSortBy.CREATED,
@@ -143,7 +144,7 @@ def list_flows(
     },
 )
 def get_flow(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     include_timerange: bool = False,
     timerange: str | None = None,
@@ -173,7 +174,7 @@ def get_flow(
     },
 )
 def put_flow(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     flow: dict[str, Any] = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
@@ -203,7 +204,7 @@ def put_flow(
     },
 )
 def delete_flow(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     deletion: DeletionUseCases = Depends(get_deletion_use_cases),
 ) -> Response:
@@ -226,7 +227,7 @@ def delete_flow(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_collection(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
@@ -247,7 +248,7 @@ def get_flow_collection(
     },
 )
 def put_flow_collection(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     collection: object = Body(...),
     flows: FlowUseCases = Depends(get_flow_use_cases),
@@ -280,7 +281,7 @@ def put_flow_collection(
     },
 )
 def delete_flow_collection(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Response:
@@ -378,7 +379,7 @@ _register_flow_property_routes(
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 def get_flow_tags(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),
 ) -> Any:
@@ -398,7 +399,7 @@ def get_flow_tags(
     responses={404: {"description": "The requested Flow tag does not exist."}},
 )
 def get_flow_tag(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     name: str,
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),
@@ -421,7 +422,7 @@ def get_flow_tag(
     },
 )
 def put_flow_tag(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     name: str,
     request: Request,
     value: TagValue = Body(...),
@@ -440,7 +441,7 @@ def put_flow_tag(
     },
 )
 def delete_flow_tag(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     name: str,
     request: Request,
     flows: FlowUseCases = Depends(get_flow_use_cases),

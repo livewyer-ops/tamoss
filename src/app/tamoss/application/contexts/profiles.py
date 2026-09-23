@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +9,7 @@ from tamoss.application.contexts.flows import validate_flow_technical_metadata
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
-from tamoss.contract.validation import strict_contract_model
+from tamoss.contract.validation import strict_contract_model, validate_mime_filter
 from tamoss.domain.model import ProfileRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.errors import BadRequest, NotFound
@@ -22,11 +21,6 @@ _PROFILE_FORMATS = {
     "urn:x-nmos:format:audio",
     "urn:x-nmos:format:data",
 }
-_MIME_TYPE_PATTERN = re.compile(
-    r"^(application|audio|font|example|image|message|model|multipart|text|video|"
-    r"x-(?:[0-9A-Za-z!#$%&'*+.^_`|~-]+))/"
-    r"([0-9A-Za-z!#$%&'*+.^_`|~-]+)$"
-)
 _PROTECTED_PROFILE_FLOW_FIELDS = set(contract_models.FlowCommon.model_fields) | {
     "profile_id"
 }
@@ -55,8 +49,10 @@ class ProfileUseCases:
     ) -> Page[ProfileRecord]:
         if format is not None and format not in _PROFILE_FORMATS:
             raise BadRequest("Bad request. Invalid query options.")
-        if codec is not None and _MIME_TYPE_PATTERN.fullmatch(codec) is None:
-            raise BadRequest("Bad request. Invalid query options.")
+        try:
+            validate_mime_filter(codec)
+        except ValueError as exc:
+            raise BadRequest("Bad request. Invalid query options.") from exc
         return self.repository.list_profiles_page(
             format=format,
             codec=codec,

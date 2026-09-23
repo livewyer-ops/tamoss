@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import Query, Request
 
+from tamoss.contract.generated import contract_models
 from tamoss.domain.tags import parse_bool_filter, parse_tag_value_list
 from tamoss.errors import BadRequest
 
@@ -34,9 +35,10 @@ def parse_get_url_labels(value: str | None) -> set[str] | None:
 
 
 def parse_storage_ids(value: str | None) -> set[str] | None:
-    if value is None or value == "":
+    if value is None:
         return None
     try:
+        contract_models.UuidList.model_validate(value)
         return {str(UUID(part)) for part in value.split(",")}
     except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc

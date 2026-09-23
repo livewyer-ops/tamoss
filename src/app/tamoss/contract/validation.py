@@ -2,9 +2,31 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from typing import TypeGuard, get_args, get_origin
+from typing import Annotated, TypeGuard, get_args, get_origin
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
+
+from tamoss.contract.generated import contract_models
+
+
+def parse_uuid(value: object) -> UUID:
+    return UUID(contract_models.Uuid.model_validate(value).root)
+
+
+ContractUUID = Annotated[UUID, BeforeValidator(parse_uuid)]
+
+
+def validate_mime_filter(value: str | None) -> None:
+    if value is not None:
+        contract_models.MimeType.model_validate(value)
+
+
+def validate_json_scalar(value: object, *, expected_type: type) -> object:
+    allowed_types = (int, float) if expected_type is int else (expected_type,)
+    if type(value) not in allowed_types:
+        raise ValueError(f"value must be a JSON {expected_type.__name__}")
+    return value
 
 
 def strict_contract_model[ModelT: BaseModel](
@@ -26,7 +48,21 @@ def strict_contract_model[ModelT: BaseModel](
 
     # JSON strict mode accepts contract encodings such as UUID strings while
     # rejecting JSON scalar coercion (for example, 0 as false).
-    return model_type.model_validate_json(json.dumps(payload), strict=True)
+    return model_type.model_validate_json(
+        json.dumps(_normalise_json_numbers(payload)), strict=True
+    )
+
+
+def _normalise_json_numbers(value: object) -> object:
+    # JSON Schema integers include numbers such as 1.0. Pydantic strict mode
+    # distinguishes their Python types; keep strict validation for other scalars.
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _normalise_json_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalise_json_numbers(item) for item in value]
+    return value
 
 
 def reject_explicit_nulls(

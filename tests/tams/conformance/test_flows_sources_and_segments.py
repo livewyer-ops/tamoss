@@ -862,7 +862,6 @@ def test_malformed_flow_id_in_segments_path_returns_404(client: TestClient) -> N
     listed = client.get("/flows/not-a-uuid/segments")
     assert listed.status_code == 404
     assert_bbc_error(listed.json(), "not_found")
-    assert listed.json()["summary"] == "The Flow ID in the path is invalid."
 
     posted = client.post(
         "/flows/not-a-uuid/segments",

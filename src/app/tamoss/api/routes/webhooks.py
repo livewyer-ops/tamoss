@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, cast
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_webhook_use_cases
+from tamoss.api.dependencies import ResourceUUID, get_webhook_use_cases
 from tamoss.api.presenters import head_response, webhook_response, with_page_headers
 from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.application.contexts.webhooks import WebhookUseCases
@@ -101,7 +100,7 @@ def post_webhook(
     responses={404: {"description": "The requested Webhook ID is invalid."}},
 )
 def get_webhook(
-    webhook_id: Annotated[UUID, Path(alias="webhookId")],
+    webhook_id: Annotated[ResourceUUID, Path(alias="webhookId")],
     request: Request,
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
@@ -122,7 +121,7 @@ def get_webhook(
     },
 )
 def put_webhook(
-    webhook_id: Annotated[UUID, Path(alias="webhookId")],
+    webhook_id: Annotated[ResourceUUID, Path(alias="webhookId")],
     webhook: dict[str, Any],
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Any:
@@ -143,7 +142,7 @@ def put_webhook(
     },
 )
 def delete_webhook(
-    webhook_id: Annotated[UUID, Path(alias="webhookId")],
+    webhook_id: Annotated[ResourceUUID, Path(alias="webhookId")],
     request: Request,
     webhooks: WebhookUseCases = Depends(get_webhook_use_cases),
 ) -> Response:

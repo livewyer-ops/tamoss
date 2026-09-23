@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
-from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
-from tamoss.api.dependencies import get_source_use_cases, require_json_body
+from tamoss.api.dependencies import (
+    ResourceUUID,
+    get_source_use_cases,
+    require_json_body,
+)
 from tamoss.api.presenters import (
     head_response,
     source_response_with_relationships,
@@ -94,7 +97,7 @@ def list_sources(
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
+    source_id: Annotated[ResourceUUID, Path(alias="sourceId")],
     request: Request,
     sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
@@ -153,7 +156,7 @@ _register_source_property_routes("description")
     responses={404: {"description": "The requested Source does not exist."}},
 )
 def get_source_tags(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
+    source_id: Annotated[ResourceUUID, Path(alias="sourceId")],
     request: Request,
     sources: SourceUseCases = Depends(get_source_use_cases),
 ) -> Any:
@@ -173,7 +176,7 @@ def get_source_tags(
     responses={404: {"description": "The requested Source tag does not exist."}},
 )
 def get_source_tag(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
+    source_id: Annotated[ResourceUUID, Path(alias="sourceId")],
     name: str,
     request: Request,
     sources: SourceUseCases = Depends(get_source_use_cases),
@@ -196,7 +199,7 @@ def get_source_tag(
     },
 )
 def put_source_tag(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
+    source_id: Annotated[ResourceUUID, Path(alias="sourceId")],
     name: str,
     value: TagValue = Body(...),
     sources: SourceUseCases = Depends(get_source_use_cases),
@@ -214,7 +217,7 @@ def put_source_tag(
     },
 )
 def delete_source_tag(
-    source_id: Annotated[UUID, Path(alias="sourceId")],
+    source_id: Annotated[ResourceUUID, Path(alias="sourceId")],
     name: str,
     request: Request,
     sources: SourceUseCases = Depends(get_source_use_cases),
