@@ -16,6 +16,15 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   initialisation-aware HLS preview, rejecting media without an init Object.
   Start playback and replay at the first sample when media begins after zero.
 
+- Publish the tested platform dependency pins with each release. Update to
+  Authentik 2026.2.7, CNPG 1.30.0, PostgreSQL 18.6, Traefik 3.7.13 and
+  cert-manager 1.21.2 through the normal platform workflow.
+- Update RustFS to 1.0.0 while retaining operator 0.0.1. Preserve stored checksums
+  when copying media; existing objects need no checksum conversion. See the
+  [upgrade guide](docs/operations/upgrades.md) for signing and recovery details.
+- Refresh the application dependencies and build toolchains. Platform updates
+  stop on failure without attempting to roll back database migrations.
+
 These fixes retain schema revision `8.2.0-oss1`. Upgrade `8.1.0-oss6`
 deployments to `8.2.0-oss1` before applying this update.
 

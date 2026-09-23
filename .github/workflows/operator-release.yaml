@@ -106,6 +106,7 @@ jobs:
           files: |
             dist/operator-release/install.yaml
             operator/compatibility.yaml
+            deploy/platform/dependencies.yaml
             dist/operator-release/release.json
           draft: true
           body_path: dist/operator-release/release-notes.md

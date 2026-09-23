@@ -502,7 +502,8 @@ def test_release_record_includes_assets_specification_and_worker_identity(
     monkeypatch.chdir(tmp_path)
     install = tmp_path / "dist/operator-release/install.yaml"
     compatibility = tmp_path / "operator/compatibility.yaml"
-    for path in (install, compatibility):
+    dependencies = tmp_path / "deploy/platform/dependencies.yaml"
+    for path in (install, compatibility, dependencies):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("release fixture\n")
     compatibility.write_text((REPO_ROOT / "operator/compatibility.yaml").read_text())
@@ -529,5 +530,17 @@ def test_release_record_includes_assets_specification_and_worker_identity(
     assert record["validationRunAttempt"] == "2"
     assert record["artifacts"] == {
         path.name: {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-        for path in (install, compatibility)
+        for path in (install, compatibility, dependencies)
+    }
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/operator-release.yaml").read_text()
+    )
+    publish = next(
+        step
+        for step in workflow["jobs"]["build-and-release"]["steps"]
+        if step["name"] == "Create draft GitHub Release"
+    )
+    assert {os.path.basename(path) for path in publish["with"]["files"].split()} == {
+        *record["artifacts"],
+        "release.json",
     }

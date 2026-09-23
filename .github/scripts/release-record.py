@@ -64,6 +64,7 @@ def main() -> None:
             for path in (
                 Path("dist/operator-release/install.yaml"),
                 Path("operator/compatibility.yaml"),
+                Path("deploy/platform/dependencies.yaml"),
             )
         },
         "validationRun": (
