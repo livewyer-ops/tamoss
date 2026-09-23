@@ -4,7 +4,9 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
-## Unreleased
+## 8.2.0-oss2-rc2 - 2026-09-23
+
+Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
 
 - Keep rejected Segment registrations from changing Objects or later entries in
   the same batch. Check that Segment ranges fit within their Objects after
@@ -15,7 +17,6 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 - Play `video/iso.segment` and `audio/iso.segment` media through the
   initialisation-aware HLS preview, rejecting media without an init Object.
   Start playback and replay at the first sample when media begins after zero.
-
 - Publish the tested platform dependency pins with each release. Update to
   Authentik 2026.2.7, CNPG 1.30.0, PostgreSQL 18.6, Traefik 3.7.13 and
   cert-manager 1.21.2 through the normal platform workflow.
