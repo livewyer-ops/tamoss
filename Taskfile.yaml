@@ -185,6 +185,8 @@ tasks:
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
+          PROFILE_KIND_ENVIRONMENT_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
 
   kind:test:
     desc: "Local Kind validation: deploy the selected profile and run deployed checks"

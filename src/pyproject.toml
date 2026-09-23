@@ -16,15 +16,15 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "alembic>=1.17.0",
+    "alembic>=1.20.0",
     "fastapi>=0.139.2",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.53.0",
     "pydantic>=2.13.4",
-    "boto3>=1.43.63",
+    "boto3>=1.43.95",
     "mediatimestamp>=5.2.0",
-    "psycopg[binary,pool]>=3.3.4",
+    "psycopg[binary,pool]>=3.3.5",
     "requests>=2.34.2",
-    "pyjwt[crypto]>=2.13.0",
+    "pyjwt[crypto]>=2.14.0",
     "pydantic-settings>=2.15.0",
     "orjson>=3.11.9",
     "prometheus-client>=0.20.0",
@@ -42,15 +42,15 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "httpx>=0.24.0",
-    "ruff==0.16.5",
+    "ruff==0.16.7",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
     "mypy>=2.3.0",
     "types-requests",
     "types-PyYAML",
-    "playwright>=1.62.0",
-    "datamodel-code-generator[ruff]>=0.72.4",
-    "httpx2>=2.9.1",  # Imported dynamically by Starlette's TestClient.
+    "playwright>=1.63.0",
+    "datamodel-code-generator[ruff]>=0.81.0",
+    "httpx2>=2.13.0",  # Imported dynamically by Starlette's TestClient.
 ]
 
 [tool.setuptools]

@@ -12,28 +12,28 @@
 #
 registries:
     - type: standard
-      ref: v4.454.0
+      ref: v4.562.0
 
 packages:
     # Core dev tools
-    - name: go-task/task@v3.46.4 # Taskfile.yaml / .tasks/*.yaml
-    - name: astral-sh/uv@0.9.25 # src/pyproject.toml, uv.lock, every `task test:*`
-    - name: cli/cli@v2.72.0 # gh CLI for PR/issue management from dev machines
+    - name: go-task/task@v3.53.1 # Taskfile.yaml / .tasks/*.yaml
+    - name: astral-sh/uv@0.12.15 # src/pyproject.toml, uv.lock, every `task test:*`
+    - name: cli/cli@v2.101.0 # gh CLI for PR/issue management from dev machines
 
     # Kubernetes / deploy tooling
-    - name: kubernetes-sigs/kind@v0.32.0 # .tasks/kind.yaml
+    - name: kubernetes-sigs/kind@v0.33.0 # .tasks/kind.yaml
       tags:
           - ci-kind
           - ci-operator-chainsaw
-    - name: kubernetes/kubectl@v1.35.0 # .tasks/kind.yaml (`kubectl wait pod ...`)
+    - name: kubernetes/kubectl@v1.36.4 # .tasks/kind.yaml (`kubectl wait pod ...`)
       tags:
           - ci-kind
           - ci-operator-chainsaw
-    - name: helm/helm@v4.2.0 # .tasks/operator.yaml and Helmfile platform releases
+    - name: helm/helm@v4.3.0 # .tasks/operator.yaml and Helmfile platform releases
       tags:
           - ci-kind
           - ci-operator-chainsaw
-    - name: helmfile/helmfile@v1.5.2 # deploy/platform/helmfile.yaml.gotmpl
+    - name: helmfile/helmfile@v1.8.0 # deploy/platform/helmfile.yaml.gotmpl
       tags:
           - ci-kind
           - ci-operator-chainsaw
@@ -43,17 +43,17 @@ packages:
     - name: golang/go@go1.26.5 # operator/go.mod and controller builds
       tags:
           - ci-security
-    - name: yannh/kubeconform@v0.6.7 # generated operator CRD/install manifest linting
+    - name: yannh/kubeconform@v0.8.0 # generated operator CRD/install manifest linting
       tags:
           - ci-operator-crd
     - name: stackrox/kube-linter@v0.8.3 # operator install manifest and pod security linting
       tags:
           - ci-operator-security
-    - name: grafana/k6@v1.2.3 # tests/k6/* via .tasks/test.yaml
+    - name: grafana/k6@v2.2.0 # optional load-test CLI
 
     # Cloud & storage
-    - name: aws/aws-cli@2.32.34 # .tasks/test.yaml k6:seed (S3 bucket seeding via rustfs)
-    - name: google/osv-scanner@v2.5.0 # .tasks/security.yaml security:audit:osv
+    - name: aws/aws-cli@2.36.46 # S3-compatible storage diagnostics
+    - name: google/osv-scanner@v2.6.0 # .tasks/security.yaml security:audit:osv
       tags:
           - ci-security
 
@@ -67,15 +67,14 @@ packages:
     - name: rhysd/actionlint@v1.7.12 # .tasks/lint.yaml (lint:actions)
       tags:
           - ci-validate
-    - name: mikefarah/yq@v4.35.1 # .tasks/lib/profile.sh and platform dependency checks
+    - name: mikefarah/yq@v4.53.6 # .tasks/lib/profile.sh and platform dependency checks
       tags:
           - ci-kind
           - ci-validate
-    - name: BurntSushi/ripgrep@14.1.1 # shell task checks and CI workflow validation
+    - name: BurntSushi/ripgrep@15.2.0 # shell task checks and CI workflow validation
       tags:
           - ci-validate
-    - name: jqlang/jq@jq-1.8.1 # k6 summary parsing in .github/workflows/*-e2e,
-    # nightly-slo, and src/scripts/
+    - name: jqlang/jq@jq-1.8.2 # JSON inspection and local diagnostics
 
 # Notes: aqua cannot provide these OS/system tools.
 # Required to build, test, and deploy:

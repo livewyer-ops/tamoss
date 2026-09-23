@@ -9,7 +9,7 @@ VERSION ?= 0.0.1
 IMG ?= livewyer/tamoss-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # Keep this on the same Kubernetes minor as the Kind node image used by the
-# chainsaw suite (kind v0.32.0 defaults to kindest/node v1.36.1).
+# Chainsaw suite (all Kind configurations pin Kubernetes v1.36.4).
 ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=

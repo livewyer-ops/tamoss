@@ -2,7 +2,7 @@ default_install_hook_types: [pre-commit, pre-push]
 repos:
   # Python code quality checks
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.5
+    rev: v0.16.7
     hooks:
       # Linter
       - id: ruff
