@@ -195,6 +195,7 @@ class ConfiguredObjectStorage:
         response = self._s3_client(source).get_object(
             Bucket=_require_bucket(source),
             Key=object_id,
+            ChecksumMode="ENABLED",
         )
         body = response["Body"]
         try:
@@ -410,6 +411,22 @@ def _copy_upload_args(response: dict[str, Any]) -> dict[str, Any]:
         extra_args["ContentType"] = response["ContentType"]
     if response.get("Metadata"):
         extra_args["Metadata"] = response["Metadata"]
+    for algorithm in (
+        "SHA256",
+        "SHA1",
+        "CRC64NVME",
+        "CRC32C",
+        "CRC32",
+        "SHA512",
+        "MD5",
+        "XXHASH64",
+        "XXHASH3",
+        "XXHASH128",
+    ):
+        if response.get(f"Checksum{algorithm}"):
+            # The SDK calculates the destination checksum for its upload part layout.
+            extra_args["ChecksumAlgorithm"] = algorithm
+            break
     return extra_args
 
 

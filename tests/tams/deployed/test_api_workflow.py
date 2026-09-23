@@ -124,9 +124,9 @@ def test_deployed_storage_object_lifecycle_and_async_delete(
         put_request = media_object["put_url"]
         put_headers = _put_url_headers(put_request)
         if e2e_client.target.upload_checksum_header:
-            put_headers["x-amz-checksum-sha256"] = _checksum_value(
+            put_headers["Content-MD5"] = _checksum_value(
                 uploaded_body,
-                "sha256",
+                "md5",
             )
 
         e2e_client.upload_put_url(

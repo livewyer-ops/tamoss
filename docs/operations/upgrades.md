@@ -68,6 +68,32 @@ kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
 ```
 
+## RustFS
+
+Before upgrading from RustFS `1.0.0-beta.3` to `1.0.0`, back up media and
+credentials, verify restoration, and pause ingest and other media writes.
+Preserve Tenant names, pools, PVCs and credentials. If credentials still use
+`rustfsadmin`, rotate them first: RustFS 1.0.0 rejects the legacy defaults.
+Generated TAMOSS credentials do not need replacement.
+
+This release retains RustFS operator `0.0.1`. The TAMOSS operator defaults the
+runtime to `1.0.0`; update any explicit
+`spec.backends.s3.rustfsOperator.image` override to `rustfs/rustfs:1.0.0` in the
+environment configuration before applying the normal sequence above. Wait for
+the StatefulSet rollout and `Ready=True`, then check existing media, uploads,
+copy and deletion before resuming writes. Recover by restoring the pre-upgrade
+backup into a matching installation; do not downgrade an upgraded data volume.
+
+RustFS 1.0.0 rejects unsigned `x-amz-*` checksum headers added to presigned URLs,
+including `x-amz-checksum-mode: ENABLED`. Include these headers when signing
+requests; presigned uploads also support `Content-MD5`. Existing objects and
+their stored checksums remain readable without recalculation.
+
+Local Compose uses `tamoss-local` and `tamoss-local-secret` by default. Override
+them with `TAMOSS_S3_ACCESS_KEY` and `TAMOSS_S3_SECRET_KEY` for both Compose and
+native development commands. Preserve the existing volume when recreating the
+container; `docker compose down --volumes` deletes it.
+
 ## Upgrading a Pinned Environment Instance
 
 Environment instances can pin `spec.api.image.tag`, `spec.ui.image.tag` and

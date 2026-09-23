@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: rustfs
-          image: rustfs/rustfs:1.0.0-beta.3
+          image: rustfs/rustfs:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: s3

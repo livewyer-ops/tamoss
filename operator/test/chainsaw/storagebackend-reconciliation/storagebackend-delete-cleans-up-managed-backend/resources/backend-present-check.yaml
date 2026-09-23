@@ -38,9 +38,9 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: AWS_ACCESS_KEY_ID
-              value: rustfsadmin
+              value: tamoss-local
             - name: AWS_SECRET_ACCESS_KEY
-              value: rustfsadmin
+              value: tamoss-local-secret
             - name: AWS_DEFAULT_REGION
               value: us-east-1
           command:

@@ -4,8 +4,8 @@ metadata:
   name: ingest-source-credentials
 type: Opaque
 stringData:
-  AWS_ACCESS_KEY_ID: rustfsadmin
-  AWS_SECRET_ACCESS_KEY: rustfsadmin
+  AWS_ACCESS_KEY_ID: tamoss-local
+  AWS_SECRET_ACCESS_KEY: tamoss-local-secret
 ---
 apiVersion: v1
 kind: ConfigMap

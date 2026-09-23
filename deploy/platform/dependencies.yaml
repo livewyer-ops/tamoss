@@ -32,8 +32,8 @@ spec:
     manifest: deploy/platform/charts/rustfs-operator/templates/rustfs-operator.yaml
     crdManifest: deploy/platform/charts/rustfs-operator/templates/tenant-crd.yaml
   rustfs:
-    version: 1.0.0-beta.3
-    source: https://github.com/rustfs/rustfs/releases/tag/1.0.0-beta.3
+    version: 1.0.0
+    source: https://github.com/rustfs/rustfs/releases/tag/1.0.0
   compose:
     postgresImage: postgres:18.6
-    rustfsImage: rustfs/rustfs:1.0.0-beta.3
+    rustfsImage: rustfs/rustfs:1.0.0

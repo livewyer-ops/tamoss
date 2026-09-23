@@ -95,8 +95,8 @@ metadata:
   namespace: (join('', [$namespace, '-backends']))
 type: Opaque
 stringData:
-  RUSTFS_ACCESS_KEY: rustfsadmin
-  RUSTFS_SECRET_KEY: rustfsadmin
+  RUSTFS_ACCESS_KEY: tamoss-local
+  RUSTFS_SECRET_KEY: tamoss-local-secret
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -118,7 +118,7 @@ spec:
     spec:
       containers:
         - name: rustfs
-          image: rustfs/rustfs:1.0.0-beta.3
+          image: rustfs/rustfs:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: s3
