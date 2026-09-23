@@ -43,6 +43,12 @@ task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG"
 `kubectl diff` exits with code 1 when differences are found; that is expected
 during review.
 
+CNPG controller upgrades can trigger a [rolling restart of database Pods](https://cloudnative-pg.io/docs/1.30/rolling_update/).
+Plan downtime for a single-instance database, including its graceful shutdown
+period. Wait for the CNPG `Cluster` to report `Ready=True` before running the
+deployed checks; an available controller Deployment does not establish database
+readiness.
+
 If automation cannot call Task, keep the same source-controlled inputs and
 apply the same layers in the same order:
 

@@ -19,6 +19,7 @@ task_check_platform_dependency_pins() {
   local traefik_chart_version
   local authentik_version
   local authentik_chart_version
+  local authentik_image_tag
   local authentik_target_version
   local cnpg_version
   local cnpg_chart_version
@@ -55,7 +56,8 @@ task_check_platform_dependency_pins() {
   rg -q "version: ${traefik_chart_version}" "$helmfile_file"
   rg -q "chart: goauthentik/authentik" "$helmfile_file"
   rg -q "version: ${authentik_chart_version}" "$helmfile_file"
-  test "$authentik_version" = "$authentik_chart_version"
+  authentik_image_tag="$(yq -r '.authentikChart.global.image.tag // ""' "$values_file")"
+  test "$authentik_version" = "${authentik_image_tag:-$authentik_chart_version}"
   rg -q "chart: cloudnative-pg/cloudnative-pg" "$helmfile_file"
   rg -q "version: ${cnpg_chart_version}" "$helmfile_file"
 
@@ -78,6 +80,7 @@ task_check_platform_dependency_pins() {
 task_check_postgres_major_pin() {
   local canonical_image="$1"
   local canonical_major
+  local canonical_version="${canonical_image##*:}"
   local failures=0
 
   canonical_major="$(printf '%s\n' "$canonical_image" | sed -E 's/.*:([0-9]+).*/\1/')"
@@ -86,15 +89,15 @@ task_check_postgres_major_pin() {
     return 1
   fi
 
-  task_check_cnpg_postgres_default_source "$canonical_major" ||
+  task_check_cnpg_postgres_default_source "$canonical_version" ||
     failures=1
   task_check_cnpg_postgres_default_yaml \
     operator/config/crd/bases/tamoss.livewyer.io_tamosses.yaml \
-    "$canonical_major" ||
+    "$canonical_version" ||
     failures=1
   task_check_cnpg_postgres_default_yaml \
     deploy/operator/install.yaml \
-    "$canonical_major" ||
+    "$canonical_version" ||
     failures=1
 
   while IFS= read -r match; do
@@ -113,8 +116,8 @@ task_check_postgres_major_pin() {
       printf '%s\n' "$text" |
         sed -nE \
           -e 's/.*postgres:([0-9]+).*/\1/p' \
-          -e 's/.*postgresVersion:[[:space:]]*"([0-9]+)".*/\1/p' \
-          -e 's/.*DefaultCNPGPostgresVersion[[:space:]]*=[[:space:]]*"([0-9]+)".*/\1/p' |
+          -e 's/.*postgresVersion:[[:space:]]*"([0-9]+)([.][0-9]+)*".*/\1/p' \
+          -e 's/.*DefaultCNPGPostgresVersion[[:space:]]*=[[:space:]]*"([0-9]+)([.][0-9]+)*".*/\1/p' |
         head -n 1
     )"
 
@@ -124,7 +127,7 @@ task_check_postgres_major_pin() {
     fi
   done < <(
     rg -n \
-      'postgres:[0-9]+|postgresVersion: "[0-9]+"|DefaultCNPGPostgresVersion[[:space:]]*=[[:space:]]*"[0-9]+"' \
+      'postgres:[0-9]+|postgresVersion: "[0-9]+([.][0-9]+)*"|DefaultCNPGPostgresVersion[[:space:]]*=[[:space:]]*"[0-9]+([.][0-9]+)*"' \
       deploy/compose/docker-compose.yaml \
       deploy/platform/dependencies.yaml \
       docs \
@@ -138,12 +141,12 @@ task_check_postgres_major_pin() {
 }
 
 task_check_cnpg_postgres_default_source() {
-  local canonical_major="$1"
+  local canonical_version="$1"
 
-  awk -v major="$canonical_major" '
+  awk -v version="$canonical_version" '
     /PostgresVersion string/ {
-      if (previous !~ "kubebuilder:default=\"" major "\"") {
-        print FILENAME ":" NR ": postgresVersion kubebuilder default does not match canonical " major > "/dev/stderr"
+      if (!index(previous, "kubebuilder:default=\"" version "\"")) {
+        print FILENAME ":" NR ": postgresVersion kubebuilder default does not match canonical " version > "/dev/stderr"
         exit 1
       }
     }
@@ -153,13 +156,13 @@ task_check_cnpg_postgres_default_source() {
 
 task_check_cnpg_postgres_default_yaml() {
   local path="$1"
-  local canonical_major="$2"
+  local canonical_version="$2"
 
-  awk -v major="\"${canonical_major}\"" '
+  awk -v version="\"${canonical_version}\"" '
     /postgresVersion:/ { in_postgres_version = 1 }
     in_postgres_version && /default:/ {
-      if ($0 !~ "default: " major) {
-        print FILENAME ":" NR ": postgresVersion default does not match canonical " major > "/dev/stderr"
+      if ($2 != version) {
+        print FILENAME ":" NR ": postgresVersion default does not match canonical " version > "/dev/stderr"
         exit 1
       }
       found = 1

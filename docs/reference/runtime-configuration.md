@@ -108,7 +108,7 @@ spec:
       repository: registry.example.com/tamoss-console-api
       tag: <release-tag>
   images:
-    schemaMigrationPostgresClient: registry.example.com/postgres:18-alpine
+    schemaMigrationPostgresClient: registry.example.com/postgres:18.6-alpine
 ```
 
 The API image also carries the TAMOSS database migration CLI used by the
