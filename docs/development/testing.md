@@ -28,8 +28,9 @@ task test:media:fixtures
 task openapi:check
 ```
 
-`task test:tams` is the local TAMS conformance gate: OpenAPI parity, capability
-semantics, and focused real Postgres/S3 checks.
+`task test:tams` runs published OpenAPI alignment, registered-route checks,
+HTTP response schema validation, capability semantics and focused real
+Postgres/S3 checks against the pinned BBC reference.
 `task test:tams:conformance` is an alias for the same local gate. Run
 `task deps` first when local Postgres and RustFS are not already running.
 `task test:tams:deployed` runs the deployed TAMS slice against a target env
@@ -61,6 +62,34 @@ The report names identify the affected quality area:
 | TAMSin release asset | `tamsin-release-events/` artefact bundle |
 | Deployed product | `junit-e2e-deployed-<profile>.xml` |
 | Operator | `junit-operator-*.xml`, `junit-e2e-operator-*.xml` |
+
+## Conformance coverage and limits
+
+The OpenAPI comparison checks the published document. The registered-route
+check independently inspects FastAPI's handlers. Neither proves that requests
+receive the required responses.
+
+Local TAMS tests validate successful HTTP responses against the unmodified
+vendored BBC JSON Schemas using `jsonschema`, independently of TAMOSS's generated
+Pydantic models. GET and HEAD are exercised separately. Negative request tests
+check each operation's specified error behaviour and verify rejected writes
+leave existing resources unchanged. Named semantic tests cover mandatory
+descriptions that JSON Schema cannot express, including timerange clusivity.
+
+Each local TAMS run writes a `.bbc.json` report alongside its JUnit report. A run
+without JUnit output writes `reports/tams-runtime-contract.json`. These reports
+identify the BBC and TAMOSS revisions, observed response statuses, successfully
+validated JSON response branches and unobserved documented branches. Error
+responses are recorded; their expected statuses are asserted by individual
+tests. An observed branch does not establish coverage of every parameter,
+payload alternative or mandatory description. Unobserved branches remain
+unverified. Passing these checks is evidence for the exercised cases, not a
+claim of complete BBC conformance.
+
+BBC 8.2 permits bit rates to be absent from Flow metadata but defines only
+integer bodies for successful property reads. It does not specify an unset
+response. TAMOSS returns 404 for an unset bit-rate property; this policy is
+tested as a TAMOSS interpretation, not as a BBC requirement.
 
 ## Deployed Gates
 

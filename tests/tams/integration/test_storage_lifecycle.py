@@ -204,3 +204,59 @@ def test_stale_allocation_cleanup_removes_postgres_row_and_stored_bytes(
     assert use_cases.repository.object_repository.get_object(object_id) is None
     assert use_cases.object_storage.read(object_id, backend=s3_backend) is None
     assert [cleanup.object_id for cleanup in completed_cleanups] == [object_id]
+
+
+def test_http_validation_preserves_persisted_media(
+    real_storage_client: TestClient,
+) -> None:
+    flow_id, _, original = create_video_flow(real_storage_client)
+    object_id = f"validation/{flow_id}.ts"
+    put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0]["put_url"]
+    uploaded = requests.put(
+        put_url["url"], data=b"validation", headers=put_url["headers"], timeout=5
+    )
+    assert uploaded.status_code in {200, 201, 204}
+    registered = real_storage_client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(object_id, "[1000000000:1_1000000000:2)"),
+    )
+    assert registered.status_code == 201
+    flow_path = f"/flows/{flow_id}"
+    before = real_storage_client.get(flow_path).json()
+    for name in ("max_bit_rate", "avg_bit_rate"):
+        assert (
+            real_storage_client.put(f"{flow_path}/{name}", json=True).status_code == 400
+        )
+    assert real_storage_client.put(flow_path, json={}).status_code == 400
+    assert real_storage_client.get(flow_path).json() == before
+    assert before["id"] == original["id"]
+    for method in ("GET", "HEAD"):
+        assert (
+            real_storage_client.request(
+                method, "/flows", params={"codec": "invalid"}
+            ).status_code
+            == 400
+        )
+        assert (
+            real_storage_client.request(
+                method, f"{flow_path}/segments", params={"timerange": "(1000000000:1)"}
+            ).status_code
+            == 400
+        )
+    assert (
+        real_storage_client.delete(
+            f"{flow_path}/segments", params={"timerange": "(1000000000:1)"}
+        ).status_code
+        == 400
+    )
+    segments = real_storage_client.get(
+        f"{flow_path}/segments", params={"timerange": "[1000000000:1]"}
+    )
+    assert segments.status_code == 200
+    assert len(segments.json()) == 1
+    media_object = real_storage_client.get(
+        f"/objects/{object_id}", params={"presigned": True}
+    )
+    downloaded = requests.get(media_object.json()["get_urls"][0]["url"], timeout=5)
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"validation"

@@ -470,18 +470,16 @@ class FlowUseCases:
 
     def get_flow_property(
         self, flow_id: UUID, property_name: FlowPropertyName
-    ) -> str | int | bool | None:
+    ) -> str | int | bool:
         flow = self.get_flow(flow_id)
         if property_name == "read_only":
             return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
-            # Unset properties are readable once the Flow exists: empty string
-            # for the string properties, null for the numeric ones (the spec
-            # reserves 404 for a missing Flow and defines no unset form).
             if property_name in {"label", "description"}:
                 return ""
-            return None
+            # BBC defines an integer response but no representation for absence.
+            raise NotFound("The requested Flow property is not set.")
         if property_name in {"label", "description"}:
             if not isinstance(value, str):
                 raise BadRequest("Bad request. Invalid Flow property value.")

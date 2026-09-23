@@ -23,6 +23,7 @@ async def _reject_explicit_null_storage_body(request: Request) -> None:
     "/flows/{flowId}/storage",
     status_code=status.HTTP_201_CREATED,
     response_model=contract_models.FlowStorage,
+    response_model_exclude_unset=True,
     responses={
         400: {"description": "Bad request. Invalid storage request."},
         403: {"description": "Forbidden."},

@@ -8,6 +8,12 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
 
+- Validate resource identifiers, codec filters and JSON body types consistently.
+  Reject exclusive instantaneous timeranges before selection or deletion, and
+  keep omitted storage response fields omitted during serialisation.
+- Validate HTTP responses against the unmodified BBC schemas and report
+  unexercised response branches separately from published OpenAPI alignment.
+  Unset bit-rate properties now return 404; see the [API reference](docs/reference/api.md).
 - Keep rejected Segment registrations from changing Objects or later entries in
   the same batch. Check that Segment ranges fit within their Objects after
   applying timestamp offsets, including when reusing media.

@@ -38,9 +38,22 @@ def bbc_validator(reference: str) -> Draft202012Validator:
     return Draft202012Validator({"$ref": uri}, registry=bbc_registry())
 
 
+@cache
 def response_validator(path: str, method: str, status: int) -> Draft202012Validator:
     escaped_path = path.replace("~", "~0").replace("/", "~1")
     return bbc_validator(
         f"#/paths/{escaped_path}/{method.lower()}/responses/{status}"
         "/content/application~1json/schema"
     )
+
+
+def response_contract(path: str, method: str, status: int) -> dict:
+    response = bbc_spec()["paths"][path][method.lower()]["responses"][str(status)]
+    if "$ref" in response:
+        return (
+            bbc_registry()
+            .resolver(BBC_API_SPEC_PATH.as_uri())
+            .lookup(response["$ref"])
+            .contents
+        )
+    return response

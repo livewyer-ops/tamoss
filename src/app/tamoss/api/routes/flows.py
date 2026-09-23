@@ -223,7 +223,7 @@ def delete_flow(
 @router.get(
     "/flows/{flowId}/flow_collection",
     response_model=list[contract_models.FlowCollectionItem],
-    response_model_exclude_none=True,
+    response_model_exclude_unset=True,
     responses={404: {"description": "The requested Flow does not exist."}},
 )
 @router.head(
@@ -239,7 +239,7 @@ def get_flow_collection(
     collection = flows.get_flow_collection(flow_id)
     if head := head_response(request):
         return head
-    return collection
+    return contract_dump(contract_models.FlowCollection.model_validate(collection))
 
 
 @router.put(
