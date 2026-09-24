@@ -111,9 +111,9 @@
     {
       "version": "8.2.0-oss2",
       "tamsAPI": "8.2",
-      "schemaRevision": "8.2.0-oss1",
+      "schemaRevision": "8.2.0-oss2",
       "upgrade": {
-        "class": "APIOnly",
+        "class": "SchemaAndAPI",
         "from": [
           "8.2.0-oss1"
         ]

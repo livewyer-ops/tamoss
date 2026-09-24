@@ -1,3 +1,7 @@
+-- Frozen TAMOSS 8.2 RC2 schema at Alembic revision 20260810_0007.
+-- Source: e688090c21365dd65a9b81d877412e6df1091a04.
+-- Keep independent of the mutable runtime schema used by migration 0001.
+
 -- Canonical TAMOSS schema SQL asset.
 -- Runtime migrations, local compose bootstrap, and database tests read this
 -- file from the Alembic migration assets package.
@@ -134,8 +138,8 @@ CREATE TABLE IF NOT EXISTS tamoss_segments (
     object_id TEXT NOT NULL,
     init_object_id TEXT,
     timerange TEXT NOT NULL,
-    timerange_start NUMERIC NOT NULL,
-    timerange_end NUMERIC NOT NULL,
+    timerange_start BIGINT NOT NULL,
+    timerange_end BIGINT NOT NULL,
     record JSONB NOT NULL,
     created TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -24,6 +24,12 @@ def test_unknown_schema_revision_is_rejected() -> None:
         validate_supported_revision("unknown")
 
 
+def test_numeric_bounds_upgrade_accepts_only_the_previous_schema() -> None:
+    validate_supported_revision("20260810_0007")
+    with pytest.raises(UnsupportedSchemaRevision):
+        validate_supported_revision("20260610_0006")
+
+
 def test_observed_revision_rejects_multiple_alembic_heads() -> None:
     engine = create_engine("sqlite://")
     try:

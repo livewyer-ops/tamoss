@@ -6,6 +6,8 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Preserve large Segment timestamps with exact numeric database bounds. The
+  schema upgrade converts existing bounds without changing media or checksums.
 - Limit Segment paging timeranges to the returned page, preserving timestamp
   precision and boundary inclusivity.
 - Validate Flow replacements before applying Profile metadata. Reject incomplete

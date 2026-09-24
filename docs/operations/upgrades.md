@@ -7,8 +7,8 @@ overlay changes in order. From `8.2.0-oss2`, each release publishes
 Use the platform configuration, operator and instance images from the same
 release, and follow its declared predecessor in `compatibility.yaml`.
 
-The direct upgrade to `8.2.0-oss2` starts at `8.2.0-oss1` and retains database
-schema revision `8.2.0-oss1`. Upgrade older installations through their supported
+The direct upgrade to `8.2.0-oss2` starts at `8.2.0-oss1` and advances the database
+schema to `8.2.0-oss2`. Upgrade older installations through their supported
 OSS releases first. External services remain managed by their owners; compare
 their versions and configuration with the target release before deployment.
 
@@ -33,14 +33,24 @@ checks.
 
 ## Sequence
 
-1. Update the source-controlled platform, operator, or environment overlay
+1. For a schema upgrade, set `spec.paused: true` in each affected instance's
+   environment overlay and apply the instance layer with
+   `task env:instance:apply`. Wait for `Paused=True` before replacing the operator.
+   On a shared cluster, pause every instance that is not yet staged for the new
+   schema. Pausing reconciliation does not stop existing workloads.
+2. Update the source-controlled platform, operator, or environment overlay
    files.
-2. Diff the target platform, operator, and environment overlay.
-3. Apply the platform, operator, and environment layers through the checked-in
-   environment workflow.
-4. Wait for `SchemaMigrated=True` and `Ready=True`.
-5. Check `status.schemaMigration` for the final attempt result.
-6. Run deployed checks.
+3. Diff the target platform, operator, and environment overlay.
+4. Apply the platform, operator, and environment layers through the checked-in
+   environment workflow, retaining the pause while staging matching API and
+   operator images. The schema Job runs from the instance's API image, so that
+   image must contain the revision requested by the operator.
+5. During the maintenance window, set `spec.paused: false` and apply the instance
+   layer. The operator runs the migration and restores the API and worker
+   Deployments after it succeeds. Allow for API unavailability during this step.
+6. Wait for `SchemaMigrated=True` and `Ready=True`.
+7. Check `status.schemaMigration` for the final attempt result.
+8. Run deployed checks.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -49,6 +59,8 @@ export TAMOSS_ENV=my-prod
 task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 
 task env:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+# For a schema upgrade, now set spec.paused: false in the staged overlay.
+task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG"
@@ -176,6 +188,19 @@ level; they are not the TAMOSS product version.
 
 ## Schema Migrations
 
+The `8.2.0-oss2` migration widens Segment timestamp bounds from `BIGINT` to
+`NUMERIC`, preserving exact nanoseconds. Existing values convert without
+recalculation; media objects and checksums are unchanged. PostgreSQL rewrites
+the Segment table and its indexes, so reserve a maintenance window and enough
+temporary database space for the rewrite. Duration depends on Segment volume.
+The migration refreshes table statistics before completing.
+
+The preceding database revision is `20260810_0007`; the new revision is
+`20260924_0008`. The previously published `8.2.0-oss2-rc2` also uses the preceding
+schema and follows this migration path. Keep API and operator images from the
+same candidate. Schema changes and the Alembic revision update are transactional;
+after a failure, investigate the cause and use the existing schema retry action.
+
 The operator schema Job runs the TAMOSS application migration CLI from the API
 image:
 
@@ -204,12 +229,12 @@ task operator:template
 
 ## Rollback
 
-For planned changes, roll back by reverting source-controlled manifests and
-reapplying the changed layer.
+For image-only changes compatible with the current schema, roll back by
+reverting source-controlled manifests and reapplying the changed layer.
 
 The operator does not automatically roll back application images or database
-schema. Restore provider data from your backup plan when a failed migration
-requires a data rollback.
+schema. Schema downgrades are unsupported. Restore the PostgreSQL backup into
+a matching installation if a completed schema upgrade must be reversed.
 
 For short investigations, pause reconciliation before manual edits and resume
 afterwards. See [Day 2 Operations](day-2.md).

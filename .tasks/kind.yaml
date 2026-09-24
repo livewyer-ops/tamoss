@@ -8,7 +8,7 @@ vars:
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
   # Keep Kind schema defaults out of the standalone operator build scope.
   # 0.0.1 is the schema marker emitted by pre-8.2 Kind builds.
-  KIND_SCHEMA_VERSION: '{{default "dev-20260810-0007" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+  KIND_SCHEMA_VERSION: '{{default "dev-20260924-0008" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
   KIND_PREVIOUS_SCHEMA_VERSION: '{{default "0.0.1" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
   TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
   OPERAND_TAG:

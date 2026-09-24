@@ -21,6 +21,7 @@ from tests.adapters.postgres.support import (
     database_url,
     execute_sql_file,
 )
+from tests.support.bbc_contract import bbc_validator
 from tests.support.s3_storage import (
     checksum_value,
     empty_and_delete_bucket,
@@ -118,6 +119,51 @@ def real_storage_client(
     )
     with TestClient(app) as client:
         yield client
+
+
+@pytest.mark.parametrize(
+    "timerange,offset",
+    [
+        ("[9999999998:0_10000000002:0)", "10000000000:0"),
+        ("[-10000000002:2_-9999999998:1)", "-10000000000:0"),
+    ],
+)
+def test_large_segment_timestamps_round_trip_through_http_and_postgres(
+    real_storage_client: TestClient, timerange: str, offset: str
+) -> None:
+    client = real_storage_client
+    flow_id, source_id, _ = create_video_flow(client)
+    object_id = str(uuid4())
+    put = allocate_objects(client, flow_id, [object_id])[0]["put_url"]
+    uploaded = requests.put(
+        put["url"], data=b"timestamp test", headers=put["headers"], timeout=5
+    )
+    assert uploaded.status_code in {200, 201, 204}, uploaded.text
+    body = {"object_id": object_id, "timerange": timerange, "ts_offset": offset}
+    bbc_validator("flow-segment-post.json").validate(body)
+    response = client.post(f"/flows/{flow_id}/segments", json=body)
+    assert response.status_code == 201, response.text
+    response = client.get(
+        f"/flows/{flow_id}/segments", params={"timerange": timerange, "limit": 1}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["x-paging-timerange"] == timerange
+    assert len(response.json()) == 1
+    assert {key: response.json()[0][key] for key in body} == body
+    detail = client.get(f"/flows/{flow_id}", params={"include_timerange": "true"})
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["timerange"] == timerange
+    filtered = client.get(
+        "/flows",
+        params={
+            "source_id": str(source_id),
+            "timerange": timerange,
+            "include_timerange": "true",
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert [flow["id"] for flow in filtered.json()] == [str(flow_id)]
+    assert filtered.json()[0]["timerange"] == timerange
 
 
 def test_allocated_put_url_validates_content_md5(
