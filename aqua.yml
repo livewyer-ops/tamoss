@@ -80,6 +80,7 @@ packages:
 # Required to build, test, and deploy:
 # - Docker or Podman (and docker compose) — container build + compose stack
 # - curl, git                             — setup and local scripts
+# Required for deployed playback tests:
+# - ffmpeg (including ffprobe)            — prepares and inspects media fixtures
 # Optional, only for the ingest helper (src/scripts/ingest_video.sh):
-# - ffmpeg                                — segments local video files for ingest
 # - uuidgen (util-linux)                  — generates flow and source identifiers
