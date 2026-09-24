@@ -492,6 +492,68 @@ def test_flow_validation_follows_bbc_concrete_content_shapes(
     assert mismatch.status_code == 400
 
 
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize("limit", [1, 2])
+def test_segment_page_timerange_covers_only_returned_segments(
+    client: TestClient, reverse_order: bool, limit: int
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    object_id = f"bbc/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [object_id])
+    upload_allocated_object(client, object_id)
+    for offset in (20, 10, 30):
+        response = client.post(
+            f"/flows/{flow_id}/segments",
+            json={
+                "object_id": object_id,
+                "timerange": f"[{offset - 2}:0_{offset + 2}:0)",
+                "ts_offset": f"{offset}:0",
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    for filters, starts in [
+        ({}, [8, 18, 28]),
+        ({"object_id": object_id}, [8, 18, 28]),
+        ({"timerange": "[19:0_20:0)"}, [18]),
+        ({"timerange": "()"}, []),
+        ({"object_id": "absent"}, []),
+    ]:
+        remaining = sorted(starts, reverse=reverse_order)
+        response = client.get(
+            f"/flows/{flow_id}/segments",
+            params={"limit": limit, "reverse_order": reverse_order, **filters},
+        )
+        while True:
+            assert response.status_code == 200
+            page_starts, remaining = remaining[:limit], remaining[limit:]
+            assert [item["timerange"] for item in response.json()] == [
+                f"[{start}:0_{start + 4}:0)" for start in page_starts
+            ]
+            expected_range = (
+                f"[{min(page_starts)}:0_{max(page_starts) + 4}:0)"
+                if page_starts
+                else "()"
+            )
+            assert response.headers["x-paging-timerange"] == expected_range
+            assert response.headers["x-paging-count"] == str(len(page_starts))
+            head = client.head(str(response.url))
+            assert head.status_code == 200 and head.content == b""
+            for header in (
+                "x-paging-timerange",
+                "x-paging-count",
+                "x-paging-limit",
+                "x-paging-reverse-order",
+                "x-paging-nextkey",
+                "link",
+            ):
+                assert head.headers.get(header) == response.headers.get(header)
+            if not remaining:
+                assert "next" not in response.links
+                break
+            response = client.get(response.links["next"]["url"])
+
+
 def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     client: TestClient,
 ) -> None:
@@ -550,7 +612,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     assert listed.headers["x-paging-limit"] == "1"
     assert listed.headers["x-paging-count"] == "1"
     assert listed.headers["x-paging-reverse-order"] == "true"
-    assert listed.headers["x-paging-timerange"] == "[0:0_20:0)"
+    assert listed.headers["x-paging-timerange"] == "[10:0_20:0)"
     assert "x-paging-nextkey" in listed.headers
     assert "link" in listed.headers
     payload = listed.json()
@@ -571,6 +633,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     )
     assert next_page.status_code == 200
     assert [item["object_id"] for item in next_page.json()] == [object_one]
+    assert next_page.headers["x-paging-timerange"] == "[0:0_10:0)"
 
     missing_flow_segments = client.get(f"/flows/{uuid4()}/segments")
     assert missing_flow_segments.status_code == 200

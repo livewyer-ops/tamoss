@@ -34,7 +34,11 @@ from tamoss.domain.model import (
     StorageBackend,
 )
 from tamoss.domain.pagination import Page, resolve_page_window
-from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
+from tamoss.domain.segments import (
+    SegmentDeleteFilter,
+    SegmentTimerangeBounds,
+    timerange_union,
+)
 
 
 class PostgresObjectSegmentMixin:
@@ -320,18 +324,6 @@ class PostgresObjectSegmentMixin:
             cur.execute(
                 sql.SQL(
                     """
-                SELECT MIN(timerange_start), MAX(timerange_end)
-                FROM tamoss_segments
-                WHERE {}
-                """
-                ).format(where_sql),
-                params,
-            )
-            range_row = cur.fetchone()
-
-            cur.execute(
-                sql.SQL(
-                    """
                 SELECT record
                 FROM tamoss_segments
                 WHERE {}
@@ -350,14 +342,11 @@ class PostgresObjectSegmentMixin:
             if len(fetched_segments) > window.limit
             else None
         )
-        matched_timerange = (
-            _timerange_from_bounds(range_row[0], range_row[1]) if range_row else "()"
-        )
         return Page(
             items=items,
             limit=window.limit,
             next_page=next_page,
-            timerange=matched_timerange,
+            timerange=timerange_union(items),
         )
 
     def append_segment(self, segment: SegmentRecord) -> None:

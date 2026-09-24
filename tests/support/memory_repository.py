@@ -743,13 +743,12 @@ class FakeTamossRepository:
             ]
 
         segments.sort(key=segment_domain.segment_sort_key, reverse=reverse_order)
-        matched_timerange = segment_domain.timerange_union(segments)
         segment_page = page_sequence(segments, page=page, limit=limit)
         return Page(
             items=segment_page.items,
             limit=segment_page.limit,
             next_page=segment_page.next_page,
-            timerange=matched_timerange,
+            timerange=segment_domain.timerange_union(segment_page.items),
         )
 
     def append_segment(self, segment: SegmentRecord) -> None:

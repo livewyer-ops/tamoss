@@ -4,6 +4,13 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## Unreleased
+
+- Limit Segment paging timeranges to the returned page, preserving timestamp
+  precision and boundary inclusivity.
+- Validate Flow replacements before applying Profile metadata. Reject incomplete
+  updates while retaining explicit Profile unlinking with a complete definition.
+
 ## 8.2.0-oss2-rc2 - 2026-09-23
 
 Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.

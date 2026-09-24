@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.support.bbc_contract import bbc_validator
 from tests.tams.support import (
     image_flow_payload,
     multi_flow_payload,
@@ -112,7 +113,7 @@ def _create_profile_flow(
     return resolved_flow_id, resolved_source_id, response.json()
 
 
-def test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_fields(
+def test_profile_reference_updates_unlinks_and_strips_inherited_fields(
     client: TestClient,
 ) -> None:
     profile_id = uuid4()
@@ -133,15 +134,17 @@ def test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_field
     )
     assert client.put(f"/flows/{flow_id}", json=same_profile).status_code == 204
 
+    before = client.get(f"/flows/{flow_id}").json()
     omitted_profile = {
         "id": str(flow_id),
         "source_id": str(source_id),
-        "description": "Association omitted but retained",
+        "description": "Invalid replacement",
     }
-    assert client.put(f"/flows/{flow_id}", json=omitted_profile).status_code == 204
+    assert not bbc_validator("flow-put.json").is_valid(omitted_profile)
+    assert client.put(f"/flows/{flow_id}", json=omitted_profile).status_code == 400
     retained = client.get(f"/flows/{flow_id}").json()
+    assert retained == before
     assert retained["profile_id"] == str(profile_id)
-    assert retained["description"] == "Association omitted but retained"
     assert retained["avg_bit_rate"] == 8_000_000
 
     incomplete_unlink = {
@@ -160,6 +163,8 @@ def test_profile_id_tri_state_expands_updates_unlinks_and_strips_inherited_field
         label="Direct flow after unlink",
     )
     direct_payload["profile_id"] = ""
+    # The typed alternative permits the documented empty-string unlink field.
+    bbc_validator("flow-put.json").validate(direct_payload)
     unlinked = client.put(f"/flows/{flow_id}", json=direct_payload)
     assert unlinked.status_code == 204, unlinked.text
 

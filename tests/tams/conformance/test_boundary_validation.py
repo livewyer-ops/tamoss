@@ -9,6 +9,7 @@ from tests.tams.support import (
     PRIMARY_BACKEND_ID,
     create_video_flow,
     register_segment,
+    video_flow_payload,
     webhook_payload,
 )
 
@@ -122,6 +123,22 @@ def test_empty_flow_body_is_invalid_for_existing_flow(client: TestClient) -> Non
     flow_id, _, original = create_video_flow(client)
     assert client.put(f"/flows/{flow_id}", json={}).status_code == 400
     assert client.get(f"/flows/{flow_id}").json() == original
+
+
+@pytest.mark.parametrize("field", ["format", "codec", "essence_parameters"])
+def test_flow_replacement_requires_technical_metadata(
+    client: TestClient, field: str
+) -> None:
+    flow_id, source_id, original = create_video_flow(client)
+    body = video_flow_payload(flow_id, source_id, label="Replacement")
+    del body[field]
+    assert not bbc_validator("flow-put.json").is_valid(body)
+    assert client.put(f"/flows/{flow_id}", json=body).status_code == 400
+    assert client.get(f"/flows/{flow_id}").json() == original
+    valid = video_flow_payload(flow_id, source_id, label="Replacement")
+    bbc_validator("flow-put.json").validate(valid)
+    assert client.put(f"/flows/{flow_id}", json=valid).status_code == 204
+    assert client.get(f"/flows/{flow_id}").json()["label"] == "Replacement"
 
 
 @pytest.mark.parametrize("field", ["name", "description"])

@@ -626,6 +626,11 @@ class FlowUseCases:
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
         try:
+            strict_contract_model(
+                contract_models.FlowPut,
+                flow,
+                recursive_non_nullable_fields=_FLOW_CONTRACT_FIELDS,
+            )
             body_flow_id = parse_uuid(flow.get("id"))
             parse_uuid(flow.get("source_id"))
         except TypeError, ValueError:
@@ -702,9 +707,6 @@ class FlowUseCases:
                     **profile.flow_metadata,
                     "profile_id": str(existing.profile_id),
                 }
-
-        if existing is not None and not unlinking_profile:
-            data = self._flow_update_payload(existing, data)
 
         try:
             data = validate_flow_payload(data)
@@ -819,22 +821,6 @@ class FlowUseCases:
             flow=record,
         )
         return record, created
-
-    @staticmethod
-    def _flow_update_payload(
-        existing: FlowRecord, data: dict[str, Any]
-    ) -> dict[str, Any]:
-        payload = dict(data)
-        if "source_id" not in payload and existing.source_id is not None:
-            payload["source_id"] = str(existing.source_id)
-        if "format" not in payload and existing.format is not None:
-            payload["format"] = existing.format
-        if "container" not in payload and existing.container is not None:
-            payload["container"] = existing.container
-        for field_name in ("codec", "essence_parameters"):
-            if field_name not in payload and field_name in existing.data:
-                payload[field_name] = existing.data[field_name]
-        return payload
 
     def referenced_flows_matching_tags_page(
         self,
