@@ -1,8 +1,8 @@
 # Install
 
 TAMOSS installs through source-controlled environment inputs. For existing
-clusters, create an environment composition, edit the generated platform values
-and `Tamoss` YAML, then apply it:
+clusters, create an environment composition, review the generated platform
+values and operator defaults, then apply it:
 
 Set `TAMOSS_VERSION` to the exact release to install. The generated environment
 pins its operator installation and each instance independently.
@@ -23,8 +23,9 @@ separate [Helm](https://helm.sh/) releases, waits for the dependency
 operators, then applies
 TAMOSS-owned platform configuration through `deploy/platform/charts/config`.
 The platform state is built from `deploy/platform/values/defaults.yaml` plus the
-environment's `platform-values.yaml`. The operator layer uses the environment's `operator/kustomization.yaml`, which
-references the selected release's published installation and catalogue. It installs
+environment's `platform-values.yaml`. The operator layer uses the environment's
+`operator/kustomization.yaml`, which references the selected release's published
+installation and catalogue and mounts the installation defaults. It installs
 the CRDs, controller, RBAC and webhooks. The environment layer applies one or more
 namespaced `Tamoss` custom resources.
 
@@ -76,8 +77,9 @@ normal environment compositions.
 
 The generated environment is the composition root. `platform-values.yaml`
 selects shared platform components. `operator/defaults.yaml` supplies site
-settings to the operator. `tamoss-patch.yaml` contains the instance identity and
-`spec.version`; add fields there only when the instance needs overrides.
+settings to the operator. `tamoss-patch.yaml` is a complete instance resource
+containing its identity and `spec.version`; add fields there only when the
+instance needs overrides.
 
 `task env:init` generates this composition:
 
@@ -100,8 +102,8 @@ For `PROFILE=multi-server DOMAIN=example.com`, create DNS records for
 See [installation defaults](../configuration.md#installation-defaults) for
 inheritance and explicit hostname overrides.
 
-Generated remote environments default to trusted public TLS. The platform
-[Helmfile](https://helmfile.readthedocs.io/)
+Generated single-server and multi-server environments default to public TLS.
+The platform [Helmfile](https://helmfile.readthedocs.io/)
 creates `ClusterIssuer/tamoss-public` when `tls.mode: public` is selected:
 
 ```yaml
@@ -112,11 +114,18 @@ tls:
     email: ops@example.com
 ```
 
+Keep `operator/defaults.yaml`'s `clusterIssuer` equal to the platform's
+`tls.issuerName`. The platform Authentik ingress host must also match the shared
+Auth URL, normally `auth.<installation-base-domain>`. These files configure
+separate layers; changing one does not update the other.
+
 Use `tls.mode: existing` when [cert-manager](https://cert-manager.io/) and
-the ClusterIssuer are managed
-outside the TAMOSS platform layer. Use `tls.mode: disabled` when TLS Secrets are
-pre-created and cert-manager annotations should be omitted from explicit
-`Tamoss` ingress overrides.
+the named ClusterIssuer are managed outside the TAMOSS platform layer.
+For pre-created TLS Secrets, use `tls.mode: disabled`, set
+`spec.ingress.annotations: {}` to suppress issuer defaults, and name the
+instance's Secrets in `spec.publicEndpoint.tlsSecretName` and
+`spec.publicEndpoint.s3TLSSecretName`. Managed Authentik needs its own platform
+ingress TLS Secret.
 
 `PROFILE=edge` generates a self-signed, Authentik-free platform composition from
 `deploy/platform/values/edge-reference.yaml`:
@@ -140,11 +149,13 @@ same layers in order:
     --state-values-file values/defaults.yaml \
     --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
     sync \
-    --sync-args "--server-side=true --rollback-on-failure" \
+    --sync-args "--server-side=true" \
     --wait \
     --wait-for-jobs
 )
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/environments/<name>/operator
+kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
+kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
 kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ```
 
@@ -165,6 +176,9 @@ An environment with two instances looks like this:
 deploy/environments/<env>/
 ├── kustomization.yaml         # lists every instance manifest below
 ├── platform-values.yaml       # shared platform components, applied once
+├── operator/
+│   ├── kustomization.yaml     # shared operator installation
+│   └── defaults.yaml          # inherited instance settings
 ├── prod-a.yaml                # Tamoss CR in namespace prod-a
 ├── prod-a-storage.yaml        # default StorageBackend for prod-a
 ├── prod-b.yaml                # Tamoss CR in namespace prod-b
@@ -179,8 +193,9 @@ registers it in `kustomization.yaml`:
 task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=<env> INSTANCE=prod-b
 ```
 
-The namespace defaults to the instance name. Optional `PROFILE`, `DOMAIN` and
-`NAMESPACE` arguments add explicit overrides.
+The namespace defaults to the instance name. The resource contains only
+`spec.version` unless optional `PROFILE` or `DOMAIN` overrides are supplied.
+Use `NAMESPACE` to select another namespace.
 
 `task env:instance:apply` then applies the whole kustomization. Instances
 using `s3.providedBy: external` need their default `StorageBackend` manifest
@@ -212,8 +227,9 @@ directories.
 task env:status ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-`Ready=True` on the `Tamoss` resource is the primary success signal. If the
-instance is not ready, read status conditions before looking at individual pods.
+`task env:wait` waits for the observed generation, selected release and
+installation defaults revision before checking `Ready=True`. If the instance
+is not ready, read status conditions before looking at individual pods.
 For Gateway API installs, also check `kubectl -n tams get httproute` and the
 `RoutingReady` and `HostnamesReady` conditions on the `Tamoss` resource.
 

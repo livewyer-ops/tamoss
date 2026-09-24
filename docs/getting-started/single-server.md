@@ -72,11 +72,11 @@ components. Set the shared domain in `operator/defaults.yaml`; the operator
 derives instance hostnames and the shared Authentik address as described in
 [Configuration](../configuration.md#installation-defaults).
 
-The profile defaults TLS to `ClusterIssuer/tamoss-public`; set the ACME email
-in `platform-values.yaml`, or switch `tls.mode` to `existing`/`disabled` when
-certificate ownership is outside the TAMOSS platform layer. Switch `tls.mode`
-to `selfSigned` when port 80 is not reachable from the public internet, as
-ACME HTTP-01 issuance needs it. Override normal
+The generated defaults select `ClusterIssuer/tamoss-public`; set the ACME email
+in `platform-values.yaml`. For an existing issuer or pre-created TLS Secrets,
+follow [Install](../operations/install.md#existing-cluster). Use
+`tls.mode: selfSigned` when choosing self-signed certificates, and keep `tls.issuerName`
+aligned with `clusterIssuer` in `operator/defaults.yaml`. Override normal
 `Tamoss` YAML fields directly in `tamoss-patch.yaml` when you need different
 provider ownership, resources, storage, or routing.
 
@@ -128,11 +128,15 @@ The checked-in target file behind this command,
 carries the Kind validation hostnames; for a remote server whose hostnames
 differ, copy
 [`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
-into the environment directory, set the API, UI, and auth URLs plus
-`TEST_TAMOSS_TOKEN_SECRET=tamoss-single-server-api-token` and
-`TEST_TAMOSS_CR_NAME=tamoss-single-server`, and pass
+into the environment directory. Use `task env:summary` and the instance's
+`status.endpoints` and `status.resolved.generatedSecrets` for the effective
+URLs and Secret names. Set `TEST_TAMOSS_NAMESPACE=tams`,
+`TEST_TAMOSS_CR_NAME=tamoss-single-server` and the resolved token Secret name in
+`TEST_TAMOSS_TOKEN_SECRET`, then pass
 `TARGET_ENV=deploy/environments/my-single-server/target.env` to the same
-command.
+command. Supply browser login credentials through the target's
+`TEST_TAMOSS_AUTH_USER` and `TEST_TAMOSS_AUTH_PASSWORD` settings or its password
+Secret reference; `env:summary` prints the access details.
 
 A fresh install has no demo media, so seed it first with the demo ingest
 helper that `task kind:up` runs —

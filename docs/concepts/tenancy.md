@@ -80,6 +80,9 @@ rules:
 
 One shared platform install can serve many tenant namespaces. Tenants consume
 platform capabilities; they do not own platform lifecycle.
+The operator's installation defaults supply shared connection settings. Each
+instance selects its own release and can override defaults in its resource;
+see [Configuration](../configuration.md#installation-defaults).
 
 | Area | Tenant reference | Platform owner |
 | --- | --- | --- |
@@ -148,6 +151,8 @@ kubectl -n tamoss-system logs deploy/operator-controller-manager --tail=200
 
 Multiple `Tamoss` resources can share platform services when their names,
 namespaces, hostnames, and referenced Secrets do not conflict.
+Inherited domains include both the resource name and namespace. Explicit
+hostname or resource-name overrides must preserve that separation.
 
 For Gateway API routing, duplicate hostname or route admission failures surface
 through `Tamoss.status.conditions[HostnamesReady]`. The operator relies on the

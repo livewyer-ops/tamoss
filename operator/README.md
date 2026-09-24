@@ -120,5 +120,5 @@ installation mounts an empty immutable ConfigMap; generated environment overlays
 replace the volume reference with their own hashed ConfigMap. Kustomize changes
 the Pod template when the file changes, so the manager reads it once at startup.
 All instance controllers use the same resolver. See
-[Configuration](../docs/configuration.md#installation-defaults) for supported
+[Runtime Configuration](../docs/reference/runtime-configuration.md#installation-defaults) for supported
 settings and precedence.

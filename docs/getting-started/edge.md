@@ -106,7 +106,8 @@ editing the two generated files, before `task env:apply`.
 ### Auth: bearer token (default)
 
 The operator defaults `edge` to token-only runtime auth. The API token lives
-in the generated `<instance>-api-token` Secret (`tamoss-edge-api-token` for the generated instance) under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
+in the generated `<instance>-api-token` Secret (`tamoss-edge-api-token` for the
+generated instance) under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
 the resolved value once the instance is ready. Read it into a variable and
 send it as a bearer header:
 
@@ -131,9 +132,9 @@ Declaring the Authentik provider runs the full OAuth stack on the node.
 On a live instance, apply the change in this order.
 
 First, in `platform-values.yaml`, enable Authentik and set its ingress host
-to `auth.` followed by your instance's `spec.publicEndpoint.baseDomain`
-value. The operator derives the OAuth issuer hostname from the base domain,
-so the two must agree. The generated platform values already contain the
+to `auth.` followed by the shared `baseDomain` in `operator/defaults.yaml`.
+If `authentik.issuerURL` overrides that shared URL, use its hostname instead.
+The generated platform values already contain the
 `authentikChart` sizing block that bounds the Authentik server, worker, and
 PostgreSQL for a 4 GB node; `task env:init PROFILE=edge` copies it from
 [`deploy/platform/values/edge-reference.yaml`](../../deploy/platform/values/edge-reference.yaml).
@@ -142,7 +143,7 @@ PostgreSQL for a 4 GB node; `task env:init PROFILE=edge` copies it from
 authentik:
   enabled: true
   ingress:
-    host: auth.<base-domain>
+    host: auth.<installation-base-domain>
 ```
 
 Re-run `task env:apply` to roll out the Authentik stack.
@@ -152,8 +153,7 @@ API server rejects a spec that carries both auth blocks, and `kubectl apply`
 does not delete the old `external` block it does not own, so on a live
 token-mode instance `task env:apply` alone fails that one-of admission
 rule; the patch must come first. The generated composition keeps the
-instance name `tamoss-edge` and the `tams` namespace from the checked-in
-edge instance manifest:
+instance name `tamoss-edge` and namespace `tams`:
 
 ```bash
 kubectl -n tams patch tamoss tamoss-edge --type=merge \
@@ -227,18 +227,25 @@ The checked-in target file behind this command,
 [`tests/targets/edge.env`](../../tests/targets/edge.env), carries the Kind
 validation hostnames. For a remote node whose hostnames differ, copy
 [`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
-into the environment directory, set the API, UI, and auth URLs plus
-`TEST_TAMOSS_TOKEN_SECRET=tamoss-edge-api-token` and
-`TEST_TAMOSS_CR_NAME=tamoss-edge`, and point the checks at it:
+into the environment directory. Use `task env:summary` and the instance's
+`status.endpoints` and `status.resolved.generatedSecrets` for the effective
+URLs and Secret names. Set `TEST_TAMOSS_NAMESPACE=tams`,
+`TEST_TAMOSS_CR_NAME=tamoss-edge` and the resolved token Secret name in
+`TEST_TAMOSS_TOKEN_SECRET`. For the default token-only mode, set
+`TEST_TAMOSS_BROWSER_API_AVAILABLE=false`, `TEST_TAMOSS_UI_EXPECT_STATUS=200`
+and `TEST_TAMOSS_AUTH_PASSWORD=unused`. Trust the self-signed CA on the test host
+or set `TEST_INSECURE_SKIP_TLS_VERIFY=true` for this test target. Point the
+checks at that file:
 
 ```bash
 task e2e:deployed PROFILE=edge KUBECONFIG="$KUBECONFIG" \
   TARGET_ENV=deploy/environments/my-edge/target.env
 ```
 
-To validate the OAuth mode, apply the two [Key Settings](#key-settings)
-changes to the environment and run the same deployed checks. The UI check
-expects a redirect to the Authentik login instead of a direct 200.
+To validate OAuth mode, apply the [Key Settings](#key-settings) changes, set
+`TEST_TAMOSS_BROWSER_API_AVAILABLE=true` and `TEST_TAMOSS_UI_EXPECT_STATUS=302`,
+and supply the browser login credentials reported by `env:summary`. Run the
+same deployed checks against that target.
 
 The deployed checks exercise the API with the bearer token, certificate
 state, and UI availability against the running instance. Set

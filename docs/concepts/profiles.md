@@ -73,12 +73,13 @@ from routing or monitoring systems to exposed component ports, DNS egress, and
 egress to HTTP/TLS services, PostgreSQL, and S3-compatible storage. A CNI that
 enforces NetworkPolicy is required for those restrictions to take effect.
 UI egress is destination-scoped to the instance API and Console, the managed
-Authentik server, and cluster DNS. An enabled Console additionally requires
-explicit Kubernetes Service and API-server endpoint IP blocks; it never
-defaults to arbitrary HTTPS egress.
+Authentik server, and cluster DNS. Console egress permits DNS and Kubernetes
+API ports by default. Optional `spec.networkPolicy.kubernetesAPIIPBlocks`
+restrict the API rule to declared destinations; see
+[Runtime Configuration](../reference/runtime-configuration.md#workload-overrides).
 
-On Cilium clusters with a self-hosted API server, enable
-`policyCIDRMatchMode: nodes` so standard `NetworkPolicy.ipBlock` peers can match
+When those IP blocks are set on Cilium clusters with a self-hosted API server,
+enable `policyCIDRMatchMode: nodes` so standard `NetworkPolicy.ipBlock` peers can match
 the configured control-plane node CIDRs. Without that Cilium setting, Console
 fails closed because its Kubernetes watch traffic is denied.
 
@@ -122,10 +123,11 @@ standard shape.
 
 ## TLS Defaults
 
-`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned` and local test TLS
-Secret names. `edge` defaults to `ClusterIssuer/tamoss-edge-selfsigned` with
-edge TLS Secret names. `single-server` and `multi-server` default to
-`ClusterIssuer/tamoss-public` with public TLS Secret names. The matching
+`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned`, `edge` to
+`ClusterIssuer/tamoss-edge-selfsigned`, and `single-server` and `multi-server`
+to `ClusterIssuer/tamoss-public`. Installation defaults can override the issuer
+and derive separate TLS Secret names for each instance. The checked-in Kind
+compositions retain their explicit TLS Secret names. The matching
 single-server and multi-server platform values use `tls.mode: public` to render
 an ACME ClusterIssuer for remote environments:
 
@@ -139,8 +141,9 @@ tls:
 
 Environment compositions only need to override this when the cluster already
 provides cert-manager, a different ClusterIssuer name, or pre-created TLS
-Secrets. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
-instead of receiving the profile default.
+Secrets. Keep the installation's `clusterIssuer` aligned with the platform
+issuer. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
+instead of receiving installation or profile issuer defaults.
 
 ## Validation Adapters
 

@@ -33,8 +33,10 @@ must contain the migration revision required by the selected release.
 2. Review and apply any required shared platform changes. Authentik, Traefik,
    cert-manager and provider operators remain separately managed. External
    database and storage services remain their owners' responsibility.
-3. Install the target operator's published `install.yaml`, including its release
-   catalogue. Check that it supports every instance release still in use.
+3. Update the published `install.yaml` URL in the environment's
+   `operator/kustomization.yaml` to the target release. Preserve
+   `operator/defaults.yaml`, apply the operator overlay and wait for its rollout.
+   Check that its catalogue supports every instance release still in use.
 4. During the maintenance window, stop ingest and other writes as required by
    the release notes. Set the chosen instance's `spec.version` to the target
    release. If it is paused, clear `spec.paused` when ready to proceed.
@@ -58,8 +60,14 @@ for a single-instance database.
 export KUBECONFIG=/path/to/kubeconfig
 export TAMOSS_ENV=my-prod
 
+# Update the published installation URL, preserving the defaults configuration.
+$EDITOR "deploy/environments/$TAMOSS_ENV/operator/kustomization.yaml"
 task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k "deploy/environments/$TAMOSS_ENV/operator"
+kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
+
 # Edit spec.version in the chosen instance manifest.
+task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
@@ -71,17 +79,25 @@ Do not replace the published catalogue with the source development catalogue.
 
 ## Installation defaults
 
-Preserve the environment's `operator/defaults.yaml` when updating the operator.
-Apply its Kustomize overlay so the defaults remain mounted. Changing shared
-defaults also changes every instance inheriting those fields, independently of
-its pinned release. Review that change separately from a release update.
-`env:wait` checks `status.appliedDefaultsRevision` against the environment file.
+To change shared defaults, edit the environment's `operator/defaults.yaml`,
+review the diff and apply the operator overlay as above. Its generated ConfigMap
+changes the Pod template, causing a rollout that loads the new settings.
+Changing shared defaults affects every instance inheriting those fields,
+independently of its pinned release. Review that change separately from a
+release update and keep the platform's DNS and TLS configuration aligned.
+
+After the operator rollout, run `task env:wait` for the environment. It checks
+the observed instance generation and requested release, then checks
+`status.appliedDefaultsRevision` against the non-empty environment defaults
+file before accepting `Ready=True`.
 
 Existing explicit settings remain overrides. This includes persisted CRD
 defaults such as `spec.console.enabled: false`; remove that field only if the
-instance should inherit the shared Console setting. Preserve
-`spec.fullnameOverride` and existing endpoint or TLS overrides on deployed
-instances to retain resource names and public addresses.
+instance should inherit the shared Console setting. Keep the existing resource
+name, namespace and immutable `spec.fullnameOverride`. Preserve endpoint and TLS
+overrides to retain public addresses and certificates. The minimal resource is
+the starting point for new instances; adoption does not require removing
+existing configuration.
 
 ## Managed storage and identity
 

@@ -82,31 +82,17 @@ task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
 Remote environments are composition roots: `platform-values.yaml` configures the
-[Helmfile](https://helmfile.readthedocs.io/)-managed platform releases, and the
-[Kustomize](https://kustomize.io/) overlay applies the
-`Tamoss` resources.
-Generated remote environments default to public ACME TLS through
+[Helmfile](https://helmfile.readthedocs.io/)-managed platform releases,
+`operator/defaults.yaml` supplies shared site settings, and `tamoss-patch.yaml`
+contains the instance identity and `spec.version`. Add instance fields only
+when they need to override the defaults.
+Generated single-server and multi-server environments default to public ACME TLS through
 `ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
 before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
 `tls.mode: disabled` when TLS Secrets are supplied outside
 [cert-manager](https://cert-manager.io/).
-The raw apply sequence is:
-
-```bash
-(
-  cd deploy/platform
-  helmfile --kubeconfig "$KUBECONFIG" \
-    --file helmfile.yaml.gotmpl \
-    --state-values-file values/defaults.yaml \
-    --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
-    sync \
-    --sync-args "--server-side=true --rollback-on-failure" \
-    --wait \
-    --wait-for-jobs
-)
-kubectl apply --server-side -k deploy/operator
-kubectl apply -k deploy/environments/<name>
-```
+See [Install](docs/operations/install.md#existing-cluster) for DNS, TLS and the
+equivalent Helmfile and Kubernetes commands.
 
 ## Profiles
 

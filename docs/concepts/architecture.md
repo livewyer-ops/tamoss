@@ -8,6 +8,11 @@ platform releases, then the [Kustomize](https://kustomize.io/)
 operator install, then the Kustomize environment overlay containing `Tamoss`
 resources.
 
+The operator installation supplies shared site defaults. An instance selects
+its release through `spec.version` and can override individual settings. A newer
+operator preserves that release selection; changes to shared defaults affect
+instances inheriting those settings. See [Configuration](../configuration.md).
+
 ## Layers
 
 | Layer | Owns | Notes |

@@ -14,15 +14,22 @@ workflow: run `task env:init`, edit the generated `platform-values.yaml` and
 
 ## Common Configuration
 
-Make these three decisions before `task env:apply`. Each guide's Key
+Review DNS, TLS and authentication before `task env:apply`. Each guide's Key
 Settings section covers the profile-specific parts.
 
 ### DNS
 
 `local-kind` needs no DNS: it uses `tamoss.localtest.me` hostnames, which
-resolve to 127.0.0.1 from public DNS. Every other profile derives `api`,
-`app`, `s3`, and `auth` hostnames from `spec.publicEndpoint.baseDomain`.
-Create real DNS records for those names, or use a wildcard resolver such as
+resolve to 127.0.0.1 from public DNS. Generated remote environments derive
+instance addresses as `api.<name>.<namespace>.<installation-base-domain>`,
+`app.<name>.<namespace>.<installation-base-domain>` and
+`s3.<name>.<namespace>.<installation-base-domain>`. Managed authentication uses
+the shared `auth.<installation-base-domain>` address. Set the shared domain in
+`operator/defaults.yaml`; `spec.publicEndpoint.baseDomain` is an optional
+instance override. See [Configuration](../configuration.md#installation-defaults)
+for examples.
+
+Create DNS records for the derived names, or use a wildcard resolver such as
 `<ip>.sslip.io` as the base domain when no DNS control exists. Host-file
 entries work for edge installs on private networks.
 
@@ -36,8 +43,14 @@ Set `tls.mode` in the environment `platform-values.yaml`:
   from Let's Encrypt. Requires
   real DNS for the derived hostnames, an ACME email in the platform values, and
   port 80 reachable for HTTP-01.
-- `existing`/`disabled`: certificate ownership stays outside the platform
-  layer; name the TLS Secrets in the `Tamoss` CR.
+- `existing`: use an existing ClusterIssuer.
+- `disabled`: supply TLS Secrets and suppress issuer annotations in the
+  instance resource.
+
+Keep `operator/defaults.yaml`'s `clusterIssuer` aligned with `tls.issuerName`.
+The [install guide](../operations/install.md#existing-cluster) covers existing
+issuers and pre-created Secrets. A wildcard certificate for the installation
+domain does not cover the deeper instance hostnames.
 
 ### Auth
 

@@ -131,7 +131,8 @@ product API/UI checks. `task kind:e2e` is the destructive fresh-cluster variant.
 
 The checked-in Kind environments enable the Console and use the operator's
 built operand image tags. Browser catalogue, playback and ingest-history checks
-require managed browser authentication and `spec.console.enabled: true`.
+require managed browser authentication and an enabled Console, inherited from
+installation defaults or explicitly set with `spec.console.enabled: true`.
 The token-only edge target sets `TEST_TAMOSS_BROWSER_API_AVAILABLE=false`:
 its browser checks verify that API and Console requests return explicit 503
 denials while authenticated API clients remain usable. Browser workflows that

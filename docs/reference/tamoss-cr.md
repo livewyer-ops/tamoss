@@ -1,7 +1,8 @@
 # Tamoss CR Reference
 
-`Tamoss` declares one TAMOSS instance in a namespace. The operator applies
-release, installation and profile defaults, then explicit fields in the CR override those defaults.
+`Tamoss` declares one TAMOSS instance in a namespace. Its release selects images
+and the schema target. Omitted site settings inherit installation and profile
+defaults; explicit fields override those defaults.
 The canonical CRD in `operator/config/crd/bases/` remains the exhaustive schema
 source.
 
@@ -12,6 +13,8 @@ Version: `v1alpha1`
 Kind: `Tamoss`
 
 Scope: `Namespaced`
+
+<a id="minimal-shape"></a>
 
 ## Minimal resource
 
@@ -31,6 +34,8 @@ spec:
 `<release>` is an exact release supported by the installed operator. Without
 installation defaults, set `spec.profile` and the required site settings explicitly.
 `spec.publicEndpoint.baseDomain` overrides the derived instance domain.
+Inherited settings are resolved without writing them into the resource;
+Kubernetes can still populate fields with defaults declared in the CRD.
 
 Set `publicEndpoint.uiURL` when the public UI uses a non-standard external
 port. It is an exact origin, not a path:
@@ -48,7 +53,7 @@ spec:
 | --- | --- |
 | `.spec.version` | Exact product release from the operator installation catalogue. Omission reports `VersionRequired` and leaves workloads unchanged. |
 | `.spec.profile` | Overrides the installation profile with `local-kind`, `edge`, `single-server`, or `multi-server`. |
-| `.spec.publicEndpoint` | Derives public API, UI, S3, and [Authentik](https://goauthentik.io/) endpoint defaults when the selected auth mode uses Authentik. |
+| `.spec.publicEndpoint` | Overrides instance API, UI and S3 endpoints. Managed Authentik uses the shared installation URL when configured. |
 | `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
 | `.spec.backends.s3` | Selects managed [RustFS](https://github.com/rustfs/rustfs) Operator or external S3-compatible storage for the default backend. |
 | `.spec.backends.s3.tags` | Freeform metadata with string or string-array values, advertised on the operator-managed default TAMS storage backend. |

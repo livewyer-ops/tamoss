@@ -20,9 +20,6 @@ Before applying the profile, confirm:
   token material.
 - The CNI enforces Kubernetes NetworkPolicy if you rely on the profile's
   default traffic restrictions.
-- If Console is enabled, the Tamoss overlay includes destination-scoped
-  `spec.networkPolicy.kubernetesAPIIPBlocks` for the Kubernetes Service and API
-  server endpoints; see [Runtime Configuration](../reference/runtime-configuration.md).
 - PostgreSQL and object-storage backup/restore ownership is decided before
   users write durable data.
 
@@ -85,8 +82,11 @@ instances, see [Hibernate and Resume](../operations/hibernate-resume.md).
 ### Identity
 
 The profile selects the managed Authentik stack by default. Set the ACME
-email and public hostnames before applying, and keep the OAuth issuer URL on
-its public hostname so browser logins and API token validation agree.
+email and public hostnames before applying. The Authentik ingress in
+`platform-values.yaml` must match the shared domain or explicit Authentik URL
+in `operator/defaults.yaml`. See
+[Configuration](../configuration.md#installation-defaults) for instance and
+shared hostname rules.
 
 ## Validate
 
@@ -94,17 +94,40 @@ its public hostname so browser logins and API token validation agree.
 task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG"
 ```
 
+This command uses the checked-in Kind target. For a remote cluster, copy
+[`tests/targets/remote.env.example`](../../tests/targets/remote.env.example) to
+`deploy/environments/my-prod/target.env`. Use `task env:summary` and the
+instance's `status.endpoints` and `status.resolved.generatedSecrets` for the
+effective URLs and Secret names. Set `TEST_TAMOSS_NAMESPACE=tams`,
+`TEST_TAMOSS_CR_NAME=tamoss-multi-server` and the resolved token Secret name in
+`TEST_TAMOSS_TOKEN_SECRET`. Supply browser login credentials through
+`TEST_TAMOSS_AUTH_USER` and `TEST_TAMOSS_AUTH_PASSWORD` or the target's password
+Secret reference, then run:
+
+```bash
+task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG" \
+  TARGET_ENV=deploy/environments/my-prod/target.env
+```
+
+The media checks need existing media. A fresh remote installation is empty;
+configure its ingest source policy and ingest test media before running those
+checks. See [Manage Ingest Runs](../operations/manage-ingest-runs.md).
+
 ## Operate
 
 Use the multi-server profile as the baseline for production choices:
 
-- Keep API, UI, worker, PostgreSQL, and S3 resource requests explicit.
 - Review the profile defaults for pod security contexts, resource requests,
   PodDisruptionBudgets, pod anti-affinity, and NetworkPolicies before applying
   tenant-specific overrides.
+- Console is enabled by the generated installation defaults. Its default
+  Kubernetes API egress is port-scoped. Set
+  `spec.networkPolicy.kubernetesAPIIPBlocks` when destination restrictions are
+  required; see [Runtime Configuration](../reference/runtime-configuration.md).
 - Use public DNS names and trusted TLS certificates. The default remote platform
   values create `ClusterIssuer/tamoss-public` from `tls.mode: public`; set the
-  ACME email before applying.
+  ACME email before applying and keep the installation's `clusterIssuer`
+  aligned with the platform's `tls.issuerName`.
 - Keep internal service URLs separate from public OAuth issuer and public S3
   URLs.
 - Confirm API CORS and browser-facing S3 CORS permit every browser origin that
