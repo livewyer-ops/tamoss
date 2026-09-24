@@ -4,6 +4,7 @@ metadata:
   name: tamoss-cnpg
   namespace: tams
 spec:
+  version: dev
   backends:
     db:
       providedBy: cnpg

@@ -32,11 +32,3 @@ func ValidateVersion(version string) error {
 		return nil
 	}
 }
-
-func IsSupportedStartingVersion(version string) bool {
-	value := strings.TrimSpace(version)
-	if value == "" || value == SchemaVersion {
-		return true
-	}
-	return PreviousSupportedSchemaVersion != "" && value == PreviousSupportedSchemaVersion
-}

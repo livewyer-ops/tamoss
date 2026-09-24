@@ -52,6 +52,7 @@ type SchemaResult struct {
 }
 
 type SchemaController struct {
+	Target schemabundle.Target
 	Client client.Client
 	Scheme *runtime.Scheme
 }
@@ -73,12 +74,12 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 		return SchemaResult{}, err
 	}
 	managed := schemaManagedObjects(state, stateFound)
-	if result, done := observedSchemaStateResult(state, stateFound, managed); done {
+	if result, done := s.observedSchemaStateResult(state, stateFound, managed); done {
 		return result, nil
 	}
 
 	includeFixtures := tamoss.Spec.Backends.DB.ShouldApplyFixtures() && !schemaStateHasAppliedVersion(state)
-	job := schemaMigrationJob(tamoss, includeFixtures)
+	job := s.schemaMigrationJob(tamoss, includeFixtures)
 	managed = append(managed, job)
 	if result, done, err := s.reconcileObsoleteSchemaJobs(ctx, tamoss, managed, job); err != nil || done {
 		return result, err
@@ -99,7 +100,7 @@ func (s *SchemaController) Reconcile(ctx context.Context, tamoss *tamossv1alpha1
 	if result, done, err := s.reconcileFailedSchemaJob(ctx, tamoss, state, managed, liveJob, jobFound); err != nil || done {
 		return result, err
 	}
-	if result, done := runningSchemaJobResult(managed, liveJob, jobFound); done {
+	if result, done := s.runningSchemaJobResult(managed, liveJob, jobFound); done {
 		return result, nil
 	}
 	if result, done, err := s.reconcileSchemaJobPodCleanup(ctx, managed, job); err != nil || done {
@@ -119,31 +120,31 @@ func schemaManagedObjects(state *corev1.ConfigMap, stateFound bool) []client.Obj
 	return []client.Object{state}
 }
 
-func observedSchemaStateResult(state *corev1.ConfigMap, stateFound bool, managed []client.Object) (SchemaResult, bool) {
+func (s *SchemaController) observedSchemaStateResult(state *corev1.ConfigMap, stateFound bool, managed []client.Object) (SchemaResult, bool) {
 	if !stateFound {
 		return SchemaResult{}, false
 	}
-	if !schemabundle.IsSupportedStartingVersion(state.Data[schemaStateAppliedVersionKey]) {
+	if !s.Target.Supports(state.Data[schemaStateAppliedVersionKey]) {
 		observed := state.Data[schemaStateAppliedVersionKey]
 		return SchemaResult{
 			Ready:           false,
-			Version:         schemabundle.SchemaVersion,
+			Version:         s.Target.Version,
 			ManagedObjects:  managed,
 			Degraded:        true,
 			Reason:          operatorstatus.ReasonUnsupportedSchemaVersion,
 			Message:         fmt.Sprintf("Observed schema revision %q is not supported by this operator", observed),
-			SchemaMigration: unsupportedSchemaMigrationStatus(observed),
+			SchemaMigration: s.unsupportedSchemaMigrationStatus(observed),
 		}, true
 	}
-	if state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion {
+	if state.Data[schemaStateAppliedVersionKey] == s.Target.Version {
 		operatormetrics.RecordSchemaMigration("skipped")
 		return SchemaResult{
 			Ready:           true,
-			Version:         schemabundle.SchemaVersion,
+			Version:         s.Target.Version,
 			ManagedObjects:  managed,
 			Reason:          operatorstatus.ReasonAlreadyAtVersion,
 			Message:         "Schema state already records the current version",
-			SchemaMigration: schemaMigrationFromState(state, operatorstatus.PhaseSucceeded, operatorstatus.PhaseSucceeded),
+			SchemaMigration: s.schemaMigrationFromState(state, operatorstatus.PhaseSucceeded, operatorstatus.PhaseSucceeded),
 		}, true
 	}
 	return SchemaResult{}, false
@@ -154,18 +155,18 @@ func (s *SchemaController) reconcileSucceededSchemaJob(ctx context.Context, tamo
 		return SchemaResult{}, false, nil
 	}
 	operatormetrics.RecordSchemaMigration("succeeded")
-	state = schemaStateConfigMap(tamoss, liveJob, includeFixtures, state)
+	state = s.schemaStateConfigMap(tamoss, liveJob, includeFixtures, state)
 	if err := s.applyOwned(ctx, tamoss, state); err != nil {
 		return SchemaResult{}, true, err
 	}
 	managed = append(managed, state)
 	return SchemaResult{
 		Ready:           true,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonSchemaApplied,
 		Message:         "Schema migration completed successfully",
-		SchemaMigration: schemaMigrationFromState(state, operatorstatus.PhaseSucceeded, operatorstatus.PhaseSucceeded),
+		SchemaMigration: s.schemaMigrationFromState(state, operatorstatus.PhaseSucceeded, operatorstatus.PhaseSucceeded),
 	}, true, nil
 }
 
@@ -177,11 +178,11 @@ func (s *SchemaController) reconcileSchemaRetryStage(ctx context.Context, tamoss
 	managed = append(managed, resetState)
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonSchemaRetryAccepted,
 		Message:         "Schema retry annotation accepted; failed migration state was reset",
-		SchemaMigration: schemaMigrationFromState(resetState, "Retrying", "RetryAccepted"),
+		SchemaMigration: s.schemaMigrationFromState(resetState, "Retrying", "RetryAccepted"),
 		RecoveryEvent: &recoveryActionEvent{
 			Type:    corev1.EventTypeNormal,
 			Reason:  operatorstatus.ReasonSchemaRetryAccepted,
@@ -211,11 +212,11 @@ func (s *SchemaController) reconcileStaleSchemaJob(ctx context.Context, tamoss *
 	}
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonMigrationInProgress,
 		Message:         "Schema migration job template changed; the stale job was deleted for recreation",
-		SchemaMigration: schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		SchemaMigration: s.schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
 		RecoveryEvent: &recoveryActionEvent{
 			Type:    corev1.EventTypeNormal,
 			Reason:  operatorstatus.ReasonMigrationInProgress,
@@ -259,7 +260,7 @@ func (s *SchemaController) reconcileObsoleteSchemaJobs(ctx context.Context, tamo
 	if !waiting {
 		return SchemaResult{}, false, nil
 	}
-	return schemaJobCleanupResult(
+	return s.schemaJobCleanupResult(
 		cleanupManaged,
 		desired,
 		"Waiting for obsolete schema migration Jobs to terminate before launching the current revision",
@@ -284,7 +285,7 @@ func (s *SchemaController) reconcileSchemaJobPodCleanup(ctx context.Context, man
 		if !schemaJobPodOwned(&pods.Items[index]) {
 			continue
 		}
-		return schemaJobCleanupResult(
+		return s.schemaJobCleanupResult(
 			managed,
 			desired,
 			"Waiting for stale schema migration Job pods to terminate before launching a replacement",
@@ -293,14 +294,14 @@ func (s *SchemaController) reconcileSchemaJobPodCleanup(ctx context.Context, man
 	return SchemaResult{}, false, nil
 }
 
-func schemaJobCleanupResult(managed []client.Object, desired *batchv1.Job, message string) SchemaResult {
+func (s *SchemaController) schemaJobCleanupResult(managed []client.Object, desired *batchv1.Job, message string) SchemaResult {
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonMigrationInProgress,
 		Message:         message,
-		SchemaMigration: schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		SchemaMigration: s.schemaMigrationFromJob(desired, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
 		RequeueAfter:    schemaJobCleanupRequeueAfter,
 	}
 }
@@ -339,53 +340,53 @@ func (s *SchemaController) reconcileFailedSchemaJob(ctx context.Context, tamoss 
 		return SchemaResult{}, false, nil
 	}
 	operatormetrics.RecordSchemaMigration("failed")
-	if terminalSchemaFailure(state, tamoss) {
+	if s.terminalSchemaFailure(state, tamoss) {
 		operatormetrics.RecordSchemaMigration("blocked")
-		return terminalSchemaFailureResult(state, managed), true, nil
+		return s.terminalSchemaFailureResult(state, managed), true, nil
 	}
-	failureCount := nextFailureCount(state, tamoss)
-	state = schemaFailureStateConfigMap(tamoss, liveJob, state, failureCount)
+	failureCount := s.nextFailureCount(state, tamoss)
+	state = s.schemaFailureStateConfigMap(tamoss, liveJob, state, failureCount)
 	if err := s.applyOwned(ctx, tamoss, state); err != nil {
 		return SchemaResult{}, true, err
 	}
 	managed = append(managed, state)
 	if failureCount >= 3 {
 		operatormetrics.RecordSchemaMigration("blocked")
-		return terminalSchemaFailureResult(state, managed), true, nil
+		return s.terminalSchemaFailureResult(state, managed), true, nil
 	}
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonSchemaMigrationFailed,
 		Message:         fmt.Sprintf("Schema migration job failed; observed failed attempt %d of 3 before marking degraded", failureCount),
-		SchemaMigration: schemaMigrationFromState(state, operatorstatus.PhaseFailed, operatorstatus.PhaseFailed),
+		SchemaMigration: s.schemaMigrationFromState(state, operatorstatus.PhaseFailed, operatorstatus.PhaseFailed),
 	}, true, nil
 }
 
-func terminalSchemaFailureResult(state *corev1.ConfigMap, managed []client.Object) SchemaResult {
+func (s *SchemaController) terminalSchemaFailureResult(state *corev1.ConfigMap, managed []client.Object) SchemaResult {
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Degraded:        true,
 		Reason:          operatorstatus.ReasonSchemaMigrationFailed,
 		Message:         "Schema migration failed three consecutive reconciles",
-		SchemaMigration: schemaMigrationFromState(state, operatorstatus.PhaseFailed, operatorstatus.PhaseFailed),
+		SchemaMigration: s.schemaMigrationFromState(state, operatorstatus.PhaseFailed, operatorstatus.PhaseFailed),
 	}
 }
 
-func runningSchemaJobResult(managed []client.Object, liveJob *batchv1.Job, jobFound bool) (SchemaResult, bool) {
+func (s *SchemaController) runningSchemaJobResult(managed []client.Object, liveJob *batchv1.Job, jobFound bool) (SchemaResult, bool) {
 	if !jobFound {
 		return SchemaResult{}, false
 	}
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonMigrationInProgress,
 		Message:         fmt.Sprintf("Schema migration job %s is running", liveJob.Name),
-		SchemaMigration: schemaMigrationFromJob(liveJob, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		SchemaMigration: s.schemaMigrationFromJob(liveJob, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
 	}, true
 }
 
@@ -396,17 +397,17 @@ func (s *SchemaController) launchSchemaJob(ctx context.Context, tamoss *tamossv1
 	operatormetrics.RecordSchemaMigration("launched")
 	return SchemaResult{
 		Ready:           false,
-		Version:         schemabundle.SchemaVersion,
+		Version:         s.Target.Version,
 		ManagedObjects:  managed,
 		Reason:          operatorstatus.ReasonMigrationInProgress,
 		Message:         "Schema migration job was launched",
-		SchemaMigration: schemaMigrationFromJob(job, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
+		SchemaMigration: s.schemaMigrationFromJob(job, operatorstatus.PhaseRunning, operatorstatus.PhaseRunning),
 	}, nil
 }
 
 func (s *SchemaController) acceptSchemaRetry(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, state *corev1.ConfigMap, liveJob *batchv1.Job, jobFound bool) (bool, *corev1.ConfigMap, error) {
 	value := strings.TrimSpace(tamoss.Annotations[AnnotationSchemaRetry])
-	if value == "" || !terminalSchemaFailure(state, tamoss) {
+	if value == "" || !s.terminalSchemaFailure(state, tamoss) {
 		return false, nil, nil
 	}
 	if state != nil && state.Annotations[annotationSchemaRetryDone] == value {
@@ -456,7 +457,7 @@ func (s *SchemaController) getSchemaJob(ctx context.Context, desired *batchv1.Jo
 	return nil, false, err
 }
 
-func schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, fixturesApplied bool, previous *corev1.ConfigMap) *corev1.ConfigMap {
+func (s *SchemaController) schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, fixturesApplied bool, previous *corev1.ConfigMap) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        tamossResourceName(tamoss, "schema-state"),
@@ -465,16 +466,16 @@ func schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, fixtu
 			Annotations: schemaStateAnnotations(previous),
 		},
 		Data: map[string]string{
-			schemaStateAppliedVersionKey: schemabundle.SchemaVersion,
+			schemaStateAppliedVersionKey: s.Target.Version,
 			schemaStateLastAppliedAtKey:  time.Now().UTC().Format(time.RFC3339),
 			schemaStateJobUIDKey:         string(job.UID),
 			schemaStateFixturesKey:       fmt.Sprintf("%t", fixturesApplied),
-			schemaStateSupportedTAMSAPI:  schemabundle.SupportedTAMSAPIVersion,
+			schemaStateSupportedTAMSAPI:  s.Target.TAMSAPI,
 		},
 	}
 }
 
-func schemaFailureStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, previous *corev1.ConfigMap, failureCount int) *corev1.ConfigMap {
+func (s *SchemaController) schemaFailureStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, previous *corev1.ConfigMap, failureCount int) *corev1.ConfigMap {
 	data := map[string]string{}
 	if previous != nil {
 		for key, value := range previous.Data {
@@ -483,7 +484,7 @@ func schemaFailureStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job
 	}
 	data[schemaStateFailureCountKey] = strconv.Itoa(failureCount)
 	data[schemaStateFailedGeneration] = strconv.FormatInt(tamoss.Generation, 10)
-	data[schemaStateFailedVersion] = schemabundle.SchemaVersion
+	data[schemaStateFailedVersion] = s.Target.Version
 	data[schemaStateFailedJobUID] = string(job.UID)
 	data[schemaStateFailedAtKey] = time.Now().UTC().Format(time.RFC3339)
 	return &corev1.ConfigMap{
@@ -539,7 +540,7 @@ func schemaRetryStateConfigMap(tamoss *tamossv1alpha1.Tamoss, previous *corev1.C
 	}
 }
 
-func schemaMigrationFromState(state *corev1.ConfigMap, phase, result string) tamossv1alpha1.SchemaMigrationStatus {
+func (s *SchemaController) schemaMigrationFromState(state *corev1.ConfigMap, phase, result string) tamossv1alpha1.SchemaMigrationStatus {
 	observed := ""
 	if state != nil {
 		observed = state.Data[schemaStateAppliedVersionKey]
@@ -550,9 +551,9 @@ func schemaMigrationFromState(state *corev1.ConfigMap, phase, result string) tam
 		Attempts:                  schemaFailureAttempts(state),
 		AppliedRevision:           observed,
 		ObservedRevision:          observed,
-		CurrentRevision:           schemabundle.SchemaVersion,
-		PreviousSupportedRevision: schemabundle.PreviousSupportedSchemaVersion,
-		SupportedTAMSAPI:          schemabundle.SupportedTAMSAPIVersion,
+		CurrentRevision:           s.Target.Version,
+		PreviousSupportedRevision: s.Target.PreviousVersion,
+		SupportedTAMSAPI:          s.Target.TAMSAPI,
 	}
 	if phase == operatorstatus.PhaseSucceeded && status.Attempts == 0 {
 		status.Attempts = 1
@@ -571,7 +572,7 @@ func schemaFailureAttempts(state *corev1.ConfigMap) int32 {
 	return int32(count) //nolint:gosec // Count is clamped to math.MaxInt32 above.
 }
 
-func schemaMigrationFromJob(job *batchv1.Job, phase, result string) tamossv1alpha1.SchemaMigrationStatus {
+func (s *SchemaController) schemaMigrationFromJob(job *batchv1.Job, phase, result string) tamossv1alpha1.SchemaMigrationStatus {
 	timestamp := job.CreationTimestamp
 	if timestamp.IsZero() {
 		timestamp = metav1.Now()
@@ -581,20 +582,20 @@ func schemaMigrationFromJob(job *batchv1.Job, phase, result string) tamossv1alph
 		LastAttemptTime:           &timestamp,
 		LastAttemptResult:         result,
 		Attempts:                  1,
-		CurrentRevision:           schemabundle.SchemaVersion,
-		PreviousSupportedRevision: schemabundle.PreviousSupportedSchemaVersion,
-		SupportedTAMSAPI:          schemabundle.SupportedTAMSAPIVersion,
+		CurrentRevision:           s.Target.Version,
+		PreviousSupportedRevision: s.Target.PreviousVersion,
+		SupportedTAMSAPI:          s.Target.TAMSAPI,
 	}
 }
 
-func unsupportedSchemaMigrationStatus(observed string) tamossv1alpha1.SchemaMigrationStatus {
+func (s *SchemaController) unsupportedSchemaMigrationStatus(observed string) tamossv1alpha1.SchemaMigrationStatus {
 	return tamossv1alpha1.SchemaMigrationStatus{
 		Phase:                     operatorstatus.PhaseBlocked,
 		LastAttemptResult:         operatorstatus.ReasonUnsupportedSchemaVersion,
 		ObservedRevision:          observed,
-		CurrentRevision:           schemabundle.SchemaVersion,
-		PreviousSupportedRevision: schemabundle.PreviousSupportedSchemaVersion,
-		SupportedTAMSAPI:          schemabundle.SupportedTAMSAPIVersion,
+		CurrentRevision:           s.Target.Version,
+		PreviousSupportedRevision: s.Target.PreviousVersion,
+		SupportedTAMSAPI:          s.Target.TAMSAPI,
 	}
 }
 
@@ -628,11 +629,11 @@ func schemaFailureCount(state *corev1.ConfigMap) int {
 	return count
 }
 
-func nextFailureCount(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamoss) int {
+func (s *SchemaController) nextFailureCount(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamoss) int {
 	if state == nil {
 		return 1
 	}
-	if state.Data[schemaStateFailedVersion] != schemabundle.SchemaVersion {
+	if state.Data[schemaStateFailedVersion] != s.Target.Version {
 		return 1
 	}
 	if state.Data[schemaStateFailedGeneration] != strconv.FormatInt(tamoss.Generation, 10) {
@@ -645,11 +646,11 @@ func nextFailureCount(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamoss) in
 	return count + 1
 }
 
-func terminalSchemaFailure(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamoss) bool {
+func (s *SchemaController) terminalSchemaFailure(state *corev1.ConfigMap, tamoss *tamossv1alpha1.Tamoss) bool {
 	if state == nil {
 		return false
 	}
-	if state.Data[schemaStateFailedVersion] != schemabundle.SchemaVersion {
+	if state.Data[schemaStateFailedVersion] != s.Target.Version {
 		return false
 	}
 	if state.Data[schemaStateFailedGeneration] != strconv.FormatInt(tamoss.Generation, 10) {
@@ -677,12 +678,12 @@ func jobFailed(job *batchv1.Job) bool {
 	return false
 }
 
-func schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) *batchv1.Job {
+func (s *SchemaController) schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) *batchv1.Job {
 	backoffLimit := int32(0)
-	args := schemaMigrationArgs(tamoss, includeFixtures)
+	args := s.schemaMigrationArgs(tamoss, includeFixtures)
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()),
+			Name:      tamossResourceName(tamoss, "schema-migrate-"+s.schemaVersionForName()),
 			Namespace: tamoss.Namespace,
 			Labels:    schemaLabels(tamoss),
 		},
@@ -708,8 +709,8 @@ func schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) *ba
 	}
 }
 
-func schemaMigrationArgs(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) []string {
-	args := []string{"run", "tamoss-db", "migrate", "--revision", schemabundle.CurrentDatabaseRevision}
+func (s *SchemaController) schemaMigrationArgs(tamoss *tamossv1alpha1.Tamoss, includeFixtures bool) []string {
+	args := []string{"run", "tamoss-db", "migrate", "--revision", s.Target.DatabaseRevision}
 	if includeFixtures {
 		args = append(args, "--apply-fixtures")
 	}
@@ -746,8 +747,8 @@ func schemaMigrationEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
 	}
 }
 
-func schemaVersionForName() string {
-	version := strings.TrimPrefix(schemabundle.SchemaVersion, "v")
+func (s *SchemaController) schemaVersionForName() string {
+	version := strings.TrimPrefix(s.Target.Version, "v")
 	if version == "" {
 		version = schemabundle.DevelopmentSchemaVersion
 	}

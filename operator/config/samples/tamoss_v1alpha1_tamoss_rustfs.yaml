@@ -4,6 +4,7 @@ metadata:
   name: tamoss-rustfs
   namespace: tams
 spec:
+  version: dev
   backends:
     db:
       providedBy: external

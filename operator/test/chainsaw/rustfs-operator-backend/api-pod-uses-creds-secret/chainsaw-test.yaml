@@ -64,6 +64,11 @@ spec:
             subresource: status
             timeout: 60s
 
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
     - name: wait for storage backend reconciliation
       try:
         - assert:

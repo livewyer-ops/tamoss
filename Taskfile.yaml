@@ -7,7 +7,6 @@ vars:
   PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
   SECRETS_DIR: ".local"
-  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
   DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'

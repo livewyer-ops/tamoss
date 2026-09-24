@@ -70,6 +70,7 @@ func TestResumeArtifactRetentionRecordsThenDeletes(t *testing.T) {
 	cleaner := &fakeHibernationArtifactCleaner{objectsDeleted: 7}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -129,6 +130,7 @@ func TestResumeArtifactRetentionWaitsForDatabaseReadiness(t *testing.T) {
 	cleaner := &fakeHibernationArtifactCleaner{}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -161,6 +163,7 @@ func TestResumeArtifactRetentionTTLSchedulesAndRetries(t *testing.T) {
 	cleaner := &fakeHibernationArtifactCleaner{}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -226,6 +229,7 @@ func TestResumeArtifactRetentionCompletesPreviousCycle(t *testing.T) {
 	tamoss.Status.Lifecycle.ResolvedRestore.ManifestKey = "hibernate/example/snap-2/manifest.json"
 	cleaner := &fakeHibernationArtifactCleaner{err: fmt.Errorf("temporary storage failure")}
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
 			WithObjects(tamoss, destination).Build(),

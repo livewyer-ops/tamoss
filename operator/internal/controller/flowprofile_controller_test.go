@@ -82,7 +82,7 @@ func TestFlowProfileReconcileLaunchesRegistrationAndPublishesReadyState(t *testi
 		WithIndex(&tamossv1alpha1.FlowProfile{}, flowProfileTamossIndex, func(obj client.Object) []string {
 			return []string{obj.(*tamossv1alpha1.FlowProfile).Spec.TamossRef.Name}
 		}).WithObjects(profile, tamoss, schemaState).Build()
-	r := &FlowProfileReconciler{Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
+	r := &FlowProfileReconciler{Releases: testReleases(), Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(profile)}
 
 	if _, err := r.Reconcile(ctx, request); err != nil {
@@ -147,7 +147,7 @@ func TestResolveIngestFlowProfilesSupportsReferenceAndUUID(t *testing.T) {
 		Resolved:           tamossv1alpha1.FlowProfileResolvedStatus{Format: "urn:x-nmos:format:video"},
 		Conditions:         []metav1.Condition{{Type: flowProfileConditionReady, Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1}},
 	}
-	r := &IngestRunReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(profile).Build()}
+	r := &IngestRunReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(profile).Build()}
 	run := &tamossv1alpha1.IngestRun{ObjectMeta: metav1.ObjectMeta{Name: "run", Namespace: profile.Namespace}}
 	spec := tamossv1alpha1.IngestRunSpec{TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"}, Options: tamossv1alpha1.IngestRunOptions{TAMSFlowProfiles: []tamossv1alpha1.IngestRunTAMSFlowProfile{
 		{Format: "video", ProfileRef: &tamossv1alpha1.IngestFlowProfileReference{Name: profile.Name}},
@@ -170,7 +170,7 @@ func TestResolvedIngestFlowProfilesArePersistedBeforeJobCreation(t *testing.T) {
 	scheme := flowProfileTestScheme(t)
 	run := &tamossv1alpha1.IngestRun{ObjectMeta: metav1.ObjectMeta{Name: "run", Namespace: "media"}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&tamossv1alpha1.IngestRun{}).WithObjects(run).Build()
-	r := &IngestRunReconciler{Client: c}
+	r := &IngestRunReconciler{Releases: testReleases(), Client: c}
 	resolved := []tamossv1alpha1.IngestRunResolvedFlowProfileStatus{{
 		Format: "video", Index: 0, ProfileID: "60d9df18-6d9d-4b86-84bf-d1dcf14b3a28", ProfileRef: "hd-avc",
 	}}
@@ -219,7 +219,7 @@ func TestResolveIngestFlowProfilesRejectsUnusableReferences(t *testing.T) {
 				}}},
 			}
 			tt.mutate(profile, &spec)
-			r := &IngestRunReconciler{Client: fake.NewClientBuilder().WithScheme(flowProfileTestScheme(t)).WithObjects(profile).Build()}
+			r := &IngestRunReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().WithScheme(flowProfileTestScheme(t)).WithObjects(profile).Build()}
 			_, reason, _, err := r.resolveIngestFlowProfiles(context.Background(), run, spec)
 			if err != nil || reason != tt.wantReason {
 				t.Fatalf("reason=%q err=%v, want %q", reason, err, tt.wantReason)
@@ -248,7 +248,7 @@ func TestFlowProfileDeletionRemainsBlockedWhileAFlowUsesTheProfile(t *testing.T)
 			return []string{obj.(*tamossv1alpha1.FlowProfile).Spec.TamossRef.Name}
 		}).
 		WithObjects(profile, tamoss, registrationState).Build()
-	r := &FlowProfileReconciler{Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
+	r := &FlowProfileReconciler{Releases: testReleases(), Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(profile)}
 
 	if err := c.Delete(ctx, profile); err != nil {
@@ -333,7 +333,7 @@ func TestFlowProfileDuplicateLoserClearsRegistrationState(t *testing.T) {
 			return []string{obj.(*tamossv1alpha1.FlowProfile).Spec.TamossRef.Name}
 		}).
 		WithObjects(profile, duplicate, tamoss, schemaState, registrationState, registrationJob).Build()
-	r := &FlowProfileReconciler{Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
+	r := &FlowProfileReconciler{Releases: testReleases(), Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(profile)}
 
 	if _, err := r.Reconcile(ctx, request); err != nil {
@@ -384,7 +384,7 @@ func TestFlowProfileDeletionDistinguishesOwnerFromDuplicate(t *testing.T) {
 					return []string{obj.(*tamossv1alpha1.FlowProfile).Spec.TamossRef.Name}
 				}).
 				WithObjects(current, other).Build()
-			r := &FlowProfileReconciler{Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
+			r := &FlowProfileReconciler{Releases: testReleases(), Client: c, Scheme: scheme, WatchNamespaces: WatchNamespaceSet{}}
 			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(current)}
 			if err := c.Delete(ctx, current); err != nil {
 				t.Fatal(err)
@@ -483,7 +483,7 @@ func TestFlowProfileDeletionWaitsForRegistrationBeforeCheckingReferences(t *test
 		WithIndex(&tamossv1alpha1.FlowProfile{}, flowProfileTamossIndex, func(obj client.Object) []string {
 			return []string{obj.(*tamossv1alpha1.FlowProfile).Spec.TamossRef.Name}
 		}).WithObjects(profile, tamoss, job, schemaState).Build()
-	r := &FlowProfileReconciler{Client: c, Scheme: scheme}
+	r := &FlowProfileReconciler{Releases: testReleases(), Client: c, Scheme: scheme}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(profile)}
 	if result, err := r.Reconcile(ctx, request); err != nil || result.RequeueAfter == 0 {
 		t.Fatalf("registration must finish before deletion: result=%#v err=%v", result, err)

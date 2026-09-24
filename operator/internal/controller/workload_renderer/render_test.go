@@ -379,7 +379,7 @@ func TestRenderAPICORSAllowedOrigins(t *testing.T) {
 func TestRenderMultiServerSecurityDefaults(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Profile = tamossv1alpha1.TamossProfileMultiServer
-	profiledefaults.Apply(tamoss)
+	profiledefaults.Apply(tamoss, profiledefaults.DevelopmentImages)
 
 	objects := Render(tamoss)
 	for _, name := range []string{"example-api", "example-ui", "example-worker", "example-console"} {
@@ -493,7 +493,7 @@ func TestRenderConsoleUsesIsolatedReadOnlyIdentity(t *testing.T) {
 		NodePort:   32000,
 	}}
 	tamoss.Spec.UI.Env = map[string]string{consoleUpstreamEnv: "http://untrusted.invalid"}
-	profiledefaults.Apply(tamoss)
+	profiledefaults.Apply(tamoss, profiledefaults.DevelopmentImages)
 	objects := Render(tamoss)
 
 	console := deploymentByName(t, objects, "example-console")
@@ -630,7 +630,7 @@ func TestRenderConsoleIsOmittedByDefault(t *testing.T) {
 	t.Parallel()
 	tamoss := rendererFixture()
 	tamoss.Spec.Console = tamossv1alpha1.ConsoleComponentSpec{}
-	profiledefaults.Apply(tamoss)
+	profiledefaults.Apply(tamoss, profiledefaults.DevelopmentImages)
 	objects := Render(tamoss)
 	if hasObject(objects, "Deployment/example-console") || hasObject(objects, "Role/example-console") {
 		t.Fatalf("did not expect opt-in Console resources in %v", renderedIDs(objects))

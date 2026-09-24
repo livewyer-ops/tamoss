@@ -9,7 +9,7 @@ import (
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/backend/cnpg"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 )
 
 func providerStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.ProviderStatus {
@@ -66,11 +66,7 @@ func routingProviderStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Provide
 	return providerDomainStatus("external", tamossv1alpha1.ProviderOwnershipExternal)
 }
 
-func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) tamossv1alpha1.ResolvedStatus {
-	resolvedTAMSinImage := defaults.DefaultTAMSinImage
-	if len(tamsinImage) > 0 && strings.TrimSpace(tamsinImage[0]) != "" {
-		resolvedTAMSinImage = strings.TrimSpace(tamsinImage[0])
-	}
+func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, release releases.Release) tamossv1alpha1.ResolvedStatus {
 	status := tamossv1alpha1.ResolvedStatus{
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
@@ -78,12 +74,12 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) 
 			Console:                       resolvedImageRef(tamoss.Spec.Console.Image, defaults.DefaultConsoleRepository),
 			Worker:                        resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			SchemaMigrationPostgresClient: schemaMigrationPostgresClientImage(tamoss),
-			TAMSin:                        resolvedTAMSinImage,
+			TAMSin:                        tamoss.Spec.Images.TAMSin,
 		},
 		Versions: tamossv1alpha1.ResolvedVersionStatus{
-			Schema:  schemabundle.SchemaVersion,
-			Tamoss:  resolvedRuntimeVersion(tamoss),
-			TAMSAPI: schemabundle.SupportedTAMSAPIVersion,
+			Schema:  release.Schema.Version,
+			Tamoss:  tamoss.Spec.Version,
+			TAMSAPI: release.Schema.TAMSAPI,
 		},
 	}
 	if tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG && tamoss.Spec.Backends.DB.CNPG != nil {
@@ -136,14 +132,10 @@ func resolvedImageRef(image tamossv1alpha1.ImageSpec, fallbackRepository string)
 	if tag == "" {
 		tag = defaults.DefaultOperandTag
 	}
-	return fmt.Sprintf("%s:%s", repository, tag)
-}
-
-func resolvedRuntimeVersion(tamoss *tamossv1alpha1.Tamoss) string {
-	if tamoss.Spec.API.Image.Tag != "" {
-		return tamoss.Spec.API.Image.Tag
+	if strings.HasPrefix(tag, "@") {
+		return repository + tag
 	}
-	return defaults.DefaultOperandTag
+	return fmt.Sprintf("%s:%s", repository, tag)
 }
 
 func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {

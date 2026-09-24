@@ -138,7 +138,7 @@ is the executable source of truth for label values and selector presets.
 | `task operator:e2e:chainsaw:smoke` | Kind-backed smoke tests |
 | `task operator:e2e:chainsaw:ci` | Kind-backed smoke and standard tests, excluding external-provider tests |
 | `task operator:e2e:chainsaw:nightly` | Kind-backed smoke, standard, and extended tests |
-| `task operator:e2e:chainsaw:release` | Release-labelled checks |
+| `task operator:e2e:chainsaw:release` | Release-labelled checks using fixture providers |
 | `task operator:e2e:chainsaw:deployed` | `target=deployed,lifecycle=read-only` only |
 | `task operator:e2e:chainsaw:focus SELECTOR='...'` | Any explicit Chainsaw label selector |
 
@@ -232,10 +232,31 @@ Profile bootstrapping is coordinated with the Kind profile e2e tasks. Chainsaw
 may assert profile-rendered Kubernetes shape, but full cluster creation and
 through-ingress smoke checks stay in the existing Kind workflow.
 
-## Rollout Gates
+## Managed release upgrades
 
-Some rollout checks are intentionally outside source control. Branch protection
-must be updated by repository administrators after the `operator-chainsaw-e2e`
-job has stayed green on `main`. The ten-run flake soak and any deferred HA
-leader-election scenario should be recorded on the pull request or follow-up
-issue that enables those gates, not hidden inside the suite.
+The `release-selection/managed-upgrade` scenario requires real CNPG and RustFS
+operators in an isolated cluster. It installs the supported historical releases,
+writes metadata and an S3 Object, then upgrades each instance separately. It
+checks the stored data and the neighbouring instance's unchanged schema.
+Its `test.tamoss.io/platform=managed` label excludes it from the default and
+fixture release suites, which install simulated provider CRDs.
+The scenario retains its resources for cluster teardown; the `up` task removes
+the test cluster unless `CHAINSAW_KEEP_CLUSTER=true`.
+
+Set `SCHEMA_VERSION` and `PREVIOUS_SCHEMA_VERSION` from the current entry in
+`operator/compatibility.yaml`, then run:
+
+```bash
+task operator:e2e:chainsaw:up \
+  CHAINSAW_CLUSTER_NAME=tamoss-release-upgrade \
+  KUBECONFIG=.local/release-upgrade.kubeconfig \
+  CHAINSAW_INSTALL_CNPG_OPERATOR=true \
+  CHAINSAW_INSTALL_RUSTFS_OPERATOR=true \
+  CHAINSAW_SELECTOR=test.tamoss.io/platform=managed \
+  SCHEMA_VERSION="$SCHEMA_VERSION" \
+  PREVIOUS_SCHEMA_VERSION="$PREVIOUS_SCHEMA_VERSION" \
+  CHAINSAW_TASK_ARGS='CHAINSAW_TESTS=operator/test/chainsaw/release-selection'
+```
+
+Other provider scenarios simulate their controllers using owned Pods and
+StatefulSets. Their database and S3 fixtures run separately.

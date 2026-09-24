@@ -59,8 +59,9 @@ var _ = Describe("Tamoss Controller lifecycle", func() {
 
 	It("removes the finalizer after owned resources are deleted", func() {
 		controllerReconciler := &TamossReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Releases: testReleases(),
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
 		}
 
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -94,8 +95,9 @@ var _ = Describe("Tamoss Controller lifecycle", func() {
 		Expect(k8sClient.Status().Update(ctx, resource)).To(Succeed())
 
 		controllerReconciler := &TamossReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Releases: testReleases(),
+			Client:   k8sClient,
+			Scheme:   k8sClient.Scheme(),
 		}
 
 		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -128,6 +130,7 @@ var _ = Describe("Tamoss Controller lifecycle", func() {
 		configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
 		recorder := record.NewFakeRecorder(10)
 		controllerReconciler := &TamossReconciler{
+			Releases: testReleases(),
 			Client:   k8sClient,
 			Scheme:   k8sClient.Scheme(),
 			Recorder: recorder,

@@ -97,8 +97,9 @@ var _ = Describe("Tamoss Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -111,7 +112,7 @@ var _ = Describe("Tamoss Controller", func() {
 			uiDeployment := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-ui", Namespace: "default"}, uiDeployment)).To(Succeed())
 			schemaJob := &batchv1.Job{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, schemaJob)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, schemaJob)).To(Succeed())
 			Expect(schemaJob.Spec.Template.Spec.Containers[0].Command).To(Equal([]string{"uv"}))
 			Expect(schemaJob.Spec.Template.Spec.Containers[0].Args).To(ContainElements("run", "tamoss-db", "migrate"))
 			completeSchemaMigration(ctx, controllerReconciler, typeNamespacedName, schemaJob)
@@ -155,6 +156,7 @@ var _ = Describe("Tamoss Controller", func() {
 			})
 
 			controllerReconciler := &TamossReconciler{
+				Releases:        testReleases(),
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				WatchNamespaces: map[string]struct{}{"default": {}},
@@ -176,6 +178,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -195,7 +198,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(backendsReady.Reason).To(Equal(operatorstatus.ReasonMissingSecret))
 
 			job := &batchv1.Job{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 			Eventually(recorder.Events).Should(Receive(ContainSubstring(operatorstatus.ReasonMissingSecret)))
 		})
@@ -227,6 +230,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -242,7 +246,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(identityReady.Reason).To(Equal(operatorstatus.ReasonMissingProviderConfiguration))
 
 			job := &batchv1.Job{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 			Eventually(recorder.Events).Should(Receive(ContainSubstring(operatorstatus.ReasonMissingProviderConfiguration)))
 		})
@@ -256,8 +260,9 @@ var _ = Describe("Tamoss Controller", func() {
 
 			instance := configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
@@ -293,6 +298,7 @@ var _ = Describe("Tamoss Controller", func() {
 			instance := configureAuthentikIdentity(ctx, typeNamespacedName, "other", "http://authentik.auth.svc:9000", []string{"https://app.example.com/auth/callback"})
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases:                    testReleases(),
 				Client:                      k8sClient,
 				Scheme:                      k8sClient.Scheme(),
 				Recorder:                    recorder,
@@ -320,6 +326,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			instance := configureAuthentikIdentity(ctx, typeNamespacedName, "any-auth", server.URL, []string{"https://app.example.com/auth/callback"})
 			controllerReconciler := &TamossReconciler{
+				Releases:                    testReleases(),
 				Client:                      k8sClient,
 				Scheme:                      k8sClient.Scheme(),
 				AuthentikPlatformNamespaces: authentikbackend.NewPlatformNamespacePolicy("*"),
@@ -345,6 +352,7 @@ var _ = Describe("Tamoss Controller", func() {
 			instance := configureAuthentikIdentity(ctx, typeNamespacedName, "auth", "http://authentik.auth.svc:9000", nil)
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -371,6 +379,7 @@ var _ = Describe("Tamoss Controller", func() {
 			configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -396,8 +405,9 @@ var _ = Describe("Tamoss Controller", func() {
 			defer server.Close()
 			configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 
 			for range 2 {
@@ -436,6 +446,7 @@ var _ = Describe("Tamoss Controller", func() {
 			defer server.Close()
 			configureAuthentikIdentity(ctx, typeNamespacedName, "auth", server.URL, []string{"https://app.example.com/auth/callback"})
 			controllerReconciler := &TamossReconciler{
+				Releases:                  testReleases(),
 				Client:                    k8sClient,
 				Scheme:                    k8sClient.Scheme(),
 				AuthentikRetryGracePeriod: time.Nanosecond,
@@ -470,8 +481,9 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(k8sClient.Update(ctx, instance)).To(Succeed())
 
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
@@ -500,8 +512,9 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(k8sClient.Update(ctx, instance)).To(Succeed())
 
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
@@ -524,6 +537,7 @@ var _ = Describe("Tamoss Controller", func() {
 			discoveryManager, _ := fakeDependencyDiscovery(false)
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases:                testReleases(),
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				Recorder:                recorder,
@@ -548,7 +562,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(updated.Status.Providers.DB.Ownership).To(Equal(tamossv1alpha1.ProviderOwnershipManaged))
 
 			job := &batchv1.Job{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 			Eventually(recorder.Events).Should(Receive(ContainSubstring(operatorstatus.ReasonMissingDependencyOperator)))
 		})
@@ -563,6 +577,7 @@ var _ = Describe("Tamoss Controller", func() {
 			discoveryManager := operatordiscovery.NewManager(fakeClient, []schema.GroupVersionResource{operatordiscovery.CNPGClustersGVR})
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases:                testReleases(),
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				Recorder:                recorder,
@@ -590,6 +605,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, fakeClient := fakeDependencyDiscovery(false)
 			controllerReconciler := &TamossReconciler{
+				Releases:                testReleases(),
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				Discovery:               discoveryManager,
@@ -611,7 +627,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(hasTamossOwner(cluster.OwnerReferences, resourceName)).To(BeTrue())
 
 			job := &batchv1.Job{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 
 			setCNPGClusterStatus(ctx, resourceName+"-db", "default", []metav1.Condition{{
@@ -624,7 +640,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)).To(Succeed())
 		})
 
 		It("should render a managed CNPG backup policy", func() {
@@ -647,6 +663,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeDependencyDiscovery(true)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -687,6 +704,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeDependencyDiscovery(true)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -719,6 +737,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeDependencyDiscovery(true)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -742,7 +761,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(backendsReady.Status).To(Equal(metav1.ConditionFalse))
 			Expect(backendsReady.Reason).To(Equal("WaitingForCNPGSecret"))
 			job := &batchv1.Job{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
 
@@ -755,6 +774,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeDependencyDiscovery(true)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -773,7 +793,7 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			job := &batchv1.Job{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, job)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, job)).To(Succeed())
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.Env).To(ContainElement(SatisfyAll(
 				HaveField("Name", "POSTGRES_USER"),
@@ -800,6 +820,7 @@ var _ = Describe("Tamoss Controller", func() {
 			discoveryManager, _ := fakeDependencyDiscovery(true)
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Recorder:  recorder,
@@ -837,6 +858,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeRustFSDependencyDiscovery()
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -865,6 +887,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeRustFSDependencyDiscovery()
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -892,6 +915,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			discoveryManager, _ := fakeRustFSDependencyDiscovery()
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Discovery: discoveryManager,
@@ -920,7 +944,7 @@ var _ = Describe("Tamoss Controller", func() {
 			err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-s3-bucket-init", Namespace: "default"}, job)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 			schemaJob := &batchv1.Job{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: "default"}, schemaJob)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: "default"}, schemaJob)).To(Succeed())
 		})
 
 		It("should surface RustFS Tenant failures as warning Events", func() {
@@ -930,6 +954,7 @@ var _ = Describe("Tamoss Controller", func() {
 			discoveryManager, _ := fakeRustFSDependencyDiscovery()
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases:  testReleases(),
 				Client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Recorder:  recorder,
@@ -961,6 +986,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -990,8 +1016,9 @@ var _ = Describe("Tamoss Controller", func() {
 
 		It("should preserve a generated API token across reconciles", func() {
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			existing := &corev1.Secret{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-api-token", Namespace: "default"}, existing)
@@ -1018,8 +1045,9 @@ var _ = Describe("Tamoss Controller", func() {
 
 		It("should replace the generated API token when an explicit token is supplied", func() {
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			existing := &corev1.Secret{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-api-token", Namespace: "default"}, existing)
@@ -1061,8 +1089,9 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(k8sClient.Update(ctx, instance)).To(Succeed())
 
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			makeSchemaReady(ctx, controllerReconciler, typeNamespacedName, resourceName)
 
@@ -1094,13 +1123,14 @@ var _ = Describe("Tamoss Controller", func() {
 
 		It("should write schema state after the migration Job succeeds", func() {
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
 
-			jobName := resourceName + "-schema-migrate-" + schemaVersionForName()
+			jobName := resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName()
 			job := &batchv1.Job{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: "default"}, job)).To(Succeed())
 			running := &tamossv1alpha1.Tamoss{}
@@ -1133,6 +1163,7 @@ var _ = Describe("Tamoss Controller", func() {
 		It("should degrade after three schema migration failures", func() {
 			recorder := record.NewFakeRecorder(10)
 			controllerReconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: recorder,
@@ -1140,7 +1171,7 @@ var _ = Describe("Tamoss Controller", func() {
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
 
-			jobName := resourceName + "-schema-migrate-" + schemaVersionForName()
+			jobName := resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName()
 			job := &batchv1.Job{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: "default"}, job)).To(Succeed())
 			markJobStatusFailed(job)
@@ -1187,13 +1218,14 @@ var _ = Describe("Tamoss Controller", func() {
 			Expect(k8sClient.Update(ctx, instance)).To(Succeed())
 
 			controllerReconciler := &TamossReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Releases: testReleases(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
 
-			jobName := resourceName + "-schema-migrate-" + schemaVersionForName()
+			jobName := resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName()
 			job := &batchv1.Job{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: "default"}, job)).To(Succeed())
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--apply-fixtures"))
@@ -1208,6 +1240,7 @@ var _ = Describe("Tamoss Controller", func() {
 
 func minimalTamossSpec() tamossv1alpha1.TamossSpec {
 	return tamossv1alpha1.TamossSpec{
+		Version: "dev",
 		Backends: tamossv1alpha1.BackendsSpec{
 			DB: tamossv1alpha1.DBBackendSpec{
 				ProvidedBy: tamossv1alpha1.BackendProvidedByExternal,
@@ -1515,6 +1548,7 @@ func resource2Gi(value string) resource.Quantity {
 
 func cleanupTamossArtifacts(ctx context.Context, name, namespace string) {
 	tamoss := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 	}
 	options := []client.DeleteAllOfOption{
@@ -1523,6 +1557,8 @@ func cleanupTamossArtifacts(ctx context.Context, name, namespace string) {
 	}
 	for _, obj := range []client.Object{
 		&appsv1.Deployment{},
+		&appsv1.StatefulSet{},
+		&corev1.Pod{},
 		&batchv1.Job{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
@@ -1558,7 +1594,7 @@ func cleanupTamossArtifacts(ctx context.Context, name, namespace string) {
 			return errors.IsNotFound(err)
 		}).Should(BeTrue())
 	}
-	for _, jobName := range []string{name + "-schema-migrate-" + schemaVersionForName(), name + "-s3-bucket-init"} {
+	for _, jobName := range []string{name + "-schema-migrate-" + testSchemaController().schemaVersionForName(), name + "-s3-bucket-init"} {
 		job := &batchv1.Job{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: namespace}, job); err == nil {
 			if len(job.Finalizers) > 0 {
@@ -1598,7 +1634,7 @@ func makeSchemaReady(ctx context.Context, reconciler *TamossReconciler, name typ
 	Expect(err).NotTo(HaveOccurred())
 
 	job := &batchv1.Job{}
-	err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + schemaVersionForName(), Namespace: name.Namespace}, job)
+	err = k8sClient.Get(ctx, types.NamespacedName{Name: resourceName + "-schema-migrate-" + testSchemaController().schemaVersionForName(), Namespace: name.Namespace}, job)
 	if errors.IsNotFound(err) {
 		return
 	}
@@ -1777,6 +1813,14 @@ func setCNPGClusterStatus(ctx context.Context, name, namespace string, condition
 			conditions[i].LastTransitionTime = metav1.Now()
 		}
 	}
+	if meta.IsStatusConditionTrue(conditions, string(cnpgv1.ConditionClusterReady)) {
+		for i := 0; i < cluster.Spec.Instances; i++ {
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s-%d", name, i+1), Namespace: namespace, Labels: map[string]string{"cnpg.io/cluster": name, "app.kubernetes.io/instance": strings.TrimSuffix(name, "-db")}, OwnerReferences: []metav1.OwnerReference{{APIVersion: cnpgv1.SchemeGroupVersion.String(), Kind: "Cluster", Name: name, UID: cluster.UID, Controller: ptr.To(true)}}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "postgres", Image: cluster.Spec.ImageName}}}}
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+			pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "postgres", Image: cluster.Spec.ImageName, ImageID: "test", Ready: true}}
+			Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+		}
+	}
 	cluster.Status.Conditions = conditions
 	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 }
@@ -1836,6 +1880,20 @@ func setRustFSTenantStatus(ctx context.Context, name, namespace string, conditio
 	Expect(unstructured.SetNestedSlice(tenant.Object, []interface{}{}, "status", "pools")).To(Succeed())
 	Expect(unstructured.SetNestedSlice(tenant.Object, conditions, "status", "conditions")).To(Succeed())
 	Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
+	for _, condition := range conditions {
+		value, ok := condition.(map[string]interface{})
+		if !ok || value["type"] != "Ready" || value["status"] != "True" {
+			continue
+		}
+		image, _, _ := unstructured.NestedString(tenant.Object, "spec", "image")
+		labels := map[string]string{"app.kubernetes.io/instance": strings.TrimSuffix(name, "-s3")}
+		pools, _, _ := unstructured.NestedSlice(tenant.Object, "spec", "pools")
+		servers, _, _ := unstructured.NestedInt64(pools[0].(map[string]interface{}), "servers")
+		set := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: name + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{{APIVersion: tenant.GetAPIVersion(), Kind: tenant.GetKind(), Name: name, UID: tenant.GetUID(), Controller: ptr.To(true)}}}, Spec: appsv1.StatefulSetSpec{Replicas: ptr.To(int32(servers)), ServiceName: name, Selector: &metav1.LabelSelector{MatchLabels: labels}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "rustfs", Image: image}}}}}}
+		Expect(k8sClient.Create(ctx, set)).To(Succeed())
+		set.Status = appsv1.StatefulSetStatus{ObservedGeneration: set.Generation, Replicas: int32(servers), ReadyReplicas: int32(servers), UpdatedReplicas: int32(servers), CurrentRevision: "current", UpdateRevision: "current"}
+		Expect(k8sClient.Status().Update(ctx, set)).To(Succeed())
+	}
 }
 
 func minimalTamossUnstructured(name string) *unstructured.Unstructured {

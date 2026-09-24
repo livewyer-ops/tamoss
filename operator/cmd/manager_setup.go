@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -20,8 +21,8 @@ import (
 
 	"github.com/livewyer-ops/tamoss/operator/internal/controller"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 )
 
@@ -116,11 +117,12 @@ func setupControllers(
 	dependencyProbeInterval time.Duration,
 ) error {
 	watchScope := controller.WatchNamespaceSet(watchNamespaces)
-	tamsinImage := strings.TrimSpace(os.Getenv("TAMOSS_TAMSIN_IMAGE"))
-	if tamsinImage == "" {
-		tamsinImage = defaults.DefaultTAMSinImage
+	catalogue, err := releases.Load(os.Getenv("TAMOSS_RELEASE_CATALOGUE"))
+	if err != nil {
+		return fmt.Errorf("load release catalogue: %w", err)
 	}
 	tamossReconciler := &controller.TamossReconciler{
+		Releases:                    catalogue,
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
@@ -130,12 +132,12 @@ func setupControllers(
 		AuthentikPlatformNamespaces: authentik.NewPlatformNamespacePolicy(os.Getenv("TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES")),
 		AuthentikProbeTimeout:       authentikProbeTimeout(),
 		AuthentikHTTPClient:         authentik.NewHTTPClient(),
-		TAMSinImage:                 tamsinImage,
 	}
 	if err := tamossReconciler.SetupWithManager(mgr); err != nil {
 		return err
 	}
 	if err := (&controller.TamossHibernateReconciler{
+		Releases:        catalogue,
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "tamosshibernate-controller"),
@@ -148,10 +150,10 @@ func setupControllers(
 		return err
 	}
 	if err := (&controller.IngestRunReconciler{
+		Releases:         catalogue,
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		WatchNamespaces:  watchScope,
-		TamsinImage:      tamsinImage,
 		APIReader:        mgr.GetAPIReader(),
 		InputResolver:    controller.SourcePolicyResolver{Client: mgr.GetClient()},
 		EndpointResolver: controller.PublishedEndpointResolver{Client: mgr.GetClient()},
@@ -167,6 +169,7 @@ func setupControllers(
 		})
 	}
 	if err := (&controller.StorageBackendReconciler{
+		Releases:        catalogue,
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
@@ -175,6 +178,7 @@ func setupControllers(
 		return err
 	}
 	return (&controller.FlowProfileReconciler{
+		Releases:        catalogue,
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        eventRecorderFor(mgr, "flowprofile-controller"),

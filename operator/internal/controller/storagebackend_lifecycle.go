@@ -14,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 )
 
 func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend) (ctrl.Result, error) {
@@ -94,9 +93,8 @@ func (r *StorageBackendReconciler) storageBackendTamoss(ctx context.Context, sto
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
-	return resolved, true, nil
+	resolved, err := resolveTamoss(tamoss, r.Releases)
+	return resolved, true, err
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendCleanupJob(ctx context.Context, desiredJob *batchv1.Job, hash, reasonPrefix, messagePrefix string) (storageBackendReconcileResult, error) {

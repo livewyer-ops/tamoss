@@ -6,6 +6,7 @@ metadata:
     confirmation.tamoss.livewyer.io/deletion: "true"
     tamoss.livewyer.io/api-token-rotate: rotate-1
 spec:
+  version: dev
   fullnameOverride: tamoss
   secrets:
     apiToken:

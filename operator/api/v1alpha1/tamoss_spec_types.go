@@ -9,6 +9,11 @@ import (
 // TamossSpec defines the desired state of Tamoss
 // +kubebuilder:validation:XValidation:rule="has(self.fullnameOverride) == has(oldSelf.fullnameOverride) && (!has(self.fullnameOverride) || self.fullnameOverride == oldSelf.fullnameOverride)",message="spec.fullnameOverride is immutable"
 type TamossSpec struct {
+	// Version selects an exact release from the operator installation catalogue.
+	// An omitted version blocks reconciliation until the installed release is pinned.
+	//+kubebuilder:validation:MinLength=1
+	Version string `json:"version,omitempty"`
+
 	// Paused stops reconcile writes while still allowing status updates.
 	//+kubebuilder:default=false
 	Paused bool `json:"paused,omitempty"`
@@ -125,6 +130,9 @@ type ImageSpec struct {
 }
 
 type ComponentImagesSpec struct {
+	// TAMSin overrides the selected release's ingest runtime. Use an immutable digest.
+	TAMSin string `json:"tamsin,omitempty"`
+
 	// SchemaMigrationPostgresClient is the image used by storage backend database registration Jobs.
 	SchemaMigrationPostgresClient string `json:"schemaMigrationPostgresClient,omitempty"`
 }

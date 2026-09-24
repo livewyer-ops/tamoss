@@ -4,6 +4,9 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // TamossStatus defines the observed state of Tamoss
 type TamossStatus struct {
+	// CurrentVersion is the last release with completed schema and workload rollouts.
+	CurrentVersion string `json:"currentVersion,omitempty"`
+
 	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition    `json:"conditions,omitempty"`
 	Replicas           ReplicaStatus         `json:"replicas,omitempty"`
@@ -135,6 +138,9 @@ type ResolvedRouteStatus struct {
 }
 
 type UpgradeStatus struct {
+	// TargetVersion records an unfinished release reconciliation across retries.
+	TargetVersion string `json:"targetVersion,omitempty"`
+
 	Phase   string `json:"phase,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`

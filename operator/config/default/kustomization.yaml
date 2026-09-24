@@ -6,6 +6,7 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+- ../releases
 - ../webhook
 - ../certmanager
 # Monitoring resources are rendered through the monitoring overlay.

@@ -83,21 +83,31 @@ task operator:manifests
 task operator:install-manifest
 ```
 
-## Install Boundary
+## Release catalogue
 
-The public TAMOSS install path is the checked-in deploy tree. Use:
+`spec.version` selects an entry in the operator installation's immutable
+`catalogue.json`. The release workflow builds the current entry from
+`compatibility.yaml` and image build digests, then embeds it in `install.yaml`.
+It also publishes the catalogue and records its checksum in `release.json`.
+
+When preparing a release, declare its schema revision, Alembic revision,
+runtime images and supported predecessor in `compatibility.yaml`. Copy each
+supported predecessor's published `runtime` record from `release.json` into
+`releases/<version>.json`. Preserve those historical records unchanged,
+including any supported prerelease whose schema differs from the final release.
+
+After changing current metadata, regenerate the development catalogue and
+installation:
 
 ```bash
-kubectl apply -k deploy/platform/<profile>
-kubectl apply --server-side -k deploy/operator
-kubectl apply -k deploy/environments/<name>
+python3 .github/scripts/release-catalogue.py --development --output operator/config/releases/catalogue.json
+task operator:install-manifest
 ```
 
-Local source builds use:
-
-```bash
-task kind:up PROFILE=local-kind
-```
+Local builds use `spec.version: dev`. `task kind:up` generates a separate
+catalogue with the locally built operand tag and schema target. Published
+installations use exact releases as described in the
+[installation guide](../docs/operations/install.md).
 
 ## License
 

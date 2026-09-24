@@ -94,6 +94,7 @@ func TestResumeBootstrapResolvesArtifactSource(t *testing.T) {
 	reader := &fakeHibernationManifestReader{manifest: bootstrapManifestFixture(), checksum: bootstrapTestChecksum}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -192,6 +193,7 @@ func TestResumeBootstrapFailureHandling(t *testing.T) {
 			test.mutate(reader, tamoss)
 
 			reconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 					WithScheme(scheme).
 					WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -238,6 +240,7 @@ func TestResumeBootstrapIgnoredWhenClusterExists(t *testing.T) {
 	reader := &fakeHibernationManifestReader{manifest: bootstrapManifestFixture(), checksum: bootstrapTestChecksum}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -319,6 +322,7 @@ func TestResumeBootstrapWakesFromLastHibernation(t *testing.T) {
 			}
 
 			reconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 					WithScheme(scheme).
 					WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -374,12 +378,12 @@ func TestResumeBootstrapWakesFromLastHibernation(t *testing.T) {
 
 func TestResumeBootstrapValidatesManifest(t *testing.T) {
 	manifest := bootstrapManifestFixture()
-	if err := validateResumeManifest(manifest, manifest.Artifact.ManifestKey); err != nil {
+	if err := validateResumeManifest(manifest, manifest.Artifact.ManifestKey, testRelease().Schema); err != nil {
 		t.Fatalf("expected fixture manifest to validate, got %v", err)
 	}
 	broken := bootstrapManifestFixture()
 	broken.CNPG.Phase = "started"
-	err := validateResumeManifest(broken, broken.Artifact.ManifestKey)
+	err := validateResumeManifest(broken, broken.Artifact.ManifestKey, testRelease().Schema)
 	if err == nil || !strings.Contains(err.Error(), "not completed") {
 		t.Fatalf("expected incomplete backup rejection, got %v", err)
 	}

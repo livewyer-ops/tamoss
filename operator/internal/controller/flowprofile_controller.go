@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -26,9 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/resource"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -54,6 +54,7 @@ const (
 )
 
 type FlowProfileReconciler struct {
+	Releases        releases.Catalogue
 	Client          client.Client
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
@@ -116,7 +117,11 @@ func (r *FlowProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	tamoss, found, err := r.flowProfileTamoss(ctx, profile.Namespace, resolved.Spec.TamossRef.Name)
 	if err != nil {
-		return ctrl.Result{}, err
+		var selection *releases.SelectionError
+		if !errors.As(err, &selection) {
+			return ctrl.Result{}, err
+		}
+		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{Phase: tamossv1alpha1.FlowProfilePhasePending, Reason: selection.Reason, Message: err.Error(), RequeueAfter: flowProfileRetryInterval})
 	}
 	if !found {
 		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{
@@ -126,7 +131,7 @@ func (r *FlowProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			RequeueAfter: flowProfileRetryInterval,
 		})
 	}
-	if !r.flowProfileSchemaReady(ctx, tamoss) || tamoss.Status.Resolved.Versions.TAMSAPI != schemabundle.SupportedTAMSAPIVersion {
+	if !r.flowProfileSchemaReady(ctx, tamoss) || tamoss.Status.Resolved.Versions.TAMSAPI != r.Releases[tamoss.Spec.Version].Schema.TAMSAPI {
 		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{
 			Phase: tamossv1alpha1.FlowProfilePhasePending, Reason: operatorstatus.ReasonWaitingForSchema,
 			Message: "The target TAMS 8.2 schema is not ready", ProfileID: resolved.Spec.ID,
@@ -321,9 +326,8 @@ func (r *FlowProfileReconciler) flowProfileTamoss(ctx context.Context, namespace
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
-	return resolved, true, nil
+	resolved, err := resolveTamoss(tamoss, r.Releases)
+	return resolved, true, err
 }
 
 func (r *FlowProfileReconciler) flowProfileSchemaReady(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) bool {
@@ -332,7 +336,8 @@ func (r *FlowProfileReconciler) flowProfileSchemaReady(ctx context.Context, tamo
 	if err := r.Client.Get(ctx, key, state); err != nil {
 		return false
 	}
-	return state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion
+	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
+	return err == nil && state.Data[schemaStateAppliedVersionKey] == release.Schema.Version
 }
 
 func (r *FlowProfileReconciler) flowProfileIDWinner(ctx context.Context, current *tamossv1alpha1.FlowProfile, spec tamossv1alpha1.FlowProfileSpec) (string, error) {

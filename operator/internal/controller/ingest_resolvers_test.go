@@ -46,7 +46,7 @@ func sourcePolicyResolverFor(t *testing.T, objects ...runtime.Object) SourcePoli
 func sourcePolicyTamoss(mode tamossv1alpha1.IngestSourcePolicyMode, sources ...tamossv1alpha1.IngestSourceSpec) *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
-		Spec: tamossv1alpha1.TamossSpec{Ingest: tamossv1alpha1.IngestSpec{
+		Spec: tamossv1alpha1.TamossSpec{Version: "dev", Ingest: tamossv1alpha1.IngestSpec{
 			SourcePolicy: tamossv1alpha1.IngestSourcePolicySpec{Mode: mode}, Sources: sources,
 		}},
 	}

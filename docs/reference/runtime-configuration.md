@@ -89,7 +89,7 @@ identities, and not needed at all when the blocks are omitted.
 
 ## Image Overrides
 
-The operator applies image defaults for a minimal CR and reports the effective
+The operator selects image defaults from `spec.version` and reports the effective
 values under `.status.resolved.images`. Override images directly when a cluster
 needs an internal registry, pinned digest, or tested component build:
 
@@ -108,7 +108,7 @@ spec:
       repository: registry.example.com/tamoss-console-api
       tag: <release-tag>
   images:
-    schemaMigrationPostgresClient: registry.example.com/postgres:18.6-alpine
+    schemaMigrationPostgresClient: registry.example.com/postgres:<tested-tag>
 ```
 
 The API image also carries the TAMOSS database migration CLI used by the
@@ -120,17 +120,17 @@ configured where the provider is selected. For example,
 [RustFS](https://github.com/rustfs/rustfs) uses
 `.spec.backends.s3.rustfsOperator.image`.
 
-Pin API, UI and Console images to the same release as the operator in non-local
-overlays. An omitted tag defaults to the operator's release tag. Development
-builds default to `dev`; the local Kind workflow uses a tag derived from the
-component build inputs. See [Upgrades](../operations/upgrades.md) for the image
-and schema checks required when changing releases.
+Set `spec.version` to an exact release in the installation's `catalogue.json`.
+That release supplies API, worker, UI, Console, TAMSin, PostgreSQL, RustFS and
+registration-helper defaults, plus the schema migration target. An operator
+update preserves the release selected by each instance.
 
-Platform controllers such as [cert-manager](https://cert-manager.io/),
-[Traefik](https://traefik.io/), [Authentik](https://goauthentik.io/), CNPG
-Operator,
-and RustFS Operator are installed before TAMOSS and are versioned in the
-platform dependency source, not in the `Tamoss` CR.
+Explicit image fields override the selected release. `spec.images.tamsin`
+accepts an immutable TAMSin image digest. An existing PostgreSQL or RustFS pin
+continues to override release defaults until removed. External services are
+configured and upgraded by their owners.
+
+See [Upgrades](../operations/upgrades.md) for adoption and release changes.
 
 ## Advanced Resource Overrides
 

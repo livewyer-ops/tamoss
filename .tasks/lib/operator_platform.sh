@@ -74,6 +74,7 @@ task_check_platform_dependency_pins() {
     echo "compose RustFS image ${compose_rustfs_image} does not match platform RustFS ${expected_rustfs_image}" >&2
     return 1
   fi
+  test "$(yq -r '.releases[-1].runtimeImages.rustfs' operator/compatibility.yaml)" = "$expected_rustfs_image"
   task_check_postgres_major_pin "$compose_postgres_image"
 }
 
@@ -89,16 +90,10 @@ task_check_postgres_major_pin() {
     return 1
   fi
 
-  task_check_cnpg_postgres_default_source "$canonical_version" ||
-    failures=1
-  task_check_cnpg_postgres_default_yaml \
-    operator/config/crd/bases/tamoss.livewyer.io_tamosses.yaml \
-    "$canonical_version" ||
-    failures=1
-  task_check_cnpg_postgres_default_yaml \
-    deploy/operator/install.yaml \
-    "$canonical_version" ||
-    failures=1
+  test "$(yq -r '.releases[-1].runtimeImages.cnpgPostgresVersion' operator/compatibility.yaml)" = "$canonical_version" || failures=1
+  task_check_cnpg_postgres_default_source || failures=1
+  task_check_cnpg_postgres_default_yaml operator/config/crd/bases/tamoss.livewyer.io_tamosses.yaml || failures=1
+  task_check_cnpg_postgres_default_yaml deploy/operator/install.yaml || failures=1
 
   while IFS= read -r match; do
     local path
@@ -141,14 +136,10 @@ task_check_postgres_major_pin() {
 }
 
 task_check_cnpg_postgres_default_source() {
-  local canonical_version="$1"
-
-  awk -v version="$canonical_version" '
-    /PostgresVersion string/ {
-      if (!index(previous, "kubebuilder:default=\"" version "\"")) {
-        print FILENAME ":" NR ": postgresVersion kubebuilder default does not match canonical " version > "/dev/stderr"
-        exit 1
-      }
+  awk '
+    /PostgresVersion string/ && previous ~ /kubebuilder:default/ {
+      print "postgresVersion must be resolved from the selected release, not CRD defaults" > "/dev/stderr"
+      exit 1
     }
     { previous = $0 }
   ' operator/api/v1alpha1/tamoss_backend_types.go
@@ -156,23 +147,9 @@ task_check_cnpg_postgres_default_source() {
 
 task_check_cnpg_postgres_default_yaml() {
   local path="$1"
-  local canonical_version="$2"
-
-  awk -v version="\"${canonical_version}\"" '
-    /postgresVersion:/ { in_postgres_version = 1 }
-    in_postgres_version && /default:/ {
-      if ($2 != version) {
-        print FILENAME ":" NR ": postgresVersion default does not match canonical " version > "/dev/stderr"
-        exit 1
-      }
-      found = 1
-      in_postgres_version = 0
-    }
-    END {
-      if (!found) {
-        print FILENAME ": postgresVersion default was not found" > "/dev/stderr"
-        exit 1
-      }
-    }
+  awk '
+    /postgresVersion:/ { in_field = 1; next }
+    in_field && /default:/ { exit 1 }
+    in_field && /type:/ { in_field = 0 }
   ' "$path"
 }

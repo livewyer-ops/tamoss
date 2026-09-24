@@ -28,6 +28,7 @@ metadata:
   name: tamoss-media
   namespace: tams
 spec:
+  version: <installed-release>
   profile: single-server
   ingest:
     sourcePolicy:

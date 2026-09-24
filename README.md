@@ -70,8 +70,11 @@ Open:
 To install on an existing Kubernetes cluster instead of the disposable
 Kind cluster, use the environment workflow:
 
+Set `TAMOSS_VERSION` to the exact release to install. The generated environment
+pins its operator installation and each instance independently.
+
 ```bash
-task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
 task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig

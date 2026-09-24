@@ -39,6 +39,7 @@ func TestHibernationSpecMaterialisesOperation(t *testing.T) {
 	recorder := record.NewFakeRecorder(4)
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -102,6 +103,7 @@ func TestHibernationSpecStartsNewCycleAfterWake(t *testing.T) {
 	}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -158,6 +160,7 @@ func TestHibernationSpecAbortsMaterialisedOperationWhenDisabled(t *testing.T) {
 	}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -188,6 +191,7 @@ func TestHibernationSpecLeavesUserOperationsAlone(t *testing.T) {
 	}
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -228,6 +232,7 @@ func TestTamossHibernateRetryAnnotationReArmsFailedOperation(t *testing.T) {
 	hibernate.Status.Reason = operatorstatus.ReasonBackupPolicyFailed
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.TamossHibernate{}).
@@ -309,6 +314,7 @@ func TestLifecycleGateFreezesMigratedSchemaCondition(t *testing.T) {
 			tamoss.Status.Conditions = tc.prior
 
 			reconciler := &TamossReconciler{
+				Releases: testReleases(),
 				Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 					WithScheme(scheme).
 					WithStatusSubresource(&tamossv1alpha1.Tamoss{}).

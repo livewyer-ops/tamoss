@@ -12,7 +12,7 @@ import (
 func TestWorkerDeploymentRendersHTTPProbes(t *testing.T) {
 	tamoss := rendererFixture()
 	tamoss.Spec.Worker.Enabled = ptr.To(true)
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
 	deployment := deploymentByName(t, Render(tamoss), "example-worker")
 	container := deployment.Spec.Template.Spec.Containers[0]

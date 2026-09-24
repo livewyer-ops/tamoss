@@ -85,8 +85,11 @@ export KUBECONFIG=/path/to/kubeconfig
 Create the environment composition, edit the two generated files, then
 apply and inspect it:
 
+Set `TAMOSS_VERSION` to the exact release to install. The generated environment
+pins its operator installation and each instance independently.
+
 ```bash
-task env:init NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 $EDITOR deploy/environments/my-edge/platform-values.yaml
 $EDITOR deploy/environments/my-edge/tamoss-patch.yaml
 task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
@@ -174,15 +177,8 @@ token as a bearer credential alongside Authentik-issued OAuth2 tokens.
 
 ### Memory budget
 
-The 8.1 measurements provide a planning baseline for a 4 GB ARM64 node:
-
-| Mode | Node memory used |
-| --- | --- |
-| Bearer token | ~1.9 GiB |
-| Managed OAuth | ~3.2 GiB |
-
-Measure the complete 8.2 deployment on the target node before accepting a
-workload. The Console and managed ingest add processes beyond that baseline.
+Measure the complete deployment on the target node before accepting a
+workload. Include the Console and any managed ingest Jobs in the memory budget.
 
 For OAuth mode on a 4 GB node, configure SSD-backed swap before enabling
 Authentik. The generated platform values bound the Authentik components for

@@ -4392,7 +4392,6 @@ spec:
                                 type: boolean
                             type: object
                           postgresVersion:
-                            default: "18.6"
                             type: string
                           resources:
                             description: ResourceRequirements describes the compute
@@ -9308,6 +9307,10 @@ spec:
                   schemaMigrationPostgresClient:
                     description: SchemaMigrationPostgresClient is the image used by
                       storage backend database registration Jobs.
+                    type: string
+                  tamsin:
+                    description: TAMSin overrides the selected release's ingest runtime.
+                      Use an immutable digest.
                     type: string
                 type: object
               ingest:
@@ -15634,6 +15637,12 @@ spec:
                       type: object
                     type: array
                 type: object
+              version:
+                description: |-
+                  Version selects an exact release from the operator installation catalogue.
+                  An omitted version blocks reconciliation until the installed release is pinned.
+                minLength: 1
+                type: string
               worker:
                 default: {}
                 properties:
@@ -19744,6 +19753,10 @@ spec:
                   - type
                   type: object
                 type: array
+              currentVersion:
+                description: CurrentVersion is the last release with completed schema
+                  and workload rollouts.
+                type: string
               endpoints:
                 properties:
                   api:
@@ -20224,6 +20237,10 @@ spec:
                   phase:
                     type: string
                   reason:
+                    type: string
+                  targetVersion:
+                    description: TargetVersion records an unfinished release reconciliation
+                      across retries.
                     type: string
                 type: object
             type: object

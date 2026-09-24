@@ -142,20 +142,40 @@ def test_instance_init_registers_the_manifest(tmp_path: Path) -> None:
 
     created = run_env_helper(
         f'task_init_env_instance "{environment}" prod-a multi-server '
-        "prod-a.example.com prod-a"
+        "prod-a.example.com prod-a 8.2.0-oss2"
     )
     assert created.returncode == 0, created.stderr
 
     manifest = environment / "prod-a.yaml"
     assert manifest.exists()
     assert "name: prod-a" in manifest.read_text(encoding="utf-8")
+    assert 'version: "8.2.0-oss2"' in manifest.read_text(encoding="utf-8")
     assert "prod-a.yaml" in (environment / "kustomization.yaml").read_text(
         encoding="utf-8"
     )
 
     repeated = run_env_helper(
         f'task_init_env_instance "{environment}" prod-a multi-server '
-        "prod-a.example.com prod-a"
+        "prod-a.example.com prod-a 8.2.0-oss2"
     )
     assert repeated.returncode != 0
     assert "already exists" in repeated.stderr
+
+
+def test_wait_checks_requested_release_and_generation_before_ready() -> None:
+    result = run_env_helper("""
+task_step() { shift; "$@"; }
+kubectl() {
+  case "$*" in
+    *jsonpath='{.spec.version}') printf 'selected-release' ;;
+    *jsonpath='{.metadata.generation}') printf '7' ;;
+    *) printf '%s\\n' "$*" ;;
+  esac
+}
+task_wait_tamoss_instance kubeconfig media instance 1m
+""")
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert "observedGeneration}=7" in lines[0]
+    assert "currentVersion}=selected-release" in lines[1]
+    assert "--for=condition=Ready" in lines[2]

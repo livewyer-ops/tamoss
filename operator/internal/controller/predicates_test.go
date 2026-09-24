@@ -142,7 +142,7 @@ func TestStatusSemanticEqualityIgnoresGeneratedTimestamps(t *testing.T) {
 func TestPatchStatusSkipsUnchangedStatusWithoutClientWrite(t *testing.T) {
 	tamoss := predicateTamoss("example")
 	tamoss.Status.Phase = operatorstatus.PhaseReady
-	reconciler := &TamossReconciler{}
+	reconciler := &TamossReconciler{Releases: testReleases()}
 	if err := reconciler.patchTamossStatus(context.TODO(), tamoss, tamoss.DeepCopy()); err != nil {
 		t.Fatalf("expected unchanged Tamoss status to skip client write: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestPatchStatusSkipsUnchangedStatusWithoutClientWrite(t *testing.T) {
 	}
 	storageBackend := predicateStorageBackend("archive")
 	storageBackend.Status.Phase = operatorstatus.PhaseReady
-	storageReconciler := &StorageBackendReconciler{}
+	storageReconciler := &StorageBackendReconciler{Releases: testReleases()}
 	if err := storageReconciler.patchStorageBackendStatus(context.TODO(), storageBackend, storageBackend.DeepCopy()); err != nil {
 		t.Fatalf("expected unchanged StorageBackend status to skip client write: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestPatchStatusSkipsUnchangedStatusWithoutClientWrite(t *testing.T) {
 	}
 	artifact := tamossv1alpha1.HibernationArtifactStatus{ManifestKey: "hibernations/example/snapshot/manifest.json"}
 	setOperationStatus(&hibernate.Status, hibernate.Generation, tamossv1alpha1.TamossOperationPhaseCompleted, operatorstatus.ReasonTamossHibernated, "complete", artifact)
-	hibernateReconciler := &TamossHibernateReconciler{}
+	hibernateReconciler := &TamossHibernateReconciler{Releases: testReleases()}
 	if err := hibernateReconciler.updateHibernateStatus(context.TODO(), hibernate, tamossv1alpha1.TamossOperationPhaseCompleted, operatorstatus.ReasonTamossHibernated, "complete", artifact); err != nil {
 		t.Fatalf("expected unchanged TamossHibernate status to skip client write: %v", err)
 	}
@@ -180,6 +180,7 @@ func TestPatchStatusSkipsUnchangedStatusWithoutClientWrite(t *testing.T) {
 
 func predicateTamoss(name string) *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "media", Generation: 1},
 	}
 }

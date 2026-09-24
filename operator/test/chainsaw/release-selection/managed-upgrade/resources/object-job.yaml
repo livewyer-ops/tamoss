@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: (join('-', [$instance, $phase, 'object']))
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: s3
+          image: amazon/aws-cli:2.32.34
+          command: [aws]
+          args: ($arguments)
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: (join('-', [$instance, 's3-creds']))
+                  key: accesskey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: (join('-', [$instance, 's3-creds']))
+                  key: secretkey
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+              value: when_required
+          volumeMounts:
+            - name: payload
+              mountPath: /payload
+      volumes:
+        - name: payload
+          configMap:
+            name: upgrade-payload

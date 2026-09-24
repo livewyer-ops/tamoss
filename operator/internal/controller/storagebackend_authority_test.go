@@ -45,6 +45,7 @@ func TestDefaultStorageBackendReadyRequiresDatabaseRegistration(t *testing.T) {
 	storageBackend.Status.Phase = operatorstatus.PhaseProgressing
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(storageBackendTestScheme(t)).
 			WithObjects(storageBackend).
@@ -101,6 +102,7 @@ func TestDefaultStorageBackendReadyAfterBucketAndDatabaseRegistration(t *testing
 	storageBackend.Status.Phase = operatorstatus.PhaseReady
 
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(storageBackendTestScheme(t)).
 			WithObjects(storageBackend).

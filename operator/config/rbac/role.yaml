@@ -116,6 +116,7 @@ rules:
   - apps
   resources:
   - replicasets
+  - statefulsets
   verbs:
   - get
   - list

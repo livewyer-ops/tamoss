@@ -5,6 +5,7 @@ metadata:
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
+  version: dev
   fullnameOverride: auth-blocked
   auth:
     providedBy: authentik-blueprints

@@ -66,6 +66,16 @@ jobs:
           git diff --exit-code -- deploy/operator/install.yaml
           git diff --exit-code -- operator/api operator/config operator/go.mod operator/go.sum
 
+      - name: Build instance release catalogue
+        env:
+          API_DIGEST: ${{ inputs.api-digest }}
+          UI_DIGEST: ${{ inputs.ui-digest }}
+          CONSOLE_API_DIGEST: ${{ inputs.console-api-digest }}
+          OPERATOR_DIGEST: ${{ inputs.operator-digest }}
+        run: |
+          SOURCE_COMMIT="$(git rev-parse HEAD)" \
+          python3 .github/scripts/release-catalogue.py --output dist/operator-release/catalogue.json
+
       - name: Build release install manifest
         shell: bash
         env:
@@ -77,6 +87,14 @@ jobs:
           kind: Kustomization
           resources:
             - ../../operator/config/default
+          configMapGenerator:
+            - name: operator-release-catalogue
+              namespace: tamoss-system
+              behavior: replace
+              files:
+                - catalogue.json
+              options:
+                immutable: true
           images:
             - name: livewyer/tamoss-operator
               newName: livewyer/tamoss-operator
@@ -108,6 +126,7 @@ jobs:
             operator/compatibility.yaml
             deploy/platform/dependencies.yaml
             dist/operator-release/release.json
+            dist/operator-release/catalogue.json
           draft: true
           body_path: dist/operator-release/release-notes.md
           prerelease: ${{ steps.version.outputs.prerelease }}

@@ -4,8 +4,9 @@ metadata:
   name: tamoss
 (status.conditions[?type == 'Ready'] | [0].status): "True"
 (status.conditions[?type == 'SchemaMigrated'] | [0].status): "True"
-(status.conditions[?type == 'SchemaMigrated'] | [0].reason): SchemaApplied
+(contains(['SchemaApplied', 'AlreadyAtVersion'], status.conditions[?type == 'SchemaMigrated'] | [0].reason)): true
 (status.schemaMigration.phase): Succeeded
+(status.schemaMigration.lastAttemptResult): Succeeded
 ---
 apiVersion: v1
 kind: ConfigMap

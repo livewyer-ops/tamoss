@@ -220,7 +220,7 @@ func TestIngestRunRejectsInvalidOutputIntentBeforeCreatingJob(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, tamoss).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: k8sClient, Scheme: scheme}
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestIngestRunReconcileCreatesJobAndReportsRunning(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("b", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("b", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -342,7 +342,7 @@ func TestIngestRunWithoutConfiguredImageStaysPending(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, testIngestTamoss()).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme}
+	reconciler := &IngestRunReconciler{Releases: testReleasesWithTAMSin(""), Client: k8sClient, Scheme: scheme}
 
 	result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)})
 	if err != nil {
@@ -381,9 +381,9 @@ func TestIngestRunWithoutSourcePolicyResolverStaysPending(t *testing.T) {
 		WithObjects(run, testIngestTamoss()).
 		Build()
 	reconciler := &IngestRunReconciler{
-		Client:      k8sClient,
-		Scheme:      scheme,
-		TamsinImage: "registry.example/tamsin@sha256:" + strings.Repeat("c", 64),
+		Client:   k8sClient,
+		Scheme:   scheme,
+		Releases: testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("c", 64)),
 	}
 
 	result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)})
@@ -427,7 +427,7 @@ func TestIngestRunRevalidatesPendingInputAfterPolicyChange(t *testing.T) {
 		Build()
 	reconciler := &IngestRunReconciler{
 		Client: k8sClient, Scheme: scheme,
-		TamsinImage: "registry.example/tamsin@sha256:" + strings.Repeat("c", 64),
+		Releases: testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("c", 64)),
 		InputResolver: SourcePolicyResolver{
 			Client: k8sClient,
 			HostResolver: staticIngestHostResolver{
@@ -484,7 +484,7 @@ func TestIngestRunWithoutApprovedEndpointResolverStaysPending(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:        k8sClient,
 		Scheme:        scheme,
-		TamsinImage:   "registry.example/tamsin@sha256:" + strings.Repeat("c", 64),
+		Releases:      testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("c", 64)),
 		InputResolver: staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 	}
 
@@ -518,7 +518,7 @@ func TestIngestRunDoesNotReplayMissingRecordedJob(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("c", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("c", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -615,7 +615,7 @@ func TestIngestRunRetryRequiresMatchingParentUID(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("d", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("d", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -658,7 +658,7 @@ func TestIngestRunRetryCannotCrossTamossInstances(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("d", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("d", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -701,7 +701,7 @@ func TestIngestRunRetryIncrementsAttempt(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("e", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("e", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -736,7 +736,7 @@ func TestIngestRunRetryRequiresTheParentConfiguration(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("e", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("e", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -768,7 +768,7 @@ func TestIngestRunResolvesApprovedStorageBackendDestination(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("f", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("f", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -805,7 +805,7 @@ func TestIngestRunRejectsStorageBackendFromAnotherTamoss(t *testing.T) {
 	reconciler := &IngestRunReconciler{
 		Client:           k8sClient,
 		Scheme:           scheme,
-		TamsinImage:      "registry.example/tamsin@sha256:" + strings.Repeat("f", 64),
+		Releases:         testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("f", 64)),
 		InputResolver:    staticIngestInputResolver{selectors: []string{"s3://staging/run/input.mp4"}},
 		EndpointResolver: staticIngestEndpointResolver{},
 	}
@@ -912,7 +912,7 @@ func TestIngestRunCancellationDeletesJobAndRetainsRun(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &batchv1.Job{}).
 		WithObjects(run, job).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme, TamsinImage: "tamsin:test"}
+	reconciler := &IngestRunReconciler{Releases: testReleasesWithTAMSin("tamsin:test"), Client: k8sClient, Scheme: scheme}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
@@ -955,7 +955,7 @@ func TestIngestRunCancellationWaitsForOwnedPodsToDisappear(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}).
 		WithObjects(run, pod).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: k8sClient, Scheme: scheme}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}
 
 	result, err := reconciler.Reconcile(ctx, request)
@@ -997,7 +997,7 @@ func TestIngestRunCancellationDoesNotDeleteConflictingJob(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}).
 		WithObjects(run, job).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: k8sClient, Scheme: scheme}
 	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
@@ -1052,9 +1052,11 @@ func testIngestTamoss() *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media", UID: types.UID("tamoss-uid"), Generation: 1},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Secrets: tamossv1alpha1.SecretsSpec{APIToken: tamossv1alpha1.APITokenSecretSpec{Generate: true}},
 		},
 		Status: tamossv1alpha1.TamossStatus{
+			CurrentVersion:     "dev",
 			ObservedGeneration: 1,
 			Conditions: []metav1.Condition{{
 				Type: "Ready", Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,

@@ -34,6 +34,7 @@ metadata:
   name: tamoss-kind
   namespace: tams
 spec:
+  version: dev
   profile: local-kind
 ```
 
@@ -91,3 +92,11 @@ kubectl -n tams get storagebackend archive -o jsonpath='{.status.resolved}'
 
 Status shows generated resource names, image references, endpoints, and Secret
 names. It never includes token, password, access key, or private key values.
+
+## Operator release catalogue
+
+`TAMOSS_RELEASE_CATALOGUE` names the JSON catalogue file mounted into the operator.
+Published installations mount an immutable ConfigMap generated from the release
+records. The operator loads it at startup and rejects a missing or invalid file.
+Select an instance release with `spec.version`; use `spec.images.tamsin` for an
+instance-specific ingest image override.

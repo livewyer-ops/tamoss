@@ -163,6 +163,8 @@ task_init_env() {
   local name="$1"
   local profile="$2"
   local domain="$3"
+  local instance_version="${4:-}"
+  task_validate_instance_version "$instance_version" || return
   local template_dir="deploy/templates/environment"
   local environment_dir="deploy/environments/$name"
 
@@ -190,11 +192,19 @@ task_init_env() {
 
   mkdir -p "$(dirname "$environment_dir")"
   cp -R "$template_dir" "$environment_dir"
+  mkdir -p "$environment_dir/operator"
+  cat > "$environment_dir/operator/kustomization.yaml" <<YAML
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- https://github.com/livewyer-ops/tamoss/releases/download/$instance_version/install.yaml
+YAML
   for file in "$environment_dir"/*.yaml; do
     tmp_file="$(mktemp)"
     sed \
       -e "s|__PROFILE__|$profile|g" \
       -e "s|__DOMAIN__|$domain|g" \
+      -e "s|__VERSION__|$instance_version|g" \
       "$file" > "$tmp_file"
     mv "$tmp_file" "$file"
   done
@@ -216,6 +226,8 @@ task_init_env_instance() {
   local profile="$3"
   local domain="$4"
   local namespace="${5:-}"
+  local instance_version="${6:-}"
+  task_validate_instance_version "$instance_version" || return
   local manifest kustomization
 
   namespace="${namespace:-$instance}"
@@ -260,6 +272,7 @@ metadata:
   name: $instance
   namespace: $namespace
 spec:
+  version: "$instance_version"
   profile: $profile
   publicEndpoint:
     baseDomain: $domain
@@ -562,9 +575,7 @@ task_wait_env() {
     [ -n "$name" ] || continue
     namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$name")"
     namespace="${namespace:-tams}"
-    task_step "wait for Tamoss instance $name" \
-      kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
-        wait --for=condition=Ready "tamoss/$name" --timeout="$timeout"
+    task_wait_tamoss_instance "$kubeconfig" "$namespace" "$name" "$timeout"
   done <<EOF
 $instances
 EOF
@@ -1084,4 +1095,14 @@ task_print_instance_summary() {
     printf '\n'
   fi
   task_print_rustfs_access "$s3_provider" "$s3_url" "$rustfs_username" "$rustfs_password"
+}
+
+# Release selection is written once into each generated instance manifest.
+task_validate_instance_version() {
+  case "$1" in
+    ""|*[!a-zA-Z0-9._-]*)
+      echo "TAMOSS_VERSION must be an exact release version from the operator catalogue." >&2
+      return 2
+      ;;
+  esac
 }

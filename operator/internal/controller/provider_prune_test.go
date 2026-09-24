@@ -33,6 +33,7 @@ func TestOptionalOwnedPruneDeletesNoLongerDesiredObjects(t *testing.T) {
 	scheduledBackup := cnpg.BuildScheduledBackup(tamoss)
 	tenant := providerPruneTenant(tamoss)
 	reconciler := TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(cluster, scheduledBackup, tenant).
@@ -67,6 +68,7 @@ func TestOptionalOwnedPruneDeletesDisabledBackupPolicy(t *testing.T) {
 	desired := map[string]struct{}{}
 	markCNPGDesiredObjects(tamoss, desired)
 	reconciler := TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(cluster, scheduledBackup).
@@ -103,6 +105,7 @@ func TestOptionalOwnedPruneKeepsDesiredObjects(t *testing.T) {
 		canonicalObjectKey(tenant):  {},
 	}
 	reconciler := TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(cluster, tenant).
@@ -133,6 +136,7 @@ func TestOptionalOwnedPruneCleansUpManagedResourcesAfterExternalProviderSwitch(t
 	tenant := providerPruneTenant(previous)
 	current := providerPruneExternalTamoss()
 	reconciler := TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(cluster, scheduledBackup, tenant).
@@ -166,7 +170,7 @@ func TestOptionalOwnedObjectListsSkipKnownAbsentOptionalCRDs(t *testing.T) {
 		},
 	)
 	_ = discovery.Refresh(ctx)
-	reconciler := TamossReconciler{Discovery: discovery}
+	reconciler := TamossReconciler{Releases: testReleases(), Discovery: discovery}
 
 	if got := reconciler.optionalOwnedObjectLists(ctx); len(got) != 0 {
 		t.Fatalf("expected absent optional CRDs to be skipped, got %d lists", len(got))
@@ -203,6 +207,7 @@ func providerPruneTamoss() *tamossv1alpha1.Tamoss {
 			UID:       types.UID("tamoss-uid"),
 		},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Backends: tamossv1alpha1.BackendsSpec{
 				DB: tamossv1alpha1.DBBackendSpec{
 					ProvidedBy: tamossv1alpha1.BackendProvidedByCNPG,

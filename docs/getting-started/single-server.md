@@ -47,10 +47,13 @@ existing-cluster install path.
 
 For an existing cluster:
 
+Set `TAMOSS_VERSION` to the exact release to install. The generated environment
+pins its operator installation and each instance independently.
+
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task env:init NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-single-server/platform-values.yaml
 $EDITOR deploy/environments/my-single-server/tamoss-patch.yaml
 task env:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"

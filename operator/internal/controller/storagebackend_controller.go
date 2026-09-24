@@ -18,7 +18,7 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/backend/rustfs"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -38,6 +38,7 @@ const (
 )
 
 type StorageBackendReconciler struct {
+	Releases        releases.Catalogue
 	Client          client.Client
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
@@ -192,8 +193,11 @@ func (r *StorageBackendReconciler) loadStorageBackendTamossStage(ctx context.Con
 		}
 		return nil, stopReconcileNow(), err
 	}
-	resolvedTamoss := tamoss.DeepCopy()
-	defaults.Apply(resolvedTamoss)
+	resolvedTamoss, err := resolveTamoss(tamoss, r.Releases)
+	if err != nil {
+		result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{Reason: releaseErrorReason(err), Message: err.Error()}))
+		return nil, stopReconcile(result), statusErr
+	}
 	return resolvedTamoss, continueReconcile(), nil
 }
 

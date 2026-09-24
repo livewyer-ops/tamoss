@@ -1,0 +1,22 @@
+{
+  "version": "8.2.0-oss2-rc2",
+  "sourceCommit": "e688090c21365dd65a9b81d877412e6df1091a04",
+  "upgradeFrom": [
+    "8.2.0-oss1"
+  ],
+  "schema": {
+    "version": "8.2.0-oss1",
+    "previousVersion": "8.2.0-oss1",
+    "databaseRevision": "20260810_0007",
+    "tamsAPI": "8.2"
+  },
+  "images": {
+    "api": "livewyer/tamoss-api@sha256:c6e1288a78a94edb98d44712fb4d09fc5942b5f0db6445e0f3cb812af4599ae4",
+    "ui": "livewyer/tamoss-ui@sha256:63803978edb2645f6242e03712442196cffe9f71c4209cb3c90639021b42ccff",
+    "console": "livewyer/tamoss-console-api@sha256:da63e82185453272f5f13f9588a133469ff0942bbb41a3b8239f2a14339f1df7",
+    "postgresClient": "postgres:18.6-alpine",
+    "cnpgPostgresVersion": "18.6",
+    "rustfs": "rustfs/rustfs:1.0.0",
+    "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
+  }
+}

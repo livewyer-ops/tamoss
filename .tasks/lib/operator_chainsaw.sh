@@ -63,7 +63,7 @@ task_operator_chainsaw_up() {
     "$platform_helmfile" \
     "$install_rustfs_operator" \
     "$install_cnpg_operator"
-  task_operator_chainsaw_apply_operator "$kubeconfig"
+  task_operator_chainsaw_apply_operator "$kubeconfig" "$operand_version" "$schema_version" "$previous_schema_version"
 
   if [ "$install_authentik_fixture" = "true" ]; then
     kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/authentik.yaml
@@ -170,9 +170,13 @@ task_operator_chainsaw_apply_operator() {
   local kubeconfig="$1"
 
   kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/gateway-api-crds.yaml
-  kubectl kustomize operator/config/chainsaw \
+  local render_dir
+  render_dir="$(mktemp -d .local/chainsaw-operator.XXXXXX)"
+  task_render_development_operator operator/config/chainsaw "${2:-dev}" "${3:-dev}" "${4:-}" "$render_dir"
+  kubectl kustomize "$render_dir" \
     --load-restrictor=LoadRestrictionsNone | \
     kubectl --kubeconfig "$kubeconfig" apply --server-side -f -
+  rm -r "$render_dir"
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \

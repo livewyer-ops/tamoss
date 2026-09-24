@@ -31,6 +31,7 @@ func TestDefaultStorageBackendUsesTamossS3Connection(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Backends: tamossv1alpha1.BackendsSpec{
 				S3: tamossv1alpha1.S3BackendSpec{
 					ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator,
@@ -100,6 +101,7 @@ func TestStorageBackendSchemaStateRequiresCurrentVersion(t *testing.T) {
 	scheme := storageBackendTestScheme(t)
 	tamoss := tamossFixture()
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(
 			tamoss,
 			&corev1.ConfigMap{
@@ -140,6 +142,7 @@ func TestStorageBackendRegistrationJobUsesPostgresAndTAMSMetadata(t *testing.T) 
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Images: tamossv1alpha1.ComponentImagesSpec{
 				SchemaMigrationPostgresClient: "postgres:test",
 			},
@@ -241,6 +244,7 @@ func TestStorageBackendInvalidTagsDegradeBeforeProvisioning(t *testing.T) {
 	}
 	recorder := record.NewFakeRecorder(10)
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.StorageBackend{}).
@@ -278,6 +282,7 @@ func TestStorageBackendDeregistrationJobUsesPostgres(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Images: tamossv1alpha1.ComponentImagesSpec{
 				SchemaMigrationPostgresClient: "postgres:test",
 			},
@@ -435,7 +440,7 @@ func TestStorageBackendRuntimeCredentialsSecretSkipsHibernateDestinations(t *tes
 
 func TestStorageBackendEventsAreEmittedAndDeduped(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &StorageBackendReconciler{Recorder: recorder}
+	reconciler := &StorageBackendReconciler{Releases: testReleases(), Recorder: recorder}
 	original := &tamossv1alpha1.StorageBackend{
 		ObjectMeta: metav1.ObjectMeta{Name: "archive", Namespace: "media"},
 	}
@@ -456,7 +461,7 @@ func TestStorageBackendEventsAreEmittedAndDeduped(t *testing.T) {
 
 func TestStorageBackendBucketCreatedEvent(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &StorageBackendReconciler{Recorder: recorder}
+	reconciler := &StorageBackendReconciler{Releases: testReleases(), Recorder: recorder}
 	original := &tamossv1alpha1.StorageBackend{
 		ObjectMeta: metav1.ObjectMeta{Name: "archive", Namespace: "media"},
 	}
@@ -497,6 +502,7 @@ func TestHibernateStorageBackendSkipsDatabaseRegistration(t *testing.T) {
 		},
 	}
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.StorageBackend{}).
@@ -578,8 +584,9 @@ func TestStorageBackendCredentialSecretWatchMapsToReferencingBackends(t *testing
 	scheme := storageBackendTestScheme(t)
 	storageBackend := storageBackendFixture()
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
-		Scheme: scheme,
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
+		Scheme:   scheme,
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "archive-s3", Namespace: "media"}}
 
@@ -595,8 +602,9 @@ func TestStorageBackendCredentialSecretWatchIgnoresUnreferencedSecrets(t *testin
 	scheme := storageBackendTestScheme(t)
 	storageBackend := storageBackendFixture()
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
-		Scheme: scheme,
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend).WithIndex(&tamossv1alpha1.StorageBackend{}, storageBackendCredentialsSecretIndex, storageBackendCredentialsSecretIndexValue).Build(),
+		Scheme:   scheme,
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "unreferenced", Namespace: "media"}}
 
@@ -613,6 +621,7 @@ func TestStorageBackendBucketUsesNativeClientAndDoesNotCreateJob(t *testing.T) {
 	storageBackend := storageBackendFixture()
 	bucketClient := &fakeBucketClient{}
 	reconciler := StorageBackendReconciler{
+		Releases:     testReleases(),
 		Client:       fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend, storageBackendCredentialsSecret(storageBackend)).Build(),
 		Scheme:       scheme,
 		BucketClient: bucketClient,
@@ -641,6 +650,7 @@ func TestStorageBackendBucketNativeFailureSurfacesStatusAndEvent(t *testing.T) {
 	storageBackend.Finalizers = []string{storageBackendFinalizer}
 	recorder := record.NewFakeRecorder(10)
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.StorageBackend{}).
@@ -677,8 +687,9 @@ func TestExternalStorageBackendReferenceCreatesReusableState(t *testing.T) {
 	storageBackend.Spec = spec
 	state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "archive-bucket-state", Namespace: "media"}}
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend, state).Build(),
-		Scheme: scheme,
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend, state).Build(),
+		Scheme:   scheme,
 	}
 
 	result, err := reconciler.reconcileStorageBackendBucket(ctx, storageBackend, tamossFixture(), spec)
@@ -727,6 +738,7 @@ func TestFinalizeExternalStorageBackendSkipsBucketDeletion(t *testing.T) {
 		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(
 			storageBackend,
 			tamossFixture(),
@@ -768,8 +780,9 @@ func TestStorageBackendDatabaseRegistrationRetriesFailedJob(t *testing.T) {
 	storageBackend := storageBackendFixture()
 	failedJob := failedJobFixture(storageBackendResourceName(storageBackend, "db-register"), storageBackend.Namespace)
 	reconciler := StorageBackendReconciler{
-		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend, failedJob).Build(),
-		Scheme: scheme,
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(storageBackend, failedJob).Build(),
+		Scheme:   scheme,
 	}
 
 	result, err := reconciler.reconcileStorageBackendDatabase(ctx, storageBackend, tamossFixture(), storageBackendSpecFixture())
@@ -817,6 +830,7 @@ func TestFinalizeStorageBackendRunsBucketAndDatabaseCleanup(t *testing.T) {
 		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(
 			storageBackend,
 			tamoss,
@@ -889,6 +903,7 @@ func TestFinalizeStorageBackendSkipsBucketDeletionWithoutBucketState(t *testing.
 		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(
 			storageBackend,
 			tamossFixture(),
@@ -935,6 +950,7 @@ func TestFinalizeStorageBackendSkipsRuntimeCredentialsWhenTamossDeleting(t *test
 		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(
 			storageBackend,
 			tamoss,
@@ -974,6 +990,7 @@ func storageBackendFixture() *tamossv1alpha1.StorageBackend {
 
 func tamossFixture() *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{Version: "dev"},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: tamossv1alpha1.GroupVersion.String(),
 			Kind:       "Tamoss",

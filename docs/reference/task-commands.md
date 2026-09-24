@@ -25,8 +25,8 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task env:init NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. Use `PROFILE=edge` for the ARM64 single-node profile. |
-| `task env:instance:init ENV=my-prod INSTANCE=second PROFILE=single-server DOMAIN=second.example.com` | Add a `Tamoss` instance to an existing environment and register it in the environment kustomization. `NAMESPACE` defaults to the instance name. |
+| `task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create a remote environment composition from checked-in templates. Use `PROFILE=edge` for the ARM64 single-node profile. |
+| `task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=my-prod INSTANCE=second PROFILE=single-server DOMAIN=second.example.com` | Add a `Tamoss` instance to an existing environment and register it in the environment kustomization. `NAMESPACE` defaults to the instance name. |
 | `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the [Helmfile](https://helmfile.readthedocs.io/) platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for the selected environment's `Tamoss` resource to report `Ready=True`. |

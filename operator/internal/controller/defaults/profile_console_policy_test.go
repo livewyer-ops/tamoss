@@ -23,7 +23,7 @@ func TestConsoleNetworkPolicyDefaultsOutsideMultiServer(t *testing.T) {
 			tamoss.Spec.Console.Enabled = ptr.To(true)
 			tamoss.Spec.NetworkPolicy.Enabled = ptr.To(true)
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			rules := tamoss.Spec.NetworkPolicy.Console.Egress
 			if len(rules) != 2 {
@@ -44,7 +44,7 @@ func TestConsoleNetworkPolicyDefaultsStayOffWhenPolicyDisabled(t *testing.T) {
 	tamoss.Name = "example"
 	tamoss.Spec.Console.Enabled = ptr.To(true)
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if tamoss.Spec.NetworkPolicy.IsEnabled() {
 		t.Fatal("Console defaults must not enable NetworkPolicy on their own")

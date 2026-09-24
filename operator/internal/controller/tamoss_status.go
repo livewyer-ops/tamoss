@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -93,7 +95,7 @@ func (r *TamossReconciler) updateStatus(ctx context.Context, tamoss *tamossv1alp
 
 	browserAuthConfigured := workload_renderer.BrowserAuthConfigured(tamoss)
 	degraded := schemaResult.Degraded
-	ready := !degraded && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
+	ready := !degraded && r.workloadRolloutsReady(ctx, tamoss) && schemaResult.Ready && identityResult.Ready && routingResult.Ready &&
 		replicasReady(replicas.API) && replicasReady(replicas.UI) && replicasReady(replicas.Worker) && replicasReady(replicas.Console)
 	phase := operatorstatus.PhaseProgressing
 	if ready {
@@ -201,13 +203,17 @@ func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamos
 
 func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, observation tamossStatusObservation) error {
 	original := tamoss.DeepCopy()
-	setCommonTamossStatus(tamoss, r.TAMSinImage)
+	setCommonTamossStatus(tamoss, r.Releases[tamoss.Spec.Version])
 	if observation.RefreshBackupPolicy {
 		if err := r.refreshObservedBackupPolicyCondition(ctx, tamoss); err != nil {
 			return err
 		}
 	}
 	applyTamossStatusObservation(tamoss, observation)
+	if observation.Ready.Status == metav1.ConditionTrue && observation.Schema != nil && observation.Schema.Ready {
+		tamoss.Status.CurrentVersion = tamoss.Spec.Version
+		tamoss.Status.Upgrade.TargetVersion = ""
+	}
 	return r.patchTamossStatus(ctx, tamoss, original)
 }
 
@@ -230,7 +236,9 @@ func applyTamossStatusObservation(tamoss *tamossv1alpha1.Tamoss, observation tam
 		tamoss.Status.Replicas = *observation.Replicas
 	}
 	if observation.Schema != nil {
-		tamoss.Status.SchemaVersion = observation.Schema.Version
+		if observation.Schema.Ready {
+			tamoss.Status.SchemaVersion = observation.Schema.Version
+		}
 		setUpgradeStatusFromSchema(tamoss, *observation.Schema)
 		setStatusCondition(conditions, generation, operatorstatus.ConditionSchemaMigrated, boolCondition(observation.Schema.Ready, schemaReason(*observation.Schema), schemaMessage(*observation.Schema)))
 	} else {
@@ -311,14 +319,14 @@ func (r *TamossReconciler) recordTamossLifecycleEvents(original, tamoss *tamossv
 	}
 }
 
-func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss, tamsinImage ...string) {
+func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss, release releases.Release) {
 	tamoss.Status.ObservedGeneration = tamoss.Generation
 	tamoss.Status.Backends.DB.Provider = tamoss.Spec.Backends.DB.Provider()
 	tamoss.Status.Backends.S3.Provider = tamoss.Spec.Backends.S3.Provider()
 	tamoss.Status.Auth = authStatus(tamoss)
 	tamoss.Status.Endpoints = endpointStatus(tamoss)
 	tamoss.Status.Providers = providerStatus(tamoss)
-	tamoss.Status.Resolved = resolvedTamossStatus(tamoss, tamsinImage...)
+	tamoss.Status.Resolved = resolvedTamossStatus(tamoss, release)
 	setBackupPolicyCondition(&tamoss.Status.Conditions, tamoss)
 	setUpgradeUnknown(tamoss, operatorstatus.ReasonUpgradeNotEvaluated, "Upgrade readiness has not been evaluated in this reconcile")
 }

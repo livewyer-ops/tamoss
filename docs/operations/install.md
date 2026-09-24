@@ -4,10 +4,13 @@ TAMOSS installs through source-controlled environment inputs. For existing
 clusters, create an environment composition, edit the generated platform values
 and `Tamoss` YAML, then apply it:
 
+Set `TAMOSS_VERSION` to the exact release to install. The generated environment
+pins its operator installation and each instance independently.
+
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 
-task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
 task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
@@ -20,8 +23,9 @@ separate [Helm](https://helm.sh/) releases, waits for the dependency
 operators, then applies
 TAMOSS-owned platform configuration through `deploy/platform/charts/config`.
 The platform state is built from `deploy/platform/values/defaults.yaml` plus the
-environment's `platform-values.yaml`. The operator layer installs the TAMOSS
-CRDs, controller, RBAC, and webhooks. The environment layer applies one or more
+environment's `platform-values.yaml`. The operator layer uses the environment's `operator/kustomization.yaml`, which
+references the selected release's published installation and catalogue. It installs
+the CRDs, controller, RBAC and webhooks. The environment layer applies one or more
 namespaced `Tamoss` custom resources.
 
 For multiple tenant namespaces, install the platform and operator once, then
@@ -112,7 +116,7 @@ pre-created and cert-manager annotations should be omitted from explicit
 `deploy/platform/values/edge-reference.yaml`:
 
 ```bash
-task env:init NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
 ```
 
@@ -166,7 +170,7 @@ Add an instance with `task env:instance:init`, which writes the manifest and
 registers it in `kustomization.yaml`:
 
 ```bash
-task env:instance:init ENV=<env> INSTANCE=prod-b PROFILE=multi-server \
+task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=<env> INSTANCE=prod-b PROFILE=multi-server \
   DOMAIN=prod-b.example.com NAMESPACE=prod-b
 ```
 

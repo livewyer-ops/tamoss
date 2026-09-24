@@ -21,7 +21,7 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.DesiredReplicaCount(); got != 2 {
 		t.Fatalf("expected API replicas 2, got %d", got)
@@ -134,7 +134,7 @@ func TestApplyMultiServerAllowsUIToReachOptInConsole(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	rules := tamoss.Spec.NetworkPolicy.UI.Egress
 	if len(rules) != 2 {
@@ -160,7 +160,7 @@ func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	rules := tamoss.Spec.NetworkPolicy.UI.Egress
 	if len(rules) != 2 {
@@ -185,7 +185,7 @@ func TestApplyMultiServerConsoleKubernetesAPIEgressIsPortScopedWithoutIPBlocks(t
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	rules := tamoss.Spec.NetworkPolicy.Console.Egress
 	if len(rules) != 2 {
@@ -209,7 +209,7 @@ func TestApplyMultiServerScopesConsoleKubernetesAPIEgressToDeclaredIPBlocks(t *t
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	rules := tamoss.Spec.NetworkPolicy.Console.Egress
 	if len(rules) != 2 {
@@ -239,7 +239,7 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 	if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyPublicHTTPS {
 		t.Fatalf("local-kind ingest source policy = %q, want PublicHTTPS", got)
 	}
@@ -330,7 +330,7 @@ func TestProductionProfilesDefaultIngestSourcePolicyToDisabled(t *testing.T) {
 	} {
 		t.Run(string(profile), func(t *testing.T) {
 			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Profile: profile}}
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 			if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyDisabled {
 				t.Fatalf("production ingest source policy = %q, want Disabled", got)
 			}
@@ -357,7 +357,7 @@ func TestApplyConsoleEnablementIsExplicit(t *testing.T) {
 				UI:      tamossv1alpha1.UIComponentSpec{Enabled: test.ui},
 				Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: test.console},
 			}}
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 			if got := tamoss.Spec.ConsoleEnabled(); got != test.want {
 				t.Fatalf("ConsoleEnabled() = %t, want %t", got, test.want)
 			}
@@ -376,7 +376,7 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected single-server CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
@@ -423,7 +423,7 @@ func TestApplyEdgeDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.edge" {
 		t.Fatalf("expected edge base domain, got %q", got)
@@ -507,7 +507,7 @@ func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-public" {
 				t.Fatalf("expected public cert issuer annotation, got %q", got)
@@ -542,7 +542,7 @@ func TestAuthentikProfilesDefaultToManagedAuthentik(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 				t.Fatalf("expected Authentik Blueprint auth for %s, got %s", profile, got)
@@ -591,7 +591,7 @@ func TestAuthentikDefaultsPreserveExplicitGroupBindings(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	bindings := tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings
 	if len(bindings) != 1 || bindings[0].GroupName != "tamoss-viewers" || len(bindings[0].Permissions) != 1 || bindings[0].Permissions[0] != "viewer" {
@@ -609,7 +609,7 @@ func TestCustomManagedAuthentikDefaultsAdministratorBinding(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	assertDefaultAuthentikAdminBinding(t, tamoss.Spec.Auth.AuthentikBlueprints)
 }
@@ -628,7 +628,7 @@ func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if _, ok := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; ok {
 		t.Fatalf("did not expect default cert issuer annotation when annotations are explicit")
@@ -655,7 +655,7 @@ func TestManagedRustFSProfileDefaultsMeetOperatorMinimum(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			rustfs := tamoss.Spec.Backends.S3.RustFSOperator
 			if rustfs == nil || len(rustfs.Pools) == 0 {
@@ -682,7 +682,7 @@ func TestApplyMultiServerPublicEndpointDefaultsRustFS(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.example.com" {
 		t.Fatalf("expected derived API ingress host, got %q", got)
@@ -722,7 +722,7 @@ func TestApplyPublicEndpointDefaultsNormalizeBaseDomain(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.example.com" {
 		t.Fatalf("expected normalized API ingress host, got %q", got)
@@ -788,7 +788,7 @@ func TestApplyPublicEndpointDefaultsPreserveOverrides(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.override.example.com" {
 		t.Fatalf("expected explicit API ingress host preserved, got %q", got)
@@ -839,7 +839,7 @@ func TestSupportedProfilesUseOperatorManagedBackends(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Backends.DB.Provider(); got != tamossv1alpha1.BackendProvidedByCNPG {
 				t.Fatalf("expected CNPG database backend for %s, got %s", profile, got)
@@ -868,7 +868,7 @@ func TestSupportedProfilesUseWorkerHTTPProbes(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			assertWorkerHTTPProbe(t, "readiness", tamoss.Spec.Worker.ReadinessProbe, "/readyz", 10, 3)
 			assertWorkerHTTPProbe(t, "liveness", tamoss.Spec.Worker.LivenessProbe, "/healthz", 30, 3)
@@ -898,7 +898,7 @@ func TestApplyPreservesExplicitWorkerProbes(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if tamoss.Spec.Worker.ReadinessProbe != readiness {
 		t.Fatalf("expected explicit worker readiness probe to be preserved")
@@ -932,7 +932,7 @@ func TestApplyPublicEndpointDefaultsPreserveExternalProviders(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByExternal {
 		t.Fatalf("expected external auth preserved, got %s", got)
@@ -998,7 +998,7 @@ func TestApplyPreservesExplicitOverrides(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.DesiredReplicaCount(); got != 4 {
 		t.Fatalf("expected explicit API replicas 4, got %d", got)
@@ -1219,7 +1219,7 @@ func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.API.Image.Tag; got != DefaultOperandTag {
 				t.Fatalf("expected API image tag %q for %s, got %q", DefaultOperandTag, profile, got)
@@ -1234,10 +1234,11 @@ func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
 	}
 }
 
-func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
-	original := DefaultOperandTag
-	DefaultOperandTag = "8.1.0-test"
-	t.Cleanup(func() { DefaultOperandTag = original })
+func TestApplyDefaultsOperandImageTagsFollowSelectedRelease(t *testing.T) {
+	images := DevelopmentImages
+	images.API = DefaultAPIRepository + ":selected"
+	images.UI = DefaultUIRepository + ":selected"
+	images.Console = DefaultConsoleRepository + ":selected"
 
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
@@ -1246,16 +1247,16 @@ func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, images)
 
-	if got := tamoss.Spec.API.Image.Tag; got != "8.1.0-test" {
-		t.Fatalf("expected API image tag to follow the build version, got %q", got)
+	if got := tamoss.Spec.API.Image.Tag; got != "selected" {
+		t.Fatalf("expected API image tag to follow the selected release, got %q", got)
 	}
-	if got := tamoss.Spec.UI.Image.Tag; got != "8.1.0-test" {
-		t.Fatalf("expected UI image tag to follow the build version, got %q", got)
+	if got := tamoss.Spec.UI.Image.Tag; got != "selected" {
+		t.Fatalf("expected UI image tag to follow the selected release, got %q", got)
 	}
-	if got := tamoss.Spec.Console.Image.Tag; got != "8.1.0-test" {
-		t.Fatalf("expected Console image tag to follow the build version, got %q", got)
+	if got := tamoss.Spec.Console.Image.Tag; got != "selected" {
+		t.Fatalf("expected Console image tag to follow the selected release, got %q", got)
 	}
 }
 
@@ -1276,7 +1277,7 @@ func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.Image.Tag; got != "pinned-api" {
 		t.Fatalf("expected explicit API image tag preserved, got %q", got)
@@ -1300,7 +1301,7 @@ func TestApplyEdgeHonoursAuthentikBlueprints(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 		t.Fatalf("expected edge to keep the Authentik provider, got %s", got)

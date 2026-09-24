@@ -1,0 +1,19 @@
+# Provider simulation: PostgreSQL traffic uses the separate database fixture.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: (join('-', [$cluster.metadata.name, $ordinal]))
+  namespace: ($cluster.metadata.namespace)
+  labels:
+    cnpg.io/cluster: ($cluster.metadata.name)
+  ownerReferences:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: ($cluster.metadata.name)
+      uid: ($cluster.metadata.uid)
+      controller: true
+spec:
+  containers:
+    - name: postgres
+      image: ($cluster.spec.imageName)
+      command: [sleep, infinity]

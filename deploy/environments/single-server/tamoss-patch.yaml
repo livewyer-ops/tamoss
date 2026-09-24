@@ -4,6 +4,7 @@ metadata:
   name: tamoss-single-server
   namespace: tams
 spec:
+  version: dev
   console:
     enabled: true
   publicEndpoint:

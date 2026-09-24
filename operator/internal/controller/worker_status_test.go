@@ -21,12 +21,14 @@ func TestUpdateStatusSurfacesUnavailableWorker(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media", Generation: 3},
 		Spec: tamossv1alpha1.TamossSpec{
-			API:    tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
-			UI:     tamossv1alpha1.UIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
-			Worker: tamossv1alpha1.WorkerComponentSpec{Enabled: ptr.To(true), WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](2)}},
+			Version: "dev",
+			API:     tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
+			UI:      tamossv1alpha1.UIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
+			Worker:  tamossv1alpha1.WorkerComponentSpec{Enabled: ptr.To(true), WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](2)}},
 		},
 	}
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(workerStatusScheme(t)).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
@@ -63,12 +65,13 @@ func TestUpdateStatusSurfacesUnavailableConsole(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-console", Namespace: "media", Generation: 3},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			API:     tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
 			UI:      tamossv1alpha1.UIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
 			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true), WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
 		},
 	}
-	reconciler := &TamossReconciler{Client: fake.NewClientBuilder().
+	reconciler := &TamossReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().
 		WithScheme(workerStatusScheme(t)).
 		WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
 		WithObjects(
@@ -101,15 +104,16 @@ func TestUpdateStatusSurfacesUnavailableBrowserAuthentication(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-browser-auth", Namespace: "media", Generation: 3},
 		Spec: tamossv1alpha1.TamossSpec{
-			API: tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
-			UI:  tamossv1alpha1.UIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
+			Version: "dev",
+			API:     tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
+			UI:      tamossv1alpha1.UIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
 			Auth: tamossv1alpha1.AuthSpec{
 				ProvidedBy: tamossv1alpha1.AuthProvidedByExternal,
 				Required:   true,
 			},
 		},
 	}
-	reconciler := &TamossReconciler{Client: fake.NewClientBuilder().
+	reconciler := &TamossReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().
 		WithScheme(workerStatusScheme(t)).
 		WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
 		WithObjects(
@@ -153,11 +157,12 @@ func TestUpdateStatusReportsConfiguredBrowserAuthentication(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-no-browser", Namespace: "media", Generation: 1},
 		Spec: tamossv1alpha1.TamossSpec{
-			API: tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
-			UI:  tamossv1alpha1.UIComponentSpec{Enabled: ptr.To(false)},
+			Version: "dev",
+			API:     tamossv1alpha1.APIComponentSpec{WorkloadCommonSpec: tamossv1alpha1.WorkloadCommonSpec{ReplicaCount: ptr.To[int32](1)}},
+			UI:      tamossv1alpha1.UIComponentSpec{Enabled: ptr.To(false)},
 		},
 	}
-	reconciler := &TamossReconciler{Client: fake.NewClientBuilder().
+	reconciler := &TamossReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().
 		WithScheme(workerStatusScheme(t)).
 		WithStatusSubresource(&tamossv1alpha1.Tamoss{}).
 		WithObjects(tamoss, availableDeployment(tamoss, "api", 1)).

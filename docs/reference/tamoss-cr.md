@@ -1,7 +1,7 @@
 # Tamoss CR Reference
 
 `Tamoss` declares one TAMOSS instance in a namespace. The operator applies
-profile defaults first, then explicit fields in the CR override those defaults.
+release and profile defaults, then explicit fields in the CR override those defaults.
 The canonical CRD in `operator/config/crd/bases/` remains the exhaustive schema
 source.
 
@@ -22,6 +22,7 @@ metadata:
   name: tamoss-kind
   namespace: tams
 spec:
+  version: dev
   profile: local-kind
 ```
 
@@ -49,6 +50,7 @@ spec:
 
 | Field | Purpose |
 | --- | --- |
+| `.spec.version` | Exact product release from the operator installation catalogue. Omission reports `VersionRequired` and leaves workloads unchanged. |
 | `.spec.profile` | Selects `local-kind`, `edge`, `single-server`, or `multi-server` defaults. |
 | `.spec.publicEndpoint` | Derives public API, UI, S3, and [Authentik](https://goauthentik.io/) endpoint defaults when the selected auth mode uses Authentik. |
 | `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
@@ -126,11 +128,12 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 
 | Field | Purpose |
 | --- | --- |
+| `.status.currentVersion` | Last release whose schema migration and workload rollouts completed. |
 | `.status.conditions` | Readiness, backend, identity, routing, schema, upgrade, and degraded conditions. |
 | `.status.endpoints` | Effective API and UI URLs after profile defaults and endpoint overrides. |
 | `.status.providers` | Selected provider and ownership model for database, S3, authentication, and routing. |
 | `.status.resolved.images` | Effective API, UI, worker, Console, TAMSin, schema helper, CNPG Postgres, and RustFS image references where rendered. |
-| `.status.resolved.versions` | Effective TAMOSS schema, runtime, and BBC TAMS API compatibility versions. |
+| `.status.resolved.versions` | Selected TAMOSS release and schema target, and BBC TAMS API compatibility version. |
 | `.status.resolved.generatedSecrets` | Generated Secret names only. Secret values are never exposed. |
 | `.status.resolved.resources` | Generated workload and default StorageBackend resource names. |
 | `.status.resolved.routes` | Generated route object names for API and UI exposure. |

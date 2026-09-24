@@ -23,6 +23,7 @@ func TestStorageBackendCredentialSecretRequestsFilterReferencingBackends(t *test
 	other.Name = "other"
 	other.Spec.Credentials.ExistingSecret = "other-secret"
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(storageBackend, other).
@@ -45,6 +46,7 @@ func TestTamossOwnedObjectListUsesManagedLabels(t *testing.T) {
 		t.Fatalf("add appsv1 scheme: %v", err)
 	}
 	tamoss := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media", UID: types.UID("tamoss-uid")},
 	}
 	owned := deploymentObject("owned", "media", tamossManagedLabelSelector(tamoss), tamossOwnerReference(tamoss))

@@ -6,6 +6,10 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Select each instance's release with `spec.version`. Operator updates preserve
+  pinned instance images and schema targets; component image overrides remain
+  available. Report the last completed release in `status.currentVersion`.
+
 - Preserve large Segment timestamps with exact numeric database bounds. The
   schema upgrade converts existing bounds without changing media or checksums.
 - Limit Segment paging timeranges to the returned page, preserving timestamp
@@ -25,8 +29,12 @@ timestamp bounds from `BIGINT` to `NUMERIC`. PostgreSQL rewrites the Segment
 table and its indexes and refreshes statistics. Reserve a maintenance window
 and enough temporary database space; duration depends on Segment volume.
 Existing values convert without recalculation, and media objects and checksums
-are unchanged. Stage matching API and operator images while reconciliation is
-paused, then follow the [upgrade procedure](docs/operations/upgrades.md#sequence).
+are unchanged. Follow the [upgrade procedure](docs/operations/upgrades.md#upgrade-sequence).
+Pin existing instances explicitly to `8.2.0-oss1` or `8.2.0-oss2-rc2` before
+selecting the next release. Unversioned resources keep their workloads running
+and report `VersionRequired` until pinned. Remove unwanted component overrides
+once, including PostgreSQL defaults persisted by the previous CRD, to follow
+the selected release.
 
 ## 8.2.0-oss2-rc2 - 2026-09-23
 

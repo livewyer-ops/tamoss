@@ -518,6 +518,9 @@ def test_release_record_includes_assets_specification_and_worker_identity(
         **{f"{name.upper()}_DIGEST": "sha256:" + "c" * 64 for name in module.IMAGES},
     }.items():
         monkeypatch.setenv(name, value)
+    catalogue = install.with_name("catalogue.json")
+    runtime = {"version": "8.2.0-oss1-rc5", "schema": {"version": "8.2.0-oss1"}}
+    catalogue.write_text(json.dumps([runtime]))
     output = tmp_path / "release.json"
     monkeypatch.setattr(sys, "argv", ["release-record.py", "--output", str(output)])
     module.main()
@@ -525,12 +528,13 @@ def test_release_record_includes_assets_specification_and_worker_identity(
     assert record["sourceCommit"] == "a" * 40
     assert record["bbcTamsCommit"] == "b" * 40
     assert record["compatibility"]["tams_api"] == "8.2"
+    assert record["runtime"] == runtime
     assert record["workerImage"] == record["images"]["api"]
     assert record["validationRun"].endswith("/actions/runs/1234")
     assert record["validationRunAttempt"] == "2"
     assert record["artifacts"] == {
         path.name: {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-        for path in (install, compatibility, dependencies)
+        for path in (install, compatibility, dependencies, catalogue)
     }
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/operator-release.yaml").read_text()

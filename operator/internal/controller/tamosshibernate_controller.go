@@ -24,12 +24,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
 type TamossHibernateReconciler struct {
+	Releases        releases.Catalogue
 	Client          client.Client
 	Scheme          *runtime.Scheme
 	Recorder        record.EventRecorder
@@ -322,8 +322,10 @@ func (r *TamossHibernateReconciler) resolveHibernateTamoss(ctx context.Context, 
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
+	resolved, err := resolveTamoss(tamoss, r.Releases)
+	if err != nil {
+		return nil, false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, releaseErrorReason(err), err.Error(), tamossv1alpha1.HibernationArtifactStatus{})
+	}
 	return resolved, true, nil
 }
 
@@ -491,7 +493,7 @@ func (r *TamossHibernateReconciler) validateHibernateSourceSchema(ctx context.Co
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, operatorstatus.ReasonSchemaNotReady, message, artifact)
 	}
 	version := strings.TrimSpace(tamoss.Status.SchemaVersion)
-	if version == "" || !schemabundle.IsSupportedStartingVersion(version) {
+	if version == "" || !r.Releases[tamoss.Spec.Version].Schema.Supports(version) {
 		message := fmt.Sprintf("Tamoss %s schema version %q is not supported for hibernation", tamoss.Name, version)
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseFailed, operatorstatus.ReasonUnsupportedSchemaVersion, message, artifact)
 	}

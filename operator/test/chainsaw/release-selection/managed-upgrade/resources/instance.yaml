@@ -1,0 +1,49 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: ($instance)
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  version: ($version)
+  profile: edge
+  auth:
+    providedBy: none
+    required: false
+  api:
+    enabled: true
+    replicaCount: 1
+  ui:
+    enabled: false
+  worker:
+    enabled: false
+  console:
+    enabled: false
+  ingress:
+    enabled: false
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false
+  backends:
+    db:
+      providedBy: cnpg
+      cnpg:
+        instances: 1
+        storage:
+          size: 1Gi
+    s3:
+      providedBy: rustfs-operator
+      rustfsOperator:
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"
+        bucket:
+          name: tamoss
+          createIfMissing: true
+        pools:
+          - name: pool-0
+            servers: 1
+            volumesPerServer: 4
+            storage:
+              size: 1Gi

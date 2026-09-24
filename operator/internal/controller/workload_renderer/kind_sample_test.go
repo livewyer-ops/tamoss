@@ -23,7 +23,7 @@ func TestKindSampleRendersOperatorOnlyResources(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", "..", "..", ".."))
 	samplePath := filepath.Join(repoRoot, "deploy", "instances", "local-kind", "tamoss.yaml")
 	tamoss := readTamossSample(t, samplePath)
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 	applySampleDefaults(tamoss)
 
 	want := []string{

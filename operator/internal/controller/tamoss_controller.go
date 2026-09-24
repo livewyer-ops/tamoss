@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,10 +26,10 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -50,6 +51,7 @@ const (
 
 // TamossReconciler reconciles a Tamoss object
 type TamossReconciler struct {
+	Releases                    releases.Catalogue
 	Client                      client.Client
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
@@ -63,7 +65,6 @@ type TamossReconciler struct {
 	AuthentikHTTPClient         *http.Client
 	ManifestReader              HibernationManifestReader
 	ArtifactCleaner             HibernationArtifactCleaner
-	TAMSinImage                 string
 	WarningEvents               operatorstatus.WarningEventDeduper
 	optionalWatches             *optionalWatchRegistrar
 }
@@ -73,7 +74,7 @@ type TamossReconciler struct {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosshibernations,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,namespace=system,resources=replicasets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,namespace=system,resources=replicasets;statefulsets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=autoscaling,namespace=system,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",namespace=system,resources=configmaps;events;pods;secrets;serviceaccounts;services,verbs=get;list;watch;create;update;patch;delete
@@ -201,14 +202,25 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		result, err := r.finalizeTamoss(ctx, tamoss)
 		return nil, stopReconcile(result), err
 	}
+	if err := r.validateReleaseState(ctx, tamoss); err != nil {
+		var selection *releases.SelectionError
+		if !errors.As(err, &selection) {
+			return nil, stopReconcileNow(), err
+		}
+		statusErr := r.blockRelease(ctx, tamoss, err)
+		recordPhase(operatorstatus.PhaseDegraded)
+		return nil, stopReconcileNow(), statusErr
+	}
 	original := tamoss.DeepCopy()
 	if controllerutil.AddFinalizer(tamoss, tamossFinalizer) {
 		if err := r.Client.Patch(ctx, tamoss, client.MergeFrom(original)); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
 		}
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
+	resolved, err := resolveTamoss(tamoss, r.Releases)
+	if err != nil {
+		return nil, stopReconcileNow(), err
+	}
 	if err := r.reconcileHibernationSpec(ctx, resolved); err != nil {
 		return nil, stopReconcile(ctrl.Result{}), err
 	}
@@ -229,6 +241,9 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		}
 		recordPhase(resolved.Status.Phase)
 		return nil, stopReconcile(ctrl.Result{}), nil
+	}
+	if err := r.beginRelease(ctx, resolved); err != nil {
+		return nil, stopReconcileNow(), err
 	}
 	return resolved, continueReconcile(), nil
 }
@@ -321,7 +336,7 @@ func (r *TamossReconciler) reconcileTamossIdentityGates(ctx context.Context, tam
 }
 
 func (r *TamossReconciler) reconcileTamossSchemaStage(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, recordPhase func(string)) (SchemaResult, reconcileControl, error) {
-	schemaResult, err := (&SchemaController{Client: r.Client, Scheme: r.Scheme}).Reconcile(ctx, tamoss)
+	schemaResult, err := (&SchemaController{Client: r.Client, Scheme: r.Scheme, Target: r.Releases[tamoss.Spec.Version].Schema}).Reconcile(ctx, tamoss)
 	if err != nil {
 		return SchemaResult{}, stopReconcile(ctrl.Result{}), err
 	}

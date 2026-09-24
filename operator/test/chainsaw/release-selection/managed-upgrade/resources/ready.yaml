@@ -1,0 +1,10 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: ($instance)
+status:
+  currentVersion: ($version)
+  (conditions[?type == 'Ready'].status | [0]): "True"
+  resolved:
+    versions:
+      tamoss: ($version)

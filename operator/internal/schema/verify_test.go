@@ -31,33 +31,14 @@ func TestVerifyAcceptsDevelopmentSchemaVersion(t *testing.T) {
 	}
 }
 
-func TestIsSupportedStartingVersion(t *testing.T) {
-	if !IsSupportedStartingVersion("") {
-		t.Fatal("empty state should be supported as a fresh install")
+func TestTargetSupportsOnlyItsSchemaAndPredecessor(t *testing.T) {
+	target := Target{Version: "current", PreviousVersion: "previous"}
+	for _, version := range []string{"", "current", "previous"} {
+		if !target.Supports(version) {
+			t.Fatalf("rejected %q", version)
+		}
 	}
-	if !IsSupportedStartingVersion(SchemaVersion) {
-		t.Fatal("current schema version should be supported")
-	}
-	if IsSupportedStartingVersion("unknown") {
-		t.Fatal("unknown schema version should not be supported")
-	}
-}
-
-func TestIsSupportedStartingVersionAcceptsPreviousRevision(t *testing.T) {
-	currentVersion := SchemaVersion
-	previousVersion := PreviousSupportedSchemaVersion
-	defer func() {
-		SchemaVersion = currentVersion
-		PreviousSupportedSchemaVersion = previousVersion
-	}()
-
-	SchemaVersion = "8.1.0-oss1"
-	PreviousSupportedSchemaVersion = "8.0.0-oss1"
-
-	if !IsSupportedStartingVersion("8.0.0-oss1") {
-		t.Fatal("previous supported schema revision should be accepted")
-	}
-	if IsSupportedStartingVersion("7.9.0-oss1") {
-		t.Fatal("unsupported previous schema revision should be rejected")
+	if target.Supports("unknown") {
+		t.Fatal("accepted unsupported schema")
 	}
 }
