@@ -90,10 +90,6 @@ then stay on the matching install, configuration, usage, and operations path.
   development.
 - [Testing](development/testing.md) - local, operator, and deployed gates.
 
-Docs are maintained as raw Markdown. Revisit a static site generator only if the
-documentation set grows beyond roughly 50 maintained pages or Markdown
-navigation becomes a clear maintenance burden.
-
 ## Glossary
 
 | Term | Meaning |
