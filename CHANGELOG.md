@@ -13,6 +13,21 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 - Validate Flow replacements before applying Profile metadata. Reject incomplete
   updates while retaining explicit Profile unlinking with a complete definition.
 
+### Upgrade notes
+
+The pending `8.2.0-oss2` release advances the schema from `8.2.0-oss1` to
+`8.2.0-oss2`. Published `8.2.0-oss2-rc2` uses the preceding schema and follows
+the same migration path. Upgrade older installations through the predecessors
+declared in `operator/compatibility.yaml`.
+
+Alembic revision `20260924_0008` follows `20260810_0007` and converts Segment
+timestamp bounds from `BIGINT` to `NUMERIC`. PostgreSQL rewrites the Segment
+table and its indexes and refreshes statistics. Reserve a maintenance window
+and enough temporary database space; duration depends on Segment volume.
+Existing values convert without recalculation, and media objects and checksums
+are unchanged. Stage matching API and operator images while reconciliation is
+paused, then follow the [upgrade procedure](docs/operations/upgrades.md#sequence).
+
 ## 8.2.0-oss2-rc2 - 2026-09-23
 
 Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
@@ -36,13 +51,38 @@ Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
   Authentik 2026.2.7, CNPG 1.30.0, PostgreSQL 18.6, Traefik 3.7.13 and
   cert-manager 1.21.2 through the normal platform workflow.
 - Update RustFS to 1.0.0 while retaining operator 0.0.1. Preserve stored checksums
-  when copying media; existing objects need no checksum conversion. See the
-  [upgrade guide](docs/operations/upgrades.md) for signing and recovery details.
+  when copying media; existing objects need no checksum conversion.
 - Refresh the application dependencies and build toolchains. Platform updates
   stop on failure without attempting to roll back database migrations.
 
 These fixes retain schema revision `8.2.0-oss1`. Upgrade `8.1.0-oss6`
 deployments to `8.2.0-oss1` before applying this update.
+
+### Upgrade notes
+
+- RustFS upgrades from `1.0.0-beta.3` to `1.0.0`. Rotate credentials still using
+  `rustfsadmin` before upgrading: the new runtime rejects those legacy defaults.
+  Generated TAMOSS credentials do not need replacement. Update any explicit
+  `spec.backends.s3.rustfsOperator.image` override to `rustfs/rustfs:1.0.0`.
+  RustFS 1.0.0 rejects unsigned `x-amz-*` checksum headers added to presigned
+  URLs, including `x-amz-checksum-mode: ENABLED`; include them when signing.
+  Presigned uploads also support `Content-MD5`.
+- Authentik updates directly from `2026.2.3` to `2026.2.7`, using chart
+  `2026.2.3` and its native image override. Its PostgreSQL database remains on
+  major 17. Separate outposts must match the server version.
+- Review custom Traefik logging values and file-provider content against the
+  [chart 41 notes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).
+  Review custom cert-manager monitoring values and controller service-account
+  permissions against the [1.21 notes](https://github.com/cert-manager/cert-manager/releases/tag/v1.21.0).
+- PostgreSQL 18.6 fixes incorrect row estimates after parallel GIN index
+  creation. When upgrading from an earlier 18.x release, inspect tables with
+  GIN indexes using the query in the
+  [PostgreSQL release notes](https://www.postgresql.org/docs/release/18.6/).
+  Run `ANALYZE schema_name.table_name` for incorrect estimates, including
+  `Infinity` or `NaN`.
+
+Follow the [upgrade guide](docs/operations/upgrades.md) for backup, sequencing,
+validation and recovery procedures.
 
 ## 8.2.0-oss2-rc1 - 2026-09-15
 
@@ -93,6 +133,9 @@ declarative, Kubernetes-managed ingest.
   migration. Existing 8.2 candidates retain the same schema revision.
 - Browser upload controls are replaced by API-client or managed `IngestRun`
   workflows.
+- TAMSin `8.2.0-in2` corrects rendered Segment timing. Re-ingest affected media
+  as a new run rather than editing or replaying an existing run; stored Flows
+  are unchanged.
 
 ## 8.1.0-oss6 - 2026-08-08
 

@@ -2,7 +2,9 @@
 
 This page lists organisations and projects using TAMOSS, in production, for evaluation, or as a reference implementation of the [BBC TAMS API](https://github.com/bbc/tams).
 
-TAMOSS is pre-1.0. The current release series (`8.1.0-ossN`) tracks BBC TAMS v8.1, and the operator API (`Tamoss`, `StorageBackend`, `IngestRun`, `TamossHibernation`, etc) may still change between releases.
+The operator API may change between releases. Review the
+[changelog](CHANGELOG.md) and [upgrade guide](docs/operations/upgrades.md)
+before updating an installation.
 
 ## Who is using TAMOSS
 

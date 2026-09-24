@@ -4,8 +4,7 @@ Local setup, test commands, and PR workflow for TAMOSS.
 
 ## Prerequisites
 
-The fastest path is [aqua](https://aquaproj.github.io/docs/install/) —
-one install step gives you the pinned CLI set for local development
+Install the pinned development tools with [aqua](https://aquaproj.github.io/docs/install/)
 (Task, uv, kind, kubectl, Go,
 kubeconform, OSV Scanner, node, yamlfmt, jq, gh).
 See [aqua.yml](aqua.yml) for the full list.
@@ -52,8 +51,7 @@ task kind:up PROFILE=local-kind
 task kind:down
 ```
 
-Mental model: **dev = speed, Kind = confidence, remote = release
-validation.** Develop against `task dev`; gate merges against
+Develop against `task dev`; gate merges against
 `task kind:test PROFILE=local-kind`; use the remote cluster only for final
 rollout checks.
 
@@ -84,13 +82,8 @@ before touching the operator so `go`, `kubeconform`, and
 
 ## Documentation
 
-Documentation follows Diataxis: getting-started tutorials, operations how-to
-guides, reference contracts, and conceptual explanations remain distinct and
-link to one another. Public docs describe current behaviour; unresolved designs
-do not belong in user-facing documentation.
-
-Write prose and commit messages in British English. Preserve literal API field
-names, commands, error codes, and upstream product names exactly.
+User and developer documentation is in [docs/](docs/README.md). Release notes
+and migration prerequisites are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Testing
 
@@ -217,7 +210,7 @@ Include:
 - [ ] Code follows style guide (pre-commit passes).
 - [ ] Tests added or updated.
 - [ ] `task check` and relevant focused suites are green.
-- [ ] Docs updated and placed in the appropriate Diataxis section.
+- [ ] Relevant documentation updated.
 
 ## Commit messages
 
