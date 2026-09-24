@@ -101,10 +101,11 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - task: operator:apply
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-          OPERATOR_KUSTOMIZE_DIR: "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}"
+      - |
+        . .tasks/lib/operator_k8s.sh
+        task_render_development_operator "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}" "{{.KIND_OPERAND_VERSION}}" "{{.KIND_SCHEMA_VERSION}}" "{{.KIND_PREVIOUS_SCHEMA_VERSION}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_apply_operator "{{.KUBECONFIG}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_wait_operator "{{.KUBECONFIG}}" tamoss-system operator-controller-manager
       - task: operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"

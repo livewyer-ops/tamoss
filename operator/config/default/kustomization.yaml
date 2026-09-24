@@ -7,6 +7,7 @@ resources:
 - ../rbac
 - ../manager
 - ../releases
+- ../instance-defaults
 - ../webhook
 - ../certmanager
 # Monitoring resources are rendered through the monitoring overlay.

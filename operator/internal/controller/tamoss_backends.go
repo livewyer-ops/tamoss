@@ -49,7 +49,11 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		desiredKeys[canonicalObjectKey(secret)] = struct{}{}
 	}
 	if err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
 	}); err != nil {
 		return providerBackendResult{}, err
 	}
@@ -88,8 +92,8 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 	}
 	desiredImage, _, _ := unstructured.NestedString(desiredTenant.Object, "spec", "image")
 	observedImage, _, _ := unstructured.NestedString(tenant.Object, "spec", "image")
-	if desiredImage != observedImage {
-		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS image"}, nil
+	if desiredImage != observedImage || tenant.GetAnnotations()[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS configuration"}, nil
 	}
 	condition, events := rustfs.RollupStatus(tenant)
 	for _, event := range events {
@@ -135,7 +139,11 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 	// without preserving live fields.
 	injectResolvedRestore(tamoss)
 	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
 	}}
 	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
@@ -158,8 +166,8 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 	if err := applyAdvancedResourcePatches(tamoss, desiredCluster); err != nil {
 		return providerBackendResult{}, err
 	}
-	if desiredCluster.Spec.ImageName != cluster.Spec.ImageName {
-		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL image"}, nil
+	if desiredCluster.Spec.ImageName != cluster.Spec.ImageName || desiredCluster.Spec.Instances != cluster.Spec.Instances || cluster.Annotations[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL configuration"}, nil
 	}
 	condition, events := cnpg.RollupStatus(cluster)
 	for _, event := range events {

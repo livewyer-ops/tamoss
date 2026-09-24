@@ -81,6 +81,7 @@ task_wait_tamoss_instance() {
   local namespace="$2"
   local name="$3"
   local timeout="$4"
+  local defaults_revision="${5:-}"
 
   local version generation
   version="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.spec.version}')"
@@ -96,6 +97,11 @@ task_wait_tamoss_instance() {
   task_step "Instance: wait for Tamoss/$name release $version" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
       --for="jsonpath={.status.currentVersion}=$version" "tamoss/$name" --timeout="$timeout"
+  if [ -n "$defaults_revision" ]; then
+    task_step "Instance: wait for Tamoss/$name installation defaults" \
+      kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
+        --for="jsonpath={.status.appliedDefaultsRevision}=$defaults_revision" "tamoss/$name" --timeout="$timeout"
+  fi
   task_step "Instance: wait for Tamoss/$name Ready" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
       --for=condition=Ready "tamoss/$name" --timeout="$timeout"

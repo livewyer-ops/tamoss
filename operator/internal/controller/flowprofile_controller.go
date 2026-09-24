@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/resource"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
@@ -54,11 +55,12 @@ const (
 )
 
 type FlowProfileReconciler struct {
-	Releases        releases.Catalogue
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	WatchNamespaces WatchNamespaceSet
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	Recorder         record.EventRecorder
+	WatchNamespaces  WatchNamespaceSet
 }
 
 type resolvedFlowProfile struct {
@@ -326,11 +328,14 @@ func (r *FlowProfileReconciler) flowProfileTamoss(ctx context.Context, namespace
 		}
 		return nil, false, err
 	}
-	resolved, err := resolveTamoss(tamoss, r.Releases)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	return resolved, true, err
 }
 
 func (r *FlowProfileReconciler) flowProfileSchemaReady(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) bool {
+	if !r.InstanceDefaults.AppliedTo(tamoss) {
+		return false
+	}
 	state := &corev1.ConfigMap{}
 	key := types.NamespacedName{Namespace: tamoss.Namespace, Name: tamossResourceName(tamoss, "schema-state")}
 	if err := r.Client.Get(ctx, key, state); err != nil {

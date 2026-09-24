@@ -192,14 +192,7 @@ task_init_env() {
 
   mkdir -p "$(dirname "$environment_dir")"
   cp -R "$template_dir" "$environment_dir"
-  mkdir -p "$environment_dir/operator"
-  cat > "$environment_dir/operator/kustomization.yaml" <<YAML
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- https://github.com/livewyer-ops/tamoss/releases/download/$instance_version/install.yaml
-YAML
-  for file in "$environment_dir"/*.yaml; do
+  for file in "$environment_dir"/*.yaml "$environment_dir"/operator/*.yaml; do
     tmp_file="$(mktemp)"
     sed \
       -e "s|__PROFILE__|$profile|g" \
@@ -210,6 +203,7 @@ YAML
   done
   if [ "$profile" = "edge" ]; then
     cp deploy/platform/values/edge-reference.yaml "$environment_dir/platform-values.yaml"
+    yq -i '.clusterIssuer = "tamoss-edge-selfsigned"' "$environment_dir/operator/defaults.yaml"
   fi
 
   printf 'Created %s\n' "$environment_dir"
@@ -223,8 +217,8 @@ YAML
 task_init_env_instance() {
   local environment_dir="$1"
   local instance="$2"
-  local profile="$3"
-  local domain="$4"
+  local profile="${3:-}"
+  local domain="${4:-}"
   local namespace="${5:-}"
   local instance_version="${6:-}"
   task_validate_instance_version "$instance_version" || return
@@ -241,7 +235,7 @@ task_init_env_instance() {
       ;;
   esac
   case "$profile" in
-    single-server|multi-server|edge) ;;
+    ""|single-server|multi-server|edge) ;;
     *)
       echo "PROFILE must be single-server, multi-server, or edge for remote Kubernetes environments." >&2
       return 2
@@ -273,10 +267,13 @@ metadata:
   namespace: $namespace
 spec:
   version: "$instance_version"
-  profile: $profile
-  publicEndpoint:
-    baseDomain: $domain
 YAML
+  if [ -n "$profile" ]; then
+    INSTANCE_PROFILE="$profile" yq -i '(select(.kind == "Tamoss") | .spec.profile) = strenv(INSTANCE_PROFILE)' "$manifest"
+  fi
+  if [ -n "$domain" ]; then
+    INSTANCE_DOMAIN="$domain" yq -i '(select(.kind == "Tamoss") | .spec.publicEndpoint.baseDomain) = strenv(INSTANCE_DOMAIN)' "$manifest"
+  fi
 
   yq -i ".resources += [\"$instance.yaml\"]" "$kustomization"
 
@@ -499,9 +496,8 @@ task_apply_env() {
   local helmfile_path="$3"
   local operator_kustomize_dir="$4"
   local platform_timeout="$5"
-  local rendered profile namespace name env_name instances
+  local rendered namespace name instances
 
-  env_name="$(basename "$environment_dir")"
   rendered="$(mktemp)"
   trap "rm -f '$rendered'" EXIT
 
@@ -511,20 +507,6 @@ task_apply_env() {
     "Environment $environment_dir was not found. Create it with task env:init."
 
   instances="$(task_tamoss_instances_for "$rendered")" || return 1
-
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    profile="$(task_tamoss_field_from_rendered "$rendered" profile "$name")"
-    case "$profile" in
-      local-kind|single-server|multi-server|edge) ;;
-      *)
-        echo "Unable to infer a supported Tamoss spec.profile for $name in $environment_dir." >&2
-        return 1
-        ;;
-    esac
-  done <<EOF
-$instances
-EOF
 
   task_apply_env_platform \
     "$kubeconfig" \
@@ -560,7 +542,11 @@ task_wait_env() {
   local kubeconfig="$2"
   local timeout="$3"
   local instance="${4:-}"
-  local rendered namespace name instances
+  local rendered namespace name instances defaults_revision=""
+
+  if [ -f "$environment_dir/operator/defaults.yaml" ] && yq -e 'length > 0' "$environment_dir/operator/defaults.yaml" >/dev/null; then
+    defaults_revision="sha256:$(sha256sum "$environment_dir/operator/defaults.yaml" | cut -d ' ' -f 1)"
+  fi
 
   rendered="$(mktemp)"
   trap "rm -f '$rendered'" EXIT
@@ -575,7 +561,7 @@ task_wait_env() {
     [ -n "$name" ] || continue
     namespace="$(task_tamoss_field_from_rendered "$rendered" namespace "$name")"
     namespace="${namespace:-tams}"
-    task_wait_tamoss_instance "$kubeconfig" "$namespace" "$name" "$timeout"
+    task_wait_tamoss_instance "$kubeconfig" "$namespace" "$name" "$timeout" "$defaults_revision"
   done <<EOF
 $instances
 EOF
@@ -748,8 +734,11 @@ task_summary_auth_namespace() {
       "$kubeconfig" \
       "$namespace" \
       "tamoss/$tamoss_name" \
-      "{.spec.auth.authentikBlueprints.platformNamespace}"
+      "{.status.auth.platformNamespace}"
   )"
+  if [ -z "$value" ]; then
+    value="$(task_k8s_resource_value "$kubeconfig" "$namespace" "tamoss/$tamoss_name" "{.spec.auth.authentikBlueprints.platformNamespace}")"
+  fi
   printf '%s\n' "${value:-$fallback}"
 }
 
@@ -843,6 +832,10 @@ task_print_instance_summary() {
   fi
   task_require_cluster_access "$kubeconfig" "$environment_dir"
 
+  if [ -z "$profile" ]; then
+    profile="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.resolved.profile}")"
+  fi
+
   if [ -n "$target_file" ] && [ -f "$target_file" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -857,11 +850,17 @@ task_print_instance_summary() {
     task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.endpoints.ui}"
   )"
   live_auth_url="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.authentikBlueprints.issuerURL}"
+    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.endpoints.auth}"
   )"
+  if [ -z "$live_auth_url" ]; then
+    live_auth_url="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.authentikBlueprints.issuerURL}")"
+  fi
   live_s3_url="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.rustfsOperator.publicEndpoint.url}"
+    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.endpoints.s3}"
   )"
+  if [ -z "$live_s3_url" ]; then
+    live_s3_url="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.rustfsOperator.publicEndpoint.url}")"
+  fi
   if [ -z "$live_s3_url" ]; then
     live_s3_url="$(
       task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.external.endpoint.public.url}"
@@ -873,8 +872,11 @@ task_print_instance_summary() {
   auth_url="${TEST_TAMOSS_AUTH:-${live_auth_url:-$(task_summary_component_url auth "$base_domain")}}"
   s3_url="${TEST_TAMOSS_S3:-${live_s3_url:-$(task_summary_component_url s3 "$base_domain")}}"
   s3_provider="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.providedBy}"
+    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.providers.s3.provider}"
   )"
+  if [ -z "$s3_provider" ]; then
+    s3_provider="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.providedBy}")"
+  fi
   token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
   token_resource_name="$(
     kubectl --kubeconfig "$kubeconfig" \

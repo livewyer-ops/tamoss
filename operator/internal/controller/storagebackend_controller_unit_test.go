@@ -990,7 +990,7 @@ func storageBackendFixture() *tamossv1alpha1.StorageBackend {
 
 func tamossFixture() *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
-		Spec: tamossv1alpha1.TamossSpec{Version: "dev"},
+		Spec: tamossv1alpha1.TamossSpec{Version: "dev", Backends: tamossv1alpha1.BackendsSpec{DB: tamossv1alpha1.DBBackendSpec{ProvidedBy: tamossv1alpha1.BackendProvidedByExternal}}},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: tamossv1alpha1.GroupVersion.String(),
 			Kind:       "Tamoss",

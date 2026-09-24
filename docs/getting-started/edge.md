@@ -91,7 +91,7 @@ pins its operator installation and each instance independently.
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 $EDITOR deploy/environments/my-edge/platform-values.yaml
-$EDITOR deploy/environments/my-edge/tamoss-patch.yaml
+$EDITOR deploy/environments/my-edge/operator/defaults.yaml
 task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-edge KUBECONFIG="$KUBECONFIG"
@@ -106,15 +106,14 @@ editing the two generated files, before `task env:apply`.
 ### Auth: bearer token (default)
 
 The operator defaults `edge` to token-only runtime auth. The API token lives
-in the generated `<fullname>-api-token` Secret — `tams-api-token` for the
-default fullname — under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
+in the generated `<instance>-api-token` Secret (`tamoss-edge-api-token` for the generated instance) under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
 the resolved value once the instance is ready. Read it into a variable and
 send it as a bearer header:
 
 ```bash
-export TAMOSS_API_TOKEN=$(kubectl -n tams get secret tams-api-token \
+export TAMOSS_API_TOKEN=$(kubectl -n tams get secret tamoss-edge-api-token \
   -o jsonpath='{.data.TAMOSS_API_TOKEN}' | base64 -d)
-curl -k -H "Authorization: Bearer $TAMOSS_API_TOKEN" https://api.tamoss.edge/
+curl -k -H "Authorization: Bearer $TAMOSS_API_TOKEN" https://api.tamoss-edge.tams.tamoss.edge/
 ```
 
 `-k` accepts the profile's default self-signed certificate; for real use,
@@ -229,7 +228,7 @@ The checked-in target file behind this command,
 validation hostnames. For a remote node whose hostnames differ, copy
 [`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
 into the environment directory, set the API, UI, and auth URLs plus
-`TEST_TAMOSS_TOKEN_SECRET=tams-api-token` and
+`TEST_TAMOSS_TOKEN_SECRET=tamoss-edge-api-token` and
 `TEST_TAMOSS_CR_NAME=tamoss-edge`, and point the checks at it:
 
 ```bash

@@ -55,7 +55,7 @@ export KUBECONFIG=/path/to/kubeconfig
 
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-single-server/platform-values.yaml
-$EDITOR deploy/environments/my-single-server/tamoss-patch.yaml
+$EDITOR deploy/environments/my-single-server/operator/defaults.yaml
 task env:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-single-server KUBECONFIG="$KUBECONFIG"
@@ -68,9 +68,9 @@ generated files, before `task env:apply`.
 
 Start from the generated environment composition under
 `deploy/environments/<name>`. Use `platform-values.yaml` to select platform
-components, and set a public base domain unless you configure every public
-endpoint directly. The operator derives `api`, `app`, `s3`, and `auth`
-hostnames from that base domain and applies profile defaults.
+components. Set the shared domain in `operator/defaults.yaml`; the operator
+derives instance hostnames and the shared Authentik address as described in
+[Configuration](../configuration.md#installation-defaults).
 
 The profile defaults TLS to `ClusterIssuer/tamoss-public`; set the ACME email
 in `platform-values.yaml`, or switch `tls.mode` to `existing`/`disabled` when
@@ -129,7 +129,7 @@ carries the Kind validation hostnames; for a remote server whose hostnames
 differ, copy
 [`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
 into the environment directory, set the API, UI, and auth URLs plus
-`TEST_TAMOSS_TOKEN_SECRET=tams-api-token` and
+`TEST_TAMOSS_TOKEN_SECRET=tamoss-single-server-api-token` and
 `TEST_TAMOSS_CR_NAME=tamoss-single-server`, and pass
 `TARGET_ENV=deploy/environments/my-single-server/target.env` to the same
 command.

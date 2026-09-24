@@ -69,6 +69,20 @@ task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 reviewed manifests with Kubernetes and Helm tooling if Task is unavailable.
 Do not replace the published catalogue with the source development catalogue.
 
+## Installation defaults
+
+Preserve the environment's `operator/defaults.yaml` when updating the operator.
+Apply its Kustomize overlay so the defaults remain mounted. Changing shared
+defaults also changes every instance inheriting those fields, independently of
+its pinned release. Review that change separately from a release update.
+`env:wait` checks `status.appliedDefaultsRevision` against the environment file.
+
+Existing explicit settings remain overrides. This includes persisted CRD
+defaults such as `spec.console.enabled: false`; remove that field only if the
+instance should inherit the shared Console setting. Preserve
+`spec.fullnameOverride` and existing endpoint or TLS overrides on deployed
+instances to retain resource names and public addresses.
+
 ## Managed storage and identity
 
 Managed RustFS follows `spec.version` when its image override is absent.

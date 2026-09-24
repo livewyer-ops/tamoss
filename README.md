@@ -76,7 +76,7 @@ pins its operator installation and each instance independently.
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
-$EDITOR deploy/environments/my-prod/tamoss-patch.yaml
+$EDITOR deploy/environments/my-prod/operator/defaults.yaml
 task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```

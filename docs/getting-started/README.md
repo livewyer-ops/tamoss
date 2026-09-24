@@ -2,7 +2,7 @@
 
 Pick a profile and follow its guide. Remote installs use the environment
 workflow: run `task env:init`, edit the generated `platform-values.yaml` and
-`tamoss-patch.yaml`, then run `task env:apply` and `task env:wait`.
+`operator/defaults.yaml`, then run `task env:apply` and `task env:wait`.
 `local-kind` runs the whole flow with `task kind:up`.
 
 | Profile | Use it for |

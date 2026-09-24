@@ -18,6 +18,7 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/backend/rustfs"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
@@ -38,14 +39,15 @@ const (
 )
 
 type StorageBackendReconciler struct {
-	Releases        releases.Catalogue
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	WatchNamespaces WatchNamespaceSet
-	WarningEvents   operatorstatus.WarningEventDeduper
-	HTTPClient      *http.Client
-	BucketClient    rustfs.BucketClient
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	Recorder         record.EventRecorder
+	WatchNamespaces  WatchNamespaceSet
+	WarningEvents    operatorstatus.WarningEventDeduper
+	HTTPClient       *http.Client
+	BucketClient     rustfs.BucketClient
 }
 
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=storagebackends,verbs=get;list;watch;create;update;patch;delete
@@ -193,7 +195,7 @@ func (r *StorageBackendReconciler) loadStorageBackendTamossStage(ctx context.Con
 		}
 		return nil, stopReconcileNow(), err
 	}
-	resolvedTamoss, err := resolveTamoss(tamoss, r.Releases)
+	resolvedTamoss, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	if err != nil {
 		result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{Reason: releaseErrorReason(err), Message: err.Error()}))
 		return nil, stopReconcile(result), statusErr

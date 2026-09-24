@@ -93,7 +93,7 @@ func (r *StorageBackendReconciler) storageBackendTamoss(ctx context.Context, sto
 		}
 		return nil, false, err
 	}
-	resolved, err := resolveTamoss(tamoss, r.Releases)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	return resolved, true, err
 }
 

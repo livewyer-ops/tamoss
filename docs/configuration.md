@@ -1,7 +1,8 @@
 # Configuration
 
-Configuration starts from the `Tamoss` custom resource. The operator applies
-profile defaults, then explicit YAML fields in the CR override those defaults.
+A `Tamoss` custom resource selects its release. Omitted site settings inherit
+installation defaults; remaining settings use the selected profile's defaults.
+Explicit fields in the resource take precedence.
 For existing clusters, make durable changes in the generated environment
 overlay under `deploy/environments/<name>` and reapply the task workflow.
 
@@ -25,35 +26,73 @@ belong in the CR references and the canonical CRD schemas under
 | Look up `FlowProfile` fields | [FlowProfile CR Reference](reference/flowprofile-cr.md) |
 | Look up `IngestRun` fields | [IngestRun CR Reference](reference/ingestrun-cr.md) |
 
-## Minimal CR
+## Minimal resource
+
+With installation defaults configured, an instance needs only its identity and
+release:
 
 ```yaml
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
-  name: tamoss-kind
-  namespace: tams
+  name: media
+  namespace: team
 spec:
-  version: dev
-  profile: local-kind
+  version: <release>
 ```
 
-For non-local profiles, set the public base domain unless every public endpoint
-is configured directly:
+Replace `<release>` with a supported exact release. The operator calculates
+inherited settings without writing them into the resource. Kubernetes may still
+supply field defaults declared in the CRD.
+
+## Installation defaults
+
+`task env:init` creates `operator/defaults.yaml` beside the operator Kustomization:
 
 ```yaml
-spec:
-  profile: multi-server
-  publicEndpoint:
-    baseDomain: tamoss.example.com
+profile: single-server
+baseDomain: example.com
+clusterIssuer: tamoss-public
+consoleEnabled: true
 ```
 
-The operator derives API, UI, and S3 endpoints from the base domain.
-[Authentik](https://goauthentik.io/)
-endpoints are derived only for Authentik-backed profiles.
-When the UI is exposed on a non-standard public port, set the exact origin in
-`spec.publicEndpoint.uiURL`; the managed Authentik proxy provider uses this
-value for its external host.
+Kustomize packages this file in an immutable ConfigMap and mounts it at the path
+named by `TAMOSS_INSTANCE_DEFAULTS`. Changing the file changes the ConfigMap name
+and rolls the operator when the overlay is applied. The operator reads it once
+at startup. Shared changes apply to existing instances that inherit those fields.
+
+| Setting | Behaviour when the instance omits its corresponding field |
+| --- | --- |
+| `profile` | Selects the deployment profile. |
+| `baseDomain` | Derives `<name>.<namespace>.<baseDomain>` for the instance. |
+| `ingressClassName` | Selects the ingress class. |
+| `clusterIssuer` | Supplies the cert-manager annotation when ingress annotations are omitted. |
+| `consoleEnabled` | Enables or disables Console. An explicit `false` takes precedence. |
+| `authentik.platformNamespace` | Selects the shared Authentik namespace. |
+| `authentik.issuerURL` | Selects the shared public Authentik base URL; otherwise `https://auth.<baseDomain>`. |
+| `authentik.internalURL` | Overrides the shared internal Authentik base URL. |
+| `authentik.apiTokenSecretRef` | Supplies the token Secret `name` and `key` in the Authentik namespace. |
+
+Custom Authentik namespaces must also be allowed by the operator's
+`TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES` setting and included in `WATCH_NAMESPACES`
+when its watch scope is restricted.
+
+For the example above, API, UI and S3 use `api.media.team.example.com`,
+`app.media.team.example.com` and `s3.media.team.example.com`. Managed authentication
+uses `auth.example.com`. Configure DNS for these names before applying the instance;
+a wildcard TLS certificate for `*.example.com` does not cover the deeper names.
+The operator derives separate TLS Secret names for each instance.
+
+Release images and schema targets always come from `spec.version` and its image
+overrides. Installation defaults cannot set them. An absent or empty defaults
+file leaves explicitly configured instances supported; a version-only resource
+reports `InstallationDefaultsRequired`. Invalid configured defaults report
+`InvalidInstallationDefaults` and leave existing workloads running.
+
+To override the inherited domain, set `spec.publicEndpoint.baseDomain`. When the
+UI uses a non-standard public port, set its exact origin in
+`spec.publicEndpoint.uiURL`. Remove an override to resume inheritance. Explicit
+external database, storage and authentication settings retain their ownership.
 
 ## Browser Origin Checklist
 
@@ -80,7 +119,7 @@ client id and secret are held in the instance's generated OAuth Secret;
 
 ## Inspect Effective Configuration
 
-The CR stays intentionally small. To see the configuration after profile
+The CR stays intentionally small. To see the configuration after installation and profile
 defaults and explicit overrides are applied, inspect status:
 
 ```bash

@@ -1,7 +1,7 @@
 # Tamoss CR Reference
 
 `Tamoss` declares one TAMOSS instance in a namespace. The operator applies
-release and profile defaults, then explicit fields in the CR override those defaults.
+release, installation and profile defaults, then explicit fields in the CR override those defaults.
 The canonical CRD in `operator/config/crd/bases/` remains the exhaustive schema
 source.
 
@@ -13,28 +13,24 @@ Kind: `Tamoss`
 
 Scope: `Namespaced`
 
-## Minimal Shape
+## Minimal resource
+
+Configure [installation defaults](../configuration.md#installation-defaults), then
+select the instance release:
 
 ```yaml
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
-  name: tamoss-kind
-  namespace: tams
+  name: media
+  namespace: team
 spec:
-  version: dev
-  profile: local-kind
+  version: <release>
 ```
 
-For non-local profiles, provide a public base domain unless every public
-endpoint is configured directly:
-
-```yaml
-spec:
-  profile: multi-server
-  publicEndpoint:
-    baseDomain: tamoss.example.com
-```
+`<release>` is an exact release supported by the installed operator. Without
+installation defaults, set `spec.profile` and the required site settings explicitly.
+`spec.publicEndpoint.baseDomain` overrides the derived instance domain.
 
 Set `publicEndpoint.uiURL` when the public UI uses a non-standard external
 port. It is an exact origin, not a path:
@@ -51,7 +47,7 @@ spec:
 | Field | Purpose |
 | --- | --- |
 | `.spec.version` | Exact product release from the operator installation catalogue. Omission reports `VersionRequired` and leaves workloads unchanged. |
-| `.spec.profile` | Selects `local-kind`, `edge`, `single-server`, or `multi-server` defaults. |
+| `.spec.profile` | Overrides the installation profile with `local-kind`, `edge`, `single-server`, or `multi-server`. |
 | `.spec.publicEndpoint` | Derives public API, UI, S3, and [Authentik](https://goauthentik.io/) endpoint defaults when the selected auth mode uses Authentik. |
 | `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
 | `.spec.backends.s3` | Selects managed [RustFS](https://github.com/rustfs/rustfs) Operator or external S3-compatible storage for the default backend. |
@@ -129,8 +125,12 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | Field | Purpose |
 | --- | --- |
 | `.status.currentVersion` | Last release whose schema migration and workload rollouts completed. |
+| `.status.appliedDefaultsRevision` | Installation defaults revision whose reconciliation and rollouts completed. |
+| `.status.resolved.defaults` | Loaded defaults file source and SHA-256 revision. |
+| `.status.resolved.profile` | Effective deployment profile. |
+| `.status.auth.platformNamespace` | Effective shared Authentik namespace. |
 | `.status.conditions` | Readiness, backend, identity, routing, schema, upgrade, and degraded conditions. |
-| `.status.endpoints` | Effective API and UI URLs after profile defaults and endpoint overrides. |
+| `.status.endpoints` | Effective API, UI, S3 and shared authentication URLs. |
 | `.status.providers` | Selected provider and ownership model for database, S3, authentication, and routing. |
 | `.status.resolved.images` | Effective API, UI, worker, Console, TAMSin, schema helper, CNPG Postgres, and RustFS image references where rendered. |
 | `.status.resolved.versions` | Selected TAMOSS release and schema target, and BBC TAMS API compatibility version. |

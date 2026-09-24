@@ -6,6 +6,10 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ## Unreleased
 
+- Allow instance manifests containing only `spec.version` to inherit installation
+  settings, with distinct instance hostnames and shared authentication. Track
+  applied defaults revisions and preserve explicit overrides.
+
 - Select each instance's release with `spec.version`. Operator updates preserve
   pinned instance images and schema targets; component image overrides remain
   available. Report the last completed release in `status.currentVersion`.

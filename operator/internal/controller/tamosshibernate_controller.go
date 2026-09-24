@@ -24,18 +24,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
 type TamossHibernateReconciler struct {
-	Releases        releases.Catalogue
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	WatchNamespaces WatchNamespaceSet
-	ManifestWriter  HibernationManifestWriter
-	PollInterval    time.Duration
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	Recorder         record.EventRecorder
+	WatchNamespaces  WatchNamespaceSet
+	ManifestWriter   HibernationManifestWriter
+	PollInterval     time.Duration
 }
 
 const tamossHibernateFinalizer = "tamosshibernate.tamoss.livewyer.io/finalizer"
@@ -322,7 +324,7 @@ func (r *TamossHibernateReconciler) resolveHibernateTamoss(ctx context.Context, 
 		}
 		return nil, false, err
 	}
-	resolved, err := resolveTamoss(tamoss, r.Releases)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	if err != nil {
 		return nil, false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, releaseErrorReason(err), err.Error(), tamossv1alpha1.HibernationArtifactStatus{})
 	}
@@ -488,7 +490,7 @@ func (r *TamossHibernateReconciler) validateHibernateSourceSchema(ctx context.Co
 		return true, nil
 	}
 	condition := meta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated)
-	if condition == nil || condition.Status != metav1.ConditionTrue {
+	if condition == nil || condition.Status != metav1.ConditionTrue || !r.InstanceDefaults.AppliedTo(tamoss) {
 		message := fmt.Sprintf("Tamoss %s is waiting for schema migration before hibernation", tamoss.Name)
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, operatorstatus.ReasonSchemaNotReady, message, artifact)
 	}

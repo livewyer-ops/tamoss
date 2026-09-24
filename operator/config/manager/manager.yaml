@@ -52,6 +52,8 @@ spec:
           value: ""
         - name: TAMOSS_AUTHENTIK_PROBE_TIMEOUT
           value: 30s
+        - name: TAMOSS_INSTANCE_DEFAULTS
+          value: /etc/tamoss-defaults/defaults.yaml
         - name: TAMOSS_RELEASE_CATALOGUE
           value: /etc/tamoss-releases/catalogue.json
         - name: POD_NAMESPACE
@@ -63,6 +65,9 @@ spec:
             fieldRef:
               fieldPath: spec.serviceAccountName
         volumeMounts:
+        - name: instance-defaults
+          mountPath: /etc/tamoss-defaults
+          readOnly: true
         - name: release-catalogue
           mountPath: /etc/tamoss-releases
           readOnly: true
@@ -107,6 +112,9 @@ spec:
             cpu: 500m
             memory: 256Mi
       volumes:
+      - name: instance-defaults
+        configMap:
+          name: instance-defaults
       - name: release-catalogue
         configMap:
           name: release-catalogue

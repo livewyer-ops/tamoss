@@ -48,6 +48,9 @@ func (r *TamossReconciler) workloadRolloutsReady(ctx context.Context, tamoss *ta
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(desired), deployment); err != nil {
 			return false
 		}
+		if deployment.Spec.Template.Annotations[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+			return false
+		}
 		for _, expected := range desired.Spec.Template.Spec.Containers {
 			found := false
 			for _, actual := range deployment.Spec.Template.Spec.Containers {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -64,10 +65,11 @@ const (
 )
 
 type IngestRunReconciler struct {
-	Releases        releases.Catalogue
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	WatchNamespaces WatchNamespaceSet
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	WatchNamespaces  WatchNamespaceSet
 	// APIReader performs uncached reads. Absence is only trusted after a live
 	// confirmation, because a lagging informer cache would otherwise fail a
 	// healthy run whose Job or target instance does exist.
@@ -198,12 +200,12 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.reconcileMissingIngestJob(ctx, run)
 	}
 
-	resolvedTamoss, selectionErr := resolveTamoss(tamoss, r.Releases)
+	resolvedTamoss, selectionErr := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	if selectionErr != nil {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, releaseErrorReason(selectionErr), selectionErr.Error(), false)
 	}
 	tamoss = resolvedTamoss
-	if !tamossReadyForIngest(tamoss) {
+	if !tamossReadyForIngest(tamoss, r.InstanceDefaults) {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamossNotReady", "The target Tamoss instance is not Ready", false)
 	}
 	if strings.TrimSpace(tamoss.Spec.Images.TAMSin) == "" {
@@ -447,9 +449,9 @@ func defaultIngestRunSpec(spec tamossv1alpha1.IngestRunSpec) tamossv1alpha1.Inge
 	return spec
 }
 
-func tamossReadyForIngest(tamoss *tamossv1alpha1.Tamoss) bool {
+func tamossReadyForIngest(tamoss *tamossv1alpha1.Tamoss, installation *defaults.Installation) bool {
 	condition := apimeta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionReady)
-	return tamoss.Spec.Version != "" && tamoss.Status.CurrentVersion == tamoss.Spec.Version &&
+	return installation.AppliedTo(tamoss) && tamoss.Spec.Version != "" && tamoss.Status.CurrentVersion == tamoss.Spec.Version &&
 		condition != nil && condition.Status == metav1.ConditionTrue &&
 		tamoss.Status.ObservedGeneration == tamoss.Generation && tamoss.Spec.API.IsEnabled()
 }

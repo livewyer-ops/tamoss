@@ -484,7 +484,7 @@ func defaultManagedS3PublicEndpoint(endpoint *tamossv1alpha1.S3PublicEndpointSpe
 }
 
 func defaultCNPG(tamoss *tamossv1alpha1.Tamoss, instances int32, storageSize string, applyFixtures, enablePodMonitor bool) {
-	if tamoss.Spec.Backends.DB.ProvidedBy == "" {
+	if tamoss.Spec.Backends.DB.ProvidedBy == "" && tamoss.Spec.Backends.DB.External == nil {
 		tamoss.Spec.Backends.DB.ProvidedBy = tamossv1alpha1.BackendProvidedByCNPG
 	}
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
@@ -517,7 +517,7 @@ func defaultCNPGResources(tamoss *tamossv1alpha1.Tamoss, requestCPU, requestMemo
 }
 
 func defaultRustFSOperator(tamoss *tamossv1alpha1.Tamoss, servers, volumesPerServer int32, storageSize string) {
-	if tamoss.Spec.Backends.S3.ProvidedBy == "" {
+	if tamoss.Spec.Backends.S3.ProvidedBy == "" && tamoss.Spec.Backends.S3.External == nil {
 		tamoss.Spec.Backends.S3.ProvidedBy = tamossv1alpha1.S3BackendProvidedByRustFSOperator
 	}
 	if tamoss.Spec.Backends.S3.Provider() != tamossv1alpha1.S3BackendProvidedByRustFSOperator {

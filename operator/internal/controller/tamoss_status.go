@@ -204,6 +204,7 @@ func (r *TamossReconciler) updateLifecycleGatedStatus(ctx context.Context, tamos
 func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, observation tamossStatusObservation) error {
 	original := tamoss.DeepCopy()
 	setCommonTamossStatus(tamoss, r.Releases[tamoss.Spec.Version])
+	tamoss.Status.Resolved.Defaults = r.InstanceDefaults.Status()
 	if observation.RefreshBackupPolicy {
 		if err := r.refreshObservedBackupPolicyCondition(ctx, tamoss); err != nil {
 			return err
@@ -212,6 +213,7 @@ func (r *TamossReconciler) patchTamossStatusObservation(ctx context.Context, tam
 	applyTamossStatusObservation(tamoss, observation)
 	if observation.Ready.Status == metav1.ConditionTrue && observation.Schema != nil && observation.Schema.Ready {
 		tamoss.Status.CurrentVersion = tamoss.Spec.Version
+		tamoss.Status.AppliedDefaultsRevision = r.InstanceDefaults.Revision()
 		tamoss.Status.Upgrade.TargetVersion = ""
 	}
 	return r.patchTamossStatus(ctx, tamoss, original)
@@ -325,6 +327,10 @@ func setCommonTamossStatus(tamoss *tamossv1alpha1.Tamoss, release releases.Relea
 	tamoss.Status.Backends.S3.Provider = tamoss.Spec.Backends.S3.Provider()
 	tamoss.Status.Auth = authStatus(tamoss)
 	tamoss.Status.Endpoints = endpointStatus(tamoss)
+	if auth := tamoss.Spec.Auth.AuthentikBlueprints; auth != nil && tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		tamoss.Status.Endpoints.Auth = auth.IssuerURL
+	}
+	tamoss.Status.Endpoints.S3 = tamoss.S3Connection().Endpoint.Public.URL
 	tamoss.Status.Providers = providerStatus(tamoss)
 	tamoss.Status.Resolved = resolvedTamossStatus(tamoss, release)
 	setBackupPolicyCondition(&tamoss.Status.Conditions, tamoss)

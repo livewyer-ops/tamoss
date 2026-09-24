@@ -26,6 +26,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
@@ -52,6 +53,7 @@ const (
 // TamossReconciler reconciles a Tamoss object
 type TamossReconciler struct {
 	Releases                    releases.Catalogue
+	InstanceDefaults            *defaults.Installation
 	Client                      client.Client
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
@@ -217,7 +219,7 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 			return nil, stopReconcile(ctrl.Result{}), err
 		}
 	}
-	resolved, err := resolveTamoss(tamoss, r.Releases)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
 	if err != nil {
 		return nil, stopReconcileNow(), err
 	}
@@ -437,6 +439,7 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 		if err := applyAdvancedResourcePatches(tamoss, desired); err != nil {
 			return err
 		}
+		r.stampInstallationDefaults(desired)
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
 		result, err := applyManagedObject(ctx, r.Client, desired)
 		if err != nil {

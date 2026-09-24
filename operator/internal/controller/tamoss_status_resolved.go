@@ -68,6 +68,7 @@ func routingProviderStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Provide
 
 func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, release releases.Release) tamossv1alpha1.ResolvedStatus {
 	status := tamossv1alpha1.ResolvedStatus{
+		Profile: tamoss.Spec.Profile,
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			UI:                            resolvedImageRef(tamoss.Spec.UI.Image, defaults.DefaultUIRepository),
@@ -143,6 +144,9 @@ func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {
 		Provider: tamoss.Spec.Auth.Provider(),
 	}
 	if status.Provider == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		if auth := tamoss.Spec.Auth.AuthentikBlueprints; auth != nil {
+			status.PlatformNamespace = auth.PlatformNamespace
+		}
 		status.ApplicationSlug = tamoss.Spec.Auth.ApplicationSlug(tamoss.Namespace, tamoss.Name)
 		status.ManagedBlueprint = authentik.ManagedBlueprintName(tamoss)
 	}

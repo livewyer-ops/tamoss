@@ -112,3 +112,13 @@ installations use exact releases as described in the
 ## License
 
 Licensed under the Apache License 2.0. See `../LICENSE`.
+
+## Installation defaults
+
+`TAMOSS_INSTANCE_DEFAULTS` points to an optional mounted YAML file. The default
+installation mounts an empty immutable ConfigMap; generated environment overlays
+replace the volume reference with their own hashed ConfigMap. Kustomize changes
+the Pod template when the file changes, so the manager reads it once at startup.
+All instance controllers use the same resolver. See
+[Configuration](../docs/configuration.md#installation-defaults) for supported
+settings and precedence.

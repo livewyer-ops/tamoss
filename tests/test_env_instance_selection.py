@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import textwrap
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -162,8 +164,12 @@ def test_instance_init_registers_the_manifest(tmp_path: Path) -> None:
     assert "already exists" in repeated.stderr
 
 
-def test_wait_checks_requested_release_and_generation_before_ready() -> None:
-    result = run_env_helper("""
+@pytest.mark.parametrize("defaults_revision", ["", "sha256:expected"])
+def test_wait_checks_requested_release_and_generation_before_ready(
+    defaults_revision: str,
+) -> None:
+    result = run_env_helper(
+        """
 task_step() { shift; "$@"; }
 kubectl() {
   case "$*" in
@@ -172,10 +178,112 @@ kubectl() {
     *) printf '%s\\n' "$*" ;;
   esac
 }
-task_wait_tamoss_instance kubeconfig media instance 1m
-""")
+"""
+        + "task_wait_tamoss_instance kubeconfig media instance 1m "
+        + f"'{defaults_revision}'\n"
+    )
     assert result.returncode == 0, result.stderr
     lines = result.stdout.splitlines()
     assert "observedGeneration}=7" in lines[0]
     assert "currentVersion}=selected-release" in lines[1]
-    assert "--for=condition=Ready" in lines[2]
+    if defaults_revision:
+        assert f"appliedDefaultsRevision}}={defaults_revision}" in lines[2]
+    assert "--for=condition=Ready" in lines[-1]
+
+
+def test_generated_environment_inherits_hashed_operator_defaults(
+    tmp_path: Path,
+) -> None:
+    for executable in ("task", "kubectl", "yq"):
+        if shutil.which(executable) is None:
+            pytest.skip(f"{executable} is required for environment generation")
+    # Exercise the public Task entry point, including variables from other Taskfiles.
+    env = os.environ.copy()
+    env.pop("PROFILE", None)
+    env.pop("DOMAIN", None)
+    name = f"defaults-test-{os.getpid()}"
+    environment = ROOT / "deploy" / "environments" / name
+    try:
+        subprocess.run(
+            [
+                "task",
+                "env:init",
+                f"NAME={name}",
+                "PROFILE=single-server",
+                "DOMAIN=example.com",
+                "TAMOSS_VERSION=dev",
+            ],
+            cwd=ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                "task",
+                "env:instance:init",
+                f"ENV={name}",
+                "INSTANCE=second",
+                "TAMOSS_VERSION=dev",
+            ],
+            cwd=ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        rendered = subprocess.check_output(
+            ["kubectl", "kustomize", str(environment)],
+            text=True,
+        )
+        instances = [
+            item for item in yaml.safe_load_all(rendered) if item["kind"] == "Tamoss"
+        ]
+        assert len(instances) == 2
+        assert all(item["spec"] == {"version": "dev"} for item in instances)
+        operator = environment / "operator"
+        # The published install is flattened and already contains hashed ConfigMaps.
+        shutil.copyfile(
+            ROOT / "deploy/operator/install.yaml", operator / "install.yaml"
+        )
+        kustomization = operator / "kustomization.yaml"
+        composition = yaml.safe_load(kustomization.read_text())
+        composition["resources"] = ["install.yaml"]
+        kustomization.write_text(yaml.safe_dump(composition))
+
+        def defaults_mount() -> str:
+            objects = list(
+                yaml.safe_load_all(
+                    subprocess.check_output(
+                        ["kubectl", "kustomize", str(operator)],
+                        text=True,
+                    )
+                )
+            )
+            deployment = next(item for item in objects if item["kind"] == "Deployment")
+            volumes = deployment["spec"]["template"]["spec"]["volumes"]
+            config_name = next(
+                item["configMap"]["name"]
+                for item in volumes
+                if item["name"] == "instance-defaults"
+            )
+            config = next(
+                item
+                for item in objects
+                if item["kind"] == "ConfigMap"
+                and item["metadata"]["name"] == config_name
+            )
+            assert config["immutable"] is True
+            assert (
+                config["data"]["defaults.yaml"]
+                == (operator / "defaults.yaml").read_text()
+            )
+            return config_name
+
+        original = defaults_mount()
+        with (operator / "defaults.yaml").open("a") as config:
+            config.write("ingressClassName: site-ingress\n")
+        assert defaults_mount() != original
+    finally:
+        shutil.rmtree(environment, ignore_errors=True)

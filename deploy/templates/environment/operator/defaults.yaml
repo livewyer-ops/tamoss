@@ -1,0 +1,4 @@
+profile: __PROFILE__
+baseDomain: __DOMAIN__
+clusterIssuer: tamoss-public
+consoleEnabled: true

@@ -5992,7 +5992,6 @@ spec:
                         when autoscaling is enabled
                       rule: '!self.enabled || self.maxReplicas >= self.minReplicas'
                   enabled:
-                    default: false
                     type: boolean
                   env:
                     additionalProperties:
@@ -19652,11 +19651,17 @@ spec:
           status:
             description: TamossStatus defines the observed state of Tamoss
             properties:
+              appliedDefaultsRevision:
+                description: AppliedDefaultsRevision identifies installation defaults
+                  whose rollout completed.
+                type: string
               auth:
                 properties:
                   applicationSlug:
                     type: string
                   managedBlueprint:
+                    type: string
+                  platformNamespace:
                     type: string
                   provider:
                     type: string
@@ -19760,6 +19765,10 @@ spec:
               endpoints:
                 properties:
                   api:
+                    type: string
+                  auth:
+                    type: string
+                  s3:
                     type: string
                   ui:
                     type: string
@@ -20147,6 +20156,13 @@ spec:
                 type: object
               resolved:
                 properties:
+                  defaults:
+                    properties:
+                      revision:
+                        type: string
+                      source:
+                        type: string
+                    type: object
                   generatedSecrets:
                     properties:
                       apiToken:
@@ -20175,6 +20191,8 @@ spec:
                       worker:
                         type: string
                     type: object
+                  profile:
+                    type: string
                   resources:
                     properties:
                       api:

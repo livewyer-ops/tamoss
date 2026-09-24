@@ -21,6 +21,7 @@ import (
 
 	"github.com/livewyer-ops/tamoss/operator/internal/controller"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
@@ -121,8 +122,10 @@ func setupControllers(
 	if err != nil {
 		return fmt.Errorf("load release catalogue: %w", err)
 	}
+	instanceDefaults := defaults.LoadInstallation(os.Getenv("TAMOSS_INSTANCE_DEFAULTS"))
 	tamossReconciler := &controller.TamossReconciler{
 		Releases:                    catalogue,
+		InstanceDefaults:            instanceDefaults,
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
@@ -137,11 +140,12 @@ func setupControllers(
 		return err
 	}
 	if err := (&controller.TamossHibernateReconciler{
-		Releases:        catalogue,
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "tamosshibernate-controller"),
-		WatchNamespaces: watchScope,
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "tamosshibernate-controller"),
+		WatchNamespaces:  watchScope,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -151,6 +155,7 @@ func setupControllers(
 	}
 	if err := (&controller.IngestRunReconciler{
 		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		WatchNamespaces:  watchScope,
@@ -169,20 +174,22 @@ func setupControllers(
 		})
 	}
 	if err := (&controller.StorageBackendReconciler{
-		Releases:        catalogue,
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
-		WatchNamespaces: watchScope,
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "storagebackend-controller"),
+		WatchNamespaces:  watchScope,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
 	return (&controller.FlowProfileReconciler{
-		Releases:        catalogue,
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "flowprofile-controller"),
-		WatchNamespaces: watchScope,
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "flowprofile-controller"),
+		WatchNamespaces:  watchScope,
 	}).SetupWithManager(mgr)
 }
 

@@ -200,7 +200,6 @@ type UIComponentSpec struct {
 }
 
 type ConsoleComponentSpec struct {
-	//+kubebuilder:default=false
 	Enabled *bool `json:"enabled,omitempty"`
 	//+kubebuilder:default={repository:livewyer/tamoss-console-api,pullPolicy:IfNotPresent}
 	Image              ImageSpec `json:"image,omitempty"`

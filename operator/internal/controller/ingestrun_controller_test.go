@@ -1052,8 +1052,9 @@ func testIngestTamoss() *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media", UID: types.UID("tamoss-uid"), Generation: 1},
 		Spec: tamossv1alpha1.TamossSpec{
-			Version: "dev",
-			Secrets: tamossv1alpha1.SecretsSpec{APIToken: tamossv1alpha1.APITokenSecretSpec{Generate: true}},
+			Version:  "dev",
+			Backends: tamossv1alpha1.BackendsSpec{DB: tamossv1alpha1.DBBackendSpec{ProvidedBy: tamossv1alpha1.BackendProvidedByExternal}},
+			Secrets:  tamossv1alpha1.SecretsSpec{APIToken: tamossv1alpha1.APITokenSecretSpec{Generate: true}},
 		},
 		Status: tamossv1alpha1.TamossStatus{
 			CurrentVersion:     "dev",

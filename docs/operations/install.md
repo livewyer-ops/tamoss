@@ -12,7 +12,7 @@ export KUBECONFIG=/path/to/kubeconfig
 
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
-$EDITOR deploy/environments/my-prod/tamoss-patch.yaml
+$EDITOR deploy/environments/my-prod/operator/defaults.yaml
 task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
@@ -75,24 +75,30 @@ normal environment compositions.
 ## Existing Cluster
 
 The generated environment is the composition root. `platform-values.yaml`
-selects which platform components Helm installs. The Kustomize overlay starts
-from `deploy/instances/<profile>` and patches the `Tamoss` CR directly. Treat
-both files as the durable source of configuration for provider ownership,
-endpoints, resources, replicas, and routing.
+selects shared platform components. `operator/defaults.yaml` supplies site
+settings to the operator. `tamoss-patch.yaml` contains the instance identity and
+`spec.version`; add fields there only when the instance needs overrides.
 
 `task env:init` generates this composition:
 
 ```text
 deploy/environments/<name>/
-├── kustomization.yaml     # overlay: deploy/instances/<profile> plus the patch
-├── platform-values.yaml   # platform component selection for the Helmfile layer
-└── tamoss-patch.yaml      # instance overrides: profile and public base domain
+├── kustomization.yaml     # instance resources
+├── namespace.yaml
+├── platform-values.yaml   # shared Helm releases
+├── operator/
+│   ├── kustomization.yaml # published operator and installation defaults mount
+│   └── defaults.yaml     # shared profile, domain and ingress settings
+└── tamoss-patch.yaml      # instance identity and release
 ```
 
-The patch keeps the instance name `tamoss-<profile>` and the `tams`
-namespace from the checked-in instance manifest. A `multi-server`
-environment therefore contains the instance `tamoss-multi-server` in the
-`tams` namespace.
+The generated instance is named `tamoss-<profile>` in namespace `tams`.
+For `PROFILE=multi-server DOMAIN=example.com`, create DNS records for
+`api.tamoss-multi-server.tams.example.com`,
+`app.tamoss-multi-server.tams.example.com`,
+`s3.tamoss-multi-server.tams.example.com` and shared `auth.example.com`.
+See [installation defaults](../configuration.md#installation-defaults) for
+inheritance and explicit hostname overrides.
 
 Generated remote environments default to trusted public TLS. The platform
 [Helmfile](https://helmfile.readthedocs.io/)
@@ -138,7 +144,7 @@ same layers in order:
     --wait \
     --wait-for-jobs
 )
-kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
+kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/environments/<name>/operator
 kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
 ```
 
@@ -170,9 +176,11 @@ Add an instance with `task env:instance:init`, which writes the manifest and
 registers it in `kustomization.yaml`:
 
 ```bash
-task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=<env> INSTANCE=prod-b PROFILE=multi-server \
-  DOMAIN=prod-b.example.com NAMESPACE=prod-b
+task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=<env> INSTANCE=prod-b
 ```
+
+The namespace defaults to the instance name. Optional `PROFILE`, `DOMAIN` and
+`NAMESPACE` arguments add explicit overrides.
 
 `task env:instance:apply` then applies the whole kustomization. Instances
 using `s3.providedBy: external` need their default `StorageBackend` manifest

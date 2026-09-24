@@ -42,11 +42,11 @@ func TestReleaseSelectionIsPerInstanceAndDoesNotPersistDefaults(t *testing.T) {
 	second.UID = "second"
 	raw := first.DeepCopy()
 	// Adding a new release to an operator must leave the original render and schema unchanged.
-	before, err := resolveTamoss(first, releases.Catalogue{old.Version: old})
+	before, err := resolveTamoss(first, releases.Catalogue{old.Version: old}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := resolveTamoss(first, catalogue)
+	after, err := resolveTamoss(first, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestReleaseSelectionIsPerInstanceAndDoesNotPersistDefaults(t *testing.T) {
 	secondState.Name = second.ResourceName("schema-state")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(fakeApplyInterceptor()).WithObjects(first, second, firstState, secondState).Build()
 	first.Spec.Version = next.Version
-	upgraded, err := resolveTamoss(first, catalogue)
+	upgraded, err := resolveTamoss(first, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestReleaseSelectionIsPerInstanceAndDoesNotPersistDefaults(t *testing.T) {
 	if job.Spec.Template.Spec.Containers[0].Image != next.Images.API || job.Spec.Template.Spec.Containers[0].Args[4] != next.Schema.DatabaseRevision {
 		t.Fatal("migration did not use the selected runtime and revision")
 	}
-	unchanged, err := resolveTamoss(second, catalogue)
+	unchanged, err := resolveTamoss(second, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestReleaseOverridesAndRemoval(t *testing.T) {
 	instance.Spec.Images.TAMSin = "mirror.example/ingest@sha256:" + strings.Repeat("f", 64)
 	instance.Spec.Backends.DB.CNPG = &tamossv1alpha1.DBCNPGSpec{PostgresVersion: "18"}
 	instance.Spec.Backends.S3.RustFSOperator = &tamossv1alpha1.S3RustFSOperatorSpec{Image: "rustfs/rustfs:pinned"}
-	resolved, err := resolveTamoss(instance, catalogue)
+	resolved, err := resolveTamoss(instance, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestReleaseOverridesAndRemoval(t *testing.T) {
 	}
 	instance.Spec.Backends.S3.RustFSOperator.Image = ""
 	instance.Spec.Backends.DB.CNPG.PostgresVersion = ""
-	resolved, err = resolveTamoss(instance, catalogue)
+	resolved, err = resolveTamoss(instance, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,21 +126,22 @@ func TestReleaseOverridesAndRemoval(t *testing.T) {
 }
 
 func TestVersionGateLeavesExistingWorkloadsUntouched(t *testing.T) {
-	for _, tc := range []struct{ version, current, observed, reason string }{
-		{"", "", "8.2.0-oss1", "VersionRequired"},
-		{"unknown", "", "8.2.0-oss1", "UnsupportedVersion"},
-		{"8.2.0-oss1", "8.2.0-oss2-rc2", "8.2.0-oss1", "UnsupportedUpgrade"},
-		{"dev", "", "8.2.0-oss1", "VersionAdoptionRequired"},
-		{"8.2.0-oss1", "8.2.0-oss1", "future", operatorstatus.ReasonUnsupportedSchemaVersion},
+	for _, tc := range []struct{ version, current, observed, reason, defaults string }{
+		{"", "", "8.2.0-oss1", "VersionRequired", ""},
+		{"unknown", "", "8.2.0-oss1", "UnsupportedVersion", ""},
+		{"8.2.0-oss1", "8.2.0-oss2-rc2", "8.2.0-oss1", "UnsupportedUpgrade", ""},
+		{"dev", "", "8.2.0-oss1", "VersionAdoptionRequired", ""},
+		{"8.2.0-oss1", "8.2.0-oss1", "future", operatorstatus.ReasonUnsupportedSchemaVersion, ""},
+		{"dev", "dev", "", "InvalidInstallationDefaults", "profile: invalid"},
 	} {
 		t.Run(tc.reason, func(t *testing.T) {
 			ctx := context.Background()
 			scheme := hibernateTestScheme(t)
-			instance := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "old", Namespace: "media", UID: "old", Generation: 2}, Spec: tamossv1alpha1.TamossSpec{Version: tc.version}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: tc.current}}
+			instance := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "old", Namespace: "media", UID: "old", Generation: 2}, Spec: tamossv1alpha1.TamossSpec{Version: tc.version, Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: tc.current}}
 			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "old-api", Namespace: "media"}, Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(1))}}
 			state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "old-schema-state", Namespace: "media"}, Data: map[string]string{schemaStateAppliedVersionKey: tc.observed}}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(instance).WithObjects(instance, deployment, state).Build()
-			r := &TamossReconciler{Client: c, Scheme: scheme, Releases: selectionCatalogue(t)}
+			r := &TamossReconciler{Client: c, Scheme: scheme, Releases: selectionCatalogue(t), InstanceDefaults: installationConfig(t, tc.defaults)}
 			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(instance)}); err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +201,7 @@ func TestReleaseSelectionCannotChangeAfterBackendWorkBegins(t *testing.T) {
 	raw := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "media"}, Spec: tamossv1alpha1.TamossSpec{Version: "dev", Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: "8.2.0-oss1", SchemaVersion: "8.2.0-oss1"}}
 	c := fake.NewClientBuilder().WithScheme(hibernateTestScheme(t)).WithStatusSubresource(raw).WithObjects(raw).Build()
 	r := &TamossReconciler{Client: c, Releases: catalogue}
-	resolved, err := resolveTamoss(raw, catalogue)
+	resolved, err := resolveTamoss(raw, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,14 +218,14 @@ func TestReleaseSelectionCannotChangeAfterBackendWorkBegins(t *testing.T) {
 		t.Fatal("starting an upgrade changed the applied version")
 	}
 	raw.Spec.Version = "8.2.0-oss1"
-	if _, err := resolveTamoss(raw, catalogue); releaseErrorReason(err) != "UpgradeInProgress" {
+	if _, err := resolveTamoss(raw, catalogue, nil); releaseErrorReason(err) != "UpgradeInProgress" {
 		t.Fatalf("unfinished upgrade accepted a rollback: %v", err)
 	}
 	if err := r.validateReleaseState(ctx, raw); releaseErrorReason(err) != "UpgradeInProgress" {
 		t.Fatalf("reconciliation did not block an unfinished upgrade: %v", err)
 	}
 	raw.Spec.Version = "dev"
-	resolved, err = resolveTamoss(raw, catalogue)
+	resolved, err = resolveTamoss(raw, catalogue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +256,7 @@ func TestDependentControllersUseTheInstanceSchemaTarget(t *testing.T) {
 		}
 		if version != "dev" {
 			instance.Spec.Version = "dev"
-			if storage.schemaStateReady(ctx, instance) || profiles.flowProfileSchemaReady(ctx, instance) || tamossReadyForIngest(instance) {
+			if storage.schemaStateReady(ctx, instance) || profiles.flowProfileSchemaReady(ctx, instance) || tamossReadyForIngest(instance, nil) {
 				t.Fatal("dependent controller admitted work before the selected upgrade")
 			}
 		}
