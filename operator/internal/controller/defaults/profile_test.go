@@ -259,6 +259,9 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-selfsigned" {
 		t.Fatalf("expected cert issuer annotation, got %q", got)
 	}
+	if got := tamoss.Spec.Ingress.Annotations["traefik.ingress.kubernetes.io/router.tls"]; got != "true" {
+		t.Fatalf("expected Traefik TLS annotation, got %q", got)
+	}
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.localtest.me" {
 		t.Fatalf("expected derived API host, got %q", got)
 	}
@@ -632,6 +635,21 @@ func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
 
 	if _, ok := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; ok {
 		t.Fatalf("did not expect default cert issuer annotation when annotations are explicit")
+	}
+}
+
+func TestApplyPreservesExplicitTraefikTLSAnnotation(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{
+		Profile: tamossv1alpha1.TamossProfileLocalKind,
+		Ingress: tamossv1alpha1.IngressSpec{Annotations: map[string]string{
+			defaultTraefikTLSAnnotation: "false",
+		}},
+	}}
+
+	Apply(tamoss, DevelopmentImages)
+
+	if got := tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation]; got != "false" {
+		t.Fatalf("explicit Traefik TLS annotation was replaced: %q", got)
 	}
 }
 

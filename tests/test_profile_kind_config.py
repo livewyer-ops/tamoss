@@ -211,6 +211,13 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
 
     assert service["spec"]["type"] == "NodePort"
     assert websecure["nodePort"] == 30443
+    authentik_ingress = _resource(rendered, "Ingress", "authentik-server", "auth")
+    assert (
+        authentik_ingress["metadata"]["annotations"][
+            "traefik.ingress.kubernetes.io/router.tls"
+        ]
+        == "true"
+    )
     assert (
         _resource(rendered, "Secret", "authentik", "auth")["metadata"]["name"]
         == "authentik"

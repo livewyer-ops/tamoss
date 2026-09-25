@@ -20,8 +20,9 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: authentik
     app.kubernetes.io/version: "2026.2.3"
-  {{- if ne $tlsMode "disabled" }}
   annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  {{- if ne $tlsMode "disabled" }}
     cert-manager.io/cluster-issuer: {{ $tlsIssuerName | quote }}
   {{- end }}
 spec:

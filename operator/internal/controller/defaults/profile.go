@@ -19,6 +19,7 @@ import (
 const (
 	defaultAppName                     = "tamoss"
 	defaultCertManagerIssuerAnnotation = "cert-manager.io/cluster-issuer"
+	defaultTraefikTLSAnnotation        = "traefik.ingress.kubernetes.io/router.tls"
 	defaultLocalKindIssuerName         = "tamoss-selfsigned"
 	defaultPublicIssuerName            = "tamoss-public"
 	defaultLocalKindTLSSecretName      = "tamoss-localtest-tls"
@@ -286,6 +287,11 @@ func defaultPlatformPublicEndpointWithoutAuthentik(tamoss *tamossv1alpha1.Tamoss
 	if tamoss.Spec.Ingress.Annotations == nil {
 		tamoss.Spec.Ingress.Annotations = map[string]string{
 			defaultCertManagerIssuerAnnotation: defaults.IssuerName,
+		}
+	}
+	if tamoss.Spec.Ingress.ClassName == "traefik" {
+		if _, ok := tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation]; !ok {
+			tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation] = "true"
 		}
 	}
 }
