@@ -151,11 +151,10 @@ tasks:
   e2e:fresh:
     silent: true
     cmds:
-      - rm -f {{.KUBECONFIG}}
       - |
         . .tasks/lib/kind.sh
         task_step "Local Kind: delete existing cluster" \
-          task_kind_delete_cluster "{{.PROJECT_NAME}}"
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
       - task: :kind:create
         vars:
           PROFILE: "{{.PROFILE}}"
@@ -186,10 +185,12 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"

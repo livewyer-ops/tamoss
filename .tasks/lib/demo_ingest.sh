@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=.tasks/lib/commands.sh
-. "$script_dir/commands.sh"
-
 target_file="${1:?target file is required}"
 media_file="${2:?demo media file is required}"
 kubeconfig="${3:?kubeconfig is required}"
 audio_file="${4:?demo audio file is required}"
 
-task_require_commands curl jq kubectl base64
+for command in curl jq kubectl base64; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "Required command '$command' was not found." >&2
+    exit 1
+  fi
+done
 
 if [ ! -f "$target_file" ]; then
   echo "Profile target file $target_file was not found." >&2

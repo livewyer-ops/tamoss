@@ -6,7 +6,6 @@ set: [errexit, nounset, pipefail]
 vars:
   PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
-  SECRETS_DIR: ".local"
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
   DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
@@ -113,10 +112,12 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -147,25 +148,16 @@ tasks:
         fi
 
   kind:down:
-    desc: "Local Kind: delete the disposable Kind cluster and local runtime state"
+    desc: "Local Kind: delete the disposable Kind cluster"
     interactive: true
     silent: true
-    prompt: "This will delete the {{.PROJECT_NAME}} Kind cluster and local runtime state. Continue?"
+    prompt: "This will delete the {{.PROJECT_NAME}} Kind cluster. Continue?"
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
-        if command -v kind >/dev/null 2>&1; then
-          task_step "Local Kind: delete cluster" \
-            task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
-        else
-          echo "Skipping Kind cleanup; kind is unavailable"
-        fi
-      - |
-        set -euo pipefail
-        . .tasks/lib/kind.sh
-        task_step "Local Kind: remove local state" \
-          task_remove_local_kind_state "{{.KUBECONFIG}}" "{{.SECRETS_DIR}}"
+        task_step "Local Kind: delete cluster" \
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
 
   dev:
     desc: "Development: run local API/frontend dev servers with Compose dependencies"
@@ -186,6 +178,7 @@ tasks:
           KUBECONFIG: "{{.KUBECONFIG}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
           PROFILE_KIND_ENVIRONMENT_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          PROFILE_TAMOSS_NAME: "{{.PROFILE_TAMOSS_NAME}}"
           PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
 
   kind:test:

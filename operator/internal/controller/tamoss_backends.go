@@ -388,7 +388,7 @@ func (r *TamossReconciler) backendDependencyGate(ctx context.Context, tamoss *ta
 			Allowed: false,
 			Known:   true,
 			Reason:  operatorstatus.ReasonMissingDependencyOperator,
-			Message: fmt.Sprintf("%s requires %s (%s). Install it with: %s", provider, hint.DependencyName, gvrString(hint.GVR), hint.InstallCommand),
+			Message: fmt.Sprintf("%s requires %s (%s); install the provider and make its API available, or select an external backend", provider, hint.DependencyName, gvrString(hint.GVR)),
 		}
 	}
 	return result

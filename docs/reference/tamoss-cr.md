@@ -37,6 +37,11 @@ installation defaults, set `spec.profile` and the required site settings explici
 Inherited settings are resolved without writing them into the resource;
 Kubernetes can still populate fields with defaults declared in the CRD.
 
+See the [minimal local-kind example](../../deploy/environments/local-kind/tamoss-minimal.example.yaml)
+and the [annotated single-server example](../../deploy/environments/single-server/tamoss-full.example.yaml)
+for instance manifests. The commented settings in the single-server example
+inherit their defaults until explicitly enabled.
+
 Set `publicEndpoint.uiURL` when the public UI uses a non-standard external
 port. It is an exact origin, not a path:
 

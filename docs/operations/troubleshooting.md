@@ -272,7 +272,9 @@ For remote clusters, use the effective API URL from `status.endpoints.api` or
 ## Support Bundle
 
 Generate a local diagnostic bundle before opening a public issue or handing off
-an incident:
+an incident. The instance and operator namespaces must already exist. If
+installation stopped before they were created, inspect the platform with
+`helm list --all-namespaces` and `kubectl --kubeconfig "$KUBECONFIG" get events --all-namespaces` first.
 
 ```bash
 task operator:support-bundle \
@@ -503,8 +505,7 @@ For an existing cluster, keep durable changes in the generated environment
 overlay and reapply the supported workflow:
 
 ```bash
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-prod
 ```
 
 For a disposable local Kind cluster, recreate the full local environment:
@@ -515,5 +516,6 @@ task kind:e2e PROFILE=local-kind
 task kind:down
 ```
 
-`task kind:down` deletes the local Kind cluster and local runtime state. Do not
-use it as a production reset path.
+`task kind:down` deletes the local Kind cluster and removes its kubeconfig
+context. It leaves other contexts and local files in place. Do not use it as a
+production reset path.

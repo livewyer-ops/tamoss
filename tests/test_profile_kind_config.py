@@ -80,8 +80,6 @@ def test_profile_registry_selects_kind_configurations() -> None:
     assert profiles["multi-server"]["targetEnv"] == "tests/targets/multi-server.env"
     assert profiles["edge"]["targetEnv"] == "tests/targets/edge.env"
     for profile in profiles.values():
-        assert "platformKustomizeDir" not in profile
-        assert "remotePlatformKustomizeDir" not in profile
         assert (ROOT / profile["kindConfig"]).is_file()
         assert (ROOT / profile["kindEnvironmentDir"]).is_dir()
         assert (ROOT / profile["instanceKustomizeDir"]).is_dir()

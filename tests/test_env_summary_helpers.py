@@ -58,12 +58,19 @@ def test_rustfs_access_is_only_printed_for_managed_rustfs(tmp_path: Path) -> Non
         "task_print_rustfs_access rustfs-operator https://s3.example.com user password",
         tmp_path,
     )
+    managed_with_credentials = _run_bash(
+        "task_print_rustfs_access rustfs-operator https://s3.example.com "
+        "user password true",
+        tmp_path,
+    )
 
     assert external.returncode == 0
     assert external.stdout == ""
     assert managed.returncode == 0
     assert "RustFS Admin URL: https://s3.example.com/rustfs/console/" in managed.stdout
-    assert "RustFS Username:  user" in managed.stdout
+    assert "RustFS Username:" not in managed.stdout
+    assert managed_with_credentials.returncode == 0
+    assert "RustFS Username:  user" in managed_with_credentials.stdout
 
 
 @pytest.mark.parametrize("status", [0, 23])
@@ -82,6 +89,7 @@ def test_platform_apply_waits_on_success_and_preserves_failed_release(
         tmp_path,
     )
     assert result.returncode == status, result.stderr
+    assert "--skip-diff-on-install" in result.stdout
     assert "--server-side=true" in result.stdout
     assert "--rollback-on-failure" not in result.stdout
     assert "--atomic" not in result.stdout

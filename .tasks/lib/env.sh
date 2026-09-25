@@ -167,7 +167,6 @@ task_init_env() {
   task_validate_instance_version "$instance_version" || return
   local template_dir="deploy/templates/environment"
   local environment_dir="deploy/environments/$name"
-
   case "$name" in
     *[!a-z0-9-]*|""|-*)
       echo "NAME must be a non-empty DNS-style name using lowercase letters, numbers, and hyphens." >&2
@@ -192,7 +191,7 @@ task_init_env() {
 
   mkdir -p "$(dirname "$environment_dir")"
   cp -R "$template_dir" "$environment_dir"
-  for file in "$environment_dir"/*.yaml "$environment_dir"/operator/*.yaml; do
+  find "$environment_dir" -type f -name '*.yaml' -print | while IFS= read -r file; do
     tmp_file="$(mktemp)"
     sed \
       -e "s|__PROFILE__|$profile|g" \
@@ -201,14 +200,14 @@ task_init_env() {
       "$file" > "$tmp_file"
     mv "$tmp_file" "$file"
   done
+  mv "$environment_dir/instances/tamoss-__PROFILE__" \
+    "$environment_dir/instances/tamoss-$profile"
   if [ "$profile" = "edge" ]; then
     cp deploy/platform/values/edge-reference.yaml "$environment_dir/platform-values.yaml"
     yq -i '.clusterIssuer = "tamoss-edge-selfsigned"' "$environment_dir/operator/defaults.yaml"
   fi
-
   printf 'Created %s\n' "$environment_dir"
-  printf 'Edit the YAML files there, then run:\n'
-  printf '  task env:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$name"
+  printf 'Review the YAML files, then use Helmfile and kubectl to apply the platform, operator, and instance resources.\n'
 }
 
 # task_init_env_instance adds an instance manifest to an existing environment
@@ -222,10 +221,11 @@ task_init_env_instance() {
   local namespace="${5:-}"
   local instance_version="${6:-}"
   task_validate_instance_version "$instance_version" || return
-  local manifest kustomization
+  local instance_dir manifest kustomization
 
   namespace="${namespace:-$instance}"
-  manifest="$environment_dir/$instance.yaml"
+  instance_dir="$environment_dir/instances/$instance"
+  manifest="$instance_dir/tamoss.yaml"
   kustomization="$environment_dir/kustomization.yaml"
 
   case "$instance" in
@@ -249,17 +249,28 @@ task_init_env_instance() {
     echo "Environment $environment_dir has no kustomization.yaml." >&2
     return 1
   fi
-  if [ -e "$manifest" ]; then
-    echo "Instance manifest $manifest already exists; refusing to overwrite it." >&2
+  if [ -e "$instance_dir" ]; then
+    echo "Instance $instance already exists; refusing to overwrite it." >&2
     return 1
   fi
 
-  cat > "$manifest" <<YAML
+  mkdir -p "$instance_dir"
+  cat > "$instance_dir/kustomization.yaml" <<YAML
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - tamoss.yaml
+YAML
+
+  cat > "$instance_dir/namespace.yaml" <<YAML
 apiVersion: v1
 kind: Namespace
 metadata:
   name: $namespace
----
+YAML
+
+  cat > "$manifest" <<YAML
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
@@ -275,11 +286,10 @@ YAML
     INSTANCE_DOMAIN="$domain" yq -i '(select(.kind == "Tamoss") | .spec.publicEndpoint.baseDomain) = strenv(INSTANCE_DOMAIN)' "$manifest"
   fi
 
-  yq -i ".resources += [\"$instance.yaml\"]" "$kustomization"
+  yq -i ".resources += [\"instances/$instance\"]" "$kustomization"
 
-  printf 'Created %s and registered it in %s\n' "$manifest" "$kustomization"
-  printf 'Edit the instance manifest, then run:\n'
-  printf '  task env:apply ENV=%s KUBECONFIG=/path/to/kubeconfig\n' "$(basename "$environment_dir")"
+  printf 'Created %s and registered it in %s\n' "$instance_dir" "$kustomization"
+  printf 'Apply it with kubectl apply -k %s\n' "$instance_dir"
 }
 
 task_env_values_enabled() {
@@ -369,9 +379,31 @@ task_diff_platform_helmfile() {
   local helmfile_path="$2"
   local values_file="$3"
   local timeout="$4"
+  local rendered status=0
 
-  task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" template --include-crds \
-    | kubectl --kubeconfig "$kubeconfig" diff -f - || true
+  rendered="$(mktemp)"
+  if task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" template --include-crds > "$rendered"; then
+    :
+  else
+    status=$?
+    rm -f "$rendered"
+    return "$status"
+  fi
+  task_kubectl_diff "$kubeconfig" -f "$rendered" || status=$?
+  rm -f "$rendered"
+  return "$status"
+}
+
+task_kubectl_diff() {
+  local kubeconfig="$1"
+  shift
+  local status=0
+
+  kubectl --kubeconfig "$kubeconfig" diff "$@" || status=$?
+  if [ "$status" -gt 1 ]; then
+    return "$status"
+  fi
+  return 0
 }
 
 task_apply_env_platform() {
@@ -392,7 +424,8 @@ task_apply_env_platform() {
 
   task_step "Platform: apply Helmfile releases" \
     task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
-      sync \
+      apply \
+      --skip-diff-on-install \
       --sync-args "--server-side=true" \
       --wait \
       --wait-for-jobs
@@ -507,7 +540,6 @@ task_apply_env() {
     "Environment $environment_dir was not found. Create it with task env:init."
 
   instances="$(task_tamoss_instances_for "$rendered")" || return 1
-
   task_apply_env_platform \
     "$kubeconfig" \
     "$environment_dir" \
@@ -515,7 +547,8 @@ task_apply_env() {
     "$platform_timeout"
   task_apply_operator "$kubeconfig" "$operator_kustomize_dir"
   task_wait_operator "$kubeconfig" tamoss-system operator-controller-manager
-  task_apply_env_instance "$environment_dir" "$kubeconfig"
+  task_step "Instance: apply TAMOSS environment $(basename "$environment_dir")" \
+    kubectl --kubeconfig "$kubeconfig" apply -k "$environment_dir"
 
   while IFS= read -r name; do
     [ -n "$name" ] || continue
@@ -530,11 +563,16 @@ EOF
 task_apply_env_instance() {
   local environment_dir="$1"
   local kubeconfig="$2"
-  local env_name
+  local instance="$3"
+  local instance_dir="$environment_dir/instances/$instance"
 
-  env_name="$(basename "$environment_dir")"
-  task_step "Instance: apply TAMOSS environment $env_name" \
-    kubectl --kubeconfig "$kubeconfig" apply -k "$environment_dir"
+  if [ ! -f "$instance_dir/kustomization.yaml" ]; then
+    echo "Instance Kustomize directory $instance_dir was not found." >&2
+    return 1
+  fi
+
+  task_step "Instance: apply TAMOSS instance $instance" \
+    kubectl --kubeconfig "$kubeconfig" apply -k "$instance_dir"
 }
 
 task_wait_env() {
@@ -609,6 +647,7 @@ task_diff_env() {
   local platform_timeout="$4"
   local operator_kustomize_dir="$5"
   local values_file="$environment_dir/platform-values.yaml"
+  local instance="${6:-}"
 
   if [ ! -f "$values_file" ]; then
     echo "Environment platform values $values_file were not found." >&2
@@ -619,12 +658,16 @@ task_diff_env() {
     return 1
   fi
 
-  task_step "Platform: diff Helmfile releases" \
-    task_diff_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$platform_timeout"
-  task_step "Operator: diff TAMOSS operator" \
-    kubectl --kubeconfig "$kubeconfig" diff --server-side -k "$operator_kustomize_dir" || true
-  task_step "Instance: diff TAMOSS environment" \
-    kubectl --kubeconfig "$kubeconfig" diff -k "$environment_dir" || true
+  printf '• Platform: diff Helmfile releases\n'
+  task_diff_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$platform_timeout" || return
+  printf '• Operator: diff TAMOSS operator\n'
+  task_kubectl_diff "$kubeconfig" --server-side -k "$operator_kustomize_dir" || return
+  printf '• Instance: diff TAMOSS environment\n'
+  if [ -n "$instance" ]; then
+    task_kubectl_diff "$kubeconfig" -k "$environment_dir/instances/$instance"
+    return
+  fi
+  task_kubectl_diff "$kubeconfig" -k "$environment_dir"
 }
 
 task_condition_summary() {
@@ -757,13 +800,16 @@ task_print_rustfs_access() {
   local s3_url="$2"
   local rustfs_username="$3"
   local rustfs_password="$4"
+  local show_credentials="${5:-false}"
 
   if [ "$s3_provider" != "rustfs-operator" ]; then
     return 0
   fi
   printf '  RustFS Admin URL: %s/rustfs/console/\n' "${s3_url%/}"
-  printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
-  printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
+  if [ "$show_credentials" = "true" ]; then
+    printf '  RustFS Username:  %s\n' "${rustfs_username:-<not available>}"
+    printf '  RustFS Password:  %s\n\n' "${rustfs_password:-<not available>}"
+  fi
 }
 
 # task_print_env_summary reports on every instance in the environment, or on
@@ -773,7 +819,8 @@ task_print_env_summary() {
   local kubeconfig="$2"
   local target_file="${3:-}"
   local instance="${4:-}"
-  local rendered instances name multiple
+  local show_credentials="${5:-auto}"
+  local rendered instances name multiple instance_credentials profile
 
   rendered="$(mktemp)"
   task_render_environment \
@@ -784,7 +831,6 @@ task_print_env_summary() {
     rm -f "$rendered"
     return 1
   }
-  rm -f "$rendered"
   multiple=0
   [ "$(printf '%s\n' "$instances" | wc -l)" -gt 1 ] && multiple=1
 
@@ -793,10 +839,16 @@ task_print_env_summary() {
     if [ "$multiple" -eq 1 ]; then
       printf '\n=== %s ===\n' "$name"
     fi
-    task_print_instance_summary "$environment_dir" "$kubeconfig" "$target_file" "$name"
+    instance_credentials="$show_credentials"
+    if [ "$instance_credentials" = "auto" ]; then
+      profile="$(task_tamoss_field_from_rendered "$rendered" profile "$name")"
+      [ "$profile" = "local-kind" ] && instance_credentials=true || instance_credentials=false
+    fi
+    task_print_instance_summary "$environment_dir" "$kubeconfig" "$target_file" "$name" "$instance_credentials"
   done <<EOF
 $instances
 EOF
+  rm -f "$rendered"
 }
 
 task_print_instance_summary() {
@@ -804,14 +856,17 @@ task_print_instance_summary() {
   local kubeconfig="$2"
   local target_file="${3:-}"
   local instance="${4:-}"
+  local show_credentials="${5:-false}"
   local rendered profile api_namespace tamoss_name base_domain
   local app_url api_url auth_url token_key
-  local token_resource_name token_secret bearer_token default_storagebackend ready_status phase
-  local s3_url s3_provider app_username app_username_secret app_username_key app_username_namespace
-  local app_password app_password_secret app_password_key app_password_namespace
-  local generated_api_token_secret generated_oauth_secret oauth_secret oauth_secret_namespace
-  local oauth_client_id oauth_client_secret oauth_issuer oauth_token_endpoint application_slug auth_provider
-  local auth_namespace live_api_url live_ui_url live_auth_url live_s3_url external_oauth_secret
+  local token_resource_name="" token_secret="" bearer_token="" default_storagebackend ready_status phase
+  local s3_url s3_provider
+  local app_password="" app_password_secret="" app_password_key="" app_password_namespace=""
+  local generated_api_token_secret="" generated_oauth_secret="" oauth_secret="" oauth_secret_namespace=""
+  local oauth_client_id="" oauth_client_secret="" oauth_issuer="" oauth_token_endpoint="" application_slug="" auth_provider
+  local auth_namespace="" live_api_url live_ui_url live_auth_url live_s3_url external_oauth_secret=""
+  local app_username="" app_username_secret="" app_username_key="" app_username_namespace=""
+  local rustfs_username="" rustfs_password="" rustfs_secret=""
 
   rendered="$(mktemp)"
   task_render_environment \
@@ -877,20 +932,21 @@ task_print_instance_summary() {
   if [ -z "$s3_provider" ]; then
     s3_provider="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.backends.s3.providedBy}")"
   fi
-  token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
-  token_resource_name="$(
-    kubectl --kubeconfig "$kubeconfig" \
-      -n "$api_namespace" \
-      get tamoss "$tamoss_name" \
-      -o "jsonpath={.spec.fullnameOverride}" 2>/dev/null || true
-  )"
-  token_resource_name="${token_resource_name:-$tamoss_name}"
-  generated_api_token_secret="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.resolved.generatedSecrets.apiToken}"
-  )"
-  token_secret="${TEST_TAMOSS_TOKEN_SECRET:-${generated_api_token_secret:-${token_resource_name}-api-token}}"
-
-  bearer_token="$(task_k8s_secret_value "$kubeconfig" "$api_namespace" "$token_secret" "$token_key")"
+  if [ "$show_credentials" = "true" ]; then
+    token_key="${TEST_TAMOSS_TOKEN_KEY:-TAMOSS_API_TOKEN}"
+    token_resource_name="$(
+      kubectl --kubeconfig "$kubeconfig" \
+        -n "$api_namespace" \
+        get tamoss "$tamoss_name" \
+        -o "jsonpath={.spec.fullnameOverride}" 2>/dev/null || true
+    )"
+    token_resource_name="${token_resource_name:-$tamoss_name}"
+    generated_api_token_secret="$(
+      task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.resolved.generatedSecrets.apiToken}"
+    )"
+    token_secret="${TEST_TAMOSS_TOKEN_SECRET:-${generated_api_token_secret:-${token_resource_name}-api-token}}"
+    bearer_token="$(task_k8s_secret_value "$kubeconfig" "$api_namespace" "$token_secret" "$token_key")"
+  fi
 
   default_storagebackend="$(
     kubectl --kubeconfig "$kubeconfig" \
@@ -907,102 +963,60 @@ task_print_instance_summary() {
       task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.providedBy}"
     )"
   fi
-  app_username="${TEST_TAMOSS_AUTH_USER:-}"
-  app_username_secret="${TEST_TAMOSS_AUTH_USER_SECRET:-}"
-  app_username_key="${TEST_TAMOSS_AUTH_USER_KEY:-}"
-  app_password="${TEST_TAMOSS_AUTH_PASSWORD:-}"
-  app_password_secret="${TEST_TAMOSS_AUTH_PASSWORD_SECRET:-}"
-  app_password_key="${TEST_TAMOSS_AUTH_PASSWORD_KEY:-}"
-  auth_namespace="$(
-    task_summary_auth_namespace \
-      "$kubeconfig" \
-      "$api_namespace" \
-      "$tamoss_name" \
-      "${TEST_TAMOSS_AUTH_NAMESPACE:-auth}"
-  )"
-  app_password_secret="${app_password_secret:-authentik}"
-  app_password_key="${app_password_key:-AUTHENTIK_BOOTSTRAP_PASSWORD}"
-  app_password_namespace="${TEST_TAMOSS_AUTH_NAMESPACE:-$auth_namespace}"
-  app_username_secret="${app_username_secret:-$app_password_secret}"
-  app_username_key="${app_username_key:-AUTHENTIK_BOOTSTRAP_USERNAME}"
-  app_username_namespace="${TEST_TAMOSS_AUTH_USER_NAMESPACE:-${TEST_TAMOSS_AUTH_NAMESPACE:-$auth_namespace}}"
-  if [ -z "$app_username" ] && [ -n "$app_username_secret" ] && [ -n "$app_username_key" ]; then
-    app_username="$(
-      task_k8s_secret_value \
-        "$kubeconfig" \
-        "$app_username_namespace" \
-        "$app_username_secret" \
-        "$app_username_key"
-    )"
-  fi
-  if [ -z "$app_username" ] && [ "$auth_provider" = "authentik-blueprints" ]; then
-    app_username="akadmin"
-  fi
-  if [ -z "$app_password" ] && [ -n "$app_password_secret" ] && [ -n "$app_password_key" ]; then
-    app_password="$(
-      kubectl --kubeconfig "$kubeconfig" \
-        -n "$app_password_namespace" \
-        get secret "$app_password_secret" \
-        -o "jsonpath={.data.${app_password_key}}" 2>/dev/null \
-      | base64 --decode || true
-    )"
+  if [ "$show_credentials" = "true" ]; then
+    app_username="${TEST_TAMOSS_AUTH_USER:-}"
+    app_username_secret="${TEST_TAMOSS_AUTH_USER_SECRET:-}"
+    app_username_key="${TEST_TAMOSS_AUTH_USER_KEY:-}"
+    app_password="${TEST_TAMOSS_AUTH_PASSWORD:-}"
+    app_password_secret="${TEST_TAMOSS_AUTH_PASSWORD_SECRET:-}"
+    app_password_key="${TEST_TAMOSS_AUTH_PASSWORD_KEY:-}"
+    auth_namespace="$(task_summary_auth_namespace "$kubeconfig" "$api_namespace" "$tamoss_name" "${TEST_TAMOSS_AUTH_NAMESPACE:-auth}")"
+    app_password_secret="${app_password_secret:-authentik}"
+    app_password_key="${app_password_key:-AUTHENTIK_BOOTSTRAP_PASSWORD}"
+    app_password_namespace="${TEST_TAMOSS_AUTH_NAMESPACE:-$auth_namespace}"
+    app_username_secret="${app_username_secret:-$app_password_secret}"
+    app_username_key="${app_username_key:-AUTHENTIK_BOOTSTRAP_USERNAME}"
+    app_username_namespace="${TEST_TAMOSS_AUTH_USER_NAMESPACE:-${TEST_TAMOSS_AUTH_NAMESPACE:-$auth_namespace}}"
+    if [ -z "$app_username" ] && [ -n "$app_username_secret" ] && [ -n "$app_username_key" ]; then
+      app_username="$(task_k8s_secret_value "$kubeconfig" "$app_username_namespace" "$app_username_secret" "$app_username_key")"
+    fi
+    if [ -z "$app_username" ] && [ "$auth_provider" = "authentik-blueprints" ]; then
+      app_username="akadmin"
+    fi
+    if [ -z "$app_password" ] && [ -n "$app_password_secret" ] && [ -n "$app_password_key" ]; then
+      app_password="$(kubectl --kubeconfig "$kubeconfig" -n "$app_password_namespace" get secret "$app_password_secret" -o "jsonpath={.data.${app_password_key}}" 2>/dev/null | base64 --decode || true)"
+    fi
+
+    application_slug="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.auth.applicationSlug}")"
+    generated_oauth_secret="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.resolved.generatedSecrets.oauth2Credentials}")"
+    external_oauth_secret="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.external.oauth2.clientCredentialsSecret.existingSecret}")"
+    oauth_secret_namespace="${TEST_TAMOSS_OAUTH_CLIENT_SECRET_NAMESPACE:-$api_namespace}"
+    oauth_secret="${TEST_TAMOSS_OAUTH_CLIENT_SECRET_NAME:-${generated_oauth_secret:-$external_oauth_secret}}"
+    oauth_client_id="${TEST_TAMOSS_OAUTH_CLIENT_ID:-}"
+    if [ -z "$oauth_client_id" ] && [ -n "$oauth_secret" ]; then
+      oauth_client_id="$(task_k8s_secret_first_value "$kubeconfig" "$oauth_secret_namespace" "$oauth_secret" "${TEST_TAMOSS_OAUTH_CLIENT_ID_SECRET_KEY:-TAMOSS_OAUTH_CLIENT_ID}" client_id)"
+    fi
+    oauth_client_secret="${TEST_TAMOSS_OAUTH_CLIENT_SECRET:-}"
+    if [ -z "$oauth_client_secret" ] && [ -n "$oauth_secret" ]; then
+      oauth_client_secret="$(task_k8s_secret_first_value "$kubeconfig" "$oauth_secret_namespace" "$oauth_secret" "${TEST_TAMOSS_OAUTH_CLIENT_SECRET_KEY:-TAMOSS_OAUTH_CLIENT_SECRET}" client_secret)"
+    fi
+    oauth_issuer="${TEST_TAMOSS_OAUTH_ISSUER:-}"
+    if [ -z "$oauth_issuer" ] && [ "$auth_provider" = "authentik-blueprints" ]; then
+      oauth_issuer="$(task_summary_oauth_issuer "$auth_url" "$application_slug")"
+    fi
+    if [ -z "$oauth_issuer" ]; then
+      oauth_issuer="$(task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.external.oauth2.issuer}")"
+    fi
+    if [ -n "$oauth_issuer" ]; then
+      oauth_issuer="${oauth_issuer%/}/"
+    fi
+    oauth_token_endpoint="${TEST_TAMOSS_OAUTH_TOKEN_ENDPOINT:-}"
+    if [ -z "$oauth_token_endpoint" ] && [ "$auth_provider" = "authentik-blueprints" ] && [ -n "$auth_url" ]; then
+      oauth_token_endpoint="${auth_url%/}/application/o/token/"
+    fi
   fi
 
-  application_slug="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.auth.applicationSlug}"
-  )"
-  generated_oauth_secret="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.status.resolved.generatedSecrets.oauth2Credentials}"
-  )"
-  external_oauth_secret="$(
-    task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.external.oauth2.clientCredentialsSecret.existingSecret}"
-  )"
-  oauth_secret_namespace="${TEST_TAMOSS_OAUTH_CLIENT_SECRET_NAMESPACE:-$api_namespace}"
-  oauth_secret="${TEST_TAMOSS_OAUTH_CLIENT_SECRET_NAME:-${generated_oauth_secret:-$external_oauth_secret}}"
-  oauth_client_id="${TEST_TAMOSS_OAUTH_CLIENT_ID:-}"
-  if [ -z "$oauth_client_id" ] && [ -n "$oauth_secret" ]; then
-    oauth_client_id="$(
-      task_k8s_secret_first_value \
-        "$kubeconfig" \
-        "$oauth_secret_namespace" \
-        "$oauth_secret" \
-        "${TEST_TAMOSS_OAUTH_CLIENT_ID_SECRET_KEY:-TAMOSS_OAUTH_CLIENT_ID}" \
-        client_id
-    )"
-  fi
-  oauth_client_secret="${TEST_TAMOSS_OAUTH_CLIENT_SECRET:-}"
-  if [ -z "$oauth_client_secret" ] && [ -n "$oauth_secret" ]; then
-    oauth_client_secret="$(
-      task_k8s_secret_first_value \
-        "$kubeconfig" \
-        "$oauth_secret_namespace" \
-        "$oauth_secret" \
-        "${TEST_TAMOSS_OAUTH_CLIENT_SECRET_KEY:-TAMOSS_OAUTH_CLIENT_SECRET}" \
-        client_secret
-    )"
-  fi
-  oauth_issuer="${TEST_TAMOSS_OAUTH_ISSUER:-}"
-  if [ -z "$oauth_issuer" ] && [ "$auth_provider" = "authentik-blueprints" ]; then
-    oauth_issuer="$(task_summary_oauth_issuer "$auth_url" "$application_slug")"
-  fi
-  if [ -z "$oauth_issuer" ]; then
-    oauth_issuer="$(
-      task_k8s_resource_value "$kubeconfig" "$api_namespace" "tamoss/$tamoss_name" "{.spec.auth.external.oauth2.issuer}"
-    )"
-  fi
-  if [ -n "$oauth_issuer" ]; then
-    oauth_issuer="${oauth_issuer%/}/"
-  fi
-  oauth_token_endpoint="${TEST_TAMOSS_OAUTH_TOKEN_ENDPOINT:-}"
-  if [ -z "$oauth_token_endpoint" ] &&
-    [ "$auth_provider" = "authentik-blueprints" ] &&
-    [ -n "$auth_url" ]; then
-    oauth_token_endpoint="${auth_url%/}/application/o/token/"
-  fi
-
-  rustfs_username=""
-  rustfs_password=""
-  if [ "$s3_provider" = "rustfs-operator" ]; then
+  if [ "$show_credentials" = "true" ] && [ "$s3_provider" = "rustfs-operator" ]; then
     rustfs_secret="${TEST_TAMOSS_RUSTFS_SECRET:-}"
     if [ -z "$rustfs_secret" ]; then
       rustfs_secret="$(
@@ -1076,19 +1090,23 @@ task_print_instance_summary() {
   printf '  Auth Provider:    %s\n' "${auth_provider:-<not available>}"
   if [ "$auth_provider" = "authentik-blueprints" ]; then
     printf '  Auth Admin URL:   %s/if/admin/\n' "${auth_url%/}"
-    if [ -n "$app_username" ] || [ -n "$app_password" ]; then
+    if [ "$show_credentials" = "true" ] && { [ -n "$app_username" ] || [ -n "$app_password" ]; }; then
       printf '  App/Auth User:    %s\n' "${app_username:-<not configured>}"
       printf '  App/Auth Pass:    %s\n' "${app_password:-<not available>}"
     fi
   fi
   printf '\n'
   printf '  API URL:          %s\n' "${api_url%/}"
-  printf '  API Token:        %s\n' "${bearer_token:-<not available>}"
+  if [ "$show_credentials" = "true" ]; then
+    printf '  API Token:        %s\n' "${bearer_token:-<not available>}"
+  else
+    printf '  Credentials:      task env:credentials INSTANCE=<name> retrieves secrets on request\n'
+  fi
   printf '\n'
-  if [ -n "$oauth_client_id" ] ||
+  if [ "$show_credentials" = "true" ] && { [ -n "$oauth_client_id" ] ||
     [ -n "$oauth_client_secret" ] ||
     [ -n "$oauth_issuer" ] ||
-    [ -n "$oauth_token_endpoint" ]; then
+    [ -n "$oauth_token_endpoint" ]; }; then
     printf 'OAuth2\n'
     printf '  Client ID:        %s\n' "${oauth_client_id:-<not available>}"
     printf '  Client Secret:    %s\n' "${oauth_client_secret:-<not available>}"
@@ -1096,7 +1114,7 @@ task_print_instance_summary() {
     printf '  Token URL:        %s\n' "${oauth_token_endpoint:-<not available>}"
     printf '\n'
   fi
-  task_print_rustfs_access "$s3_provider" "$s3_url" "$rustfs_username" "$rustfs_password"
+  task_print_rustfs_access "$s3_provider" "$s3_url" "$rustfs_username" "$rustfs_password" "$show_credentials"
 }
 
 # Release selection is written once into each generated instance manifest.

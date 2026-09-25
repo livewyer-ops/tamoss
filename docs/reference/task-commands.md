@@ -1,8 +1,8 @@
 # Task Commands
 
-This is the supported command surface. Operator-facing workflows are listed
-first. Maintainer and helper commands are separated so internal tooling is not
-confused with the product install path.
+Task commands are optional conveniences. The public deployment interface is
+Helmfile and Kubernetes manifests; see the [install](../operations/install.md)
+and [upgrade](../operations/upgrades.md) guides for native commands.
 
 This page is manually maintained. Refresh it against `task -l` when task
 names or descriptions change.
@@ -14,9 +14,9 @@ names or descriptions change.
 | Command | Purpose |
 | --- | --- |
 | `task kind:up PROFILE=local-kind` | Local [Kind](https://kind.sigs.k8s.io/) evaluation path: build local images, create or reuse Kind, apply the operator, apply the selected `Tamoss` instance, and ingest one playable demo segment unless `KIND_DEMO_INGEST=false` is set. `PROFILE=multi-server` uses a multi-node Kind cluster. |
-| `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for a Kind or remote environment. |
+| `task env:summary ENV_DIR=deploy/environments/local-kind KUBECONFIG=tams.kubeconfig` | Print local-kind lifecycle status, access URLs and credentials. Remote summaries omit secret values; use `task env:credentials INSTANCE=<name>` to retrieve one instance's credentials explicitly. |
 | `task kind:operator:reload` | Rebuild the operator image, load it into the existing Kind cluster, and restart the operator deployment without rerunning the full `task kind:up` flow. |
-| `task kind:down` | Delete the disposable Kind cluster and local runtime state. |
+| `task kind:down` | Delete the disposable Kind cluster and remove its kubeconfig context. |
 | `task kind:test PROFILE=local-kind` | Create or reuse Kind, deploy the selected profile, and run deployed TAMS/product checks. |
 | `task kind:e2e PROFILE=local-kind` | Recreate Kind from scratch, deploy the selected profile with the current operator, and run deployed TAMS/product checks. `PROFILE=multi-server` validates on a multi-node Kind cluster. |
 | `task logs` | Show recent concise task logs from `.local/logs/task`. |
@@ -25,14 +25,15 @@ names or descriptions change.
 
 | Command | Purpose |
 | --- | --- |
-| `task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Create platform values, an operator overlay with installation defaults, and an instance whose spec contains only its release. Use `PROFILE=edge` for the ARM64 single-node profile. |
-| `task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=my-prod INSTANCE=second` | Add an instance selecting only its release and register it in the environment kustomization. `NAMESPACE` defaults to the instance name; optional `PROFILE` and `DOMAIN` override inherited settings. |
-| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply the [Helmfile](https://helmfile.readthedocs.io/) platform releases, TAMOSS operator, and selected environment overlay. |
-| `task env:instance:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Apply all instance manifests in the environment without updating the platform or operator. |
-| `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff the Helmfile platform releases, TAMOSS operator, and selected environment overlay. |
+| `task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Scaffold platform values, an operator overlay and an instance Kustomize directory. Use `PROFILE=edge` for the ARM64 single-node profile. |
+| `task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=my-prod INSTANCE=second` | Add an instance Kustomize directory to the environment. `NAMESPACE` defaults to the instance name; optional `PROFILE` and `DOMAIN` override inherited settings. |
+| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Convenience sequence for applying platform Helmfile releases, the TAMOSS operator and all environment resources. |
+| `task env:instance:apply ENV=my-prod INSTANCE=second KUBECONFIG=/path/to/kubeconfig` | Apply the selected instance Kustomize directory. |
+| `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff platform Helmfile releases, TAMOSS operator and the environment. Add `INSTANCE=<name>` to diff one instance. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for observed instance generations, requested releases and the environment's defaults revision, then `Ready=True`. |
 | `task env:status ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Show the selected environment's `Tamoss` status, namespace resources, routes, and recent events. |
-| `task env:summary ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Print lifecycle status, access URLs, app credentials, API token, OAuth client details, and storage credentials for the selected environment. |
+| `task env:summary ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Print lifecycle status and access URLs. Credentials print automatically for `local-kind`; remote summaries omit secret values. |
+| `task env:credentials ENV=my-prod INSTANCE=second KUBECONFIG=/path/to/kubeconfig` | Print credentials for a selected remote instance when explicitly requested. |
 
 `env:wait`, `env:status`, and `env:summary` act on every instance in the
 environment. Add `INSTANCE=<name>` to act on one, for example

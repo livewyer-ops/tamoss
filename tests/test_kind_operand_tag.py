@@ -18,9 +18,7 @@ _PLAN_BINARIES = ("task", "docker", "kind", "yq", "kubectl")
 _PLAN_BINARIES_MSG = ", ".join(_PLAN_BINARIES[:-1]) + f" and {_PLAN_BINARIES[-1]}"
 
 
-def test_operand_tag_is_content_derived_and_directory_independent(
-    tmp_path: Path,
-) -> None:
+def test_operand_tag_is_content_derived_and_directory_independent() -> None:
     """The tag must not depend on where the helper is called from.
 
     Resolving src/ against the caller's directory matches nothing elsewhere and
@@ -277,6 +275,7 @@ def test_kind_workflows_preserve_environment_overrides(entry_point: str) -> None
             entry_point,
             f"PROFILE_KIND_ENVIRONMENT_DIR={environment_dir}",
             f"PROFILE_TARGET_ENV={target}",
+            "PROFILE_TAMOSS_NAME=tamoss-single-server",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -284,7 +283,14 @@ def test_kind_workflows_preserve_environment_overrides(entry_point: str) -> None
         text=True,
     )
     plan = result.stdout + result.stderr
-    assert f'task_apply_env_instance "{environment_dir}"' in plan
+    assert (
+        f'task_apply_env_instance "{environment_dir}" "tams.kubeconfig" '
+        '"tamoss-single-server"' in plan
+    )
+    assert (
+        f'task_wait_env "{environment_dir}" "tams.kubeconfig" "15m" '
+        '"tamoss-single-server"' in plan
+    )
     assert f'.tasks/lib/demo_ingest.sh "{target}"' in plan
     catalogue_tags = re.findall(
         r'task_render_development_operator "[^"]+" "([^"]+)"', plan
@@ -293,6 +299,73 @@ def test_kind_workflows_preserve_environment_overrides(entry_point: str) -> None
         r'task_kind_build_image "TAMOSS API" "livewyer/tamoss-api:([^"]+)"', plan
     )
     assert catalogue_tags and set(catalogue_tags) == set(api_tags)
+
+
+@pytest.mark.parametrize("delete_status", [0, 17])
+def test_kind_down_preserves_local_files_and_reports_delete_failure(
+    tmp_path: Path, delete_status: int
+) -> None:
+    if shutil.which("task") is None:
+        pytest.skip("Task is required for Kind cleanup checks")
+
+    kubeconfig = tmp_path / "shared.kubeconfig"
+    kubeconfig.write_text("unrelated context\n", encoding="utf-8")
+    local_instructions = ROOT / ".local/AGENTS.md"
+    assert local_instructions.is_file()
+    kind = tmp_path / "kind"
+    kind.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" > "$KIND_CALL_LOG"\n'
+        'exit "$KIND_DELETE_STATUS"\n',
+        encoding="utf-8",
+    )
+    kind.chmod(0o755)
+    call_log = tmp_path / "kind-call"
+    env = os.environ.copy()
+    env.update(
+        PATH=f"{tmp_path}:{env['PATH']}",
+        KIND_CALL_LOG=str(call_log),
+        KIND_DELETE_STATUS=str(delete_status),
+        TASK_LOG_DIR=str(tmp_path / "logs"),
+    )
+    result = subprocess.run(
+        [
+            "task",
+            "--yes",
+            "kind:down",
+            "PROJECT_NAME=disposable",
+            f"KUBECONFIG={kubeconfig}",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode == 0) == (delete_status == 0), result.stderr
+    assert call_log.read_text(encoding="utf-8").strip() == (
+        f"delete cluster --name disposable --kubeconfig {kubeconfig}"
+    )
+    assert kubeconfig.read_text(encoding="utf-8") == "unrelated context\n"
+    assert local_instructions.is_file()
+
+
+def test_kind_e2e_deletes_only_its_cluster_context(tmp_path: Path) -> None:
+    if any(
+        shutil.which(binary) is None for binary in (*_PLAN_BINARIES, "helm", "helmfile")
+    ):
+        pytest.skip("Task, Docker and the Kubernetes deployment tools are required")
+    kubeconfig = tmp_path / "shared.kubeconfig"
+    result = subprocess.run(
+        ["task", "--verbose", "--dry", "kind:e2e:fresh", f"KUBECONFIG={kubeconfig}"],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    plan = result.stdout + result.stderr
+    assert f'task_kind_delete_cluster "tams" "{kubeconfig}"' in plan
+    assert f"rm -f {kubeconfig}" not in plan
 
 
 def _kind_image_plan(profile: str = "local-kind") -> str:

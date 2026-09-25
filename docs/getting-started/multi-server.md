@@ -39,8 +39,8 @@ the deployed e2e checks run.
 
 For an existing cluster:
 
-Set `TAMOSS_VERSION` to the exact release to install. The generated environment
-pins its operator installation and each instance independently.
+Choose the product release and export it as `TAMOSS_VERSION`. The generated
+environment uses it for the operator install reference and initial instance.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -48,13 +48,13 @@ export KUBECONFIG=/path/to/kubeconfig
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/operator/defaults.yaml
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 
-Work through the [Key Settings](#key-settings) while editing the two
-generated files, before `task env:apply`.
+Work through the [Key Settings](#key-settings), then apply the platform,
+operator and instance with the native commands in the
+[install guide](../operations/install.md#existing-cluster). Use
+`task env:summary` to inspect status if useful.
 
 The platform layer installs the components enabled in
 `deploy/environments/my-prod/platform-values.yaml`. The TAMOSS operator
@@ -100,7 +100,9 @@ This command uses the checked-in Kind target. For a remote cluster, copy
 instance's `status.endpoints` and `status.resolved.generatedSecrets` for the
 effective URLs and Secret names. Set `TEST_TAMOSS_NAMESPACE=tams`,
 `TEST_TAMOSS_CR_NAME=tamoss-multi-server` and the resolved token Secret name in
-`TEST_TAMOSS_TOKEN_SECRET`. Supply browser login credentials through
+`TEST_TAMOSS_TOKEN_SECRET`. Retrieve credentials with
+`task env:credentials ENV=my-prod INSTANCE=tamoss-multi-server KUBECONFIG="$KUBECONFIG"`
+and supply browser login credentials through
 `TEST_TAMOSS_AUTH_USER` and `TEST_TAMOSS_AUTH_PASSWORD` or the target's password
 Secret reference, then run:
 

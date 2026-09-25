@@ -82,24 +82,22 @@ other existing ARM64 cluster, export the path to its kubeconfig first:
 export KUBECONFIG=/path/to/kubeconfig
 ```
 
-Create the environment composition, edit the two generated files, then
-apply and inspect it:
+Create the environment composition and review its generated files:
 
-Set `TAMOSS_VERSION` to the exact release to install. The generated environment
-pins its operator installation and each instance independently.
+Choose the product release and export it as `TAMOSS_VERSION`. The generated
+environment uses it for the operator install reference and initial instance.
 
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 $EDITOR deploy/environments/my-edge/platform-values.yaml
 $EDITOR deploy/environments/my-edge/operator/defaults.yaml
-task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-edge KUBECONFIG="$KUBECONFIG"
 ```
 
 The generated edge platform values disable Authentik and use self-signed TLS
-by default. Work through the [Key Settings](#key-settings) while
-editing the two generated files, before `task env:apply`.
+by default. Work through the [Key Settings](#key-settings), then apply the
+platform, operator and instance with the native commands in the
+[install guide](../operations/install.md#existing-cluster).
 
 ## Key Settings
 
@@ -107,9 +105,9 @@ editing the two generated files, before `task env:apply`.
 
 The operator defaults `edge` to token-only runtime auth. The API token lives
 in the generated `<instance>-api-token` Secret (`tamoss-edge-api-token` for the
-generated instance) under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
-the resolved value once the instance is ready. Read it into a variable and
-send it as a bearer header:
+generated instance) under the `TAMOSS_API_TOKEN` key. Retrieve it with
+`task env:credentials ENV=my-edge INSTANCE=tamoss-edge KUBECONFIG="$KUBECONFIG"`
+or read the Secret into a variable, then send it as a bearer header:
 
 ```bash
 export TAMOSS_API_TOKEN=$(kubectl -n tams get secret tamoss-edge-api-token \
@@ -146,12 +144,14 @@ authentik:
     host: auth.<installation-base-domain>
 ```
 
-Re-run `task env:apply` to roll out the Authentik stack.
+Reapply the platform Helmfile state as described in the
+[install guide](../operations/install.md#existing-cluster) to roll out the
+Authentik stack.
 
 Then switch the provider on the running instance with a merge patch. The
 API server rejects a spec that carries both auth blocks, and `kubectl apply`
 does not delete the old `external` block it does not own, so on a live
-token-mode instance `task env:apply` alone fails that one-of admission
+token-mode instance applying the Kustomize directory alone fails that one-of admission
 rule; the patch must come first. The generated composition keeps the
 instance name `tamoss-edge` and namespace `tams`:
 
@@ -160,7 +160,8 @@ kubectl -n tams patch tamoss tamoss-edge --type=merge \
   -p '{"spec":{"auth":{"providedBy":"authentik-blueprints","external":null}}}'
 ```
 
-Finally, record the same change in `tamoss-patch.yaml` so later applies
+Finally, record the same change in
+`instances/tamoss-edge/tamoss.yaml` so later applies
 agree with the cluster:
 
 ```yaml
@@ -168,6 +169,9 @@ agree with the cluster:
     providedBy: authentik-blueprints
     external: null
 ```
+
+Apply the saved instance composition with
+`kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-edge/instances/tamoss-edge`.
 
 The operator submits the blueprint, waits for the issuer, and redeploys the
 API and UI against it. The UI then redirects to the Authentik login. The
@@ -187,7 +191,7 @@ PostgreSQL memory limit, which also carries the Authentik task queue.
 ### UI on and off
 
 The UI serves static assets from nginx. To disable it, add this to the spec in
-`tamoss-patch.yaml`:
+`instances/tamoss-edge/tamoss.yaml`:
 
 ```yaml
   ui:
@@ -244,8 +248,8 @@ task e2e:deployed PROFILE=edge KUBECONFIG="$KUBECONFIG" \
 
 To validate OAuth mode, apply the [Key Settings](#key-settings) changes, set
 `TEST_TAMOSS_BROWSER_API_AVAILABLE=true` and `TEST_TAMOSS_UI_EXPECT_STATUS=302`,
-and supply the browser login credentials reported by `env:summary`. Run the
-same deployed checks against that target.
+and supply the browser login credentials reported by `task env:credentials`.
+Run the same deployed checks against that target.
 
 The deployed checks exercise the API with the bearer token, certificate
 state, and UI availability against the running instance. Set

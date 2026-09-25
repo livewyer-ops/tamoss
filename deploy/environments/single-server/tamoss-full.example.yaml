@@ -1,0 +1,134 @@
+# Copy the settings you need into an instance overlay. This file is not applied
+# by the environment Kustomization. The commented values match single-server
+# defaults with the generated installation defaults (including Console enabled).
+# Replace <installed-release> with a release supported by the installed operator.
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss-single-server
+  namespace: tams
+spec:
+  version: <installed-release>
+  profile: single-server
+
+  # paused: false
+
+  # Public addresses and TLS Secret names derive from installation defaults.
+  # Release images and provider versions derive from spec.version.
+
+  # api:
+  #   enabled: true
+  #   replicaCount: 1
+  #   resources:
+  #     requests:
+  #       cpu: 250m
+  #       memory: 384Mi
+  #     limits:
+  #       cpu: "1"
+  #       memory: 768Mi
+  #   autoscaling:
+  #     enabled: false
+  #   pdb:
+  #     enabled: false
+
+  # worker:
+  #   enabled: true
+  #   replicaCount: 1
+  #   resources:
+  #     requests:
+  #       cpu: 100m
+  #       memory: 128Mi
+  #     limits:
+  #       cpu: 500m
+  #       memory: 384Mi
+  #   autoscaling:
+  #     enabled: false
+  #   pdb:
+  #     enabled: false
+
+  # ui:
+  #   enabled: true
+  #   replicaCount: 1
+  #   env:
+  #     TAMOSS_API_URL: /api
+  #   resources:
+  #     requests:
+  #       cpu: 25m
+  #       memory: 32Mi
+  #     limits:
+  #       cpu: 200m
+  #       memory: 128Mi
+  #   autoscaling:
+  #     enabled: false
+  #   pdb:
+  #     enabled: false
+
+  # console:
+  #   enabled: true
+  #   replicaCount: 1
+  #   resources:
+  #     requests:
+  #       cpu: 25m
+  #       memory: 32Mi
+  #     limits:
+  #       cpu: 200m
+  #       memory: 128Mi
+  #   autoscaling:
+  #     enabled: false
+  #   pdb:
+  #     enabled: false
+
+  # backends:
+  #   db:
+  #     providedBy: cnpg
+  #     applyFixtures: false
+  #     cnpg:
+  #       instances: 1
+  #       storage:
+  #         size: 50Gi
+  #       backup:
+  #         enabled: false
+  #       monitoring:
+  #         enablePodMonitor: false
+  #   s3:
+  #     providedBy: rustfs-operator
+  #     rustfsOperator:
+  #       pools:
+  #         - name: pool-0
+  #           servers: 1
+  #           volumesPerServer: 4
+  #           storage:
+  #             size: 100Gi
+  #       bucket:
+  #         name: tamoss
+  #         createIfMissing: true
+  #       # The single-server pool places four volumes on one disk.
+  #       env:
+  #         - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+  #           value: "true"
+
+  # auth:
+  #   providedBy: authentik-blueprints
+  #   required: true
+  #   trustForwardAuthHeaders: false
+
+  # ingest:
+  #   sourcePolicy:
+  #     mode: Disabled
+
+  # ingress:
+  #   enabled: true
+  #   className: traefik
+  # httpRoute:
+  #   enabled: false
+  # networkPolicy:
+  #   enabled: false
+  # service:
+  #   enabled: true
+  #   type: ClusterIP
+  # serviceAccount:
+  #   create: true
+  #   automount: false
+  # secrets:
+  #   apiToken:
+  #     generate: true

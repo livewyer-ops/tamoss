@@ -46,12 +46,6 @@ task_profile_kind_environment_dir() {
   task_profile_field "$profile" kindEnvironmentDir
 }
 
-task_profile_remote_enabled() {
-  local profile="$1"
-
-  [ "$(task_profile_query "$profile" ".remoteEnvironment")" = "true" ]
-}
-
 task_run_profile_e2e_sequence() {
   local project_name="$1"
   local kubeconfig="$2"

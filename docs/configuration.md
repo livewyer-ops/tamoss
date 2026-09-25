@@ -48,6 +48,13 @@ Replace `<release>` with a supported exact release. The operator calculates
 inherited settings without writing them into the resource. Kubernetes may still
 supply field defaults declared in the CRD.
 
+The [local-kind example](../deploy/environments/local-kind/tamoss-minimal.example.yaml)
+sets only its development release and profile. The
+[single-server example](../deploy/environments/single-server/tamoss-full.example.yaml)
+shows common defaults as commented settings. These files are examples; copy
+the settings you need into your instance overlay. They are not included in the
+environment Kustomizations.
+
 ## Installation defaults
 
 `task env:init` creates `operator/defaults.yaml` beside the operator Kustomization:
@@ -102,7 +109,8 @@ With the managed Authentik provider, the issuer URL is per application, not
 the Authentik root: `https://<auth-host>/application/o/<application-slug>/`.
 OpenID discovery lives beneath it at `.well-known/openid-configuration`. The
 client id and secret are held in the instance's generated OAuth Secret;
-`task env:summary` prints the resolved values.
+retrieve them with `task env:credentials INSTANCE=<name>` when needed. Remote
+`task env:summary` output omits secret values.
 
 ## Inspect Effective Configuration
 

@@ -2,16 +2,10 @@ package discovery
 
 import "k8s.io/apimachinery/pkg/runtime/schema"
 
-const PlatformPrerequisitesInstallCommand = "task env:platform:apply ENV=<environment> KUBECONFIG=<kubeconfig>"
-
-const CNPGInstallCommand = PlatformPrerequisitesInstallCommand
-
 const (
 	RustFSOperatorChartVersion = "0.1.0"
 	RustFSOperatorCommit       = "ff80d847806eb7cfc9c4a33769715a6b0f3145dd"
 )
-
-const RustFSOperatorInstallCommand = PlatformPrerequisitesInstallCommand
 
 var CNPGClustersGVR = schema.GroupVersionResource{
 	Group:    "postgresql.cnpg.io",
@@ -50,7 +44,6 @@ type RemediationHint struct {
 	ProvidedBy     string
 	GVR            schema.GroupVersionResource
 	DependencyName string
-	InstallCommand string
 }
 
 var remediationHints = map[string]RemediationHint{
@@ -58,13 +51,11 @@ var remediationHints = map[string]RemediationHint{
 		ProvidedBy:     "cnpg",
 		GVR:            CNPGClustersGVR,
 		DependencyName: "CloudNativePG",
-		InstallCommand: CNPGInstallCommand,
 	},
 	"rustfs-operator": {
 		ProvidedBy:     "rustfs-operator",
 		GVR:            RustFSTenantsGVR,
 		DependencyName: "RustFS Operator",
-		InstallCommand: RustFSOperatorInstallCommand,
 	},
 }
 

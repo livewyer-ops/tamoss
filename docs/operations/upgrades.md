@@ -5,11 +5,16 @@ Installing a newer operator leaves that selection unchanged. To upgrade an
 instance, change its version in its source-controlled manifest and apply it.
 Explicit component image overrides continue to take precedence.
 
-Read the target release's [changelog](../../CHANGELOG.md) entry for prerequisites.
-Its `compatibility.yaml` declares supported upgrade paths, `dependencies.yaml`
-records tested platform versions, and `catalogue.json` records the instance
-releases supported by that operator installation. `release.json` includes image
-references and artefact checksums.
+The TAMOSS source revision for a release contains the platform dependency pins
+and the matching operator install reference. Use that revision when applying a
+shared platform or operator update. Read the target release's
+[changelog](../../CHANGELOG.md) entry first: `compatibility.yaml` declares
+supported upgrade paths, `dependencies.yaml` records tested platform versions,
+`catalogue.json` records instance releases supported by the operator, and
+`release.json` includes image references and artefact checksums.
+The platform `helmfile apply` command requires the
+[Helm diff plugin](https://github.com/databus23/helm-diff). Install it with
+`helm plugin install https://github.com/databus23/helm-diff --verify=false` if it is absent.
 
 ## Prepare an existing instance
 
@@ -30,18 +35,18 @@ must contain the migration revision required by the selected release.
 
 1. Read the release prerequisites, verify restorable backups, and rehearse the
    supported upgrade with populated data in a separate environment.
-2. Review and apply any required shared platform changes. Authentik, Traefik,
-   cert-manager and provider operators remain separately managed. External
-   database and storage services remain their owners' responsibility.
-3. Update the published `install.yaml` URL in the environment's
-   `operator/kustomization.yaml` to the target release. Preserve
-   `operator/defaults.yaml`, apply the operator overlay and wait for its rollout.
-   Check that its catalogue supports every instance release still in use.
+2. Check out the source revision for the target release. Update the remote
+   resource in `operator/kustomization.yaml` to that release's published
+   `install.yaml`, then review the platform and operator changes.
+3. Apply the platform with Helmfile, then apply the operator Kustomization and
+   wait for its CRDs and Deployment. Confirm its catalogue supports every
+   instance release still in use. External database and storage services remain
+   their owners' responsibility.
 4. During the maintenance window, stop ingest and other writes as required by
    the release notes. Set the chosen instance's `spec.version` to the target
    release. If it is paused, clear `spec.paused` when ready to proceed.
-5. Apply the instance layer and wait for `status.currentVersion` to match the
-   requested release and for `Ready=True`.
+5. Review and apply only that instance's Kustomize directory, then confirm
+   `status.currentVersion` matches the requested release and `Ready=True`.
 6. Validate existing media, uploads, metadata, webhooks and queued work before
    resuming normal traffic.
 
@@ -59,23 +64,37 @@ for a single-instance database.
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 export TAMOSS_ENV=my-prod
+export INSTANCE=prod-a
 
-# Update the published installation URL, preserving the defaults configuration.
+# Run from the source revision for the target release. Update the operator
+# install URL in operator/kustomization.yaml before applying it.
 $EDITOR "deploy/environments/$TAMOSS_ENV/operator/kustomization.yaml"
-task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+(
+  cd deploy/platform
+  helmfile --kubeconfig "$KUBECONFIG" \
+    --file helmfile.yaml.gotmpl \
+    --state-values-file values/defaults.yaml \
+    --state-values-file "../environments/$TAMOSS_ENV/platform-values.yaml" \
+    apply \
+    --skip-diff-on-install \
+    --sync-args "--server-side=true" \
+    --wait \
+    --wait-for-jobs
+)
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k "deploy/environments/$TAMOSS_ENV/operator"
+kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
 kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
 
-# Edit spec.version in the chosen instance manifest.
-task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+# Edit spec.version in instances/$INSTANCE/tamoss.yaml.
+kubectl --kubeconfig "$KUBECONFIG" diff -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+task env:wait ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
+task env:status ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
 ```
 
-`kubectl diff` exits with code 1 when differences are found. Apply the same
-reviewed manifests with Kubernetes and Helm tooling if Task is unavailable.
-Do not replace the published catalogue with the source development catalogue.
+`task env:diff`, `task env:instance:apply`, `task env:wait` and `task env:status`
+remain optional convenience commands. `kubectl diff` exit code 1 means changes
+were found; values greater than 1 indicate an error.
 
 ## Installation defaults
 
@@ -102,10 +121,12 @@ existing configuration.
 ## Managed storage and identity
 
 Managed RustFS follows `spec.version` when its image override is absent.
-Preserve Tenant names, pools, PVCs and credentials. Follow release-specific
-backup and credential instructions, wait for the StatefulSet rollout, and test
-existing media and new writes. Recover by restoring a verified backup into a
-matching installation; do not downgrade an upgraded data volume.
+Preserve Tenant names, pools, PVCs and credentials. TAMOSS does not provide a
+default backup for managed RustFS data. Use a backup or replication method
+supported by the storage platform, and test restoring the complete Tenant
+before relying on it. Follow release-specific credential instructions, wait
+for the StatefulSet rollout, and test existing media and new writes. Do not
+downgrade an upgraded data volume.
 
 Authentik follows the shared platform release. Follow its supported upgrade
 sequence and preserve its database, secret key, users and provider identities.
@@ -147,11 +168,8 @@ Keep the requested release selected while an upgrade is in progress.
 Rehearse migrations with a restored database to estimate locking, disk-space
 requirements and downtime. The migration Job uses the selected API image and
 its catalogue Alembic revision. Schema changes and the revision update are
-transactional. Non-Kubernetes installations use the same application CLI:
-
-```bash
-tamoss-db migrate
-```
+transactional. The operator runs the migration and reports its progress in
+`Tamoss.status.schemaMigration`; inspect the Job logs if it fails.
 
 The operator does not automatically roll back images or schema. Product release
 downgrades are unsupported. Restore the PostgreSQL and storage backups into a
