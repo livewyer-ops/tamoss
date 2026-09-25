@@ -203,6 +203,134 @@ def test_profiles_enforce_video_frame_rate_conditionals(client: TestClient) -> N
     )
 
 
+def _codec_metadata(format_value: str, codec: str) -> dict[str, Any]:
+    metadata = _technical_metadata(format_value)
+    metadata["codec"] = codec
+    essence = metadata["essence_parameters"]
+    if codec in {"audio/x-raw-int", "audio/x-raw-float"}:
+        essence.update(
+            bit_depth=32 if codec == "audio/x-raw-float" else 16,
+            unc_parameters={"unc_type": "interleaved"},
+        )
+    elif codec == "video/raw":
+        essence.update(
+            bit_depth=8,
+            unc_parameters={"unc_type": "UYVY"},
+            horiz_chroma_subs=2,
+            vert_chroma_subs=1,
+        )
+    return metadata
+
+
+def _write_codec_metadata(
+    client: TestClient, operation: str, metadata: dict[str, Any]
+) -> tuple[Any, str]:
+    resource_id = str(uuid4())
+    if operation == "profile":
+        body = {"id": resource_id, "flow_metadata": metadata}
+        return client.post(f"/service/profiles/{resource_id}", json=body), resource_id
+    body = {"id": resource_id, "source_id": str(uuid4()), **metadata}
+    return client.put(f"/flows/{resource_id}", json=body), resource_id
+
+
+@pytest.mark.parametrize("operation", ["profile", "flow"])
+@pytest.mark.parametrize(
+    ("format_value", "codec", "missing_field"),
+    [
+        (AUDIO_FORMAT, "audio/x-raw-int", "bit_depth"),
+        (AUDIO_FORMAT, "audio/x-raw-int", "unc_parameters"),
+        (VIDEO_FORMAT, "video/raw", "bit_depth"),
+        (VIDEO_FORMAT, "video/raw", "unc_parameters"),
+        (VIDEO_FORMAT, "video/raw", "horiz_chroma_subs"),
+        (VIDEO_FORMAT, "video/raw", "vert_chroma_subs"),
+        (AUDIO_FORMAT, "audio/x-raw-float", "bit_depth"),
+    ],
+)
+def test_raw_codec_metadata_requires_conditional_fields(
+    client: TestClient,
+    operation: str,
+    format_value: str,
+    codec: str,
+    missing_field: str,
+) -> None:
+    metadata = _codec_metadata(format_value, codec)
+    metadata["essence_parameters"].pop(missing_field)
+
+    response, resource_id = _write_codec_metadata(client, operation, metadata)
+
+    assert response.status_code == 400
+    path = (
+        f"/service/profiles/{resource_id}"
+        if operation == "profile"
+        else f"/flows/{resource_id}"
+    )
+    assert client.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("operation", ["profile", "flow"])
+def test_raw_float_depth_must_be_32_or_64(
+    client: TestClient, operation: str
+) -> None:
+    metadata = _codec_metadata(AUDIO_FORMAT, "audio/x-raw-float")
+    metadata["essence_parameters"]["bit_depth"] = 16
+
+    response, _ = _write_codec_metadata(client, operation, metadata)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("operation", ["profile", "flow"])
+@pytest.mark.parametrize(
+    ("format_value", "codec", "depth", "unc_type"),
+    [
+        (AUDIO_FORMAT, "audio/x-raw-int", 16, "interleaved"),
+        (AUDIO_FORMAT, "audio/x-raw-float", 32, "interleaved"),
+        (AUDIO_FORMAT, "audio/x-raw-float", 64, "interleaved"),
+        (VIDEO_FORMAT, "video/raw", 8, "UYVY"),
+        (VIDEO_FORMAT, "video/raw", 8, "RGB"),
+        (AUDIO_FORMAT, "audio/aac", None, None),
+        (VIDEO_FORMAT, "video/h264", None, None),
+    ],
+)
+def test_codec_metadata_valid_controls(
+    client: TestClient,
+    operation: str,
+    format_value: str,
+    codec: str,
+    depth: int | None,
+    unc_type: str | None,
+) -> None:
+    metadata = _codec_metadata(format_value, codec)
+    essence = metadata["essence_parameters"]
+    if depth is not None:
+        essence["bit_depth"] = depth
+    if unc_type == "RGB":
+        essence["unc_parameters"]["unc_type"] = "RGB"
+        essence.pop("horiz_chroma_subs")
+        essence.pop("vert_chroma_subs")
+
+    response, resource_id = _write_codec_metadata(client, operation, metadata)
+
+    assert response.status_code == 201
+    path = (
+        f"/service/profiles/{resource_id}"
+        if operation == "profile"
+        else f"/flows/{resource_id}"
+    )
+    stored = client.get(path)
+    assert stored.status_code == 200
+    returned = stored.json()
+    returned_metadata = (
+        returned["flow_metadata"] if operation == "profile" else returned
+    )
+    assert returned_metadata["codec"] == codec
+    returned_essence = returned_metadata["essence_parameters"]
+    if depth is None:
+        assert "bit_depth" not in returned_essence
+    else:
+        assert returned_essence["bit_depth"] == depth
+
+
 @pytest.mark.parametrize(
     "field_name",
     ["label", "description", "created_by", "created", "tags"],

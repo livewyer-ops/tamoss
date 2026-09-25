@@ -95,6 +95,7 @@ _FLOW_TECHNICAL_MODELS: dict[str, type[BaseModel]] = {
     "urn:x-nmos:format:data": contract_models.FlowData,
     "urn:x-nmos:format:multi": contract_models.FlowMulti,
 }
+_PACKED_YUV_TYPES = ("YUYV", "UYVY", "AYUV", "v210", "v216")
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,35 @@ def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
             raise ValueError("frame_rate must not be set when vfr is true")
         if variable_frame_rate is not True and not has_frame_rate:
             raise ValueError("frame_rate is required when vfr is false or omitted")
+
+        unc_parameters = essence_parameters.get("unc_parameters")
+        unc_type = (
+            unc_parameters.get("unc_type")
+            if isinstance(unc_parameters, dict)
+            else None
+        )
+        if payload.get("codec") == "video/raw" and (
+            "bit_depth" not in essence_parameters or unc_type is None
+        ):
+            raise ValueError("raw video requires bit_depth and unc_type")
+        if unc_type in _PACKED_YUV_TYPES and (
+            "horiz_chroma_subs" not in essence_parameters
+            or "vert_chroma_subs" not in essence_parameters
+        ):
+            raise ValueError("packed YUV video requires chroma subsampling")
+
+    if format_value == "urn:x-nmos:format:audio" and payload.get("codec") in (
+        "audio/x-raw-int",
+        "audio/x-raw-float",
+    ):
+        bit_depth = essence_parameters.get("bit_depth")
+        if "bit_depth" not in essence_parameters or (
+            payload["codec"] == "audio/x-raw-float" and bit_depth not in (32, 64)
+        ):
+            raise ValueError("raw audio requires a valid bit_depth")
+        unc_parameters = essence_parameters.get("unc_parameters")
+        if not isinstance(unc_parameters, dict) or "unc_type" not in unc_parameters:
+            raise ValueError("raw audio requires unc_type")
 
 
 def ensure_flow_writable(flow: FlowRecord) -> None:
