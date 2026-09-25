@@ -268,9 +268,7 @@ def test_raw_codec_metadata_requires_conditional_fields(
 
 
 @pytest.mark.parametrize("operation", ["profile", "flow"])
-def test_raw_float_depth_must_be_32_or_64(
-    client: TestClient, operation: str
-) -> None:
+def test_raw_float_depth_must_be_32_or_64(client: TestClient, operation: str) -> None:
     metadata = _codec_metadata(AUDIO_FORMAT, "audio/x-raw-float")
     metadata["essence_parameters"]["bit_depth"] = 16
 

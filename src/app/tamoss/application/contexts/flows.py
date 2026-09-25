@@ -238,9 +238,7 @@ def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
 
         unc_parameters = essence_parameters.get("unc_parameters")
         unc_type = (
-            unc_parameters.get("unc_type")
-            if isinstance(unc_parameters, dict)
-            else None
+            unc_parameters.get("unc_type") if isinstance(unc_parameters, dict) else None
         )
         if payload.get("codec") == "video/raw" and (
             "bit_depth" not in essence_parameters or unc_type is None
