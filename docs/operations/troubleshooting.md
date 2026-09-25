@@ -122,26 +122,13 @@ Check registration time, active status and selectors before changing delivery
 configuration. An absent `flow_collected_by_ids` selects all collections;
 `[]` selects only top-level Flows. The same distinction applies to Sources.
 
-For retained delivery history, run the read-only diagnostic with the target's
-existing `POSTGRES_*` configuration:
-
-```bash
-umask 077
-uv run --project src python scripts/webhook_diagnostics.py \
-  --webhook-id 00000000-0000-4000-8000-000000000001 \
-  > webhook-diagnostics.json
-```
-
-Use a read-only database identity where available. The script enforces a
-read-only, repeatable-read transaction with a five-second statement timeout.
-It reports queue counts, expired claims, activity timestamps and at most 20
-recent deliveries without callback keys, full URLs, payloads or raw errors.
-Rows expire under `TAMOSS_WORKER_QUEUE_RETENTION_SECONDS` (seven days by
-default), so a missing success timestamp does not prove delivery never worked.
-`last_attempt_activity_at` is a state update, not an HTTP request start time.
+Use `task env:status` to inspect the instance, Pods and recent Kubernetes
+events. Check API and worker logs with `kubectl logs`, and compare delivery
+attempts with the receiver's logs. A missing receiver event does not by itself
+show whether TAMOSS queued or attempted delivery.
 
 - No queued event: inspect registration time, status and selectors.
-- Pending or expired claim: inspect worker readiness, queue age and leases.
+- Worker not progressing: inspect worker readiness, replica status and pod logs.
 - HTTP 401/403: compare callback authentication with the receiver's expected key.
 - Target blocked: inspect DNS and egress policy. Delivery pins the checked
   destination and ignores ambient proxies and netrc credentials. Do not enable
@@ -240,22 +227,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <pod-name> --prev
 
 Worker pods expose `/healthz` and `/readyz` on their metrics port. These
 constant-time probes report process progress and the result of the latest worker
-poll without opening new backend connections. For a deeper dependency check,
-run the diagnostic command in the container:
+poll without opening new backend connections. Use readiness, replica status,
+and pod logs to check the worker:
 
 ```bash
-WORKER_DEPLOYMENT="$(kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  get tamoss "$TAMOSS_NAME" -o jsonpath='{.status.resolved.resources.worker}')"
-kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  exec deploy/"$WORKER_DEPLOYMENT" -- /bin/uv run python -m tamoss.worker health
-
 kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get tamoss "$TAMOSS_NAME" \
   -o jsonpath='{.status.replicas.worker}'
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get pods
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <worker-pod> --tail=100
 ```
-
-The worker health command validates runtime configuration, PostgreSQL
-connectivity, and the mounted StorageBackend credentials file. It does not claim
-queue work, send webhooks, delete media, or register storage metadata.
 
 ## API or UI Fails
 
