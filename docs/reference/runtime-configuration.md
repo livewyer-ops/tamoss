@@ -265,3 +265,18 @@ allows private addresses generally, but metadata and Kubernetes service targets
 still require an explicit host allowlist. With the operator, set the same values
 under `.spec.api.env` and `.spec.worker.env` so registration and delivery use the
 same policy.
+
+### S3 web identity credentials
+
+API and worker runtimes can use AWS web identity credentials for the configured
+default S3 backend. Set `TAMOSS_S3_ENDPOINT` explicitly, omit both
+`TAMOSS_S3_ACCESS_KEY` and `TAMOSS_S3_SECRET_KEY`, and provide `AWS_ROLE_ARN` and
+`AWS_WEB_IDENTITY_TOKEN_FILE`. Complete static keys and runtime credential-file
+entries take precedence. Partial key pairs are rejected, and additional
+backends still require their own credentials.
+
+The AWS SDK handles role assumption and credential renewal through its normal
+credential chain. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` take precedence
+over web identity credentials in that chain. Configure the service account,
+projected token and IAM trust policy outside TAMOSS. This runtime option does
+not change the operator's S3 credential Secret requirements.
