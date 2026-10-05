@@ -21,7 +21,7 @@ from tamoss.domain.model import (
     utc_now,
 )
 from tamoss.errors import ConfigurationError
-from tamoss.settings import Settings
+from tamoss.settings import Settings, aws_web_identity_configured
 from tamoss.storage_credentials import StorageBackendCredentialFile
 
 
@@ -308,15 +308,27 @@ class ConfiguredObjectStorage:
         endpoint_url = (
             backend.public_endpoint_url if public else backend.endpoint_url
         ) or backend.endpoint_url
-        if not endpoint_url or not backend.access_key or not backend.secret_key:
+        configured = self._settings.storage_backend
+        use_web_identity = (
+            not backend.access_key
+            and not backend.secret_key
+            and configured is not None
+            and configured.id == backend.id
+            and not configured.access_key
+            and not configured.secret_key
+            and aws_web_identity_configured()
+        )
+        if not endpoint_url or (
+            not use_web_identity and (not backend.access_key or not backend.secret_key)
+        ):
             raise ConfigurationError(
                 f"Storage backend {backend.id} is missing S3 endpoint or credentials."
             )
         return boto3.client(
             "s3",
             endpoint_url=endpoint_url,
-            aws_access_key_id=backend.access_key,
-            aws_secret_access_key=backend.secret_key,
+            aws_access_key_id=backend.access_key or None,
+            aws_secret_access_key=backend.secret_key or None,
             region_name=backend.region or "us-east-1",
             config=Config(
                 signature_version="s3v4",
