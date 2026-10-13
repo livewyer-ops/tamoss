@@ -1,0 +1,35 @@
+{
+  "advisory": "GHSA-vfj7-8cjw-p6xm",
+  "chain": [
+    [
+      "@byomakase/omakase-player",
+      "1.1.1",
+      "1.1.1",
+      "sha512-Bc5Md7N3hpeSBeTJgjg1/qNeUmm2MNmSv2cgxmrOoTzXYjoySjczlfRZQG0Rwyz+qarYTcwMCqt9yvLOhGapHA=="
+    ],
+    [
+      "patch-package",
+      "8.0.1",
+      "^8.0.1",
+      "sha512-VsKRIA8f5uqHQ7NGhwIna6Bx6D9s/1iXlA1hthBVBEbkq+t4kXD0HHt+rJhf/Z+Ci0F/HCB2hvn0qLdLG+Qxlw=="
+    ],
+    [
+      "find-yarn-workspace-root",
+      "2.0.0",
+      "^2.0.0",
+      "sha512-1IMnbjt4KzsQfnhnzNd8wUEgXZ44IzZaZmnLYx7D5FZlaHt2gW20Cri8Q+E/t5tIj4+epTBub+2Zxu/vNILzqQ=="
+    ],
+    [
+      "micromatch",
+      "4.0.8",
+      "^4.0.2",
+      "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA=="
+    ],
+    [
+      "braces",
+      "3.0.3",
+      "^3.0.3",
+      "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="
+    ]
+  ]
+}
