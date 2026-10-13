@@ -4762,6 +4762,13 @@ spec:
                             default: tamoss
                             minLength: 1
                             type: string
+                          credentialSource:
+                            description: CredentialSource selects static Secret credentials
+                              or the workload's web identity.
+                            enum:
+                            - secret
+                            - web-identity
+                            type: string
                           endpoint:
                             properties:
                               default:
@@ -4781,6 +4788,11 @@ spec:
                             default: us-east-1
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: web-identity must not reference a credentials Secret
+                          rule: '!has(self.credentialSource) || self.credentialSource
+                            != ''web-identity'' || !has(self.auth) || !has(self.auth.existingSecret)
+                            || self.auth.existingSecret.size() == 0'
                       providedBy:
                         enum:
                         - external

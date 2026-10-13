@@ -27,12 +27,25 @@ func (r *StorageBackendReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&tamossv1alpha1.StorageBackend{}, builder.WithPredicates(storageBackendPrimaryPredicate())).
 		Owns(&batchv1.Job{}).
 		Owns(&corev1.ConfigMap{}).
+		Watches(&tamossv1alpha1.Tamoss{}, handler.EnqueueRequestsFromMapFunc(r.storageBackendTamossRequests), builder.WithPredicates(tamossPrimaryPredicate())).
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.storageBackendCredentialSecretRequests),
 			builder.WithPredicates(credentialSecretPredicate()),
 		).
 		Complete(r)
+}
+
+func (r *StorageBackendReconciler) storageBackendTamossRequests(ctx context.Context, obj client.Object) []reconcile.Request {
+	list := &tamossv1alpha1.StorageBackendList{}
+	if err := listStorageBackendsForTamoss(ctx, r.Client, obj.GetNamespace(), obj.GetName(), list); err != nil {
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for _, backend := range list.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: storageBackendRequest(backend)})
+	}
+	return requests
 }
 
 func (r *StorageBackendReconciler) storageBackendCredentialSecretRequests(ctx context.Context, obj client.Object) []reconcile.Request {

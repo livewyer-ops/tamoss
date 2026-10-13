@@ -278,5 +278,6 @@ backends still require their own credentials.
 The AWS SDK handles role assumption and credential renewal through its normal
 credential chain. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` take precedence
 over web identity credentials in that chain. Configure the service account,
-projected token and IAM trust policy outside TAMOSS. This runtime option does
-not change the operator's S3 credential Secret requirements.
+projected token and IAM trust policy outside TAMOSS. Operator-managed workloads
+select this mode explicitly through `credentialSource: web-identity`; see
+[Configure S3 web identity](../operations/s3-web-identity.md).

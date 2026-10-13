@@ -80,100 +80,67 @@ def test_s3_clients_are_reused_and_configured_with_connection_pool(
 
 @pytest.mark.parametrize("empty_key", [None, ""])
 def test_keyless_default_backend_presigns_with_native_web_identity_credentials(
-    monkeypatch, tmp_path, empty_key
+    native_web_identity, empty_key
 ) -> None:
-    token_file = tmp_path / "web-identity-token"
-    token_file.write_text("test-web-identity-token")
-    role_arn = "arn:aws:iam::123456789012:role/tamoss"
-    monkeypatch.setenv("AWS_ROLE_ARN", role_arn)
-    monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", str(token_file))
-    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
-    monkeypatch.setenv("AWS_CONFIG_FILE", "/dev/null")
-    for name in (
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-        "AWS_PROFILE",
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    sdk_session = botocore.session.Session()
-    sts = sdk_session.create_client(
-        "sts",
-        region_name="us-east-1",
-        aws_access_key_id="test",
-        aws_secret_access_key="test",
-    )
-    create_client = sdk_session.create_client
-    monkeypatch.setattr(
-        sdk_session,
-        "create_client",
-        lambda service_name, **kwargs: (
-            sts if service_name == "sts" else create_client(service_name, **kwargs)
-        ),
-    )
-    session = boto3.Session(botocore_session=sdk_session)
-    monkeypatch.setattr("tamoss.adapters.object_storage.boto3.client", session.client)
-    backend = replace(_s3_backend(), access_key=empty_key, secret_key=empty_key)
+    _, original, stubber, _, _, role_arn = native_web_identity
+    backend = replace(original, access_key=empty_key, secret_key=empty_key)
     storage = ConfiguredObjectStorage(
         Settings(storage_backend=_settings_backend(backend))
     )
-
-    with Stubber(sts) as stubber:
-        stubber.add_response(
-            "assume_role_with_web_identity",
-            {
-                "Credentials": {
-                    "AccessKeyId": "ASIAXXXXXXXXXXXXXXXX",
-                    "SecretAccessKey": "s" * 40,
-                    "SessionToken": "test-role-session-token",
-                    "Expiration": datetime.now(UTC) + timedelta(hours=1),
-                }
-            },
-            {
-                "RoleArn": role_arn,
-                "RoleSessionName": ANY,
-                "WebIdentityToken": "test-web-identity-token",
-            },
-        )
-        put = storage.build_put_request(
-            object_id="media/object.ts",
-            content_type="video/mp2t",
-            backend=backend,
-            presigned=True,
-        )
-        get = storage.build_get_urls_batch(
-            [
-                ObjectGetUrlRequest(
-                    object_id="media/object.ts", backend=backend, include_direct=False
-                )
-            ]
-        )[(backend.id, "media/object.ts")][0]
-        for request in (put, get):
-            query = parse_qs(urlparse(request["url"]).query)
-            assert query["X-Amz-Credential"][0].startswith("ASIAXXXXXXXXXXXXXXXX/")
-            assert query["X-Amz-Security-Token"] == ["test-role-session-token"]
-            assert urlparse(request["url"]).netloc == "storage.public.example.test"
-        internal = storage._s3_client(backend)
-        assert internal is storage._s3_client(backend)
-        assert internal.meta.endpoint_url == backend.endpoint_url
-        secondary = replace(
-            _external_backend(),
-            access_key="secondary-access",
-            secret_key="secondary-secret",
-        )
-        secondary_url = storage.build_get_urls_batch(
-            [
-                ObjectGetUrlRequest(
-                    object_id="media/object.ts", backend=secondary, include_direct=False
-                )
-            ]
-        )[(secondary.id, "media/object.ts")][0]["url"]
-        query = parse_qs(urlparse(secondary_url).query)
-        assert query["X-Amz-Credential"][0].startswith("secondary-access/")
-        assert "X-Amz-Security-Token" not in query
-        assert urlparse(secondary_url).netloc == "s3.eu-central-003.backblazeb2.com"
-        stubber.assert_no_pending_responses()
+    stubber.add_response(
+        "assume_role_with_web_identity",
+        {
+            "Credentials": {
+                "AccessKeyId": "ASIAXXXXXXXXXXXXXXXX",
+                "SecretAccessKey": "s" * 40,
+                "SessionToken": "test-role-session-token",
+                "Expiration": datetime.now(UTC) + timedelta(hours=1),
+            }
+        },
+        {
+            "RoleArn": role_arn,
+            "RoleSessionName": ANY,
+            "WebIdentityToken": "original-token",
+        },
+    )
+    put = storage.build_put_request(
+        object_id="media/object.ts",
+        content_type="video/mp2t",
+        backend=backend,
+        presigned=True,
+    )
+    get = storage.build_get_urls_batch(
+        [
+            ObjectGetUrlRequest(
+                object_id="media/object.ts", backend=backend, include_direct=False
+            )
+        ]
+    )[(backend.id, "media/object.ts")][0]
+    for request in (put, get):
+        query = parse_qs(urlparse(request["url"]).query)
+        assert query["X-Amz-Credential"][0].startswith("ASIAXXXXXXXXXXXXXXXX/")
+        assert query["X-Amz-Security-Token"] == ["test-role-session-token"]
+        assert urlparse(request["url"]).netloc == "storage.public.example.test"
+    internal = storage._s3_client(backend)
+    assert internal is storage._s3_client(backend)
+    assert internal.meta.endpoint_url == backend.endpoint_url
+    secondary = replace(
+        _external_backend(),
+        access_key="secondary-access",
+        secret_key="secondary-secret",
+    )
+    secondary_url = storage.build_get_urls_batch(
+        [
+            ObjectGetUrlRequest(
+                object_id="media/object.ts", backend=secondary, include_direct=False
+            )
+        ]
+    )[(secondary.id, "media/object.ts")][0]["url"]
+    query = parse_qs(urlparse(secondary_url).query)
+    assert query["X-Amz-Credential"][0].startswith("secondary-access/")
+    assert "X-Amz-Security-Token" not in query
+    assert urlparse(secondary_url).netloc == "s3.eu-central-003.backblazeb2.com"
+    stubber.assert_no_pending_responses()
 
 
 @pytest.mark.parametrize(
@@ -976,3 +943,113 @@ def test_presigned_get_urls_increment_media_metric(monkeypatch) -> None:
 
     after = REGISTRY.get_sample_value(metric, {"operation": "get"}) or 0.0
     assert after - before == 2
+
+
+@pytest.fixture
+def native_web_identity(monkeypatch, tmp_path):
+    token_file = tmp_path / "identity-token"
+    token_file.write_text("original-token")
+    role = "arn:aws:iam::123456789012:role/tamoss"
+    for name in (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in {
+        "AWS_ROLE_ARN": role,
+        "AWS_WEB_IDENTITY_TOKEN_FILE": str(token_file),
+        "AWS_CONFIG_FILE": "/dev/null",
+        "AWS_SHARED_CREDENTIALS_FILE": "/dev/null",
+    }.items():
+        monkeypatch.setenv(name, value)
+    sdk = botocore.session.Session()
+    sts = sdk.create_client(
+        "sts",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    create_client = sdk.create_client
+    monkeypatch.setattr(
+        sdk,
+        "create_client",
+        lambda service_name, **kwargs: (
+            sts if service_name == "sts" else create_client(service_name, **kwargs)
+        ),
+    )
+    session = boto3.Session(botocore_session=sdk)
+    monkeypatch.setattr("tamoss.adapters.object_storage.boto3.client", session.client)
+    backend = replace(_s3_backend(), access_key=None, secret_key=None)
+    storage = ConfiguredObjectStorage(
+        Settings(storage_backend=_settings_backend(backend))
+    )
+    with Stubber(sts) as stubber:
+        yield storage, backend, stubber, token_file, sdk, role
+        stubber.assert_no_pending_responses()
+
+
+@pytest.mark.parametrize(
+    "error_code", ["InvalidIdentityToken", "AccessDenied", "ExpiredToken"]
+)
+def test_native_web_identity_errors_do_not_fall_back_to_static_credentials(
+    native_web_identity, error_code
+):
+    storage, backend, stubber, _, _, role = native_web_identity
+    stubber.add_client_error(
+        "assume_role_with_web_identity",
+        service_error_code=error_code,
+        http_status_code=403,
+        expected_params={
+            "RoleArn": role,
+            "RoleSessionName": ANY,
+            "WebIdentityToken": "original-token",
+        },
+    )
+    with pytest.raises(ClientError) as error:
+        storage.build_put_request(
+            object_id="object",
+            content_type="video/mp2t",
+            backend=backend,
+            presigned=True,
+        )
+    assert error.value.response["Error"]["Code"] == error_code
+
+
+def test_native_web_identity_refresh_reads_rotated_token(
+    native_web_identity, monkeypatch
+):
+    storage, backend, stubber, token_file, sdk, role = native_web_identity
+    initial = datetime.now(UTC)
+    for index, token in enumerate(("original-token", "rotated-token")):
+        stubber.add_response(
+            "assume_role_with_web_identity",
+            {
+                "Credentials": {
+                    "AccessKeyId": f"ASIAXXXXXXXXXXXXXXX{index}",
+                    "SecretAccessKey": "s" * 40,
+                    "SessionToken": f"session-{index}",
+                    "Expiration": initial + timedelta(hours=index + 1),
+                }
+            },
+            {"RoleArn": role, "RoleSessionName": ANY, "WebIdentityToken": token},
+        )
+    first = storage.build_put_request(
+        object_id="object", content_type="video/mp2t", backend=backend, presigned=True
+    )
+    assert parse_qs(urlparse(first["url"]).query)["X-Amz-Security-Token"] == [
+        "session-0"
+    ]
+    client = storage._s3_presign_client(backend)
+    token_file.write_text("rotated-token")
+    later = initial + timedelta(hours=1, seconds=1)
+    monkeypatch.setattr(sdk.get_credentials(), "_time_fetcher", lambda: later)
+    monkeypatch.setattr("botocore.credentials._local_now", lambda: later)
+    second = storage.build_put_request(
+        object_id="object", content_type="video/mp2t", backend=backend, presigned=True
+    )
+    assert parse_qs(urlparse(second["url"]).query)["X-Amz-Security-Token"] == [
+        "session-1"
+    ]
+    assert storage._s3_presign_client(backend) is client
