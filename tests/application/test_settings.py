@@ -137,6 +137,46 @@ def test_local_kind_runtime_env_values_parse(
     }
 
 
+@pytest.mark.parametrize(
+    ("access_key", "secret_key", "role", "token_file", "endpoint", "configured"),
+    [
+        (None, None, "role", "token", "https://s3.example.test", True),
+        ("", "", "role", "token", "https://s3.example.test", True),
+        ("access", "secret", "role", "token", "https://s3.example.test", True),
+        ("access", None, "role", "token", "https://s3.example.test", False),
+        (None, "secret", "role", "token", "https://s3.example.test", False),
+        (None, None, None, "token", "https://s3.example.test", False),
+        (None, None, "role", None, "https://s3.example.test", False),
+        (None, None, " ", "token", "https://s3.example.test", False),
+        (None, None, "role", " ", "https://s3.example.test", False),
+        (None, None, "role", "token", None, False),
+        (None, None, "role", "token", " ", False),
+        ("access", "secret", "role", "token", None, True),
+    ],
+)
+def test_s3_web_identity_settings_preserve_explicit_credentials(
+    monkeypatch, access_key, secret_key, role, token_file, endpoint, configured
+) -> None:
+    for name, value in {
+        "TAMOSS_S3_ACCESS_KEY": access_key,
+        "TAMOSS_S3_SECRET_KEY": secret_key,
+        "AWS_ROLE_ARN": role,
+        "AWS_WEB_IDENTITY_TOKEN_FILE": token_file,
+        "TAMOSS_S3_ENDPOINT": endpoint,
+    }.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+    backend = Settings().storage_backend_record()
+
+    assert (backend is not None) is configured
+    if backend is not None:
+        assert backend.access_key == access_key
+        assert backend.secret_key == secret_key
+
+
 @pytest.mark.parametrize("raw_tags", ["not-json", "[]", '{"bad": 1}'])
 def test_storage_backend_tags_reject_invalid_env(
     monkeypatch: pytest.MonkeyPatch, raw_tags: str
