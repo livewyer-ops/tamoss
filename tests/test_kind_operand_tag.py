@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -310,8 +311,6 @@ def test_kind_down_preserves_local_files_and_reports_delete_failure(
 
     kubeconfig = tmp_path / "shared.kubeconfig"
     kubeconfig.write_text("unrelated context\n", encoding="utf-8")
-    local_instructions = ROOT / ".local/AGENTS.md"
-    assert local_instructions.is_file()
     kind = tmp_path / "kind"
     kind.write_text(
         '#!/bin/sh\nprintf "%s\\n" "$*" > "$KIND_CALL_LOG"\n'
@@ -327,27 +326,34 @@ def test_kind_down_preserves_local_files_and_reports_delete_failure(
         KIND_DELETE_STATUS=str(delete_status),
         TASK_LOG_DIR=str(tmp_path / "logs"),
     )
-    result = subprocess.run(
-        [
-            "task",
-            "--yes",
-            "kind:down",
-            "PROJECT_NAME=disposable",
-            f"KUBECONFIG={kubeconfig}",
-        ],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    local_dir = ROOT / ".local"
+    local_dir.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="kind-cleanup-", dir=local_dir
+    ) as directory:
+        local_file = Path(directory) / "keep.txt"
+        local_file.write_text("preserve this file\n", encoding="utf-8")
+        result = subprocess.run(
+            [
+                "task",
+                "--yes",
+                "kind:down",
+                "PROJECT_NAME=disposable",
+                f"KUBECONFIG={kubeconfig}",
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-    assert (result.returncode == 0) == (delete_status == 0), result.stderr
-    assert call_log.read_text(encoding="utf-8").strip() == (
-        f"delete cluster --name disposable --kubeconfig {kubeconfig}"
-    )
-    assert kubeconfig.read_text(encoding="utf-8") == "unrelated context\n"
-    assert local_instructions.is_file()
+        assert (result.returncode == 0) == (delete_status == 0), result.stderr
+        assert call_log.read_text(encoding="utf-8").strip() == (
+            f"delete cluster --name disposable --kubeconfig {kubeconfig}"
+        )
+        assert kubeconfig.read_text(encoding="utf-8") == "unrelated context\n"
+        assert local_file.read_text(encoding="utf-8") == "preserve this file\n"
 
 
 def test_kind_e2e_deletes_only_its_cluster_context(tmp_path: Path) -> None:
