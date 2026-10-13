@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rustfs-extra-env
+data:
+  RUSTFS_IDENTITY_OPENID_ENABLE: 'on'
+  RUSTFS_IDENTITY_OPENID_CONFIG_URL: http://oidc:8080/.well-known/openid-configuration
+  RUSTFS_IDENTITY_OPENID_CLIENT_ID: tamoss
+  RUSTFS_OUTBOUND_ALLOW_ORIGINS: http://oidc:8080

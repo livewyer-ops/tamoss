@@ -55,6 +55,14 @@ Fixture containers follow the same rule: invoke `pg_isready`, `aws`, or the
 fixture programme directly and use Kubernetes Job retries or probes for
 convergence.
 
+Keep fixture programmes in Python files alongside their scenario or shared
+fixture. The test-only `livewyer/tamoss-chainsaw:dev` image includes those files
+and the locked pytest dependency; the setup task builds and loads it into Kind.
+Resource manifests invoke the files directly. Python checks run with plain
+assertions and short tracebacks to keep credentials and signed URLs out of
+pytest diagnostics. Chainsaw records Job completion in its JUnit report and
+collects failed Job output before cleanup.
+
 Run against the current Kubernetes context:
 
 ```bash
@@ -159,7 +167,9 @@ Shared fixtures currently include:
 - `postgres.yaml` starts a single-pod PostgreSQL instance with ephemeral
   storage.
 - `rustfs.yaml` starts a single-pod RustFS S3-compatible backend and creates the
-  `tamoss` bucket using `amazon/aws-cli`.
+  `tamoss` bucket using `amazon/aws-cli`. Create the optional `rustfs-extra-env`
+  ConfigMap before applying this fixture to supply scenario-specific environment
+  variables.
 - `rustfs-crd.yaml` installs a minimal RustFS Operator `Tenant` CRD for tests
   that assert TAMOSS emits RustFS Operator resources without running the RustFS
   controller.

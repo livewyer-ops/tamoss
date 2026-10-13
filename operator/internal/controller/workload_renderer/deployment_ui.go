@@ -2,6 +2,7 @@ package workload_renderer
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -66,19 +67,27 @@ func renderUIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 		proofKeys = append(proofKeys, ForwardAuthConsoleProofSecretKey)
 	}
 	spec := withForwardAuthProofVolume(tamoss.Spec.UI.WorkloadCommonSpec, tamoss, proofKeys...)
-	return []client.Object{
-		deploymentFor(
-			tamoss,
-			"ui",
-			spec,
-			uiImage(tamoss.Spec.UI.Image.Repository, tamoss.Spec.UI.Image.Tag),
-			tamoss.Spec.UI.Image.PullPolicy,
-			nil,
-			env,
-			tamoss.Spec.UI.EnvFrom,
-			ports,
-		),
+	// The account can retain its IAM role when storage returns to Secret mode.
+	skip := spec.PodAnnotations["eks.amazonaws.com/skip-containers"]
+	spec.PodAnnotations = mergeStringMaps(spec.PodAnnotations, map[string]string{
+		"eks.amazonaws.com/skip-containers": strings.Trim(skip+",ui", ","),
+	})
+	deployment := deploymentFor(
+		tamoss,
+		"ui",
+		spec,
+		uiImage(tamoss.Spec.UI.Image.Repository, tamoss.Spec.UI.Image.Tag),
+		tamoss.Spec.UI.Image.PullPolicy,
+		nil,
+		env,
+		tamoss.Spec.UI.EnvFrom,
+		ports,
+	)
+	if tamoss.UsesS3WebIdentity() {
+		automount := false
+		deployment.Spec.Template.Spec.AutomountServiceAccountToken = &automount
 	}
+	return []client.Object{deployment}
 }
 
 func firstServicePort(ports []corev1.ServicePort, fallback int32) int32 {

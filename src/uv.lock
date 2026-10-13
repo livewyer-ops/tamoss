@@ -1468,6 +1468,9 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
+test = [
+    { name = "pytest" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1504,6 +1507,7 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
+test = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "truststore"
