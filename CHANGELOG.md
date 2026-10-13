@@ -16,7 +16,8 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 - Update PyJWT to 2.15.1, Mako to 1.4.2, virtualenv to 21.7.13,
   brace-expansion to 2.1.7 and source-map-js to 1.2.2. Build the operator and
-  Console API with Go 1.27.2 and golang.org/x/net 0.60.0.
+  Console API with Go 1.27.2 and golang.org/x/net 0.60.0; use golangci-lint
+  2.14.0 to support the updated compiler.
   Guard the braces advisory exception against changes to its unused dependency
   chain, installation policy and production build. These changes add no schema
   migration.
