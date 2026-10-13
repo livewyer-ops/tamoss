@@ -27,8 +27,21 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   precision and boundary inclusivity.
 - Validate Flow replacements before applying Profile metadata. Reject incomplete
   updates while retaining explicit Profile unlinking with a complete definition.
+- Support AWS web identity credentials for a configured keyless default S3
+  backend, preserving explicit keys and additional backend credential checks.
+- Add explicit web identity configuration for the operator-managed API and
+  worker's default external S3 media backend. Preserve Secret credentials for
+  other stores and prevent S3 identity-token injection into the UI.
 
 ### Upgrade notes
+
+Web identity adds optional `credentialSource` fields to the Tamoss and
+StorageBackend CRDs, with no database migration. Apply the updated CRDs and
+operator, then select a runtime containing web identity support before enabling
+the option. Existing static-key installations retain their behaviour without
+manifest changes. Switching credentials preserves backend IDs and media; restore
+Secret mode before downgrading to a release without this option. See
+[Configure S3 web identity](docs/operations/s3-web-identity.md).
 
 The pending `8.2.0-oss2` release advances the schema from `8.2.0-oss1` to
 `8.2.0-oss2`. Published `8.2.0-oss2-rc2` uses the preceding schema and follows

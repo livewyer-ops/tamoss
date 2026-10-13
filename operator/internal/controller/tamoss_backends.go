@@ -419,6 +419,15 @@ func (r *TamossReconciler) checkBackendReferences(ctx context.Context, tamoss *t
 		Reason:  operatorstatus.ReasonBackendReferencesConfigured,
 		Message: "Backend secret references are configured",
 	}
+	if tamoss.UsesS3WebIdentity() {
+		backends := &tamossv1alpha1.StorageBackendList{}
+		if err := listStorageBackendsForTamoss(ctx, r.Client, tamoss.Namespace, tamoss.Name, backends); err != nil {
+			return backendReferenceResult{}, err
+		}
+		if err := validateStorageWebIdentitySelection(tamoss, backends.Items); err != nil {
+			return backendReferenceResult{Reason: operatorstatus.ReasonMissingProviderConfiguration, Message: err.Error()}, nil
+		}
+	}
 	for _, requirement := range backendConfigRequirements(tamoss) {
 		if strings.TrimSpace(requirement.value) != "" {
 			continue
@@ -502,10 +511,14 @@ func backendConfigRequirements(tamoss *tamossv1alpha1.Tamoss) []backendConfigReq
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.endpoint.default.url", value: s3.Endpoint.Default.URL},
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.region", value: s3.Region},
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.bucket", value: s3.Bucket},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.existingSecret", value: s3.Auth.ExistingSecret},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.accessKey", value: s3.Auth.SecretKeys.AccessKey},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.secretKey", value: s3.Auth.SecretKeys.SecretKey},
 		)
+		if !tamoss.UsesS3WebIdentity() {
+			requirements = append(requirements,
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.existingSecret", value: s3.Auth.ExistingSecret},
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.accessKey", value: s3.Auth.SecretKeys.AccessKey},
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.secretKey", value: s3.Auth.SecretKeys.SecretKey},
+			)
+		}
 	}
 	return requirements
 }
@@ -524,15 +537,17 @@ func backendSecretRequirements(tamoss *tamossv1alpha1.Tamoss) []backendSecretReq
 			},
 		})
 	}
-	requirements = append(requirements,
-		backendSecretRequirement{
-			purpose: "s3",
-			name:    s3.Auth.ExistingSecret,
-			keys: []string{
-				s3.Auth.SecretKeys.AccessKey,
-				s3.Auth.SecretKeys.SecretKey,
+	if !tamoss.UsesS3WebIdentity() {
+		requirements = append(requirements,
+			backendSecretRequirement{
+				purpose: "s3",
+				name:    s3.Auth.ExistingSecret,
+				keys: []string{
+					s3.Auth.SecretKeys.AccessKey,
+					s3.Auth.SecretKeys.SecretKey,
+				},
 			},
-		},
-	)
+		)
+	}
 	return requirements
 }

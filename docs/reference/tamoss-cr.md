@@ -61,6 +61,7 @@ spec:
 | `.spec.publicEndpoint` | Overrides instance API, UI and S3 endpoints. Managed Authentik uses the shared installation URL when configured. |
 | `.spec.backends.db` | Selects managed [CNPG](https://cloudnative-pg.io/) or external PostgreSQL and configures database backup/restore when CNPG is used. |
 | `.spec.backends.s3` | Selects managed [RustFS](https://github.com/rustfs/rustfs) Operator or external S3-compatible storage for the default backend. |
+| `.spec.backends.s3.external.credentialSource` | `secret` when omitted, or `web-identity` for the default external media backend. Web identity requires a matching StorageBackend and excludes an S3 credential Secret reference. See [Configure S3 web identity](../operations/s3-web-identity.md). |
 | `.spec.backends.s3.tags` | Freeform metadata with string or string-array values, advertised on the operator-managed default TAMS storage backend. |
 | `.spec.auth` | Selects Authentik Blueprints, external OAuth/OIDC, or no authentication. |
 | `.spec.api`, `.spec.ui`, `.spec.worker`, `.spec.console` | Component enablement, replicas, images, resources, scheduling, probes, env, volumes, and security context. |

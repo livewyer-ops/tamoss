@@ -33,6 +33,10 @@ spec:
               containerPort: 9000
             - name: console
               containerPort: 9001
+          envFrom:
+            - configMapRef:
+                name: rustfs-extra-env
+                optional: true
           env:
             - name: RUSTFS_ACCESS_KEY
               valueFrom:

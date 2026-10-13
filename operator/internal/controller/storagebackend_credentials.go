@@ -72,7 +72,7 @@ func storageBackendRuntimeCredentials(ctx context.Context, c client.Client, tamo
 		}
 		spec := storageBackend.Spec
 		spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
-		if spec.IsHibernateDestination() {
+		if spec.IsHibernateDestination() || spec.CredentialSource == tamossv1alpha1.S3CredentialSourceWebIdentity {
 			continue
 		}
 		if spec.TamossRef.Name != tamoss.Name || spec.Credentials.ExistingSecret == "" {
@@ -167,12 +167,14 @@ func (r *StorageBackendReconciler) bucketClient() rustfs.BucketClient {
 func missingStorageBackendFields(spec tamossv1alpha1.StorageBackendSpec) []string {
 	missing := []string{}
 	checks := map[string]string{
-		".spec.tamossRef.name":                   spec.TamossRef.Name,
-		".spec.bucketName":                       spec.BucketName,
-		".spec.endpoint.default.url":             spec.Endpoint.Default.URL,
-		".spec.credentials.existingSecret":       spec.Credentials.ExistingSecret,
-		".spec.credentials.secretKeys.accessKey": storageBackendAccessKey(spec),
-		".spec.credentials.secretKeys.secretKey": storageBackendSecretKey(spec),
+		".spec.tamossRef.name":       spec.TamossRef.Name,
+		".spec.bucketName":           spec.BucketName,
+		".spec.endpoint.default.url": spec.Endpoint.Default.URL,
+	}
+	if spec.CredentialSource != tamossv1alpha1.S3CredentialSourceWebIdentity {
+		checks[".spec.credentials.existingSecret"] = spec.Credentials.ExistingSecret
+		checks[".spec.credentials.secretKeys.accessKey"] = storageBackendAccessKey(spec)
+		checks[".spec.credentials.secretKeys.secretKey"] = storageBackendSecretKey(spec)
 	}
 	for field, value := range checks {
 		if strings.TrimSpace(value) == "" {

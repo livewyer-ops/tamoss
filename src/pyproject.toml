@@ -37,9 +37,10 @@ tamoss-db = "tamoss.db.cli:main"
 tamoss-profile = "tamoss.profile_cli:main"
 
 [dependency-groups]
+test = ["pytest>=9.1.1"]
 dev = [
+    {include-group = "test"},
     "pre-commit>=4.6.2",
-    "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "httpx>=0.24.0",
     "ruff==0.16.7",

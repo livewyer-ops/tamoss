@@ -57,7 +57,8 @@ spec:
 | `.spec.bucketName` | Bucket name. |
 | `.spec.endpoint.default.url` | Internal endpoint used by API and worker. |
 | `.spec.endpoint.public.url` | Browser-facing endpoint used in object and presigned URLs. Defaults to the default endpoint. |
-| `.spec.credentials.existingSecret` | Secret containing access and secret keys. |
+| `.spec.credentialSource` | `secret` (also used when omitted) or `web-identity`. Web identity is restricted to the default external media backend. |
+| `.spec.credentials.existingSecret` | Secret containing access and secret keys; must be absent for web identity. |
 | `.spec.credentials.secretKeys.accessKey` | Secret key name for the access key. |
 | `.spec.credentials.secretKeys.secretKey` | Secret key name for the secret key. |
 | `.spec.hibernate.retention.mode` | Hibernate artefact retention mode: `Retain`, `DeleteAfterResume`, or `TTL`. Defaults to `Retain`. |
@@ -127,6 +128,13 @@ managed RustFS providers. With `spec.backends.s3.providedBy: external`, create
 a `StorageBackend` with `defaultStorage: true` alongside the instance; until
 one exists the API cannot allocate storage and returns
 `StorageBackendMetadataMissing`.
+
+For web identity, both the instance's external S3 configuration and this
+resource must select `credentialSource: web-identity`. Set the backend ID to
+`f1ab5b54-9703-42ed-b181-11ba1c794a7f`, and match the instance's bucket, region
+and endpoints. The operator checks configuration and database registration;
+`Ready=True` does not verify STS trust or S3 permissions. See
+[Configure S3 web identity](../operations/s3-web-identity.md).
 
 See [Storage Backends](../concepts/storage-backends.md).
 See [Hibernate and Resume](../operations/hibernate-resume.md) for hibernation
