@@ -43,7 +43,13 @@ tasks:
     # The full audit already scans this lockfile through audit:osv. Keep this
     # focused entry point on the same advisory policy, including dev packages.
     cmds:
-      - osv-scanner --lockfile=package-lock.json
+      - |
+        guard_status=0
+        node scripts/check-braces-mitigation.mjs || guard_status=1
+        status=0
+        osv-scanner --lockfile=package-lock.json || status=$?
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
+        exit "$guard_status"
 
   audit:frontend:signatures:
     desc: Verify frontend packages against registry signatures and provenance
@@ -70,12 +76,13 @@ tasks:
       - sh: command -v osv-scanner
         msg: "osv-scanner is required; run aqua install"
     # Covers Go and all npm dependencies, including build tools. Broad Go call
-    # analysis stays disabled; only the approved OpenPGP exclusion has an
-    # import guard, matching the Linux container build architectures.
+    # analysis stays disabled. The OpenPGP and braces exclusions have separate
+    # checks for their reviewed import and execution boundaries.
     cmds:
       - mkdir -p reports
       - |
         guard_status=0
+        node src/app/frontend/scripts/check-braces-mitigation.mjs || guard_status=1
         for arch in amd64 arm64; do
           if ! packages="$(cd operator && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go list -mod=readonly -deps -test ./...)" || [ -z "$packages" ]; then
             printf 'OpenPGP exclusion check failed for linux/%s.\n' "$arch" >&2

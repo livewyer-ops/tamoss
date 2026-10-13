@@ -195,6 +195,14 @@ task kind:test PROFILE=local-kind        # if your change touches
                                          # deployment, storage, or IO
 ```
 
+Dependency audits enforce advisory-specific exceptions recorded in the relevant
+`osv-scanner.toml`. The braces exception requires dependency lifecycle scripts
+to remain disabled and the reviewed install dependency chain to remain absent
+from the production module graph. Full and focused frontend audits check the
+package versions, integrity and consumers before inspecting a native Vite build.
+A failed check still runs the scanner and fails the audit. Reassess the exception
+when these conditions change or an upstream fix becomes available.
+
 ### PR description
 
 Include:

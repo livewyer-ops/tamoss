@@ -5,3 +5,15 @@ Risk accepted by maintainer on 2026-09-06: retain Omakase Player 1.1.1, includin
 its embedded xml2js parser, without blocking release for this advisory.
 This is not a fix; reassess when upgrading the player.
 """
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+reason = """
+Reviewed on 2026-10-13: braces is installed only through Omakase's unused
+patch-package install dependency. npm lifecycle scripts are disabled and the
+production frontend contains none of this dependency chain. Both frontend and
+full audits enforce these conditions with check-braces-mitigation.mjs, including
+the reviewed package versions, integrity and consumers. This is a non-reachability
+mitigation, not a dependency fix; reassess when the guarded inputs change or a
+fixed release becomes available. Other braces advisories remain blocking.
+"""
