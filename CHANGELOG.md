@@ -14,6 +14,13 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   pinned instance images and schema targets; component image overrides remain
   available. Report the last completed release in `status.currentVersion`.
 
+- Update PyJWT to 2.15.1, Mako to 1.4.2, virtualenv to 21.7.13,
+  brace-expansion to 2.1.7 and source-map-js to 1.2.2. Build the operator and
+  Console API with Go 1.27.2 and golang.org/x/net 0.60.0; use golangci-lint
+  2.14.0 to support the updated compiler.
+  Enforce dependency advisory mitigations during audits. These changes add no
+  schema migration.
+
 - Preserve large Segment timestamps with exact numeric database bounds. The
   schema upgrade converts existing bounds without changing media or checksums.
 - Limit Segment paging timeranges to the returned page, preserving timestamp
