@@ -338,6 +338,62 @@ def _render_tamoss(path: Path) -> dict[str, Any]:
     raise AssertionError(f"No Tamoss resource rendered from {path}")
 
 
+@pytest.mark.parametrize(
+    "values, field",
+    [
+        (
+            {"traefik": {"enabled": True, "logs": {"general": {"level": "DEBUG"}}}},
+            "logs",
+        ),
+        (
+            {
+                "traefik": {
+                    "enabled": True,
+                    "providers": {"file": {"content": "http: {}"}},
+                }
+            },
+            "content",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {
+                    "prometheus": {"servicemonitor": {"targetPort": "metrics"}}
+                },
+            },
+            "targetPort",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {
+                    "prometheus": {"servicemonitor": {"path": "/metrics"}}
+                },
+            },
+            "path",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {"prometheus": {"podmonitor": {"path": "/metrics"}}},
+            },
+            "path",
+        ),
+    ],
+)
+def test_native_platform_charts_reject_removed_overrides(
+    tmp_path, values, field
+) -> None:
+    if shutil.which("helmfile") is None or shutil.which("helm") is None:
+        pytest.skip("helm and helmfile are required for platform checks")
+    path = tmp_path / "values.yaml"
+    path.write_text(yaml.safe_dump(values))
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        _render_platform(path)
+    assert field in caught.value.stderr
+    assert "schema" in caught.value.stderr
+
+
 def _render_platform(values_path: Path) -> list[dict[str, Any]]:
     result = subprocess.run(
         [

@@ -38,7 +38,8 @@ must contain the migration revision required by the selected release.
 2. Check out the source revision for the target release. Update the remote
    resource in `operator/kustomization.yaml` to that release's published
    `install.yaml`, then review the platform and operator changes.
-3. Apply the platform with Helmfile, then apply the operator Kustomization and
+3. Apply the platform with `task env:platform:apply`, which validates all Helm
+   releases before changing the cluster. Then apply the operator Kustomization and
    wait for its CRDs and Deployment. Confirm its catalogue supports every
    instance release still in use. External database and storage services remain
    their owners' responsibility.
@@ -69,18 +70,7 @@ export INSTANCE=prod-a
 # Run from the source revision for the target release. Update the operator
 # install URL in operator/kustomization.yaml before applying it.
 $EDITOR "deploy/environments/$TAMOSS_ENV/operator/kustomization.yaml"
-(
-  cd deploy/platform
-  helmfile --kubeconfig "$KUBECONFIG" \
-    --file helmfile.yaml.gotmpl \
-    --state-values-file values/defaults.yaml \
-    --state-values-file "../environments/$TAMOSS_ENV/platform-values.yaml" \
-    apply \
-    --skip-diff-on-install \
-    --sync-args "--server-side=true" \
-    --wait \
-    --wait-for-jobs
-)
+task env:platform:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
 kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k "deploy/environments/$TAMOSS_ENV/operator"
 kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
 kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
@@ -159,6 +149,13 @@ outside the selected release's supported starting revisions. `UpgradeInProgress`
 requires the target recorded in `status.upgrade.targetVersion` to finish before
 selecting another release.
 
+If RustFS fails during rollout, inspect the Tenant conditions and the RustFS
+Pod's events and logs. Schema and application updates wait for backend
+readiness. Correct invalid custom configuration to resume the upgrade; storage
+may be unavailable until the rollout recovers. TAMOSS does not replace
+user-owned Secrets. Check the [release notes](../../CHANGELOG.md) for credential
+requirements.
+
 For `SchemaMigrationFailed`, inspect migration Job logs, database connectivity
 and permissions. Correct the cause and use the existing schema retry action.
 Keep the requested release selected while an upgrade is in progress.
@@ -170,6 +167,9 @@ requirements and downtime. The migration Job uses the selected API image and
 its catalogue Alembic revision. Schema changes and the revision update are
 transactional. The operator runs the migration and reports its progress in
 `Tamoss.status.schemaMigration`; inspect the Job logs if it fails.
+The schema-state ConfigMap records both the product schema and Alembic revision.
+Installations with older state records verify their selected revision once.
+An already-applied Alembic revision is not repeated.
 
 The operator does not automatically roll back images or schema. Product release
 downgrades are unsupported. Restore the PostgreSQL and storage backups into a

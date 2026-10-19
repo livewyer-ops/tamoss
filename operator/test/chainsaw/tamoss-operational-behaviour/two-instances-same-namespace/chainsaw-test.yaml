@@ -25,6 +25,14 @@ spec:
             file: assert/postgres-instances-available.yaml
         - apply:
             file: resources/tamoss-instances.yaml
+        - assert:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: alpha-s3
+                namespace: ($namespace)
+                generation: 1
         - patch:
             resource:
               apiVersion: rustfs.com/v1alpha1
@@ -33,6 +41,7 @@ spec:
                 name: alpha-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:
@@ -50,6 +59,14 @@ spec:
             bindings:
               - name: tenant
                 value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'alpha-s3'))
+        - assert:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: beta-s3
+                namespace: ($namespace)
+                generation: 1
         - patch:
             resource:
               apiVersion: rustfs.com/v1alpha1
@@ -58,6 +75,7 @@ spec:
                 name: beta-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:

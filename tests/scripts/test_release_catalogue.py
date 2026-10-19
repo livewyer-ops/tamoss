@@ -32,7 +32,7 @@ def test_release_catalogue_preserves_published_runtimes(tmp_path, monkeypatch):
     current = entries[-1]
     assert current["version"] == "8.2.0-oss2-rc3"
     assert current["sourceCommit"] == "a" * 40
-    assert current["schema"]["databaseRevision"] == "20260924_0008"
+    assert current["schema"]["databaseRevision"] == "20261019_0009"
     assert current["images"]["api"] == "livewyer/tamoss-api@sha256:" + "0" * 64
     assert current["images"]["ui"] == "livewyer/tamoss-ui@sha256:" + "1" * 64
     assert (

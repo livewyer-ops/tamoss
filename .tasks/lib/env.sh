@@ -422,6 +422,9 @@ task_apply_env_platform() {
     return 1
   fi
 
+  task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
+    template --include-crds > /dev/null
+
   task_step "Platform: apply Helmfile releases" \
     task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
       apply \

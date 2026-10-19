@@ -18,6 +18,82 @@ import (
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
+func TestSchemaStateRequiresTheSelectedDatabaseRevision(t *testing.T) {
+	controller := testSchemaController()
+	for _, revision := range []string{"", "20260924_0008", controller.Target.DatabaseRevision} {
+		t.Run(revision, func(t *testing.T) {
+			state := &corev1.ConfigMap{Data: map[string]string{
+				schemaStateAppliedVersionKey: controller.Target.Version,
+				"databaseRevision":           revision,
+			}}
+			result, done := controller.observedSchemaStateResult(state, true, []client.Object{state})
+			wantReady := revision == controller.Target.DatabaseRevision
+			if done != wantReady || result.Ready != wantReady {
+				t.Fatalf("revision %q: got ready=%t, done=%t; want %t", revision, result.Ready, done, wantReady)
+			}
+		})
+	}
+}
+
+func TestCompletedMigrationRecordsRevisionAndPreservesFixtures(t *testing.T) {
+	controller := testSchemaController()
+	previous := &corev1.ConfigMap{Data: map[string]string{schemaStateFixturesKey: "true"}}
+	state := controller.schemaStateConfigMap(recoveryTamoss(), &batchv1.Job{}, false, previous)
+	if state.Data["databaseRevision"] != controller.Target.DatabaseRevision || state.Data[schemaStateFixturesKey] != "true" {
+		t.Fatalf("completed migration did not preserve its revision and fixture state: %#v", state.Data)
+	}
+}
+
+func TestLegacySchemaStateVerifiesOnlyTheSelectedRevision(t *testing.T) {
+	for _, version := range []string{"8.2.0-oss1", "8.2.0-oss2-rc2", "dev"} {
+		t.Run(version, func(t *testing.T) {
+			ctx := context.Background()
+			catalogue := selectionCatalogue(t)
+			instance := recoveryTamoss()
+			instance.Spec.Version = version
+			instance.Status.CurrentVersion = version
+			resolved, err := resolveTamoss(instance, catalogue, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scheme := storageBackendTestScheme(t)
+			controller := SchemaController{Target: catalogue[version].Schema, Scheme: scheme}
+			state := controller.schemaStateConfigMap(instance, &batchv1.Job{}, true, nil)
+			delete(state.Data, schemaStateDatabaseRevisionKey)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(fakeApplyInterceptor()).WithStatusSubresource(&batchv1.Job{}).WithObjects(instance, state).Build()
+			controller.Client = c
+			result, err := controller.Reconcile(ctx, resolved)
+			if err != nil || result.Ready {
+				t.Fatalf("legacy state must verify its revision: %#v, %v", result, err)
+			}
+			job := &batchv1.Job{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(controller.schemaMigrationJob(resolved, false)), job); err != nil {
+				t.Fatal(err)
+			}
+			container := job.Spec.Template.Spec.Containers[0]
+			if container.Args[4] != catalogue[version].Schema.DatabaseRevision || container.Image != catalogue[version].Images.API || slices.Contains(container.Args, "--apply-fixtures") {
+				t.Fatal("revision verification changed the release pin or reapplied fixtures")
+			}
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+			if err := c.Status().Update(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				result, err = controller.Reconcile(ctx, resolved)
+				if err != nil || !result.Ready {
+					t.Fatalf("completed verification must remain ready: %#v, %v", result, err)
+				}
+			}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(state), state); err != nil {
+				t.Fatal(err)
+			}
+			if !schemaStateMatchesTarget(state, controller.Target) || state.Data[schemaStateFixturesKey] != "true" {
+				t.Fatal("revision or fixture state was not retained")
+			}
+		})
+	}
+}
+
 func TestJobOutcomeWaitsForTerminalConditions(t *testing.T) {
 	job := &batchv1.Job{Status: batchv1.JobStatus{Active: 1, Failed: 1, Succeeded: 1}}
 	if jobSucceeded(job) || jobFailed(job) {

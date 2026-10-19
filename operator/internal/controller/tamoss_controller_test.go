@@ -1879,6 +1879,7 @@ func ensureRustFSTenantCRD(ctx context.Context) {
 func setRustFSTenantStatus(ctx context.Context, name, namespace string, conditions []interface{}) {
 	tenant := rustfs.NewTenant()
 	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, tenant)).To(Succeed())
+	Expect(unstructured.SetNestedField(tenant.Object, tenant.GetGeneration(), "status", "observedGeneration")).To(Succeed())
 	Expect(unstructured.SetNestedField(tenant.Object, int64(1), "status", "availableReplicas")).To(Succeed())
 	Expect(unstructured.SetNestedField(tenant.Object, "Ready", "status", "currentState")).To(Succeed())
 	Expect(unstructured.SetNestedSlice(tenant.Object, []interface{}{}, "status", "pools")).To(Succeed())

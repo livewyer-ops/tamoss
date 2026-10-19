@@ -33,6 +33,13 @@ Release versions track the BBC TAMS API version they implement, followed by an `
   worker's default external S3 media backend. Preserve Secret credentials for
   other stores and prevent S3 identity-token injection into the UI.
 
+- Refresh statistics for TAMOSS-owned tables with GIN indexes during the schema
+  upgrade. Record the Alembic revision so maintenance also runs on installations
+  already using the current product schema.
+- Validate all platform Helm releases before applying changes.
+- Wait for RustFS to observe its updated Tenant configuration before advancing
+  schema and application updates.
+
 ### Upgrade notes
 
 Web identity adds optional `credentialSource` fields to the Tamoss and
@@ -54,6 +61,36 @@ table and its indexes and refreshes statistics. Reserve a maintenance window
 and enough temporary database space; duration depends on Segment volume.
 Existing values convert without recalculation, and media objects and checksums
 are unchanged. Follow the [upgrade procedure](docs/operations/upgrades.md#upgrade-sequence).
+
+The upgrade automatically refreshes PostgreSQL statistics for TAMOSS tables.
+No manual statistics maintenance is required. Installations that have already
+completed the Segment timestamp conversion do not repeat it.
+
+Generated TAMOSS RustFS credentials need no rotation. For inter-node
+authentication, RustFS 1.0.0 requires a valid explicit RPC secret if either
+root credential uses the public `rustfsadmin` default.
+Check custom credentials before upgrading: invalid credentials can interrupt
+storage during rollout. Correct the configuration to resume the upgrade;
+TAMOSS does not replace user-owned Secrets.
+
+The embedded Authentik outpost updates with the server. Authentik-managed
+outposts update through their native integration; manually deployed outposts
+must be updated separately.
+
+Default TAMOSS Traefik values require no changes. If you customise logging or
+file-provider settings, follow the
+[Traefik chart 41 upgrade notes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).
+
+Default cert-manager values require no changes. For custom overrides:
+
+- Remove cert-manager `prometheus.servicemonitor.targetPort`,
+  `prometheus.servicemonitor.path` and `prometheus.podmonitor.path` overrides.
+  The metrics port is now `http-metrics`.
+- Issuers that request tokens for the cert-manager controller ServiceAccount
+  need an explicit Role/RoleBinding or a dedicated ServiceAccount. Custom
+  tooling that creates ACME Challenges or Orders needs explicit permissions.
+  The default TAMOSS issuers do not require these permissions.
+
 Pin existing instances explicitly to `8.2.0-oss1` or `8.2.0-oss2-rc2` before
 selecting the next release. Unversioned resources keep their workloads running
 and report `VersionRequired` until pinned. Remove unwanted component overrides

@@ -11,7 +11,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,13 +47,14 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: tamoss.Namespace}}
 		desiredKeys[canonicalObjectKey(secret)] = struct{}{}
 	}
-	if err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
+	tenant, err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
 		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
 			return err
 		}
 		r.stampInstallationDefaults(obj)
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return providerBackendResult{}, err
 	}
 	aliasService := rustfs.BuildServiceAlias(tamoss)
@@ -69,32 +69,7 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		return providerBackendResult{}, err
 	}
 
-	tenant := rustfs.NewTenant()
-	tenant.SetName(tamoss.ResourceName("s3"))
-	tenant.SetNamespace(tamoss.Namespace)
 	desiredKeys[canonicalObjectKey(tenant)] = struct{}{}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(tenant), tenant); err != nil {
-		if apierrors.IsNotFound(err) {
-			return providerBackendResult{
-				Ready:   false,
-				Reason:  operatorstatus.ReasonTenantNotReady,
-				Message: "RustFS Tenant has not been observed yet",
-			}, nil
-		}
-		return providerBackendResult{}, err
-	}
-	desiredTenant, err := rustfs.BuildTenant(tamoss)
-	if err != nil {
-		return providerBackendResult{}, err
-	}
-	if err := applyAdvancedResourcePatches(tamoss, desiredTenant); err != nil {
-		return providerBackendResult{}, err
-	}
-	desiredImage, _, _ := unstructured.NestedString(desiredTenant.Object, "spec", "image")
-	observedImage, _, _ := unstructured.NestedString(tenant.Object, "spec", "image")
-	if desiredImage != observedImage || tenant.GetAnnotations()[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
-		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS configuration"}, nil
-	}
 	condition, events := rustfs.RollupStatus(tenant)
 	for _, event := range events {
 		r.recordWarning(tamoss, event.Reason, event.Message)
