@@ -342,7 +342,7 @@ func (r *FlowProfileReconciler) flowProfileSchemaReady(ctx context.Context, tamo
 		return false
 	}
 	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
-	return err == nil && state.Data[schemaStateAppliedVersionKey] == release.Schema.Version
+	return err == nil && schemaStateMatchesTarget(state, release.Schema)
 }
 
 func (r *FlowProfileReconciler) flowProfileIDWinner(ctx context.Context, current *tamossv1alpha1.FlowProfile, spec tamossv1alpha1.FlowProfileSpec) (string, error) {

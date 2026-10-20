@@ -26,17 +26,18 @@ import (
 )
 
 const (
-	schemaStateAppliedVersionKey = "appliedVersion"
-	schemaStateLastAppliedAtKey  = "lastAppliedAt"
-	schemaStateJobUIDKey         = "jobUID"
-	schemaStateFixturesKey       = "fixturesApplied"
-	schemaStateSupportedTAMSAPI  = "supportedTAMSAPI"
-	schemaStateFailureCountKey   = "failureCount"
-	schemaStateFailedGeneration  = "failedGeneration"
-	schemaStateFailedVersion     = "failedVersion"
-	schemaStateFailedJobUID      = "failedJobUID"
-	schemaStateFailedAtKey       = "failedAt"
-	schemaJobCleanupRequeueAfter = 2 * time.Second
+	schemaStateAppliedVersionKey   = "appliedVersion"
+	schemaStateDatabaseRevisionKey = "databaseRevision"
+	schemaStateLastAppliedAtKey    = "lastAppliedAt"
+	schemaStateJobUIDKey           = "jobUID"
+	schemaStateFixturesKey         = "fixturesApplied"
+	schemaStateSupportedTAMSAPI    = "supportedTAMSAPI"
+	schemaStateFailureCountKey     = "failureCount"
+	schemaStateFailedGeneration    = "failedGeneration"
+	schemaStateFailedVersion       = "failedVersion"
+	schemaStateFailedJobUID        = "failedJobUID"
+	schemaStateFailedAtKey         = "failedAt"
+	schemaJobCleanupRequeueAfter   = 2 * time.Second
 )
 
 type SchemaResult struct {
@@ -113,6 +114,10 @@ func schemaStateHasAppliedVersion(state *corev1.ConfigMap) bool {
 	return state != nil && strings.TrimSpace(state.Data[schemaStateAppliedVersionKey]) != ""
 }
 
+func schemaStateMatchesTarget(state *corev1.ConfigMap, target schemabundle.Target) bool {
+	return state != nil && state.Data[schemaStateAppliedVersionKey] == target.Version && state.Data[schemaStateDatabaseRevisionKey] == target.DatabaseRevision
+}
+
 func schemaManagedObjects(state *corev1.ConfigMap, stateFound bool) []client.Object {
 	if !stateFound {
 		return []client.Object{}
@@ -136,7 +141,7 @@ func (s *SchemaController) observedSchemaStateResult(state *corev1.ConfigMap, st
 			SchemaMigration: s.unsupportedSchemaMigrationStatus(observed),
 		}, true
 	}
-	if state.Data[schemaStateAppliedVersionKey] == s.Target.Version {
+	if schemaStateMatchesTarget(state, s.Target) {
 		operatormetrics.RecordSchemaMigration("skipped")
 		return SchemaResult{
 			Ready:           true,
@@ -458,6 +463,7 @@ func (s *SchemaController) getSchemaJob(ctx context.Context, desired *batchv1.Jo
 }
 
 func (s *SchemaController) schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, job *batchv1.Job, fixturesApplied bool, previous *corev1.ConfigMap) *corev1.ConfigMap {
+	fixturesApplied = fixturesApplied || (previous != nil && previous.Data[schemaStateFixturesKey] == "true")
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        tamossResourceName(tamoss, "schema-state"),
@@ -466,11 +472,12 @@ func (s *SchemaController) schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, j
 			Annotations: schemaStateAnnotations(previous),
 		},
 		Data: map[string]string{
-			schemaStateAppliedVersionKey: s.Target.Version,
-			schemaStateLastAppliedAtKey:  time.Now().UTC().Format(time.RFC3339),
-			schemaStateJobUIDKey:         string(job.UID),
-			schemaStateFixturesKey:       fmt.Sprintf("%t", fixturesApplied),
-			schemaStateSupportedTAMSAPI:  s.Target.TAMSAPI,
+			schemaStateAppliedVersionKey:   s.Target.Version,
+			schemaStateDatabaseRevisionKey: s.Target.DatabaseRevision,
+			schemaStateLastAppliedAtKey:    time.Now().UTC().Format(time.RFC3339),
+			schemaStateJobUIDKey:           string(job.UID),
+			schemaStateFixturesKey:         fmt.Sprintf("%t", fixturesApplied),
+			schemaStateSupportedTAMSAPI:    s.Target.TAMSAPI,
 		},
 	}
 }

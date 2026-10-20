@@ -4,4 +4,5 @@ metadata:
   name: tamoss-schema-state
 data:
   appliedVersion: ($values.schemaVersion)
+  databaseRevision: ($values.databaseRevision)
   fixturesApplied: "false"

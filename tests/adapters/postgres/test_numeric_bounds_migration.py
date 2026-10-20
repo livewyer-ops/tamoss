@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import urlencode
@@ -179,6 +180,91 @@ def test_fresh_install_has_numeric_bounds(migration_database) -> None:
     connection, config = migration_database
     command.upgrade(config, "head")
     assert _bounds_types(connection) == [("numeric", "NO"), ("numeric", "NO")]
+    assert (
+        connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        == CURRENT_SCHEMA_REVISION
+    )
+
+
+def test_statistics_upgrade_repairs_owned_gin_tables_without_rewriting_media(
+    migration_database,
+) -> None:
+    connection, config = migration_database
+    _seed_previous_schema(connection, config)
+    command.upgrade(config, "20260924_0008")
+    tables = (
+        "tamoss_storage_backends",
+        "tamoss_sources",
+        "tamoss_flows",
+        "tamoss_media_objects",
+        "tamoss_webhooks",
+    )
+    connection.execute("CREATE TABLE unrelated (tags jsonb)")
+    connection.execute("CREATE INDEX ON unrelated USING gin(tags)")
+    for table in (*tables, "unrelated"):
+        connection.execute(
+            "UPDATE pg_class SET reltuples = 'Infinity'::real WHERE oid = %s::regclass",
+            (table,),
+        )
+    before = connection.execute(
+        "SELECT pg_relation_filenode('tamoss_segments'), "
+        "(SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s)"
+    ).fetchone()
+
+    command.upgrade(config, "head")
+
+    for table in tables:
+        estimate = connection.execute(
+            "SELECT reltuples FROM pg_class WHERE oid = %s::regclass", (table,)
+        ).fetchone()[0]
+        assert math.isfinite(estimate) and estimate >= 0
+    assert math.isinf(
+        connection.execute(
+            "SELECT reltuples FROM pg_class WHERE oid = 'unrelated'::regclass"
+        ).fetchone()[0]
+    )
+    assert (
+        connection.execute(
+            "SELECT pg_relation_filenode('tamoss_segments'), "
+            "(SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s)"
+        ).fetchone()
+        == before
+    )
+
+    # A completed upgrade must not repeat maintenance on subsequent runs.
+    def reject_analysis(conn, cursor, statement, parameters, context, executemany):
+        assert not statement.lstrip().startswith("ANALYZE")
+
+    event.listen(Engine, "before_cursor_execute", reject_analysis)
+    try:
+        command.upgrade(config, "head")
+    finally:
+        event.remove(Engine, "before_cursor_execute", reject_analysis)
+
+
+def test_statistics_upgrade_failure_preserves_revision_and_can_be_retried(
+    migration_database,
+) -> None:
+    connection, config = migration_database
+    _seed_previous_schema(connection, config)
+    command.upgrade(config, "20260924_0008")
+
+    def interrupt_analysis(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().startswith("ANALYZE"):
+            raise RuntimeError("Interrupted statistics maintenance")
+
+    event.listen(Engine, "before_cursor_execute", interrupt_analysis)
+    try:
+        with pytest.raises(RuntimeError, match="Interrupted statistics maintenance"):
+            command.upgrade(config, "head")
+    finally:
+        event.remove(Engine, "before_cursor_execute", interrupt_analysis)
+    assert (
+        connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        == "20260924_0008"
+    )
+    assert connection.execute("SELECT count(*) FROM tamoss_segments").fetchone()[0] == 3
+    command.upgrade(config, "head")
     assert (
         connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         == CURRENT_SCHEMA_REVISION

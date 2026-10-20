@@ -22268,7 +22268,7 @@ data:
         "schema": {
           "version": "dev",
           "previousVersion": "8.2.0-oss1",
-          "databaseRevision": "20260924_0008",
+          "databaseRevision": "20261019_0009",
           "tamsAPI": "8.2"
         },
         "images": {
@@ -22285,7 +22285,7 @@ data:
 immutable: true
 kind: ConfigMap
 metadata:
-  name: operator-release-catalogue-8bbc942tmk
+  name: operator-release-catalogue-gk26c5chg8
   namespace: tamoss-system
 ---
 apiVersion: v1
@@ -22467,7 +22467,7 @@ spec:
           name: operator-instance-defaults-5d92246b49
         name: instance-defaults
       - configMap:
-          name: operator-release-catalogue-8bbc942tmk
+          name: operator-release-catalogue-gk26c5chg8
         name: release-catalogue
 ---
 apiVersion: cert-manager.io/v1

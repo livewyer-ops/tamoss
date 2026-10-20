@@ -36,6 +36,7 @@ spec:
                 name: tamoss-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:

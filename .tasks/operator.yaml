@@ -135,7 +135,8 @@ tasks:
           --report-format JUNIT-TEST \
           --report-path "{{.REPORT_PATH}}" \
           --parallel "{{.CHAINSAW_PARALLEL}}" \
-          --set-string "schemaVersion={{.SCHEMA_VERSION}}"
+          --set-string "schemaVersion={{.SCHEMA_VERSION}}" \
+          --set-string "databaseRevision=$(jq -er '.[] | select(.version == "dev") | .schema.databaseRevision' operator/config/releases/catalogue.json)"
         if [ -n "{{.CHAINSAW_SELECTOR}}" ]; then
           set -- "$@" --selector "{{.CHAINSAW_SELECTOR}}"
         fi

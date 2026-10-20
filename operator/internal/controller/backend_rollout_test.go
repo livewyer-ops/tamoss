@@ -37,6 +37,8 @@ func TestRustFSReadinessWaitsForStatefulSetRevisionAndReplicas(t *testing.T) {
 	tenant.SetName("store")
 	tenant.SetNamespace("media")
 	tenant.SetUID("store")
+	tenant.SetGeneration(2)
+	tenant.Object["status"] = map[string]interface{}{"observedGeneration": int64(2)}
 	set := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "store-pool-0", Namespace: "media", Generation: 2, OwnerReferences: []metav1.OwnerReference{{UID: tenant.GetUID(), Controller: ptr.To(true)}}}, Spec: appsv1.StatefulSetSpec{Replicas: ptr.To(int32(1)), Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "rustfs", Image: "rustfs:next"}}}}}, Status: appsv1.StatefulSetStatus{ObservedGeneration: 2, ReadyReplicas: 1, UpdatedReplicas: 1, CurrentRevision: "previous", UpdateRevision: "next"}}
 	c := fake.NewClientBuilder().WithScheme(hibernateTestScheme(t)).WithStatusSubresource(set).WithObjects(set).Build()
 	r := &TamossReconciler{Client: c}
@@ -47,6 +49,11 @@ func TestRustFSReadinessWaitsForStatefulSetRevisionAndReplicas(t *testing.T) {
 	if err := c.Status().Update(ctx, set); err != nil {
 		t.Fatal(err)
 	}
+	tenant.Object["status"] = map[string]interface{}{"observedGeneration": int64(1)}
+	if ready, err := r.rustfsRolloutReady(ctx, tenant); err != nil || ready {
+		t.Fatalf("previous Tenant generation was accepted: ready=%v, err=%v", ready, err)
+	}
+	tenant.Object["status"] = map[string]interface{}{"observedGeneration": int64(2)}
 	if ready, err := r.rustfsRolloutReady(ctx, tenant); err != nil || !ready {
 		t.Fatalf("completed rollout was rejected: ready=%v, err=%v", ready, err)
 	}

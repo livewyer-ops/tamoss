@@ -46,6 +46,10 @@ func (r *TamossReconciler) cnpgRolloutReady(ctx context.Context, cluster *cnpgv1
 }
 
 func (r *TamossReconciler) rustfsRolloutReady(ctx context.Context, tenant *unstructured.Unstructured) (bool, error) {
+	observedGeneration, _, _ := unstructured.NestedInt64(tenant.Object, "status", "observedGeneration")
+	if observedGeneration != tenant.GetGeneration() {
+		return false, nil
+	}
 	image, _, _ := unstructured.NestedString(tenant.Object, "spec", "image")
 	pools, _, _ := unstructured.NestedSlice(tenant.Object, "spec", "pools")
 	expected := map[string]int64{}

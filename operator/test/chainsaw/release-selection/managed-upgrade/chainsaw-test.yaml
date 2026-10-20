@@ -180,7 +180,7 @@ spec:
               - "SELECT label || ':' || (SELECT version_num FROM alembic_version) FROM tamoss_sources WHERE id='10000000-0000-4000-8000-000000000001';"
             check:
               ($error == null): true
-              (trim_space($stdout)): "upgrade-probe:20260924_0008"
+              (trim_space($stdout)): "upgrade-probe:20261019_0009"
         - apply:
             file: resources/object-job.yaml
             bindings:
@@ -246,7 +246,14 @@ spec:
               ($error == null): true
               (trim_space($stdout)): "20260810_0007"
 
-    - name: upgrade candidate and preserve stored data
+    - name: recover a failed storage rollout and preserve stored data
+      bindings:
+        - name: originalEnv
+          value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'Tamoss', $namespace, 'candidate').spec.backends.s3.rustfsOperator.env)
+        - name: apiGeneration
+          value: (x_k8s_get($client, 'apps/v1', 'Deployment', $namespace, 'candidate-api').metadata.generation)
+        - name: credentialsVersion
+          value: (x_k8s_get($client, 'v1', 'Secret', $namespace, 'candidate-s3-creds').metadata.resourceVersion)
       try:
         - patch:
             resource:
@@ -256,6 +263,63 @@ spec:
                 name: candidate
               spec:
                 version: dev
+                backends:
+                  s3:
+                    rustfsOperator:
+                      env:
+                        - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+                          value: "true"
+                        - name: RUSTFS_SECRET_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: candidate-s3-creds
+                              key: missing-secretkey
+        - assert:
+            file: resources/storage-rollout-failed.yaml
+            timeout: 5m
+        - command:
+            entrypoint: kubectl
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            args:
+              - exec
+              - -n
+              - $NAMESPACE
+              - candidate-db-1
+              - -c
+              - postgres
+              - --
+              - psql
+              - -U
+              - postgres
+              - -d
+              - tams
+              - -v
+              - ON_ERROR_STOP=1
+              - -Atc
+              - "SELECT version_num FROM alembic_version;"
+            check:
+              ($error == null): true
+              (trim_space($stdout)): "20260810_0007"
+        - assert:
+            file: resources/ready.yaml
+            bindings:
+              - name: instance
+                value: previous
+              - name: version
+                value: dev
+        - patch:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              metadata:
+                name: candidate
+              spec:
+                backends:
+                  s3:
+                    rustfsOperator:
+                      env: ($originalEnv)
         - assert:
             file: resources/ready.yaml
             timeout: 10m
@@ -288,7 +352,7 @@ spec:
               - "SELECT label || ':' || (SELECT version_num FROM alembic_version) FROM tamoss_sources WHERE id='10000000-0000-4000-8000-000000000001';"
             check:
               ($error == null): true
-              (trim_space($stdout)): "upgrade-probe:20260924_0008"
+              (trim_space($stdout)): "upgrade-probe:20261019_0009"
         - apply:
             file: resources/object-job.yaml
             bindings:
@@ -320,3 +384,10 @@ spec:
             check:
               ($error == null): true
               (trim_space($stdout)): "release-upgrade-probe"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: candidate-s3-creds
+                resourceVersion: ($credentialsVersion)

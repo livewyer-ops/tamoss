@@ -9,7 +9,7 @@ const (
 	DevelopmentSchemaVersion = "dev"
 	// CurrentDatabaseRevision binds migration Jobs to the Alembic revision
 	// shipped in the matching API image.
-	CurrentDatabaseRevision = "20260924_0008"
+	CurrentDatabaseRevision = "20261019_0009"
 )
 
 var (

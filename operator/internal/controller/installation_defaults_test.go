@@ -141,7 +141,7 @@ func TestInstallationDefaultsGateDependentWork(t *testing.T) {
 	config := installationConfig(t, "profile: local-kind\nbaseDomain: example.com")
 	catalogue := selectionCatalogue(t)
 	instance := testIngestTamoss()
-	state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: catalogue[instance.Spec.Version].Schema.Version}}
+	state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: catalogue[instance.Spec.Version].Schema.Version, schemaStateDatabaseRevisionKey: catalogue[instance.Spec.Version].Schema.DatabaseRevision}}
 	c := fake.NewClientBuilder().WithScheme(hibernateTestScheme(t)).WithObjects(state).Build()
 	profiles := &FlowProfileReconciler{Client: c, Releases: catalogue, InstanceDefaults: config}
 	storage := &StorageBackendReconciler{Client: c, Releases: catalogue, InstanceDefaults: config}

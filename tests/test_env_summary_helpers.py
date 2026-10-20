@@ -83,6 +83,7 @@ def test_platform_apply_waits_on_success_and_preserves_failed_release(
         "set -e; "
         'task_step() { shift; "$@"; }; '
         'task_platform_helmfile() { printf "%s\\n" "$@"; '
+        'if [ "$5" = template ]; then return 0; fi; '
         f"return {status}; }}; "
         "task_wait_env_platform() { touch waited; }; "
         "task_apply_env_platform kubeconfig . helmfile.yaml 15m",
@@ -94,6 +95,26 @@ def test_platform_apply_waits_on_success_and_preserves_failed_release(
     assert "--rollback-on-failure" not in result.stdout
     assert "--atomic" not in result.stdout
     assert (tmp_path / "waited").exists() == (status == 0)
+
+
+def test_platform_validation_failure_prevents_any_apply(tmp_path: Path) -> None:
+    (tmp_path / "platform-values.yaml").touch()
+    (tmp_path / "helmfile.yaml").touch()
+    result = _run_bash(
+        "set -e; "
+        'task_platform_helmfile() { if [ "$5" = template ]; then '
+        'printf "rendered-secret\\n"; return 42; fi; touch applied; }; '
+        "task_wait_env_platform() { touch waited; }; "
+        "task_apply_env_platform kubeconfig . helmfile.yaml 15m",
+        tmp_path,
+    )
+    assert result.returncode == 42
+    assert "rendered-secret" not in result.stdout
+    assert "rendered-secret" not in result.stderr
+    for log in tmp_path.glob(".local/logs/task/*.log"):
+        assert "rendered-secret" not in log.read_text()
+    assert not (tmp_path / "applied").exists()
+    assert not (tmp_path / "waited").exists()
 
 
 def _run_bash(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
