@@ -248,8 +248,8 @@ class PostgresObjectSegmentMixin:
                 WITH candidate_bounds(timerange_start, timerange_end) AS (
                     SELECT *
                     FROM unnest(
-                        %(starts)s::bigint[],
-                        %(ends)s::bigint[]
+                        %(starts)s::numeric[],
+                        %(ends)s::numeric[]
                     )
                 )
                     SELECT record

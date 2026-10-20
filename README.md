@@ -5,7 +5,7 @@
 # TAMOSS
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.14](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-blue)](https://www.python.org/)
 [![BBC TAMS v8.2](https://img.shields.io/badge/BBC%20TAMS-v8.2-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the

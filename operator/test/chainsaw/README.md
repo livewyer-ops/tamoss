@@ -45,7 +45,7 @@ Use Chainsaw operations in this order:
    Pod or Service.
 3. Use `command` only for an external system boundary, such as PostgreSQL, S3,
    operator process configuration, a mutating API workflow, or a response-body
-   assertion that cannot use `proxy` because Chainsaw 0.2.15 does not propagate
+   assertion that cannot use `proxy` because the pinned Chainsaw does not propagate
    proxy outputs.
 
 Inline `script` operations, shell entrypoints, shell pipelines, and `kubectl`
@@ -156,7 +156,7 @@ Shared fixtures currently include:
   to a scenario namespace.
 - `external-backend-secrets.yaml` creates the conventional Postgres and S3
   Secret names used by external-backend scenarios.
-- `postgres.yaml` starts a single-pod PostgreSQL 18 instance with ephemeral
+- `postgres.yaml` starts a single-pod PostgreSQL instance with ephemeral
   storage.
 - `rustfs.yaml` starts a single-pod RustFS S3-compatible backend and creates the
   `tamoss` bucket using `amazon/aws-cli`.

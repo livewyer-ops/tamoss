@@ -237,7 +237,7 @@ def test_schema_versions_remain_consistent_across_entry_points(
         environment.pop(key, None)
     overrides = []
     operator_build = entry_point == "operator:image:build"
-    expected = "0.0.1" if operator_build else "dev-20260810-0007"
+    expected = "0.0.1" if operator_build else "dev-20260924-0008"
     previous = "" if operator_build else "0.0.1"
     if source != "default":
         expected, previous = "custom-schema", "previous-schema"

@@ -125,7 +125,6 @@ tokens.
 ### Auth: managed OAuth
 
 Declaring the Authentik provider runs the full OAuth stack on the node.
-Managed OAuth on edge is supported from `8.1.0-oss5`.
 
 On a live instance, apply the change in this order.
 
