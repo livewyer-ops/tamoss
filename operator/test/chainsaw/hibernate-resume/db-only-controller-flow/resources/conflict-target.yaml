@@ -20,6 +20,7 @@ metadata:
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
+  version: dev
   fullnameOverride: conflict
   hibernation:
     resumeFrom:

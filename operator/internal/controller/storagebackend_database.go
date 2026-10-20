@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -26,7 +25,8 @@ func (r *StorageBackendReconciler) schemaStateReady(ctx context.Context, tamoss 
 	if err := r.Client.Get(ctx, key, state); err != nil {
 		return false
 	}
-	return state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion
+	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
+	return err == nil && state.Data[schemaStateAppliedVersionKey] == release.Schema.Version
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendDatabase(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) (storageBackendReconcileResult, error) {

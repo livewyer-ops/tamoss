@@ -118,7 +118,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run -ldflags "$(GO_LDFLAGS)" ./cmd
+	TAMOSS_RELEASE_CATALOGUE=$${TAMOSS_RELEASE_CATALOGUE:-config/releases/catalogue.json} go run -ldflags "$(GO_LDFLAGS)" ./cmd
 
 .PHONY: install-manifest
 install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.

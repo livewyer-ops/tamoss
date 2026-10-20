@@ -4,6 +4,4 @@ metadata:
   name: tamoss-__PROFILE__
   namespace: tams
 spec:
-  profile: __PROFILE__
-  publicEndpoint:
-    baseDomain: __DOMAIN__
+  version: __VERSION__

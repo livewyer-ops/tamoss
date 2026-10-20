@@ -45,6 +45,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
         - assert:
             file: assert/default-storagebackend-owned.yaml
             timeout: 120s

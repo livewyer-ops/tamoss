@@ -41,6 +41,7 @@ func TestTamossHibernateLaunchesCNPGBackupAndGatesLifecycle(t *testing.T) {
 	recorder := record.NewFakeRecorder(4)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}, &appsv1.Deployment{}).
@@ -192,6 +193,7 @@ func TestTamossHibernateCompletesWhenCNPGBackupCompletes(t *testing.T) {
 	writer := &fakeHibernationManifestWriter{checksum: "sha256:fake"}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -269,6 +271,7 @@ func TestTamossHibernateRecoversPartialCompletion(t *testing.T) {
 	writer := &fakeHibernationManifestWriter{checksum: "sha256:recovered"}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -301,6 +304,7 @@ func TestTamossHibernateAddsFinalizerBeforeReconciling(t *testing.T) {
 	hibernate.Finalizers = nil
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(hibernate).
@@ -340,6 +344,7 @@ func TestTamossHibernateDeleteMarksActiveLifecycleFailed(t *testing.T) {
 	}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -393,6 +398,7 @@ func TestTamossHibernateDeleteAfterManifestCommitFinishesHibernation(t *testing.
 	cluster := hibernateClusterFixture(tamoss)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}, &cnpgv1.Cluster{}).
@@ -432,6 +438,7 @@ func TestTamossHibernateWaitsForMissingDestination(t *testing.T) {
 	hibernate := hibernateFixture()
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -470,6 +477,7 @@ func TestTamossHibernateWaitsForSourceSchemaMigration(t *testing.T) {
 	cluster := hibernateClusterFixture(tamoss)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -506,6 +514,7 @@ func TestTamossHibernateRejectsUnsupportedSourceSchema(t *testing.T) {
 	cluster := hibernateClusterFixture(tamoss)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -541,6 +550,7 @@ func TestTamossHibernateFailsWhenCNPGBackupFails(t *testing.T) {
 	}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -607,6 +617,7 @@ func TestTamossHibernateRetriesManifestUploadFailure(t *testing.T) {
 	writer := &fakeHibernationManifestWriter{checksum: "sha256:fake", err: fmt.Errorf("connection reset")}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -676,6 +687,7 @@ func TestTamossHibernateTerminalPhasesRemainIdempotent(t *testing.T) {
 	api := hibernateDeploymentFixture(tamoss, "api", 2)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -730,6 +742,7 @@ func TestTamossHibernateFailsOnLifecycleConflict(t *testing.T) {
 	cluster := hibernateClusterFixture(tamoss)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -774,6 +787,7 @@ func TestTamossHibernateFailsWhenTamossAlreadyHibernated(t *testing.T) {
 	cluster := hibernateClusterFixture(tamoss)
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -811,6 +825,7 @@ func TestTamossHibernateDeleteAfterCompletionKeepsLifecycle(t *testing.T) {
 	}
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -852,6 +867,7 @@ func TestTamossHibernateRejectsForeignBackup(t *testing.T) {
 	backup.OwnerReferences = nil
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).
@@ -891,6 +907,7 @@ func TestTamossHibernateRejectsUnimplementedDriver(t *testing.T) {
 	hibernate.Spec.Driver = tamossv1alpha1.HibernationDriverLogicalDump
 
 	reconciler := TamossHibernateReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).
 			WithScheme(scheme).
 			WithStatusSubresource(&tamossv1alpha1.Tamoss{}, &tamossv1alpha1.TamossHibernate{}).

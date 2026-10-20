@@ -2,6 +2,10 @@
 
 Start Day 2 work from the `Tamoss` resource. It is the operator's summary of
 schema, backend, identity, rollout, and degradation state.
+Use `status.resolved` and `status.endpoints` for effective settings, including
+inherited defaults. Shared settings are maintained in the environment's
+`operator/defaults.yaml`; see [Upgrades](upgrades.md#installation-defaults) for
+applying them. Instance-specific changes belong in the instance manifest.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -120,7 +124,7 @@ then reapply it:
 
 ```bash
 $EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
+task env:instance:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
 ```
 

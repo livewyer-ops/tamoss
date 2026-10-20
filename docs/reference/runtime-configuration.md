@@ -1,9 +1,55 @@
 # Runtime Configuration
 
-Runtime configuration covers Kubernetes workload overrides, image selection,
-runtime environment variables, and network policy toggles. Keep provider
-ownership decisions in the `Tamoss` CR and make durable changes in the
-environment overlay under `deploy/environments/<name>`.
+Runtime configuration covers installation defaults, Kubernetes workload
+overrides, image selection, runtime environment variables and network policy.
+Make durable changes in the environment under `deploy/environments/<name>`.
+Shared settings belong in `operator/defaults.yaml`; instance overrides and
+provider ownership belong in the `Tamoss` CR.
+
+## Installation defaults
+
+`task env:init` creates `operator/defaults.yaml` beside the operator
+Kustomization. Omitted instance settings inherit this file, then the selected
+profile supplies remaining defaults. Explicit instance fields take precedence,
+including `spec.console.enabled: false`. Removing an override resumes
+inheritance where the CRD does not supply its own default.
+
+| Setting | Behaviour when the instance omits its corresponding field |
+| --- | --- |
+| `profile` | Selects `local-kind`, `edge`, `single-server` or `multi-server`. |
+| `baseDomain` | Derives `<name>.<namespace>.<baseDomain>` for the instance. |
+| `ingressClassName` | Selects the ingress class. |
+| `clusterIssuer` | Supplies the cert-manager annotation when ingress annotations are omitted. |
+| `consoleEnabled` | Enables or disables Console. Generated environments set this to `true`. |
+| `authentik.platformNamespace` | Selects the shared Authentik namespace. |
+| `authentik.issuerURL` | Selects the shared public Authentik base URL; otherwise `https://auth.<baseDomain>`. |
+| `authentik.internalURL` | Overrides the shared internal Authentik base URL. |
+| `authentik.apiTokenSecretRef` | Supplies the token Secret `name` and `key` in the Authentik namespace. |
+
+Custom Authentik namespaces must also be allowed by the operator's
+`TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES` setting and included in `WATCH_NAMESPACES`
+when its watch scope is restricted. External authentication settings retain
+their ownership and do not inherit managed Authentik connection settings.
+
+Kustomize packages the file in an immutable ConfigMap mounted at the path named
+by `TAMOSS_INSTANCE_DEFAULTS`. A file change changes the ConfigMap name and rolls
+the operator when its overlay is applied. The operator reads the file once at
+startup. Shared changes apply to existing instances inheriting those fields;
+inherited settings are resolved in memory, while Kubernetes can still populate
+CRD defaults in the stored resource.
+
+The file accepts only the settings above. Release images and schema targets
+come from `spec.version`; explicit image fields override release images.
+An absent or empty defaults file supports explicitly configured instances.
+A version-only resource without usable installation defaults reports
+`InstallationDefaultsRequired`. Invalid configured defaults report
+`InvalidInstallationDefaults` and leave existing workloads running.
+
+`status.resolved.defaults` reports the loaded file and revision.
+`status.appliedDefaultsRevision` records the revision whose reconciliation and
+rollouts completed. See [Configuration](../configuration.md#installation-defaults)
+for a minimal example and [Upgrades](../operations/upgrades.md#installation-defaults)
+for applying shared changes.
 
 ## Workload Overrides
 
@@ -89,7 +135,7 @@ identities, and not needed at all when the blocks are omitted.
 
 ## Image Overrides
 
-The operator applies image defaults for a minimal CR and reports the effective
+The operator selects image defaults from `spec.version` and reports the effective
 values under `.status.resolved.images`. Override images directly when a cluster
 needs an internal registry, pinned digest, or tested component build:
 
@@ -108,7 +154,7 @@ spec:
       repository: registry.example.com/tamoss-console-api
       tag: <release-tag>
   images:
-    schemaMigrationPostgresClient: registry.example.com/postgres:18.6-alpine
+    schemaMigrationPostgresClient: registry.example.com/postgres:<tested-tag>
 ```
 
 The API image also carries the TAMOSS database migration CLI used by the
@@ -120,17 +166,17 @@ configured where the provider is selected. For example,
 [RustFS](https://github.com/rustfs/rustfs) uses
 `.spec.backends.s3.rustfsOperator.image`.
 
-Pin API, UI and Console images to the same release as the operator in non-local
-overlays. An omitted tag defaults to the operator's release tag. Development
-builds default to `dev`; the local Kind workflow uses a tag derived from the
-component build inputs. See [Upgrades](../operations/upgrades.md) for the image
-and schema checks required when changing releases.
+Set `spec.version` to an exact release in the installation's `catalogue.json`.
+That release supplies API, worker, UI, Console, TAMSin, PostgreSQL, RustFS and
+registration-helper defaults, plus the schema migration target. An operator
+update preserves the release selected by each instance.
 
-Platform controllers such as [cert-manager](https://cert-manager.io/),
-[Traefik](https://traefik.io/), [Authentik](https://goauthentik.io/), CNPG
-Operator,
-and RustFS Operator are installed before TAMOSS and are versioned in the
-platform dependency source, not in the `Tamoss` CR.
+Explicit image fields override the selected release. `spec.images.tamsin`
+accepts an immutable TAMSin image digest. An existing PostgreSQL or RustFS pin
+continues to override release defaults until removed. External services are
+configured and upgraded by their owners.
+
+See [Upgrades](../operations/upgrades.md) for adoption and release changes.
 
 ## Advanced Resource Overrides
 

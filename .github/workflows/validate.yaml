@@ -76,11 +76,15 @@ jobs:
         run: python3 .github/scripts/release-metadata.py --validate
 
       - name: Render remote environment overlay
+        env:
+          TAMOSS_VERSION: 8.2.0-oss2-rc3
         run: |
+          python3 .github/scripts/release-metadata.py "$TAMOSS_VERSION"
           environment="ci-single-server"
           rm -rf "deploy/environments/${environment}"
-          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
+          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com TAMOSS_VERSION="$TAMOSS_VERSION"
           kubectl kustomize "deploy/environments/${environment}" >/tmp/tamoss-${environment}.yaml
+          test "$(yq --no-doc -r 'select(.kind == "Tamoss") | .spec.version' /tmp/tamoss-${environment}.yaml)" = "$TAMOSS_VERSION"
 
   python:
     runs-on: ubuntu-24.04

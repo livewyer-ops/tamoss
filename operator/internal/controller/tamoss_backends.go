@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,7 +49,11 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		desiredKeys[canonicalObjectKey(secret)] = struct{}{}
 	}
 	if err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
 	}); err != nil {
 		return providerBackendResult{}, err
 	}
@@ -78,6 +83,18 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		}
 		return providerBackendResult{}, err
 	}
+	desiredTenant, err := rustfs.BuildTenant(tamoss)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if err := applyAdvancedResourcePatches(tamoss, desiredTenant); err != nil {
+		return providerBackendResult{}, err
+	}
+	desiredImage, _, _ := unstructured.NestedString(desiredTenant.Object, "spec", "image")
+	observedImage, _, _ := unstructured.NestedString(tenant.Object, "spec", "image")
+	if desiredImage != observedImage || tenant.GetAnnotations()[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS configuration"}, nil
+	}
 	condition, events := rustfs.RollupStatus(tenant)
 	for _, event := range events {
 		r.recordWarning(tamoss, event.Reason, event.Message)
@@ -89,6 +106,13 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 			Message:  condition.Message,
 			Degraded: len(events) > 0,
 		}, nil
+	}
+	rolloutReady, err := r.rustfsRolloutReady(ctx, tenant)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if !rolloutReady {
+		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS workload rollout"}, nil
 	}
 
 	return r.reconcileDefaultStorageBackendBucket(ctx, tamoss, desiredKeys)
@@ -115,7 +139,11 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 	// without preserving live fields.
 	injectResolvedRestore(tamoss)
 	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
 	}}
 	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
@@ -134,6 +162,13 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 		return providerBackendResult{}, err
 	}
 
+	desiredCluster := cnpg.BuildCluster(tamoss)
+	if err := applyAdvancedResourcePatches(tamoss, desiredCluster); err != nil {
+		return providerBackendResult{}, err
+	}
+	if desiredCluster.Spec.ImageName != cluster.Spec.ImageName || desiredCluster.Spec.Instances != cluster.Spec.Instances || cluster.Annotations[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL configuration"}, nil
+	}
 	condition, events := cnpg.RollupStatus(cluster)
 	for _, event := range events {
 		r.recordWarning(tamoss, event.Reason, event.Message)
@@ -145,6 +180,13 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 			Message:  condition.Message,
 			Degraded: len(events) > 0,
 		}, nil
+	}
+	rolloutReady, err := r.cnpgRolloutReady(ctx, cluster)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if !rolloutReady {
+		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL workload rollout"}, nil
 	}
 
 	_, secretReadiness, err := (cnpg.SecretReader{Client: r.Client}).Read(ctx, tamoss)

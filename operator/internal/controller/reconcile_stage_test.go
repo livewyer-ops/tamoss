@@ -16,7 +16,8 @@ import (
 func TestTamossCompletionResultRequeuesForManagedAuthentik(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
 		},
 	}
 
@@ -29,7 +30,8 @@ func TestTamossCompletionResultRequeuesForManagedAuthentik(t *testing.T) {
 func TestTamossCompletionResultDoesNotRequeueForExternalAuth(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
 		},
 	}
 
@@ -42,7 +44,8 @@ func TestTamossCompletionResultDoesNotRequeueForExternalAuth(t *testing.T) {
 func TestTamossCompletionResultRequeuesSchemaCleanupForExternalDependencies(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
 		},
 	}
 
@@ -55,6 +58,7 @@ func TestTamossCompletionResultRequeuesSchemaCleanupForExternalDependencies(t *t
 func TestTamossCompletionResultRequeuesForProviderManagedBackends(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Backends: tamossv1alpha1.BackendsSpec{
 				DB: tamossv1alpha1.DBBackendSpec{ProvidedBy: tamossv1alpha1.BackendProvidedByCNPG},
 			},
@@ -70,7 +74,8 @@ func TestTamossCompletionResultRequeuesForProviderManagedBackends(t *testing.T) 
 func TestTamossCompletionResultUsesShortestManagedProbeInterval(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
 			Backends: tamossv1alpha1.BackendsSpec{
 				S3: tamossv1alpha1.S3BackendSpec{ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator},
 			},
@@ -88,7 +93,7 @@ func TestObservedSchemaStateResultRejectsUnsupportedVersion(t *testing.T) {
 		Data: map[string]string{schemaStateAppliedVersionKey: "unknown"},
 	}
 
-	result, done := observedSchemaStateResult(state, true, []client.Object{state})
+	result, done := testSchemaController().observedSchemaStateResult(state, true, []client.Object{state})
 	if !done {
 		t.Fatal("expected unsupported schema state to finish the stage")
 	}
@@ -99,6 +104,7 @@ func TestObservedSchemaStateResultRejectsUnsupportedVersion(t *testing.T) {
 
 func TestPrepareStorageBackendLifecycleIgnoresDisallowedNamespace(t *testing.T) {
 	reconciler := &StorageBackendReconciler{
+		Releases:        testReleases(),
 		WatchNamespaces: map[string]struct{}{"allowed": {}},
 	}
 	storageBackend := &tamossv1alpha1.StorageBackend{

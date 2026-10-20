@@ -13,11 +13,13 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 )
 
 const (
 	defaultAppName                     = "tamoss"
 	defaultCertManagerIssuerAnnotation = "cert-manager.io/cluster-issuer"
+	defaultTraefikTLSAnnotation        = "traefik.ingress.kubernetes.io/router.tls"
 	defaultLocalKindIssuerName         = "tamoss-selfsigned"
 	defaultPublicIssuerName            = "tamoss-public"
 	defaultLocalKindTLSSecretName      = "tamoss-localtest-tls"
@@ -31,11 +33,10 @@ const (
 )
 
 // Apply fills omitted Tamoss fields with operator-owned defaults.
-func Apply(tamoss *tamossv1alpha1.Tamoss) {
+func Apply(tamoss *tamossv1alpha1.Tamoss, images releases.Images) {
 	if tamoss == nil {
 		return
 	}
-	applyImageDefaults(tamoss)
 	switch tamoss.Spec.Profile {
 	case tamossv1alpha1.TamossProfileLocalKind:
 		applyLocalKind(tamoss)
@@ -46,6 +47,7 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 	case tamossv1alpha1.TamossProfileEdge:
 		applyEdge(tamoss)
 	}
+	applyImageDefaults(tamoss, images)
 	if tamoss.Spec.Ingest.SourcePolicy.Mode == "" {
 		tamoss.Spec.Ingest.SourcePolicy.Mode = tamossv1alpha1.IngestSourcePolicyDisabled
 	}
@@ -54,36 +56,54 @@ func Apply(tamoss *tamossv1alpha1.Tamoss) {
 	applyBaseComponentDefaults(tamoss)
 }
 
-func applyImageDefaults(tamoss *tamossv1alpha1.Tamoss) {
-	if tamoss.Spec.API.Image.Repository == "" {
-		tamoss.Spec.API.Image.Repository = DefaultAPIRepository
+func applyImageDefaults(tamoss *tamossv1alpha1.Tamoss, images releases.Images) {
+	if tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG && tamoss.Spec.Backends.DB.CNPG == nil {
+		tamoss.Spec.Backends.DB.CNPG = &tamossv1alpha1.DBCNPGSpec{}
 	}
-	if tamoss.Spec.API.Image.Tag == "" {
-		tamoss.Spec.API.Image.Tag = DefaultOperandTag
+	if tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator && tamoss.Spec.Backends.S3.RustFSOperator == nil {
+		tamoss.Spec.Backends.S3.RustFSOperator = &tamossv1alpha1.S3RustFSOperatorSpec{}
 	}
-	if tamoss.Spec.API.Image.PullPolicy == "" {
-		tamoss.Spec.API.Image.PullPolicy = corev1.PullIfNotPresent
-	}
-	if tamoss.Spec.UI.Image.Repository == "" {
-		tamoss.Spec.UI.Image.Repository = DefaultUIRepository
-	}
-	if tamoss.Spec.UI.Image.Tag == "" {
-		tamoss.Spec.UI.Image.Tag = DefaultOperandTag
-	}
-	if tamoss.Spec.UI.Image.PullPolicy == "" {
-		tamoss.Spec.UI.Image.PullPolicy = corev1.PullIfNotPresent
-	}
-	if tamoss.Spec.Console.Image.Repository == "" {
-		tamoss.Spec.Console.Image.Repository = DefaultConsoleRepository
-	}
-	if tamoss.Spec.Console.Image.Tag == "" {
-		tamoss.Spec.Console.Image.Tag = DefaultOperandTag
-	}
-	if tamoss.Spec.Console.Image.PullPolicy == "" {
-		tamoss.Spec.Console.Image.PullPolicy = corev1.PullIfNotPresent
-	}
+	defaultImage(&tamoss.Spec.API.Image, images.API)
+	defaultImage(&tamoss.Spec.UI.Image, images.UI)
+	defaultImage(&tamoss.Spec.Console.Image, images.Console)
 	if tamoss.Spec.Images.SchemaMigrationPostgresClient == "" {
-		tamoss.Spec.Images.SchemaMigrationPostgresClient = DefaultPostgresClientImage
+		tamoss.Spec.Images.SchemaMigrationPostgresClient = images.PostgresClient
+	}
+	if tamoss.Spec.Images.TAMSin == "" {
+		tamoss.Spec.Images.TAMSin = images.TAMSin
+	}
+	if db := tamoss.Spec.Backends.DB.CNPG; db != nil && db.PostgresVersion == "" {
+		db.PostgresVersion = images.CNPGPostgresVersion
+	}
+	if s3 := tamoss.Spec.Backends.S3.RustFSOperator; s3 != nil && s3.Image == "" {
+		s3.Image = images.RustFS
+	}
+}
+
+func defaultImage(image *tamossv1alpha1.ImageSpec, reference string) {
+	// Keep tag and digest together so a repository-only override can use a mirror.
+	separator := strings.LastIndex(reference, ":")
+	if at := strings.Index(reference, "@"); at >= 0 {
+		separator = at
+		if colon := strings.LastIndex(reference[:at], ":"); colon > strings.LastIndex(reference[:at], "/") {
+			separator = colon
+		}
+	}
+	repository, tag := reference, ""
+	if separator > strings.LastIndex(reference, "/") {
+		repository, tag = reference[:separator], reference[separator+1:]
+		if reference[separator] == '@' {
+			tag = "@" + tag
+		}
+	}
+	if image.Repository == "" {
+		image.Repository = repository
+	}
+	if image.Tag == "" {
+		image.Tag = tag
+	}
+	if image.PullPolicy == "" {
+		image.PullPolicy = corev1.PullIfNotPresent
 	}
 }
 
@@ -267,6 +287,11 @@ func defaultPlatformPublicEndpointWithoutAuthentik(tamoss *tamossv1alpha1.Tamoss
 	if tamoss.Spec.Ingress.Annotations == nil {
 		tamoss.Spec.Ingress.Annotations = map[string]string{
 			defaultCertManagerIssuerAnnotation: defaults.IssuerName,
+		}
+	}
+	if tamoss.Spec.Ingress.ClassName == "traefik" {
+		if _, ok := tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation]; !ok {
+			tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation] = "true"
 		}
 	}
 }
@@ -465,7 +490,7 @@ func defaultManagedS3PublicEndpoint(endpoint *tamossv1alpha1.S3PublicEndpointSpe
 }
 
 func defaultCNPG(tamoss *tamossv1alpha1.Tamoss, instances int32, storageSize string, applyFixtures, enablePodMonitor bool) {
-	if tamoss.Spec.Backends.DB.ProvidedBy == "" {
+	if tamoss.Spec.Backends.DB.ProvidedBy == "" && tamoss.Spec.Backends.DB.External == nil {
 		tamoss.Spec.Backends.DB.ProvidedBy = tamossv1alpha1.BackendProvidedByCNPG
 	}
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
@@ -478,9 +503,6 @@ func defaultCNPG(tamoss *tamossv1alpha1.Tamoss, instances int32, storageSize str
 	cnpg := tamoss.Spec.Backends.DB.CNPG
 	if cnpg.Instances == 0 {
 		cnpg.Instances = instances
-	}
-	if cnpg.PostgresVersion == "" {
-		cnpg.PostgresVersion = DefaultCNPGPostgresVersion
 	}
 	if cnpg.Storage.Size == "" {
 		cnpg.Storage.Size = storageSize
@@ -501,7 +523,7 @@ func defaultCNPGResources(tamoss *tamossv1alpha1.Tamoss, requestCPU, requestMemo
 }
 
 func defaultRustFSOperator(tamoss *tamossv1alpha1.Tamoss, servers, volumesPerServer int32, storageSize string) {
-	if tamoss.Spec.Backends.S3.ProvidedBy == "" {
+	if tamoss.Spec.Backends.S3.ProvidedBy == "" && tamoss.Spec.Backends.S3.External == nil {
 		tamoss.Spec.Backends.S3.ProvidedBy = tamossv1alpha1.S3BackendProvidedByRustFSOperator
 	}
 	if tamoss.Spec.Backends.S3.Provider() != tamossv1alpha1.S3BackendProvidedByRustFSOperator {
@@ -511,9 +533,6 @@ func defaultRustFSOperator(tamoss *tamossv1alpha1.Tamoss, servers, volumesPerSer
 		tamoss.Spec.Backends.S3.RustFSOperator = &tamossv1alpha1.S3RustFSOperatorSpec{}
 	}
 	rustfs := tamoss.Spec.Backends.S3.RustFSOperator
-	if rustfs.Image == "" {
-		rustfs.Image = DefaultRustFSImage
-	}
 	if len(rustfs.Pools) == 0 {
 		rustfs.Pools = []tamossv1alpha1.S3RustFSPoolSpec{{
 			Name:             "pool-0",

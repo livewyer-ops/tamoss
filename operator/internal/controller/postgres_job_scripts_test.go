@@ -46,6 +46,7 @@ func TestStorageBackendDatabaseScriptsUseSharedPostgresWrapper(t *testing.T) {
 func TestSchemaMigrationJobUsesRuntimeMigrationCommand(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			API: tamossv1alpha1.APIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{
 					Repository: "registry.example.com/tamoss-api",
@@ -58,7 +59,7 @@ func TestSchemaMigrationJobUsesRuntimeMigrationCommand(t *testing.T) {
 		},
 	}
 
-	job := schemaMigrationJob(tamoss, true)
+	job := testSchemaController().schemaMigrationJob(tamoss, true)
 	container := job.Spec.Template.Spec.Containers[0]
 
 	if image := container.Image; image != "registry.example.com/tamoss-api:v1.2.3" {

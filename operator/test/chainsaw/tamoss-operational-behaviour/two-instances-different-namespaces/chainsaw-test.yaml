@@ -45,6 +45,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', 'tamoss-cross-alpha', 'alpha-s3'))
         - patch:
             resource:
               apiVersion: rustfs.com/v1alpha1
@@ -65,6 +70,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', 'tamoss-cross-beta', 'beta-s3'))
         - assert:
             file: assert/tamoss-ready.yaml
             timeout: 5m

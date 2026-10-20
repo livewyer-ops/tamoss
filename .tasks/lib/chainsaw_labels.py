@@ -36,7 +36,7 @@ SELECTORS = {
     "nightly": (
         "test.tamoss.io/target=kind,test.tamoss.io/tier in (smoke,standard,extended)"
     ),
-    "release": "test.tamoss.io/tier=release",
+    "release": "test.tamoss.io/tier=release,test.tamoss.io/platform!=managed",
     "deployed": "test.tamoss.io/target=deployed,test.tamoss.io/lifecycle=read-only",
 }
 

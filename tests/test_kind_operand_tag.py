@@ -286,6 +286,13 @@ def test_kind_workflows_preserve_environment_overrides(entry_point: str) -> None
     plan = result.stdout + result.stderr
     assert f'task_apply_env_instance "{environment_dir}"' in plan
     assert f'.tasks/lib/demo_ingest.sh "{target}"' in plan
+    catalogue_tags = re.findall(
+        r'task_render_development_operator "[^"]+" "([^"]+)"', plan
+    )
+    api_tags = re.findall(
+        r'task_kind_build_image "TAMOSS API" "livewyer/tamoss-api:([^"]+)"', plan
+    )
+    assert catalogue_tags and set(catalogue_tags) == set(api_tags)
 
 
 def _kind_image_plan(profile: str = "local-kind") -> str:

@@ -31,7 +31,8 @@ func TestForwardAuthProofIsStableAndAnnotatesConsumers(t *testing.T) {
 		},
 	}
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 	}
 	objects := forwardAuthObjects(tamoss)
 
@@ -71,7 +72,8 @@ func TestForwardAuthProofIsStableAndAnnotatesConsumers(t *testing.T) {
 func TestForwardAuthProofIsGeneratedAfterSecretDeletion(t *testing.T) {
 	tamoss := forwardAuthTamoss()
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).Build(),
 	}
 	objects := forwardAuthObjects(tamoss)
 
@@ -100,7 +102,8 @@ func TestForwardAuthProofRegeneratesOnlyMissingKey(t *testing.T) {
 		Data: map[string][]byte{workload_renderer.ForwardAuthAPIProofSecretKey: apiProof},
 	}
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 	}
 	objects := forwardAuthObjects(tamoss)
 
@@ -129,7 +132,8 @@ func TestForwardAuthProofRegeneratesMalformedValues(t *testing.T) {
 		},
 	}
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 	}
 	objects := forwardAuthObjects(tamoss)
 
@@ -162,7 +166,7 @@ func TestForwardAuthConsoleChecksumIsOmittedWithoutConsoleConsumer(t *testing.T)
 
 func TestForwardAuthPreparationIsNoopWithoutRenderedSecret(t *testing.T) {
 	tamoss := forwardAuthTamoss()
-	reconciler := &TamossReconciler{}
+	reconciler := &TamossReconciler{Releases: testReleases()}
 
 	if err := reconciler.prepareForwardAuthProofSecret(context.Background(), tamoss, nil); err != nil {
 		t.Fatalf("expected no-op without a rendered proof Secret: %v", err)
@@ -170,7 +174,7 @@ func TestForwardAuthPreparationIsNoopWithoutRenderedSecret(t *testing.T) {
 }
 
 func forwardAuthTamoss() *tamossv1alpha1.Tamoss {
-	return &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "tams"}}
+	return &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Version: "dev"}, ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "tams"}}
 }
 
 func forwardAuthObjects(tamoss *tamossv1alpha1.Tamoss) []client.Object {

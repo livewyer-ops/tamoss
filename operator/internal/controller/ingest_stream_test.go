@@ -269,7 +269,8 @@ func TestIngestRunRecordsProtocolConfirmedOutcomeOnStatus(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, testIngestTamoss(), job, pod).Build()
 	reconciler := &IngestRunReconciler{
-		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		Releases: testReleases(),
+		Client:   k8sClient, Scheme: scheme, APIReader: k8sClient,
 		PodLogs: staticPodLogReader{stream: testIngestEventStream(t, ingestevent.RunSucceeded)},
 	}
 
@@ -296,7 +297,8 @@ func TestIngestRunRejectsExitCodeMismatch(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, testIngestTamoss(), job, pod).Build()
 	reconciler := &IngestRunReconciler{
-		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		Releases: testReleases(),
+		Client:   k8sClient, Scheme: scheme, APIReader: k8sClient,
 		PodLogs: staticPodLogReader{stream: testIngestEventStream(t, ingestevent.RunSucceeded)},
 	}
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
@@ -316,7 +318,8 @@ func TestIngestRunWaitsForUnavailableStreamThenFailsClosed(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, testIngestTamoss(), job, pod).Build()
 	reconciler := &IngestRunReconciler{
-		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
+		Releases: testReleases(),
+		Client:   k8sClient, Scheme: scheme, APIReader: k8sClient,
 		PodLogs: staticPodLogReader{err: errors.New("logs not ready")},
 	}
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {

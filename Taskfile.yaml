@@ -7,7 +7,6 @@ vars:
   PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
   SECRETS_DIR: ".local"
-  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
   DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
@@ -102,10 +101,11 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - task: operator:apply
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-          OPERATOR_KUSTOMIZE_DIR: "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}"
+      - |
+        . .tasks/lib/operator_k8s.sh
+        task_render_development_operator "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}" "{{.KIND_OPERAND_VERSION}}" "{{.KIND_SCHEMA_VERSION}}" "{{.KIND_PREVIOUS_SCHEMA_VERSION}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_apply_operator "{{.KUBECONFIG}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_wait_operator "{{.KUBECONFIG}}" tamoss-system operator-controller-manager
       - task: operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"

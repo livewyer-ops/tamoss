@@ -53,6 +53,14 @@ Read `Tamoss` conditions first:
 | `Degraded=True` | User-actionable reconcile failure. |
 | `Paused=True` | `.spec.paused=true`; writes are suspended. |
 
+For `InstallationDefaultsRequired`, check that the environment's operator
+overlay was applied and supplies the omitted profile and site settings.
+For `InvalidInstallationDefaults`, correct `operator/defaults.yaml` and apply
+that overlay again; the operator reads it at startup. Inspect
+`status.resolved.defaults` and `status.appliedDefaultsRevision` to distinguish
+the loaded configuration from the revision whose rollout completed. See
+[Runtime Configuration](../reference/runtime-configuration.md#installation-defaults).
+
 Then inspect provider ownership:
 
 ```bash
@@ -258,7 +266,8 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
   logs -l app.kubernetes.io/component=api --tail=100
 ```
 
-For remote clusters, use the public API hostname configured in the `Tamoss` CR.
+For remote clusters, use the effective API URL from `status.endpoints.api` or
+`task env:summary`.
 
 ## Support Bundle
 

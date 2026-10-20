@@ -24,7 +24,7 @@ from playwright.sync_api import (
 )
 
 from tests.e2e.client import E2EClient
-from tests.e2e.kubernetes import kubectl
+from tests.e2e.kubernetes import kubectl, load_jsonpath
 from tests.e2e.target import E2ETarget
 from tests.support.fixtures import load_json_fixture
 from tests.support.paths import REPO_ROOT
@@ -1180,13 +1180,21 @@ def _split_resource_ref(ref: str, *, default_namespace: str) -> tuple[str, str]:
 
 
 def _deployed_worker_image(target: E2ETarget) -> str:
+    assert target.cr_name, "Webhook receiver setup requires TEST_TAMOSS_CR_NAME"
+    worker = load_jsonpath(
+        kubeconfig=target.kubeconfig,
+        namespace=target.namespace,
+        resource=f"tamoss/{target.cr_name}",
+        jsonpath="{.status.resolved.resources.worker}",
+    )
+    assert worker, "The selected instance must have an enabled worker"
     result = _kubectl_for_target(
         target,
         "-n",
         target.namespace,
         "get",
         "deploy",
-        "tams-worker",
+        worker,
         "-o",
         "jsonpath={.spec.template.spec.containers[0].image}",
     )

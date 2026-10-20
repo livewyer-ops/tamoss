@@ -70,7 +70,7 @@ func TestIngestRunFailsTerminallyWhenRecordedJobDisappears(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}, &tamossv1alpha1.Tamoss{}).
 		WithObjects(run, tamoss).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme, APIReader: k8sClient}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: k8sClient, Scheme: scheme, APIReader: k8sClient}
 
 	result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)})
 	if err != nil {
@@ -110,7 +110,7 @@ func TestIngestRunWaitsWhenMissingJobIsStillLive(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(ownedIngestJob(run)).
 		Build()
-	reconciler := &IngestRunReconciler{Client: cached, Scheme: scheme, APIReader: live}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: cached, Scheme: scheme, APIReader: live}
 
 	result, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)})
 	if err != nil {
@@ -182,6 +182,7 @@ func TestIngestRunPreservesExistingJobWhenConfigurationChanges(t *testing.T) {
 	run := ingestRunWithRecordedJob(testIngestRun())
 	tamoss := testIngestTamoss()
 	tamoss.Status.Conditions[0].Status = metav1.ConditionFalse
+	tamoss.Spec.Version = "unavailable-release"
 	job := ownedIngestJob(run)
 	oldImage := "registry.example/tamsin@sha256:" + strings.Repeat("a", 64)
 	job.Spec.Template.Spec.Containers = []corev1.Container{{Name: "tamsin", Image: oldImage, Args: []string{"ingest", "--verify=auto"}}}
@@ -194,7 +195,7 @@ func TestIngestRunPreservesExistingJobWhenConfigurationChanges(t *testing.T) {
 		Build()
 	reconciler := &IngestRunReconciler{
 		Client: k8sClient, Scheme: scheme, APIReader: k8sClient,
-		TamsinImage: "registry.example/tamsin@sha256:" + strings.Repeat("b", 64),
+		Releases: testReleasesWithTAMSin("registry.example/tamsin@sha256:" + strings.Repeat("b", 64)),
 	}
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
@@ -231,7 +232,7 @@ func TestIngestRunStopsJobWhenTargetTamossIsDeleted(t *testing.T) {
 		WithStatusSubresource(&tamossv1alpha1.IngestRun{}).
 		WithObjects(run, job).
 		Build()
-	reconciler := &IngestRunReconciler{Client: k8sClient, Scheme: scheme, APIReader: k8sClient}
+	reconciler := &IngestRunReconciler{Releases: testReleases(), Client: k8sClient, Scheme: scheme, APIReader: k8sClient}
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err != nil {
 		t.Fatalf("reconcile failed: %v", err)
@@ -257,7 +258,7 @@ func TestIngestRunStopsJobWhenTargetTamossIsDeleted(t *testing.T) {
 // An IngestRun created without spec.options must still resolve, because the
 // nested defaults do not materialise when the parent object is absent.
 func TestResolveIngestStorageBackendAcceptsUnsetReference(t *testing.T) {
-	reconciler := &IngestRunReconciler{}
+	reconciler := &IngestRunReconciler{Releases: testReleases()}
 	spec := defaultIngestRunSpec(tamossv1alpha1.IngestRunSpec{
 		TamossRef: tamossv1alpha1.TamossReferenceSpec{Name: "example"},
 		Input:     tamossv1alpha1.IngestRunInput{Kind: tamossv1alpha1.IngestInputKindHTTP, URI: "https://media.example.test/staged-123"},

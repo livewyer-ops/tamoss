@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
+
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -62,10 +65,11 @@ const (
 )
 
 type IngestRunReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	WatchNamespaces WatchNamespaceSet
-	TamsinImage     string
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	WatchNamespaces  WatchNamespaceSet
 	// APIReader performs uncached reads. Absence is only trusted after a live
 	// confirmation, because a lagging informer cache would otherwise fail a
 	// healthy run whose Job or target instance does exist.
@@ -196,14 +200,19 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.reconcileMissingIngestJob(ctx, run)
 	}
 
-	if !tamossReadyForIngest(tamoss) {
+	resolvedTamoss, selectionErr := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
+	if selectionErr != nil {
+		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, releaseErrorReason(selectionErr), selectionErr.Error(), false)
+	}
+	tamoss = resolvedTamoss
+	if !tamossReadyForIngest(tamoss, r.InstanceDefaults) {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamossNotReady", "The target Tamoss instance is not Ready", false)
 	}
-	if strings.TrimSpace(r.TamsinImage) == "" {
+	if strings.TrimSpace(tamoss.Spec.Images.TAMSin) == "" {
 		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinRuntimeUnavailable", "The operator has no immutable TAMSin image configured", false)
 	}
-	if !isImmutableImageReference(r.TamsinImage) {
-		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinImageNotImmutable", "TAMOSS_TAMSIN_IMAGE must use an immutable sha256 digest", false)
+	if !isImmutableImageReference(tamoss.Spec.Images.TAMSin) {
+		return r.setIngestRunStaticPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "TamsinImageNotImmutable", "spec.images.tamsin must use an immutable sha256 digest", false)
 	}
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		return r.setIngestRunPhase(ctx, run, tamossv1alpha1.IngestRunPhasePending, "IngestAuthenticationUnavailable", "IngestRun currently requires an operator-managed API token Secret", false)
@@ -261,7 +270,7 @@ func (r *IngestRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	desired := desiredIngestJob(run, spec, tamoss, endpoint, r.TamsinImage, storageID, flowMetadata, resolved)
+	desired := desiredIngestJob(run, spec, tamoss, endpoint, tamoss.Spec.Images.TAMSin, storageID, flowMetadata, resolved)
 	if err := controllerutil.SetControllerReference(run, desired, r.Scheme); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -440,9 +449,10 @@ func defaultIngestRunSpec(spec tamossv1alpha1.IngestRunSpec) tamossv1alpha1.Inge
 	return spec
 }
 
-func tamossReadyForIngest(tamoss *tamossv1alpha1.Tamoss) bool {
+func tamossReadyForIngest(tamoss *tamossv1alpha1.Tamoss, installation *defaults.Installation) bool {
 	condition := apimeta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionReady)
-	return condition != nil && condition.Status == metav1.ConditionTrue &&
+	return installation.AppliedTo(tamoss) && tamoss.Spec.Version != "" && tamoss.Status.CurrentVersion == tamoss.Spec.Version &&
+		condition != nil && condition.Status == metav1.ConditionTrue &&
 		tamoss.Status.ObservedGeneration == tamoss.Generation && tamoss.Spec.API.IsEnabled()
 }
 

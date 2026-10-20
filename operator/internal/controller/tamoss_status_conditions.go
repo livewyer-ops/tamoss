@@ -43,9 +43,10 @@ func setUpgradeUnknown(tamoss *tamossv1alpha1.Tamoss, reason, message string) {
 
 func setUpgradeStatus(tamoss *tamossv1alpha1.Tamoss, phase string, upgradeable metav1.ConditionStatus, reason, message string) {
 	tamoss.Status.Upgrade = tamossv1alpha1.UpgradeStatus{
-		Phase:   phase,
-		Reason:  reason,
-		Message: message,
+		TargetVersion: tamoss.Status.Upgrade.TargetVersion,
+		Phase:         phase,
+		Reason:        reason,
+		Message:       message,
 	}
 	operatorstatus.SetConditionStatus(&tamoss.Status.Conditions, tamoss.Generation, operatorstatus.ConditionUpgradeable, upgradeable, reason, message)
 }

@@ -37,10 +37,10 @@ func TestSchemaJobWithDriftedTemplateIsDeletedAndRecreated(t *testing.T) {
 	ctx := context.Background()
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
-	stale := schemaMigrationJob(tamoss, false)
+	stale := testSchemaController().schemaMigrationJob(tamoss, false)
 	stale.Spec.Template.Spec.Containers[0].Image = "livewyer/tamoss-api:superseded"
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, stale).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestDriftedSchemaJobWaitsForForegroundPodCleanupBeforeReplacement(t *testin
 	ctx := context.Background()
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
-	stale := schemaMigrationJob(tamoss, false)
+	stale := testSchemaController().schemaMigrationJob(tamoss, false)
 	stale.UID = types.UID("stale-schema-job")
 	stale.Spec.Template.Spec.Containers[0].Image = "livewyer/tamoss-api:superseded"
 	controller := true
@@ -109,7 +109,7 @@ func TestDriftedSchemaJobWaitsForForegroundPodCleanupBeforeReplacement(t *testin
 		return c.Delete(ctx, obj, opts...)
 	}
 	fakeClient := fake.NewClientBuilder().WithInterceptorFuncs(interceptors).WithScheme(scheme).WithObjects(tamoss, stale, stalePod).Build()
-	schemaController := SchemaController{Client: fakeClient, Scheme: scheme}
+	schemaController := SchemaController{Target: testRelease().Schema, Client: fakeClient, Scheme: scheme}
 	jobKey := types.NamespacedName{Name: stale.Name, Namespace: stale.Namespace}
 
 	result, err := schemaController.Reconcile(ctx, tamoss)
@@ -159,7 +159,7 @@ func TestObsoleteVersionSchemaJobAndPodAreRemovedBeforeCurrentLaunch(t *testing.
 	ctx := context.Background()
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
-	desired := schemaMigrationJob(tamoss, false)
+	desired := testSchemaController().schemaMigrationJob(tamoss, false)
 	obsolete := desired.DeepCopy()
 	obsolete.Name = tamossResourceName(tamoss, "schema-migrate-8-1-0-oss2")
 	obsolete.UID = types.UID("obsolete-schema-job")
@@ -195,7 +195,7 @@ func TestObsoleteVersionSchemaJobAndPodAreRemovedBeforeCurrentLaunch(t *testing.
 		return c.Delete(ctx, obj, opts...)
 	}
 	fakeClient := fake.NewClientBuilder().WithInterceptorFuncs(interceptors).WithScheme(scheme).WithObjects(tamoss, obsolete, obsoletePod).Build()
-	controllerUnderTest := SchemaController{Client: fakeClient, Scheme: scheme}
+	controllerUnderTest := SchemaController{Target: testRelease().Schema, Client: fakeClient, Scheme: scheme}
 	desiredKey := client.ObjectKeyFromObject(desired)
 
 	result, err := controllerUnderTest.Reconcile(ctx, tamoss)
@@ -242,14 +242,14 @@ func TestFailureOnlySchemaStateRetriesBootstrapWithFixtures(t *testing.T) {
 	tamoss := recoveryTamoss()
 	applyFixtures := true
 	tamoss.Spec.Backends.DB.ApplyFixtures = &applyFixtures
-	failed := schemaMigrationJob(tamoss, true)
+	failed := testSchemaController().schemaMigrationJob(tamoss, true)
 	failed.UID = types.UID("failed-schema-job")
-	state := schemaFailureStateConfigMap(tamoss, failed, nil, 1)
+	state := testSchemaController().schemaFailureStateConfigMap(tamoss, failed, nil, 1)
 	if schemaStateHasAppliedVersion(state) {
 		t.Fatalf("expected failure-only state without applied version, got %#v", state.Data)
 	}
 	fakeClient := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state).Build()
-	controller := SchemaController{Client: fakeClient, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: fakeClient, Scheme: scheme}
 
 	if _, err := controller.Reconcile(ctx, tamoss); err != nil {
 		t.Fatalf("expected failure-only schema state retry: %v", err)
@@ -267,11 +267,11 @@ func TestSchemaJobFailedWithDriftedTemplateIsRecreated(t *testing.T) {
 	ctx := context.Background()
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
-	stale := schemaMigrationJob(tamoss, false)
+	stale := testSchemaController().schemaMigrationJob(tamoss, false)
 	stale.Spec.Template.Spec.Containers[0].Image = "livewyer/tamoss-api:superseded"
 	stale.Status = failedJobFixture(stale.Name, stale.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, stale).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -291,11 +291,11 @@ func TestSucceededPinned81SchemaJobIsDeletedWithoutStamping82State(t *testing.T)
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
 	tamoss.Spec.API.Image.Tag = "8.1.0-oss6"
-	stale := schemaMigrationJob(tamoss, false)
+	stale := testSchemaController().schemaMigrationJob(tamoss, false)
 	stale.Spec.Template.Spec.Containers[0].Args = []string{"run", "tamoss-db", "migrate"}
 	stale.Status.Succeeded = 1
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, stale).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -333,9 +333,9 @@ func TestSchemaJobWithMatchingTemplateIsLeftRunning(t *testing.T) {
 	ctx := context.Background()
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
-	running := schemaMigrationJob(tamoss, false)
+	running := testSchemaController().schemaMigrationJob(tamoss, false)
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, running).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -354,7 +354,7 @@ func TestPinned81TerminalFailureIsReplacedAfter82ImageUpdate(t *testing.T) {
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
 	tamoss.Spec.API.Image.Tag = "8.1.0-oss6"
-	stale := schemaMigrationJob(tamoss, false)
+	stale := testSchemaController().schemaMigrationJob(tamoss, false)
 	stale.Status = failedJobFixture(stale.Name, stale.Namespace).Status
 	state := terminalSchemaState(tamoss, "")
 
@@ -362,7 +362,7 @@ func TestPinned81TerminalFailureIsReplacedAfter82ImageUpdate(t *testing.T) {
 	// migration with the old pinned image.
 	tamoss.Spec.API.Image.Tag = "8.2.0-oss1"
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, stale).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -393,10 +393,10 @@ func TestMatchingSchemaJobPreservesTerminalFailure(t *testing.T) {
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
 	state := terminalSchemaState(tamoss, "")
-	failed := schemaMigrationJob(tamoss, false)
+	failed := testSchemaController().schemaMigrationJob(tamoss, false)
 	failed.Status = failedJobFixture(failed.Name, failed.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, failed).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -412,7 +412,7 @@ func TestMatchingSchemaJobPreservesTerminalFailure(t *testing.T) {
 
 func TestSchemaJobTemplateDriftedComparesRenderedFields(t *testing.T) {
 	tamoss := recoveryTamoss()
-	desired := schemaMigrationJob(tamoss, false)
+	desired := testSchemaController().schemaMigrationJob(tamoss, false)
 
 	same := desired.DeepCopy()
 	if schemaJobTemplateDrifted(same, desired) {

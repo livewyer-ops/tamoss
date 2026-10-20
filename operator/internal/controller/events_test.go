@@ -14,8 +14,9 @@ import (
 
 func TestTamossLifecycleEventsFromConditionTransitions(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 	original := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
@@ -33,8 +34,9 @@ func TestTamossLifecycleEventsFromConditionTransitions(t *testing.T) {
 
 func TestTamossWarningEventsFromConditionTransitions(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 	original := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
@@ -55,8 +57,9 @@ func TestTamossWarningEventsFromConditionTransitions(t *testing.T) {
 
 func TestTamossWarningEventsIgnoreProgressReasons(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 	original := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	updated := original.DeepCopy()
@@ -73,8 +76,9 @@ func TestTamossWarningEventsIgnoreProgressReasons(t *testing.T) {
 
 func TestTamossWarningsAreDedupedByReasonAndMessage(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 	tamoss := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 
@@ -91,8 +95,9 @@ func TestTamossWarningsAreDedupedByReasonAndMessage(t *testing.T) {
 
 func TestDriftCorrectedSuppressesInitialConvergence(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 	tamoss := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 	}
 	deployment := &appsv1.Deployment{

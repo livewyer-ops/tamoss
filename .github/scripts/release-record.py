@@ -51,7 +51,12 @@ def main() -> None:
         compatibility_path,
     )
     images = image_references(dict(os.environ))
+    catalogue = json.loads(Path("dist/operator-release/catalogue.json").read_text())
+    runtime = next(
+        entry for entry in catalogue if entry["version"] == tag.removeprefix("v")
+    )
     record = {
+        "runtime": runtime,
         "recordVersion": 1,
         "tag": tag,
         "sourceCommit": commit_sha("SOURCE_COMMIT"),
@@ -63,6 +68,7 @@ def main() -> None:
             path.name: {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
             for path in (
                 Path("dist/operator-release/install.yaml"),
+                Path("dist/operator-release/catalogue.json"),
                 Path("operator/compatibility.yaml"),
                 Path("deploy/platform/dependencies.yaml"),
             )

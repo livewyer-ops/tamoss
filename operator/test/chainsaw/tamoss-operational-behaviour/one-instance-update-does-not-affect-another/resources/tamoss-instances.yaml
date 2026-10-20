@@ -5,6 +5,7 @@ metadata:
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
+  version: dev
   fullnameOverride: alpha
   auth:
     required: false
@@ -61,6 +62,7 @@ metadata:
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
+  version: dev
   fullnameOverride: beta
   auth:
     required: false
