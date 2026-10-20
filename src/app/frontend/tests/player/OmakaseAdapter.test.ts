@@ -662,6 +662,37 @@ describe("OmakaseAdapter", () => {
     handle.destroy();
   });
 
+  it("starts and replays at the first sample without skipping later buffer gaps", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const handle = createOmakasePreview({
+      descriptor: descriptor(),
+      playerElementId: "player",
+      timelineElementId: "timeline",
+      onChange,
+    });
+    const player = mocks.instances[0];
+    player.ranges = [[0.2, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    await handle.ready;
+    expect(player.player.seekTo).toHaveBeenCalledWith(0.2);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: "ready", currentTime: 0.2 }),
+    );
+
+    player.player.seekTo.mockClear();
+    player.mainMediaElement.currentTime = 4;
+    player.ranges = [[8, 12]];
+    await vi.advanceTimersByTimeAsync(100);
+    expect(player.player.seekTo).not.toHaveBeenCalled();
+    expect(player.mainMediaElement.currentTime).toBe(4);
+
+    Object.defineProperty(player.mainMediaElement, "ended", { value: true });
+    document.querySelector<HTMLElement>("omakase-play-button")?.click();
+    expect(player.player.seekTo).toHaveBeenCalledWith(0.2);
+    handle.destroy();
+  });
+
   it("fails closed on fatal native HLS errors", async () => {
     const onChange = vi.fn();
     const handle = createOmakasePreview({

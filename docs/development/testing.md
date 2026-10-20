@@ -93,6 +93,9 @@ tested as a TAMOSS interpretation, not as a BBC requirement.
 
 ## Deployed Gates
 
+Install `ffmpeg` and `ffprobe` on the test host for deployed playback checks.
+The shared Kubernetes CI workflow installs them through the system package manager.
+
 Run against an existing local [Kind](https://kind.sigs.k8s.io/) target:
 
 ```bash

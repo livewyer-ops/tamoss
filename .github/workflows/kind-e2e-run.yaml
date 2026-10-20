@@ -60,6 +60,11 @@ jobs:
       - name: Install browser runtime
         run: uv run --project src playwright install --with-deps chromium
 
+      - name: Install media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run Kind E2E gate
         run: task kind:e2e PROFILE=local-kind KUBECONFIG=tams.kubeconfig KIND_SUMMARY=false
 
