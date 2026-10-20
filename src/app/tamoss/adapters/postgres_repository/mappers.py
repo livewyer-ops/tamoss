@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from mediatimestamp import TimeRange, Timestamp
+from mediatimestamp import Timestamp
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.types import (
@@ -32,7 +33,7 @@ from tamoss.domain.model import (
     WebhookDeliveryRecord,
     WebhookRecord,
 )
-from tamoss.domain.timeranges import finite_normalized_timerange_bounds
+from tamoss.domain.timeranges import finite_normalized_timerange_bounds, parse_timerange
 from tamoss.errors import normalize_error_payload
 
 
@@ -478,8 +479,8 @@ def _raise_if_segments_overlap(
           AND EXISTS (
               SELECT 1
               FROM unnest(
-                  %(starts)s::bigint[],
-                  %(ends)s::bigint[]
+                  %(starts)s::numeric[],
+                  %(ends)s::numeric[]
               ) AS candidate(timerange_start, timerange_end)
               WHERE segment.timerange_start < candidate.timerange_end
                 AND segment.timerange_end > candidate.timerange_start
@@ -852,7 +853,7 @@ def _optional_datetime_from_record(value: Any) -> datetime | None:
 
 def _timerange_bounds(timerange: str) -> tuple[int, int]:
     try:
-        parsed = TimeRange.from_str(timerange)
+        parsed = parse_timerange(timerange)
     except Exception as exc:
         raise ValueError("Segment timerange is invalid.") from exc
     try:
@@ -868,11 +869,13 @@ def _timerange_bounds(timerange: str) -> tuple[int, int]:
     return bounds.start, bounds.end
 
 
-def _timerange_from_bounds(start: int | None, end: int | None) -> str:
+def _timerange_from_bounds(
+    start: int | Decimal | None, end: int | Decimal | None
+) -> str:
     if start is None or end is None:
         return "()"
-    start_ts = Timestamp.from_nanosec(start)
-    end_ts = Timestamp.from_nanosec(end)
+    start_ts = Timestamp.from_nanosec(int(start))
+    end_ts = Timestamp.from_nanosec(int(end))
     if start == end:
         return f"[{start_ts}]"
     return f"[{start_ts}_{end_ts})"

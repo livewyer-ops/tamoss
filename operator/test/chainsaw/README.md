@@ -45,7 +45,7 @@ Use Chainsaw operations in this order:
    Pod or Service.
 3. Use `command` only for an external system boundary, such as PostgreSQL, S3,
    operator process configuration, a mutating API workflow, or a response-body
-   assertion that cannot use `proxy` because Chainsaw 0.2.15 does not propagate
+   assertion that cannot use `proxy` because the pinned Chainsaw does not propagate
    proxy outputs.
 
 Inline `script` operations, shell entrypoints, shell pipelines, and `kubectl`
@@ -54,6 +54,14 @@ purpose-built executable directly and have an explicit Chainsaw `check`.
 Fixture containers follow the same rule: invoke `pg_isready`, `aws`, or the
 fixture programme directly and use Kubernetes Job retries or probes for
 convergence.
+
+Keep fixture programmes in Python files alongside their scenario or shared
+fixture. The test-only `livewyer/tamoss-chainsaw:dev` image includes those files
+and the locked pytest dependency; the setup task builds and loads it into Kind.
+Resource manifests invoke the files directly. Python checks run with plain
+assertions and short tracebacks to keep credentials and signed URLs out of
+pytest diagnostics. Chainsaw records Job completion in its JUnit report and
+collects failed Job output before cleanup.
 
 Run against the current Kubernetes context:
 
@@ -133,12 +141,14 @@ is the executable source of truth for label values and selector presets.
 | `test.tamoss.io/provider` | `none`, `cnpg`, `rustfs`, `authentik`, `external`, `mixed` |
 | `test.tamoss.io/profile` | `none`, `local-kind`, `edge`, `single-server`, `multi-server` |
 
+The optional `test.tamoss.io/platform` label accepts `managed` or `simulated`.
+
 | Command | Selection |
 | --- | --- |
 | `task operator:e2e:chainsaw:smoke` | Kind-backed smoke tests |
 | `task operator:e2e:chainsaw:ci` | Kind-backed smoke and standard tests, excluding external-provider tests |
 | `task operator:e2e:chainsaw:nightly` | Kind-backed smoke, standard, and extended tests |
-| `task operator:e2e:chainsaw:release` | Release-labelled checks |
+| `task operator:e2e:chainsaw:release` | Release-labelled checks using fixture providers |
 | `task operator:e2e:chainsaw:deployed` | `target=deployed,lifecycle=read-only` only |
 | `task operator:e2e:chainsaw:focus SELECTOR='...'` | Any explicit Chainsaw label selector |
 
@@ -156,10 +166,12 @@ Shared fixtures currently include:
   to a scenario namespace.
 - `external-backend-secrets.yaml` creates the conventional Postgres and S3
   Secret names used by external-backend scenarios.
-- `postgres.yaml` starts a single-pod PostgreSQL 18 instance with ephemeral
+- `postgres.yaml` starts a single-pod PostgreSQL instance with ephemeral
   storage.
 - `rustfs.yaml` starts a single-pod RustFS S3-compatible backend and creates the
-  `tamoss` bucket using `amazon/aws-cli`.
+  `tamoss` bucket using `amazon/aws-cli`. Create the optional `rustfs-extra-env`
+  ConfigMap before applying this fixture to supply scenario-specific environment
+  variables.
 - `rustfs-crd.yaml` installs a minimal RustFS Operator `Tenant` CRD for tests
   that assert TAMOSS emits RustFS Operator resources without running the RustFS
   controller.
@@ -232,10 +244,26 @@ Profile bootstrapping is coordinated with the Kind profile e2e tasks. Chainsaw
 may assert profile-rendered Kubernetes shape, but full cluster creation and
 through-ingress smoke checks stay in the existing Kind workflow.
 
-## Rollout Gates
+## Managed release upgrades
 
-Some rollout checks are intentionally outside source control. Branch protection
-must be updated by repository administrators after the `operator-chainsaw-e2e`
-job has stayed green on `main`. The ten-run flake soak and any deferred HA
-leader-election scenario should be recorded on the pull request or follow-up
-issue that enables those gates, not hidden inside the suite.
+The `release-selection/managed-upgrade` scenario requires real CNPG and RustFS
+operators in an isolated cluster. It installs the supported historical releases,
+writes metadata and an S3 Object, then upgrades each instance separately. It
+checks the stored data and the neighbouring instance's unchanged schema.
+Its `test.tamoss.io/platform=managed` label excludes it from the default and
+fixture release suites, which install simulated provider CRDs.
+The scenario retains its resources for cluster teardown; the `up` task removes
+the test cluster unless `CHAINSAW_KEEP_CLUSTER=true`.
+
+Run:
+
+```bash
+task operator:e2e:chainsaw:managed:up
+```
+
+The task derives schema versions from `operator/compatibility.yaml` and installs
+both provider operators. Tag-time and manually dispatched operator CI run this
+task; its report is `reports/managed-upgrade/junit-operator-chainsaw.xml`.
+
+Other provider scenarios simulate their controllers using owned Pods and
+StatefulSets. Their database and S3 fixtures run separately.

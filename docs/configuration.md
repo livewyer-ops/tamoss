@@ -1,18 +1,20 @@
 # Configuration
 
-Configuration starts from the `Tamoss` custom resource. The operator applies
-profile defaults, then explicit YAML fields in the CR override those defaults.
+A `Tamoss` custom resource selects its release. Omitted site settings inherit
+installation defaults; remaining settings use the selected profile's defaults.
+Explicit fields in the resource take precedence.
 For existing clusters, make durable changes in the generated environment
 overlay under `deploy/environments/<name>` and reapply the task workflow.
 
 Use this page as the routing point for configuration work. Field-level details
-belong in the CR references and the canonical CRD schemas under
+belong in the references; the canonical CRD schemas are under
 `operator/config/crd/bases/`.
 
 ## Common Paths
 
 | Need | Use |
 | --- | --- |
+| Set shared installation defaults | [Runtime Configuration](reference/runtime-configuration.md#installation-defaults) |
 | Choose `local-kind`, `edge`, `single-server`, or `multi-server` | [Profiles](concepts/profiles.md) |
 | Configure managed or external providers | [Provider Ownership](concepts/provider-ownership.md) |
 | Configure storage backends and controlled storage allocation | [Storage Backends](concepts/storage-backends.md) |
@@ -25,34 +27,66 @@ belong in the CR references and the canonical CRD schemas under
 | Look up `FlowProfile` fields | [FlowProfile CR Reference](reference/flowprofile-cr.md) |
 | Look up `IngestRun` fields | [IngestRun CR Reference](reference/ingestrun-cr.md) |
 
-## Minimal CR
+<a id="minimal-cr"></a>
+
+## Minimal resource
+
+With installation defaults configured, an instance needs only its identity and
+release:
 
 ```yaml
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
-  name: tamoss-kind
-  namespace: tams
+  name: media
+  namespace: team
 spec:
-  profile: local-kind
+  version: <release>
 ```
 
-For non-local profiles, set the public base domain unless every public endpoint
-is configured directly:
+Replace `<release>` with a supported exact release. The operator calculates
+inherited settings without writing them into the resource. Kubernetes may still
+supply field defaults declared in the CRD.
+
+The [local-kind example](../deploy/environments/local-kind/tamoss-minimal.example.yaml)
+sets only its development release and profile. The
+[single-server example](../deploy/environments/single-server/tamoss-full.example.yaml)
+shows common defaults as commented settings. These files are examples; copy
+the settings you need into your instance overlay. They are not included in the
+environment Kustomizations.
+
+## Installation defaults
+
+`task env:init` creates `operator/defaults.yaml` beside the operator Kustomization:
 
 ```yaml
-spec:
-  profile: multi-server
-  publicEndpoint:
-    baseDomain: tamoss.example.com
+profile: single-server
+baseDomain: example.com
+clusterIssuer: tamoss-public
+consoleEnabled: true
 ```
 
-The operator derives API, UI, and S3 endpoints from the base domain.
-[Authentik](https://goauthentik.io/)
-endpoints are derived only for Authentik-backed profiles.
-When the UI is exposed on a non-standard public port, set the exact origin in
-`spec.publicEndpoint.uiURL`; the managed Authentik proxy provider uses this
-value for its external host.
+Shared settings go in this file. The platform's `platform-values.yaml` configures
+the services it refers to, including the Authentik ingress and TLS issuer.
+Keep the Authentik host aligned with the shared domain and `clusterIssuer`
+aligned with the platform's `tls.issuerName`.
+
+For the example above, API, UI and S3 use `api.media.team.example.com`,
+`app.media.team.example.com` and `s3.media.team.example.com`. Managed authentication
+uses `auth.example.com`. Configure DNS for these names before applying the instance;
+a wildcard TLS certificate for `*.example.com` does not cover the deeper names.
+The operator derives separate TLS Secret names for each instance.
+
+Apply the environment's operator overlay after changing shared settings.
+Changes affect existing instances that inherit those fields, independently of
+their selected release. See the [installation settings reference](reference/runtime-configuration.md#installation-defaults)
+for supported fields and the [upgrade guide](operations/upgrades.md#installation-defaults)
+for applying changes to existing installations.
+
+To override the inherited domain, set `spec.publicEndpoint.baseDomain`. When the
+UI uses a non-standard public port, set its exact origin in
+`spec.publicEndpoint.uiURL`. Remove an override to resume inheritance. Explicit
+external database, storage and authentication settings retain their ownership.
 
 ## Browser Origin Checklist
 
@@ -75,19 +109,27 @@ With the managed Authentik provider, the issuer URL is per application, not
 the Authentik root: `https://<auth-host>/application/o/<application-slug>/`.
 OpenID discovery lives beneath it at `.well-known/openid-configuration`. The
 client id and secret are held in the instance's generated OAuth Secret;
-`task env:summary` prints the resolved values.
+retrieve them with `task env:credentials INSTANCE=<name>` when needed. Remote
+`task env:summary` output omits secret values.
 
 ## Inspect Effective Configuration
 
-The CR stays intentionally small. To see the configuration after profile
-defaults and explicit overrides are applied, inspect status:
+To see the effective configuration, inspect status or use `task env:summary`.
+For the example instance above:
 
 ```bash
-kubectl -n tams describe tamoss tamoss-kind
-kubectl -n tams get tamoss tamoss-kind -o jsonpath='{.status.resolved}'
-kubectl -n tams get storagebackend -o wide
-kubectl -n tams get storagebackend archive -o jsonpath='{.status.resolved}'
+kubectl -n team describe tamoss media
+kubectl -n team get tamoss media -o jsonpath='{.status.resolved}{"\n"}{.status.endpoints}{"\n"}'
+kubectl -n team get storagebackend -o wide
 ```
 
 Status shows generated resource names, image references, endpoints, and Secret
 names. It never includes token, password, access key, or private key values.
+
+## Operator release catalogue
+
+`TAMOSS_RELEASE_CATALOGUE` names the JSON catalogue file mounted into the operator.
+Published installations mount an immutable ConfigMap generated from the release
+records. The operator loads it at startup and rejects a missing or invalid file.
+Select an instance release with `spec.version`; use `spec.images.tamsin` for an
+instance-specific ingest image override.

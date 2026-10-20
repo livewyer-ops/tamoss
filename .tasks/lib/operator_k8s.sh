@@ -81,7 +81,27 @@ task_wait_tamoss_instance() {
   local namespace="$2"
   local name="$3"
   local timeout="$4"
+  local defaults_revision="${5:-}"
 
+  local version generation
+  version="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.spec.version}')"
+  generation="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.metadata.generation}')"
+  if [ -z "$version" ]; then
+    echo "Tamoss/$name requires spec.version before it can become ready." >&2
+    return 1
+  fi
+  task_step "Instance: wait for Tamoss/$name generation $generation" \
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
+      --for="jsonpath={.status.conditions[?(@.type==\"Ready\")].observedGeneration}=$generation" \
+      "tamoss/$name" --timeout="$timeout"
+  task_step "Instance: wait for Tamoss/$name release $version" \
+    kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
+      --for="jsonpath={.status.currentVersion}=$version" "tamoss/$name" --timeout="$timeout"
+  if [ -n "$defaults_revision" ]; then
+    task_step "Instance: wait for Tamoss/$name installation defaults" \
+      kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
+        --for="jsonpath={.status.appliedDefaultsRevision}=$defaults_revision" "tamoss/$name" --timeout="$timeout"
+  fi
   task_step "Instance: wait for Tamoss/$name Ready" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
       --for=condition=Ready "tamoss/$name" --timeout="$timeout"
@@ -106,4 +126,34 @@ task_delete_tamoss_instance() {
   task_step "Instance: delete Tamoss/$name" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" \
       delete tamoss "$name" --ignore-not-found
+}
+
+# Render an isolated catalogue for local builds without changing checked-in defaults.
+task_render_development_operator() {
+  local source_dir="$1"
+  local operand_tag="$2"
+  local schema_version="$3"
+  local previous_schema_version="$4"
+  local output_dir="$5"
+  local source_path
+  mkdir -p "$output_dir"
+  source_path="$(realpath --relative-to="$output_dir" "$source_dir")"
+  python3 .github/scripts/release-catalogue.py --development \
+    --operand-tag "$operand_tag" --schema-version "$schema_version" \
+    --previous-schema-version "$previous_schema_version" \
+    --output "$output_dir/catalogue.json"
+  cat > "$output_dir/kustomization.yaml" <<YAML
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- $source_path
+configMapGenerator:
+- name: operator-release-catalogue
+  namespace: tamoss-system
+  behavior: replace
+  files:
+  - catalogue.json
+  options:
+    immutable: true
+YAML
 }

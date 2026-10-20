@@ -25,6 +25,7 @@ AXES = {
     "lifecycle": {"read-only", "ephemeral", "destructive"},
     "provider": {"none", "cnpg", "rustfs", "authentik", "external", "mixed"},
 }
+OPTIONAL_AXES = {"platform": {"managed", "simulated"}}
 
 SELECTORS = {
     "smoke": "test.tamoss.io/target=kind,test.tamoss.io/tier=smoke",
@@ -36,7 +37,11 @@ SELECTORS = {
     "nightly": (
         "test.tamoss.io/target=kind,test.tamoss.io/tier in (smoke,standard,extended)"
     ),
-    "release": "test.tamoss.io/tier=release",
+    "release": "test.tamoss.io/tier=release,test.tamoss.io/platform!=managed",
+    "managed": (
+        "test.tamoss.io/target=kind,test.tamoss.io/tier=release,"
+        "test.tamoss.io/platform=managed"
+    ),
     "deployed": "test.tamoss.io/target=deployed,test.tamoss.io/lifecycle=read-only",
 }
 
@@ -72,6 +77,11 @@ def validate_labels(root: Path) -> int:
                 continue
             axis = key.rsplit("/", 1)[1]
             if labels[key] not in allowed[axis]:
+                failures.append(f"{path}: unsupported {key}={labels[key]}")
+
+        for axis, values in OPTIONAL_AXES.items():
+            key = f"test.tamoss.io/{axis}"
+            if key in labels and labels[key] not in values:
                 failures.append(f"{path}: unsupported {key}={labels[key]}")
 
         if (
@@ -123,16 +133,39 @@ def _validate_native_operations(path: Path) -> list[str]:
 
 def _validate_no_shell_resources(root: Path) -> list[str]:
     shell_item = re.compile(r"^\s*-\s+['\"]?(?:/bin/)?(?:ba)?sh['\"]?\s*$")
+    script_key = re.compile(r"^\s*['\"]?[^:'\"]+\.(?:py|sh)['\"]?:\s*[|>]")
+    python_item = re.compile(
+        r"^(?P<indent>[ \t]*)-\s+['\"]?(?:[^\s]+/)?python[\d.]*['\"]?\s*$"
+    )
     failures: list[str] = []
     for path in sorted(root.rglob("*.yaml")):
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for line_number, line in enumerate(lines, start=1):
             if shell_item.match(line):
                 failures.append(
                     f"{path}:{line_number}: shell entrypoints are not allowed "
                     "in Chainsaw resources"
                 )
+            if script_key.match(line):
+                failures.append(
+                    f"{path}:{line_number}: keep fixture programmes in source files"
+                )
+            python = python_item.match(line)
+            if python:
+                argument = re.compile(rf"^{python['indent']}-\s+(.+)$")
+                for following in lines[line_number:]:
+                    item = argument.match(following)
+                    if item is None:
+                        break
+                    value = item[1].strip("'\"")
+                    if value == "-c":
+                        failures.append(
+                            f"{path}:{line_number}: invoke a Python source file, "
+                            "not inline code"
+                        )
+                        break
+                    if value == "-m" or not value.startswith("-"):
+                        break
     return failures
 
 

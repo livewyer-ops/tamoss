@@ -11,22 +11,22 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
 )
 
 func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Profile: tamossv1alpha1.TamossProfileLocalKind,
 			Secrets: tamossv1alpha1.SecretsSpec{
 				APIToken: tamossv1alpha1.APITokenSecretSpec{Generate: true},
 			},
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
-	setCommonTamossStatus(tamoss)
+	setCommonTamossStatus(tamoss, testRelease())
 
 	if tamoss.Status.Endpoints.API != "https://api.tamoss.localtest.me" {
 		t.Fatalf("expected default API endpoint, got %q", tamoss.Status.Endpoints.API)
@@ -65,7 +65,7 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Versions.Tamoss != "dev" {
 		t.Fatalf("expected runtime version from local-kind image tag, got %#v", tamoss.Status.Resolved.Versions)
 	}
-	if tamoss.Status.Resolved.Versions.TAMSAPI != schemabundle.SupportedTAMSAPIVersion {
+	if tamoss.Status.Resolved.Versions.TAMSAPI != testRelease().Schema.TAMSAPI {
 		t.Fatalf("expected TAMS API compatibility version, got %#v", tamoss.Status.Resolved.Versions)
 	}
 	if tamoss.Status.Resolved.Resources.API != "example-api" ||
@@ -93,6 +93,7 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 func TestEndpointStatusUsesExplicitPublicUIURL(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
 				UIURL: "https://app.example.com:30443/",
 			},
@@ -117,6 +118,7 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version:          "dev",
 			FullnameOverride: "custom",
 			API: tamossv1alpha1.APIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-api", Tag: "v1.2.3"},
@@ -150,9 +152,10 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 			},
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
-	status := resolvedTamossStatus(tamoss, "registry.example.com/tamsin@sha256:"+strings.Repeat("b", 64))
+	tamoss.Spec.Images.TAMSin = "registry.example.com/tamsin@sha256:" + strings.Repeat("b", 64)
+	status := resolvedTamossStatus(tamoss, testRelease())
 
 	if status.Images.API != "registry.example.com/tamoss-api:v1.2.3" {
 		t.Fatalf("expected overridden API image, got %q", status.Images.API)
@@ -231,10 +234,11 @@ func TestProviderStatusClassifiesManagedProfileDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Profile: tamossv1alpha1.TamossProfileLocalKind,
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
 	status := providerStatus(tamoss)
 
@@ -262,7 +266,7 @@ func TestProviderStatusClassifiesExternalAndDisabledAuth(t *testing.T) {
 		Spec:       minimalTamossSpec(),
 	}
 	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByNone}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
 	status := providerStatus(tamoss)
 

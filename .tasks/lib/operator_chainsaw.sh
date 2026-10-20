@@ -45,6 +45,10 @@ task_operator_chainsaw_up() {
   task_step "Operator Chainsaw: build API image" \
     docker build -t "$api_image" -f src/app/tamoss/Dockerfile .
 
+  task_step "Operator Chainsaw: build test image" \
+    docker build -t livewyer/tamoss-chainsaw:dev \
+      --build-arg API_IMAGE="$api_image" -f operator/test/chainsaw/Dockerfile .
+
   "$kind_bin" delete cluster --name "$cluster" >/dev/null 2>&1 || true
   task_step "Operator Chainsaw: create Kind cluster" \
     "$kind_bin" create cluster \
@@ -57,13 +61,15 @@ task_operator_chainsaw_up() {
     "$kind_bin" load docker-image "$chainsaw_image" --name "$cluster"
   task_step "Operator Chainsaw: load API image" \
     "$kind_bin" load docker-image "$api_image" --name "$cluster"
+  task_step "Operator Chainsaw: load test image" \
+    "$kind_bin" load docker-image livewyer/tamoss-chainsaw:dev --name "$cluster"
 
   task_operator_chainsaw_apply_platform_prerequisites \
     "$kubeconfig" \
     "$platform_helmfile" \
     "$install_rustfs_operator" \
     "$install_cnpg_operator"
-  task_operator_chainsaw_apply_operator "$kubeconfig"
+  task_operator_chainsaw_apply_operator "$kubeconfig" "$operand_version" "$schema_version" "$previous_schema_version"
 
   if [ "$install_authentik_fixture" = "true" ]; then
     kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/authentik.yaml
@@ -170,9 +176,13 @@ task_operator_chainsaw_apply_operator() {
   local kubeconfig="$1"
 
   kubectl --kubeconfig "$kubeconfig" apply --server-side -f operator/test/chainsaw/fixtures/gateway-api-crds.yaml
-  kubectl kustomize operator/config/chainsaw \
+  local render_dir
+  render_dir="$(mktemp -d .local/chainsaw-operator.XXXXXX)"
+  task_render_development_operator operator/config/chainsaw "${2:-dev}" "${3:-dev}" "${4:-}" "$render_dir"
+  kubectl kustomize "$render_dir" \
     --load-restrictor=LoadRestrictionsNone | \
     kubectl --kubeconfig "$kubeconfig" apply --server-side -f -
+  rm -r "$render_dir"
   kubectl --kubeconfig "$kubeconfig" wait \
     --for=condition=Established \
     crd/tamosses.tamoss.livewyer.io \

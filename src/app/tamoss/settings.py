@@ -125,12 +125,26 @@ class ForwardAuthGroupBinding(BaseModel):
         return value
 
 
+def aws_web_identity_configured() -> bool:
+    return all(
+        (_env_str(name) or "").strip()
+        for name in ("AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE")
+    )
+
+
 def _s3_backend_from_env() -> StorageBackendSettings | None:
     endpoint_url = _env_url("TAMOSS_S3_ENDPOINT", "http://localhost:9000")
     public_endpoint_url = _env_url("TAMOSS_S3_PUBLIC_ENDPOINT", endpoint_url)
     access_key = _env_str("TAMOSS_S3_ACCESS_KEY")
     secret_key = _env_str("TAMOSS_S3_SECRET_KEY")
-    if not access_key or not secret_key:
+    static_credentials = bool(access_key and secret_key)
+    web_identity = (
+        not access_key
+        and not secret_key
+        and bool((_env_str("TAMOSS_S3_ENDPOINT") or "").strip())
+        and aws_web_identity_configured()
+    )
+    if not static_credentials and not web_identity:
         return None
 
     region = _env_str("TAMOSS_S3_REGION", "us-east-1")

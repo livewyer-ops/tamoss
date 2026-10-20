@@ -9,6 +9,7 @@ metadata:
   name: tamoss-kind
   namespace: tams
 spec:
+  version: dev
   profile: local-kind
   ingest:
     sourcePolicy:

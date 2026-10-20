@@ -1,0 +1,184 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: default-web-identity
+  labels:
+    test.tamoss.io/target: kind
+    test.tamoss.io/tier: smoke
+    test.tamoss.io/domain: storage
+    test.tamoss.io/lifecycle: ephemeral
+    test.tamoss.io/provider: mixed
+    test.tamoss.io/profile: none
+spec:
+  steps:
+    - name: start storage and identity issuer
+      try:
+        - apply:
+            file: ../../fixtures/operator-namespace-rbac.yaml
+        - apply:
+            file: ../../fixtures/external-backend-secrets.yaml
+        - apply:
+            file: ../../fixtures/postgres.yaml
+        - apply:
+            file: resources/oidc.yaml
+        - wait:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: oidc
+            for:
+              condition:
+                name: Available
+        - apply:
+            file: resources/rustfs-oidc-env.yaml
+        - apply:
+            file: ../../fixtures/rustfs.yaml
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: rustfs
+              (status.observedGeneration == metadata.generation): true
+              (status.updatedReplicas == spec.replicas): true
+              (status.availableReplicas == spec.replicas): true
+              (status.replicas == spec.replicas): true
+        - apply:
+            file: resources/archive-bucket.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: rustfs-create-bucket
+            for:
+              condition:
+                name: Complete
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: archive-create-bucket
+            for:
+              condition:
+                name: Complete
+        - apply:
+            file: resources/media-identities.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: media-identity-setup
+            timeout: 2m
+            for:
+              condition:
+                name: Complete
+    - name: exercise web identity
+      try:
+        - apply:
+            file: resources/storagebackend.yaml
+        - apply:
+            file: resources/additional.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/web-identity.yaml
+            timeout: 5m
+        - assert:
+            file: assert/ready.yaml
+            timeout: 5m
+        - apply:
+            file: resources/check.yaml
+            bindings:
+              - name: mode
+                value: web
+              - name: session
+                value: 'true'
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: identity-check-web
+            timeout: 5m
+            for:
+              condition:
+                name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=identity-check-web
+            container: check
+            tail: 50
+    - name: restore Secret credentials on the same backend
+      bindings:
+        - name: backendUID
+          value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'StorageBackend', $namespace, 'default-media').metadata.uid)
+      try:
+        - patch:
+            file: resources/tamoss-secret.yaml
+        - patch:
+            file: resources/storagebackend-secret.yaml
+        - assert:
+            file: assert/secret.yaml
+        - assert:
+            file: assert/ready.yaml
+        - assert:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              metadata:
+                name: default-media
+                uid: ($backendUID)
+        - apply:
+            file: resources/check.yaml
+            bindings:
+              - name: mode
+                value: secret
+              - name: session
+                value: 'false'
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: identity-check-secret
+            timeout: 5m
+            for:
+              condition:
+                name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=identity-check-secret
+            container: check
+            tail: 50
+    - name: enable web identity again
+      bindings:
+        - name: backendUID
+          value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'StorageBackend', $namespace, 'default-media').metadata.uid)
+      try:
+        - apply:
+            file: resources/storagebackend.yaml
+        - apply:
+            file: resources/tamoss.yaml
+        - assert:
+            file: assert/web-identity.yaml
+        - assert:
+            file: assert/ready.yaml
+        - assert:
+            resource:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: StorageBackend
+              metadata:
+                name: default-media
+                uid: ($backendUID)
+        - apply:
+            file: resources/check.yaml
+            bindings:
+              - name: mode
+                value: reenabled
+              - name: session
+                value: 'true'
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: identity-check-reenabled
+            timeout: 5m
+            for:
+              condition:
+                name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=identity-check-reenabled
+            container: check
+            tail: 50

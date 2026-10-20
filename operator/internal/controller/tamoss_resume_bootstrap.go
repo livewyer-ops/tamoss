@@ -201,7 +201,7 @@ func (r *TamossReconciler) resolveResumeBootstrapSource(ctx context.Context, tam
 	if trustedChecksum != checksum {
 		return bootstrapFailure(operatorstatus.ReasonHibernateManifestChecksumMismatch, fmt.Sprintf("hibernation manifest checksum mismatch: source %s, computed %s", trustedChecksum, checksum))
 	}
-	if err := validateResumeManifest(manifest, manifestKey); err != nil {
+	if err := validateResumeManifest(manifest, manifestKey, r.Releases[tamoss.Spec.Version].Schema); err != nil {
 		reason := operatorstatus.ReasonHibernateSourceInvalid
 		if errors.Is(err, errHibernationManifestSchemaUnsupported) {
 			reason = operatorstatus.ReasonUnsupportedSchemaVersion
@@ -244,7 +244,7 @@ func resumeManifestReadFailureReason(err error) string {
 	return operatorstatus.ReasonHibernateSourceInvalid
 }
 
-func validateResumeManifest(manifest hibernationManifest, manifestKey string) error {
+func validateResumeManifest(manifest hibernationManifest, manifestKey string, target schemabundle.Target) error {
 	if manifest.Schema.ManifestKind != "TamossHibernate" {
 		return fmt.Errorf("hibernation manifest schema kind %q is not supported", manifest.Schema.ManifestKind)
 	}
@@ -252,12 +252,12 @@ func validateResumeManifest(manifest hibernationManifest, manifestKey string) er
 	if schemaVersion == "" {
 		return fmt.Errorf("%w: schema.version is required", errHibernationManifestSchemaUnsupported)
 	}
-	if !schemabundle.IsSupportedStartingVersion(schemaVersion) {
+	if !target.Supports(schemaVersion) {
 		return fmt.Errorf("%w: schema version %q is not supported by this operator", errHibernationManifestSchemaUnsupported, schemaVersion)
 	}
 	tamsAPI := strings.TrimSpace(manifest.Schema.TAMSAPI)
-	if tamsAPI != schemabundle.SupportedTAMSAPIVersion {
-		return fmt.Errorf("%w: TAMS API version %q is not supported; expected %q", errHibernationManifestSchemaUnsupported, tamsAPI, schemabundle.SupportedTAMSAPIVersion)
+	if tamsAPI != target.TAMSAPI {
+		return fmt.Errorf("%w: TAMS API version %q is not supported; expected %q", errHibernationManifestSchemaUnsupported, tamsAPI, target.TAMSAPI)
 	}
 	if manifest.Driver != string(tamossv1alpha1.HibernationDriverCNPGPhysical) {
 		return fmt.Errorf("hibernation manifest driver %q is not supported for resume", manifest.Driver)

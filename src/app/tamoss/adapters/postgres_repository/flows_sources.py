@@ -30,6 +30,7 @@ from tamoss.domain.listing_pagination import listing_page, listing_window
 from tamoss.domain.listings import FlowSortBy, SourceSortBy
 from tamoss.domain.model import FlowRecord, SourceRecord, SourceRelationships
 from tamoss.domain.pagination import Page, resolve_page_window
+from tamoss.domain.segments import timerange_query_end
 
 
 class PostgresFlowSourceMixin:
@@ -209,21 +210,41 @@ class PostgresFlowSourceMixin:
             identity=lambda flow: flow.id,
         )
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
+    def flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        timerange_start: int | None = None,
+        timerange_end: int | None = None,
+        timerange_is_empty: bool = False,
+        timerange_is_point: bool = False,
+    ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         timeranges = dict.fromkeys(requested_ids, "()")
-        if not requested_ids:
+        if not requested_ids or timerange_is_empty:
             return timeranges
+
+        clauses = [sql.SQL("flow_id = ANY(%(flow_ids)s::uuid[])")]
+        params: dict[str, Any] = {"flow_ids": requested_ids}
+        query_end = timerange_query_end(
+            timerange_start, timerange_end, timerange_is_point
+        )
+        if query_end is not None:
+            clauses.append(sql.SQL("timerange_start < %(timerange_end)s"))
+            params["timerange_end"] = query_end
+        if timerange_start is not None:
+            clauses.append(sql.SQL("timerange_end > %(timerange_start)s"))
+            params["timerange_start"] = timerange_start
 
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                """
+                sql.SQL("""
                 SELECT flow_id, MIN(timerange_start), MAX(timerange_end)
                 FROM tamoss_segments
-                WHERE flow_id = ANY(%(flow_ids)s::uuid[])
+                {}
                 GROUP BY flow_id
-                """,
-                {"flow_ids": requested_ids},
+                """).format(_where_sql(clauses)),
+                params,
             )
             rows = cur.fetchall()
 

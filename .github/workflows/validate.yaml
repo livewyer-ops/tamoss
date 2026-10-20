@@ -26,7 +26,7 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
-          version: v1.35.0
+          version: v1.36.4
 
       - name: Install Task
         uses: ./.github/actions/setup-task
@@ -52,7 +52,7 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
-          version: v1.35.0
+          version: v1.36.4
 
       - name: Install Task
         uses: ./.github/actions/setup-task
@@ -77,10 +77,14 @@ jobs:
 
       - name: Render remote environment overlay
         run: |
+          TAMOSS_VERSION="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["version"])')"
+          export TAMOSS_VERSION
+          python3 .github/scripts/release-metadata.py "$TAMOSS_VERSION"
           environment="ci-single-server"
           rm -rf "deploy/environments/${environment}"
-          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com
+          task env:init NAME="${environment}" PROFILE=single-server DOMAIN=tamoss.example.com TAMOSS_VERSION="$TAMOSS_VERSION"
           kubectl kustomize "deploy/environments/${environment}" >/tmp/tamoss-${environment}.yaml
+          test "$(yq --no-doc -r 'select(.kind == "Tamoss") | .spec.version' /tmp/tamoss-${environment}.yaml)" = "$TAMOSS_VERSION"
 
   python:
     runs-on: ubuntu-24.04
@@ -92,18 +96,19 @@ jobs:
           submodules: true
 
       - name: Run Pre-commit
-        uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+        uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
 
       - name: Install Task
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
+          version: "0.12.15"
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install --project src
 
       - name: Install project
         run: uv sync --project src --locked --all-extras --dev
@@ -121,7 +126,7 @@ jobs:
         run: task test:tams:inventory
 
       - name: Upload TAMS conformance inventory report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tams-conformance-inventory-report
           path: reports/tams-conformance-inventory.md
@@ -139,12 +144,13 @@ jobs:
         uses: ./.github/actions/setup-task
 
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
+          version: "0.12.15"
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install --project src
 
       - name: Install project
         run: uv sync --project src --locked --all-extras --dev

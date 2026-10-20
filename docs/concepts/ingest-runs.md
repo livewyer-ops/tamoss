@@ -8,7 +8,7 @@ the temporary Kubernetes workload that performs the work.
 
 The public resource is `IngestRun`. After validating its immutable intent, the
 operator creates a fixed-purpose
-[TAMSin 8.2.0-in2](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in2)
+[TAMSin](https://github.com/livewyer-ops/tamsin)
 Kubernetes `Job` and records the Job's name and UID in `status.jobRef`.
 
 The distinction is deliberate:
@@ -143,7 +143,7 @@ The operator projects these phases:
 | `Cancelled` | Cancellation was requested and the owned workload has terminated. |
 
 TAMSin emits the versioned `tamsin.ingest.events` 2.1 machine event stream. The
-operator validates it with the public reducer pinned from TAMSin v1.0.0-rc.3,
+operator validates it with the public reducer pinned in [go.mod](../../operator/go.mod),
 which supports this protocol independently of the executable version. It
 retains bounded counters, stable reasons, attempt identity, output resource identities, and
 verified result metadata on the CR. Free-form Pod logs and raw media locators

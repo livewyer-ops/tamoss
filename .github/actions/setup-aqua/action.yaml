@@ -9,21 +9,21 @@ inputs:
   aqua_version:
     description: aqua version used by aquaproj/aqua-installer.
     required: false
-    default: v2.56.3
+    default: v2.63.0
 
 runs:
   using: composite
   steps:
     - name: Install aqua and tagged tools
       if: ${{ inputs.tags != '' }}
-      uses: aquaproj/aqua-installer@11dd79b4e498d471a9385aa9fb7f62bb5f52a73c # v4.0.4
+      uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
       with:
         aqua_version: ${{ inputs.aqua_version }}
         aqua_opts: "-t ${{ inputs.tags }}"
 
     - name: Install aqua links
       if: ${{ inputs.tags == '' }}
-      uses: aquaproj/aqua-installer@11dd79b4e498d471a9385aa9fb7f62bb5f52a73c # v4.0.4
+      uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
       with:
         aqua_version: ${{ inputs.aqua_version }}
         aqua_opts: "-l"

@@ -47,9 +47,14 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: tamoss.Namespace}}
 		desiredKeys[canonicalObjectKey(secret)] = struct{}{}
 	}
-	if err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
-	}); err != nil {
+	tenant, err := rustfs.Reconcile(ctx, r.Client, tamoss, func(obj client.Object) error {
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
+	})
+	if err != nil {
 		return providerBackendResult{}, err
 	}
 	aliasService := rustfs.BuildServiceAlias(tamoss)
@@ -64,20 +69,7 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 		return providerBackendResult{}, err
 	}
 
-	tenant := rustfs.NewTenant()
-	tenant.SetName(tamoss.ResourceName("s3"))
-	tenant.SetNamespace(tamoss.Namespace)
 	desiredKeys[canonicalObjectKey(tenant)] = struct{}{}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(tenant), tenant); err != nil {
-		if apierrors.IsNotFound(err) {
-			return providerBackendResult{
-				Ready:   false,
-				Reason:  operatorstatus.ReasonTenantNotReady,
-				Message: "RustFS Tenant has not been observed yet",
-			}, nil
-		}
-		return providerBackendResult{}, err
-	}
 	condition, events := rustfs.RollupStatus(tenant)
 	for _, event := range events {
 		r.recordWarning(tamoss, event.Reason, event.Message)
@@ -89,6 +81,13 @@ func (r *TamossReconciler) reconcileProviderBackends(ctx context.Context, tamoss
 			Message:  condition.Message,
 			Degraded: len(events) > 0,
 		}, nil
+	}
+	rolloutReady, err := r.rustfsRolloutReady(ctx, tenant)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if !rolloutReady {
+		return providerBackendResult{Reason: operatorstatus.ReasonTenantNotReady, Message: "Waiting for the requested RustFS workload rollout"}, nil
 	}
 
 	return r.reconcileDefaultStorageBackendBucket(ctx, tamoss, desiredKeys)
@@ -115,7 +114,11 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 	// without preserving live fields.
 	injectResolvedRestore(tamoss)
 	mutators := []cnpg.ObjectMutator{func(obj client.Object) error {
-		return applyAdvancedResourcePatches(tamoss, obj)
+		if err := applyAdvancedResourcePatches(tamoss, obj); err != nil {
+			return err
+		}
+		r.stampInstallationDefaults(obj)
+		return nil
 	}}
 	if err := cnpg.Reconcile(ctx, r.Client, tamoss, mutators...); err != nil {
 		return providerBackendResult{}, err
@@ -134,6 +137,13 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 		return providerBackendResult{}, err
 	}
 
+	desiredCluster := cnpg.BuildCluster(tamoss)
+	if err := applyAdvancedResourcePatches(tamoss, desiredCluster); err != nil {
+		return providerBackendResult{}, err
+	}
+	if desiredCluster.Spec.ImageName != cluster.Spec.ImageName || desiredCluster.Spec.Instances != cluster.Spec.Instances || cluster.Annotations[installationDefaultsRevisionAnnotation] != r.InstanceDefaults.Revision() {
+		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL configuration"}, nil
+	}
 	condition, events := cnpg.RollupStatus(cluster)
 	for _, event := range events {
 		r.recordWarning(tamoss, event.Reason, event.Message)
@@ -145,6 +155,13 @@ func (r *TamossReconciler) reconcileCNPG(ctx context.Context, tamoss *tamossv1al
 			Message:  condition.Message,
 			Degraded: len(events) > 0,
 		}, nil
+	}
+	rolloutReady, err := r.cnpgRolloutReady(ctx, cluster)
+	if err != nil {
+		return providerBackendResult{}, err
+	}
+	if !rolloutReady {
+		return providerBackendResult{Reason: operatorstatus.ReasonClusterNotReady, Message: "Waiting for the requested PostgreSQL workload rollout"}, nil
 	}
 
 	_, secretReadiness, err := (cnpg.SecretReader{Client: r.Client}).Read(ctx, tamoss)
@@ -346,7 +363,7 @@ func (r *TamossReconciler) backendDependencyGate(ctx context.Context, tamoss *ta
 			Allowed: false,
 			Known:   true,
 			Reason:  operatorstatus.ReasonMissingDependencyOperator,
-			Message: fmt.Sprintf("%s requires %s (%s). Install it with: %s", provider, hint.DependencyName, gvrString(hint.GVR), hint.InstallCommand),
+			Message: fmt.Sprintf("%s requires %s (%s); install the provider and make its API available, or select an external backend", provider, hint.DependencyName, gvrString(hint.GVR)),
 		}
 	}
 	return result
@@ -376,6 +393,15 @@ func (r *TamossReconciler) checkBackendReferences(ctx context.Context, tamoss *t
 		Ready:   true,
 		Reason:  operatorstatus.ReasonBackendReferencesConfigured,
 		Message: "Backend secret references are configured",
+	}
+	if tamoss.UsesS3WebIdentity() {
+		backends := &tamossv1alpha1.StorageBackendList{}
+		if err := listStorageBackendsForTamoss(ctx, r.Client, tamoss.Namespace, tamoss.Name, backends); err != nil {
+			return backendReferenceResult{}, err
+		}
+		if err := validateStorageWebIdentitySelection(tamoss, backends.Items); err != nil {
+			return backendReferenceResult{Reason: operatorstatus.ReasonMissingProviderConfiguration, Message: err.Error()}, nil
+		}
 	}
 	for _, requirement := range backendConfigRequirements(tamoss) {
 		if strings.TrimSpace(requirement.value) != "" {
@@ -460,10 +486,14 @@ func backendConfigRequirements(tamoss *tamossv1alpha1.Tamoss) []backendConfigReq
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.endpoint.default.url", value: s3.Endpoint.Default.URL},
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.region", value: s3.Region},
 			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.bucket", value: s3.Bucket},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.existingSecret", value: s3.Auth.ExistingSecret},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.accessKey", value: s3.Auth.SecretKeys.AccessKey},
-			backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.secretKey", value: s3.Auth.SecretKeys.SecretKey},
 		)
+		if !tamoss.UsesS3WebIdentity() {
+			requirements = append(requirements,
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.existingSecret", value: s3.Auth.ExistingSecret},
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.accessKey", value: s3.Auth.SecretKeys.AccessKey},
+				backendConfigRequirement{purpose: "s3", field: ".spec.backends.s3.external.auth.secretKeys.secretKey", value: s3.Auth.SecretKeys.SecretKey},
+			)
+		}
 	}
 	return requirements
 }
@@ -482,15 +512,17 @@ func backendSecretRequirements(tamoss *tamossv1alpha1.Tamoss) []backendSecretReq
 			},
 		})
 	}
-	requirements = append(requirements,
-		backendSecretRequirement{
-			purpose: "s3",
-			name:    s3.Auth.ExistingSecret,
-			keys: []string{
-				s3.Auth.SecretKeys.AccessKey,
-				s3.Auth.SecretKeys.SecretKey,
+	if !tamoss.UsesS3WebIdentity() {
+		requirements = append(requirements,
+			backendSecretRequirement{
+				purpose: "s3",
+				name:    s3.Auth.ExistingSecret,
+				keys: []string{
+					s3.Auth.SecretKeys.AccessKey,
+					s3.Auth.SecretKeys.SecretKey,
+				},
 			},
-		},
-	)
+		)
+	}
 	return requirements
 }

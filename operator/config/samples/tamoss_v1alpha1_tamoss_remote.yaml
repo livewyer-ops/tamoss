@@ -4,6 +4,7 @@ metadata:
   name: tamoss-remote
   namespace: tams
 spec:
+  version: dev
   fullnameOverride: tams
   secrets:
     apiToken:

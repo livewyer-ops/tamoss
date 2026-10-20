@@ -57,7 +57,7 @@ func TestBackupPolicyConditionConfigured(t *testing.T) {
 
 func TestObservedBackupPolicyMissingScheduledBackup(t *testing.T) {
 	tamoss := cnpgBackupTamoss(true)
-	reconciler := &TamossReconciler{Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).Build()}
+	reconciler := &TamossReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).Build()}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
 	if err != nil {
@@ -76,7 +76,8 @@ func TestObservedBackupPolicyArchivingUnknown(t *testing.T) {
 	scheduled := scheduledBackup(tamoss)
 	cluster := cnpgCluster(tamoss)
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
 	}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
@@ -107,7 +108,8 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 	cluster.Status.LastFailedBackup = "2026-05-22T12:00:00Z"         //nolint:staticcheck // see above
 	cluster.Status.FirstRecoverabilityPoint = "2026-05-22T10:00:00Z" //nolint:staticcheck // see above
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
 	}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
@@ -152,7 +154,7 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	spec := externalStorageBackendSpecFixture()
 	spec.BucketName = "archive"
 	spec.Endpoint.Public.URL = server.URL
-	reconciler := &StorageBackendReconciler{HTTPClient: server.Client()}
+	reconciler := &StorageBackendReconciler{Releases: testReleases(), HTTPClient: server.Client()}
 
 	diagnostic := reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
 	if diagnostic.Status != metav1.ConditionTrue || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticReady {

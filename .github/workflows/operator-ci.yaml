@@ -49,7 +49,7 @@ jobs:
         run: task test:tamsin:release
 
       - name: Upload TAMSin release reports
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: tamsin-release-reports-${{ github.run_id }}
@@ -65,10 +65,10 @@ jobs:
       # when the publishing workflow runs. Build it here, without pushing, so
       # that break surfaces on the pull request that causes it.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build the Console API image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: operator/Dockerfile.console-api
@@ -121,12 +121,10 @@ jobs:
 
   operator-chainsaw-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       CHAINSAW_CLUSTER_NAME: tamoss-chainsaw-ci
       CHAINSAW_KEEP_CLUSTER: "true"
-      CHAINSAW_INSTALL_RUSTFS_OPERATOR: ${{ vars.CHAINSAW_INSTALL_RUSTFS_OPERATOR || 'false' }}
-      CHAINSAW_INSTALL_CNPG_OPERATOR: ${{ vars.CHAINSAW_INSTALL_CNPG_OPERATOR || 'false' }}
       KUBECONFIG: .local/tamoss-chainsaw-ci.kubeconfig
       OPERATOR_IMAGE: livewyer/tamoss-operator:chainsaw-${{ github.sha }}
     steps:
@@ -158,22 +156,32 @@ jobs:
           kubectl version --client=true
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: amd64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Run chainsaw smoke suite
         if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
+        env:
+          CHAINSAW_INSTALL_RUSTFS_OPERATOR: ${{ vars.CHAINSAW_INSTALL_RUSTFS_OPERATOR || 'false' }}
+          CHAINSAW_INSTALL_CNPG_OPERATOR: ${{ vars.CHAINSAW_INSTALL_CNPG_OPERATOR || 'false' }}
         run: |
           echo "CHAINSAW_SUITE=smoke" >> "$GITHUB_ENV"
           task operator:e2e:chainsaw:smoke:up
 
       - name: Run full chainsaw suite
         if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
+        env:
+          CHAINSAW_INSTALL_RUSTFS_OPERATOR: ${{ vars.CHAINSAW_INSTALL_RUSTFS_OPERATOR || 'false' }}
+          CHAINSAW_INSTALL_CNPG_OPERATOR: ${{ vars.CHAINSAW_INSTALL_CNPG_OPERATOR || 'false' }}
         run: task operator:e2e:chainsaw:ci:up
+
+      - name: Qualify managed release upgrades
+        if: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+        run: task operator:e2e:chainsaw:managed:up
 
       - name: Capture chainsaw diagnostics
         if: failure() || cancelled()
@@ -181,11 +189,12 @@ jobs:
 
       - name: Upload chainsaw reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-chainsaw-e2e-${{ github.run_id }}
           path: |
             reports/junit-operator-chainsaw.xml
+            reports/managed-upgrade/junit-operator-chainsaw.xml
             reports/chainsaw-logs/**
           retention-days: 30
           if-no-files-found: ignore
@@ -225,7 +234,7 @@ jobs:
 
       - name: Publish chainsaw JUnit summary
         if: always() && hashFiles('reports/junit-operator-chainsaw.xml') != ''
-        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.0.0
+        uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2.6
         with:
           paths: reports/junit-operator-chainsaw.xml
           show: all

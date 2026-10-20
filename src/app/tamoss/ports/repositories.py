@@ -120,7 +120,15 @@ class FlowRepository(TransactionalRepository, FlowCollectionRepository, Protocol
         limit: int | None,
     ) -> Page[FlowRecord]: ...
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]: ...
+    def flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        timerange_start: int | None = None,
+        timerange_end: int | None = None,
+        timerange_is_empty: bool = False,
+        timerange_is_point: bool = False,
+    ) -> dict[UUID, str]: ...
 
     def has_segments(self, flow_id: UUID) -> bool: ...
 

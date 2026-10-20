@@ -53,6 +53,27 @@ spec:
                     message: Cluster is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/cnpg-simulated-pod.yaml
+            bindings:
+              - name: cluster
+                value: (x_k8s_get($client, 'postgresql.cnpg.io/v1', 'Cluster', $namespace, 'tamoss-db'))
+              - name: ordinal
+                value: "1"
+        - apply:
+            file: ../../fixtures/cnpg-simulated-pod.yaml
+            bindings:
+              - name: cluster
+                value: (x_k8s_get($client, 'postgresql.cnpg.io/v1', 'Cluster', $namespace, 'tamoss-db'))
+              - name: ordinal
+                value: "2"
+        - apply:
+            file: ../../fixtures/cnpg-simulated-pod.yaml
+            bindings:
+              - name: cluster
+                value: (x_k8s_get($client, 'postgresql.cnpg.io/v1', 'Cluster', $namespace, 'tamoss-db'))
+              - name: ordinal
+                value: "3"
         - assert:
             resource:
               apiVersion: batch/v1

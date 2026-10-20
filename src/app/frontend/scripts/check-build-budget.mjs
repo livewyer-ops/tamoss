@@ -11,9 +11,9 @@ const OMAKASE_VERSION = "1.1.1";
 const OMAKASE_INTEGRITY =
   "sha512-Bc5Md7N3hpeSBeTJgjg1/qNeUmm2MNmSv2cgxmrOoTzXYjoySjczlfRZQG0Rwyz+qarYTcwMCqt9yvLOhGapHA==";
 const HLS_PACKAGE = "hls.js";
-const HLS_VERSION = "1.6.17";
+const HLS_VERSION = "1.7.3";
 const HLS_INTEGRITY =
-  "sha512-NUplVGVuc1hSPwdB/9/cbRkUmLrYi75/hqiXKdA+l300pJNxDu96R7jRb2imDzWJqIUF4I5ThmAdp9GvOCXsuQ==";
+  "sha512-MsPlx6yVW4Qv4C7mEVou4/gk/5cN2dVxOTnrNjPSmyH2f0Ln+/UkG10Ax1PE6OvrmTVPKgQYozTtBaPOuCzq7A==";
 const OMAKASE_PREVIEW_SOURCE = "src/player/MediaPreview.tsx";
 const OMAKASE_JS_MARKERS = ["OmakaseTrackApi", "OmakaseVttVersion"];
 const OMAKASE_CSS_MARKER = "omakase-player";

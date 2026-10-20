@@ -25,6 +25,9 @@ spec:
             file: ../../fixtures/assert/postgresql-available.yaml
         - apply:
             file: resources/tamoss-api-bundled.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-tenant-present.yaml
+            timeout: 120s
         - patch:
             resource:
               apiVersion: rustfs.com/v1alpha1
@@ -33,6 +36,7 @@ spec:
                 name: tamoss-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:
@@ -45,6 +49,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
         - assert:
             file: assert/tamoss-default-ready.yaml
             timeout: 5m
@@ -66,3 +75,8 @@ spec:
             for:
               condition:
                 name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=ingest-storagebackends-check
+            container: check
+            tail: 50

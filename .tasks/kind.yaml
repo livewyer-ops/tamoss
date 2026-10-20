@@ -8,7 +8,7 @@ vars:
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
   # Keep Kind schema defaults out of the standalone operator build scope.
   # 0.0.1 is the schema marker emitted by pre-8.2 Kind builds.
-  KIND_SCHEMA_VERSION: '{{default "dev-20260810-0007" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+  KIND_SCHEMA_VERSION: '{{default "dev-20260924-0008" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
   KIND_PREVIOUS_SCHEMA_VERSION: '{{default "0.0.1" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
   TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
   OPERAND_TAG:
@@ -151,11 +151,10 @@ tasks:
   e2e:fresh:
     silent: true
     cmds:
-      - rm -f {{.KUBECONFIG}}
       - |
         . .tasks/lib/kind.sh
         task_step "Local Kind: delete existing cluster" \
-          task_kind_delete_cluster "{{.PROJECT_NAME}}"
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
       - task: :kind:create
         vars:
           PROFILE: "{{.PROFILE}}"
@@ -174,10 +173,11 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - task: :operator:apply
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-          OPERATOR_KUSTOMIZE_DIR: "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}"
+      - |
+        . .tasks/lib/operator_k8s.sh
+        task_render_development_operator "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}" "{{.KIND_OPERAND_VERSION}}" "{{.KIND_SCHEMA_VERSION}}" "{{.KIND_PREVIOUS_SCHEMA_VERSION}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_apply_operator "{{.KUBECONFIG}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_wait_operator "{{.KUBECONFIG}}" tamoss-system operator-controller-manager
       - task: :operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -185,10 +185,12 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"

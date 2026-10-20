@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from tamoss.application.contexts import deletion_processor
 
 from tests.tams.support import (
     create_video_flow,
@@ -18,6 +19,45 @@ from tests.tams.support import (
 pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 
+@pytest.mark.parametrize("reused", [False, True])
+@pytest.mark.parametrize(
+    ("timerange", "offset", "expected"),
+    [
+        ("[0:0_10:0)", None, 201),
+        ("[2:0_8:0)", None, 201),
+        ("[100:0_110:0)", "100:0", 201),
+        ("[-10:0_0:0)", "-10:0", 201),
+        ("[10:0_20:0)", None, 400),
+        ("[-1:0_9:0)", None, 400),
+        ("[0:0_10:0]", None, 400),
+        ("[9:0]", None, 201),
+        ("[10:0]", None, 400),
+    ],
+)
+def test_segment_range_must_fit_object_after_timestamp_offset(
+    client: TestClient, reused: bool, timerange: str, offset: str | None, expected: int
+) -> None:
+    original_flow_id, _, _ = create_video_flow(client)
+    object_id = str(uuid4())
+    if reused:
+        register_segment(client, original_flow_id, object_id=object_id)
+    target_flow_id, _, _ = create_video_flow(client)
+    payload = {"object_id": object_id, "timerange": timerange}
+    if offset is not None:
+        payload["ts_offset"] = offset
+    if not reused:
+        payload.update(
+            object_timerange="[0:0_10:0)",
+            get_urls=[{"url": "https://media.example/object.ts", "label": "external"}],
+        )
+    response = client.post(f"/flows/{target_flow_id}/segments", json=payload)
+    assert response.status_code == expected, response.text
+    if expected == 400:
+        assert client.get(f"/flows/{target_flow_id}/segments").json() == []
+        if not reused:
+            assert client.get(f"/objects/{object_id}").status_code == 404
+
+
 def test_segment_reads_emit_effective_object_timerange_only_when_requested(
     client: TestClient,
 ) -> None:
@@ -28,6 +68,7 @@ def test_segment_reads_emit_effective_object_timerange_only_when_requested(
         flow_id,
         timerange="[20:0_30:0)",
         object_timerange="[100:0_110:0)",
+        ts_offset="-80:0",
     )
 
     omitted = client.get(f"/flows/{flow_id}/segments")
@@ -109,6 +150,7 @@ def test_segment_webhooks_emit_effective_object_timerange_only_when_requested(
         flow_id,
         timerange="[20:0_30:0)",
         object_timerange="[100:0_110:0)",
+        ts_offset="-80:0",
     )
 
     deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
@@ -234,7 +276,9 @@ def test_source_collection_webhook_selector_distinguishes_omitted_empty_and_pare
 def test_flow_deletion_uses_pre_delete_collection_selector_context(
     tamoss_app: FastAPI,
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(deletion_processor, "DELETE_SEGMENT_BATCH_SIZE", 1)
     child_flow_id, _, _ = create_video_flow(client)
     top_level_flow_id, _, _ = create_video_flow(client)
     parent_flow_id = uuid4()
@@ -250,10 +294,11 @@ def test_flow_deletion_uses_pre_delete_collection_selector_context(
     )
     assert collection.status_code == 204
     register_segment(client, child_flow_id)
+    register_segment(client, child_flow_id, timerange="[10:0_20:0)")
 
     webhook_ids = _register_collection_selector_webhooks(
         client,
-        events=["flows/deleted"],
+        events=["flows/segments_deleted", "flows/deleted"],
         selector_name="flow_collected_by_ids",
         parent_id=parent_flow_id,
     )
@@ -262,6 +307,15 @@ def test_flow_deletion_uses_pre_delete_collection_selector_context(
     assert (
         tamoss_app.state.tamoss_use_cases.deletion.process_pending_delete_requests()
         == 1
+    )
+    assert client.get(f"/flows/{child_flow_id}").status_code == 200
+    assert (
+        tamoss_app.state.tamoss_use_cases.deletion.process_pending_delete_requests()
+        == 1
+    )
+    assert (
+        tamoss_app.state.tamoss_use_cases.deletion.process_pending_delete_requests()
+        == 0
     )
     assert client.delete(f"/flows/{top_level_flow_id}").status_code == 204
 
@@ -275,6 +329,23 @@ def test_flow_deletion_uses_pre_delete_collection_selector_context(
     }
     assert event_ids[webhook_ids["empty"]] == {str(top_level_flow_id)}
     assert event_ids[webhook_ids["parent"]] == {str(child_flow_id)}
+    deliveries = tamoss_app.state.tamoss_use_cases.repository.list_webhook_deliveries()
+    for selector in ("omitted", "parent"):
+        child_events = [
+            delivery.payload
+            for delivery in deliveries
+            if delivery.webhook_id == webhook_ids[selector]
+            and delivery.payload["event"]["flow_id"] == str(child_flow_id)
+        ]
+        assert [event["event_type"] for event in child_events] == [
+            "flows/segments_deleted",
+            "flows/segments_deleted",
+            "flows/deleted",
+        ]
+        assert [event["event"]["timerange"] for event in child_events[:2]] == [
+            "[0:0_10:0)",
+            "[10:0_20:0)",
+        ]
 
 
 def test_source_deletion_uses_context_from_its_deleted_flow(

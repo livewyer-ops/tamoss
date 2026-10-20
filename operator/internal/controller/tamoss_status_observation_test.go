@@ -22,7 +22,7 @@ func observationFixture() tamossStatusObservation {
 }
 
 func TestStatusObservationWithoutBackendObservationFallsBackToUnknown(t *testing.T) {
-	tamoss := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+	tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Version: "dev"}, ObjectMeta: metav1.ObjectMeta{Generation: 3}}
 
 	applyTamossStatusObservation(tamoss, observationFixture())
 
@@ -39,7 +39,7 @@ func TestStatusObservationWithoutBackendObservationFallsBackToUnknown(t *testing
 }
 
 func TestStatusObservationWithoutBackendObservationPreservesLastObservedState(t *testing.T) {
-	tamoss := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+	tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Version: "dev"}, ObjectMeta: metav1.ObjectMeta{Generation: 3}}
 	operatorstatus.SetConditionBool(&tamoss.Status.Conditions, 2, operatorstatus.ConditionBackendsReady, false, operatorstatus.ReasonMissingSecret, "Required secret app-backends was not found")
 
 	applyTamossStatusObservation(tamoss, observationFixture())
@@ -57,7 +57,7 @@ func TestStatusObservationWithoutBackendObservationPreservesLastObservedState(t 
 }
 
 func TestStatusObservationRecordsObservedBackendState(t *testing.T) {
-	tamoss := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
+	tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Version: "dev"}, ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 	observation := observationFixture()
 	backends := boolCondition(false, operatorstatus.ReasonClusterNotReady, "CNPG Cluster app-db is not ready")
 	observation.Backends = &backends

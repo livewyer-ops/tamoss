@@ -4,6 +4,7 @@ metadata:
   name: tamoss-authentik
   namespace: tams
 spec:
+  version: dev
   fullnameOverride: tams
   auth:
     providedBy: authentik-blueprints

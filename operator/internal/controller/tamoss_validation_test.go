@@ -55,6 +55,32 @@ var _ = Describe("Tamoss API validation", func() {
 			Expect(errors.IsInvalid(err)).To(BeTrue())
 		})
 
+		It("requires a non-optional database CA ConfigMap name and key when TLS is enabled", func() {
+			for _, test := range []struct {
+				name     string
+				selector map[string]interface{}
+				valid    bool
+			}{
+				{name: "required", selector: map[string]interface{}{"name": "database-ca", "key": "ca.pem"}, valid: true},
+				{name: "explicit-required", selector: map[string]interface{}{"name": "database-ca", "key": "ca.pem", "optional": false}, valid: true},
+				{name: "missing-name", selector: map[string]interface{}{"key": "ca.pem"}},
+				{name: "empty-name", selector: map[string]interface{}{"name": "", "key": "ca.pem"}},
+				{name: "missing-key", selector: map[string]interface{}{"name": "database-ca"}},
+				{name: "empty-key", selector: map[string]interface{}{"name": "database-ca", "key": ""}},
+				{name: "optional", selector: map[string]interface{}{"name": "database-ca", "key": "ca.pem", "optional": true}},
+			} {
+				resource := minimalTamossUnstructured("database-tls-" + test.name)
+				Expect(unstructured.SetNestedMap(resource.Object, test.selector, "spec", "backends", "db", "external", "tls", "caConfigMap")).To(Succeed())
+				err := k8sClient.Create(ctx, resource)
+				if test.valid {
+					Expect(err).NotTo(HaveOccurred(), test.name)
+					DeferCleanup(func() { _ = k8sClient.Delete(ctx, resource) })
+				} else {
+					Expect(errors.IsInvalid(err)).To(BeTrue(), "%s: %v", test.name, err)
+				}
+			}
+		})
+
 		It("requires a positive TTL for TTL hibernation retention", func() {
 			backend := &tamossv1alpha1.StorageBackend{
 				ObjectMeta: metav1.ObjectMeta{Name: "invalid-hibernate-ttl", Namespace: "default"},

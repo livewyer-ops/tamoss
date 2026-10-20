@@ -33,6 +33,7 @@ spec:
                 name: tamoss-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:
@@ -45,6 +46,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
         - assert:
             file: assert/default-storagebackend-owned.yaml
             timeout: 120s

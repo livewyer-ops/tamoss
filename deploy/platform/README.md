@@ -22,9 +22,10 @@ From this directory:
 helmfile --kubeconfig "$KUBECONFIG" \
   --file helmfile.yaml.gotmpl \
   --state-values-file values/defaults.yaml \
-  --state-values-file ../../deploy/environments/local-kind/platform-values.yaml \
-  sync \
-  --sync-args "--server-side=true --rollback-on-failure" \
+  --state-values-file ../environments/local-kind/platform-values.yaml \
+  apply \
+  --skip-diff-on-install \
+  --sync-args "--server-side=true" \
   --wait \
   --wait-for-jobs
 ```

@@ -1,143 +1,212 @@
 # Upgrades
 
-Upgrade TAMOSS by applying source-controlled platform, operator, and environment
-overlay changes in order.
+Each `Tamoss` instance selects an exact product release through `spec.version`.
+To upgrade an instance, change its version in its source-controlled manifest
+and apply it. Explicit component image overrides take precedence.
 
-## Before Upgrading
+The TAMOSS source revision for a release contains the platform dependency pins
+and the matching operator install reference. Use that revision when applying a
+shared platform or operator update. Read the target release's
+[changelog](../../CHANGELOG.md) entry first: `compatibility.yaml` declares
+supported upgrade paths, `dependencies.yaml` records tested platform versions,
+`catalogue.json` records instance releases supported by the operator, and
+`release.json` includes image references and artefact checksums.
+The platform `helmfile apply` command requires
+[Helm diff](install.md#helm-diff).
 
-1. Confirm PostgreSQL and object-storage backups are recent and restorable.
-2. Read the TAMOSS changelog.
-3. Diff manifests for the target environment in a non-production environment.
-4. Confirm any platform dependency change is intentional.
-5. Confirm the current `Tamoss` resource reports `Ready=True` and
-   `Upgradeable=True`.
+## Environment layout migration
 
-For local validation, `task kind:e2e PROFILE=local-kind` creates a fresh
-[Kind](https://kind.sigs.k8s.io/)
-cluster with the current operator image and runs the deployed TAMS API and UI
-checks.
+Older generated environments combine a shared base with `tamoss-patch.yaml`.
+The patch contains only overrides, so preserve the fully rendered resources:
 
-## Sequence
+1. Render the existing environment with `kubectl kustomize` before changing
+   its base or directory layout. Save the output for comparison.
+2. Put the complete rendered `Tamoss` in `instances/<instance>/tamoss.yaml`,
+   with its instance-owned Namespace in `namespace.yaml`. Preserve names,
+   namespaces, `fullnameOverride`, version pins and custom settings. Carry over
+   any additional instance resources; keep shared resources at the root.
+3. List these files in the instance's `kustomization.yaml`. Replace the old
+   base and patch references in the environment's top-level Kustomization with
+   `instances/<instance>`, preserving resources shared by other instances.
+4. Compare the rendered resources before and after the move; they must be
+   equivalent. Configure the separate operator overlay using the
+   [environment layout](install.md#existing-cluster), keeping
+   `operator/` and `platform-values.yaml` at the environment root.
 
-1. Update the source-controlled platform, operator, or environment overlay
-   files.
-2. Diff the target platform, operator, and environment overlay.
-3. Apply the platform, operator, and environment layers through the checked-in
-   environment workflow.
-4. Wait for `SchemaMigrated=True` and `Ready=True`.
-5. Check `status.schemaMigration` for the final attempt result.
-6. Run deployed checks.
+## Prepare an existing instance
+
+Before installing an operator that requires release selection, pin
+`spec.version` to the instance's installed release in its environment overlay.
+Use the release record and existing workload images to identify it. An instance
+without a version reports `VersionRequired`; its workloads continue running,
+but reconciliation and new managed work wait for an explicit pin.
+
+Review existing image overrides. Remove an override only when that component
+should follow the selected release. This includes
+`spec.backends.s3.rustfsOperator.image` and
+`spec.backends.db.cnpg.postgresVersion`. PostgreSQL values previously inserted
+by CRD defaulting also remain overrides until removed. An API image override
+must contain the migration revision required by the selected release.
+
+## Upgrade sequence
+
+1. Read the release prerequisites, verify restorable backups, and rehearse the
+   supported upgrade with populated data in a separate environment.
+2. Check out the source revision for the target release. Update the remote
+   resource in `operator/kustomization.yaml` to that release's published
+   `install.yaml`, then review the platform and operator changes.
+3. Apply the platform with `task env:platform:apply`, which validates all Helm
+   releases before changing the cluster. Then apply the operator Kustomization and
+   wait for its CRDs and Deployment. Confirm its catalogue supports every
+   instance release still in use. External database and storage services remain
+   their owners' responsibility.
+4. During the maintenance window, stop ingest and other writes as required by
+   the release notes. Set the chosen instance's `spec.version` to the target
+   release. If it is paused, clear `spec.paused` when ready to proceed.
+5. Review and apply only that instance's Kustomize directory, then confirm
+   `status.currentVersion` matches the requested release and `Ready=True`.
+6. Validate existing media, uploads, metadata, webhooks and queued work before
+   resuming normal traffic.
+
+The operator reconciles managed backends first, waits for their requested
+rollouts, then completes the schema migration before reconciling application
+workloads. Existing ingest Jobs retain their original image; new Jobs wait for
+the instance to become ready. Pausing reconciliation does not stop workloads
+or active writes.
+
+Upgrade one instance at a time. Other pinned instances retain their release
+images and schema targets. Shared platform changes can still affect them; for
+example, a CNPG controller upgrade can restart database Pods. Allow downtime
+for a single-instance database.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
 export TAMOSS_ENV=my-prod
+export INSTANCE=prod-a
 
-task env:diff ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+# Run from the source revision for the target release. Update the operator
+# install URL in operator/kustomization.yaml before applying it.
+$EDITOR "deploy/environments/$TAMOSS_ENV/operator/kustomization.yaml"
+task env:platform:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
+kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k "deploy/environments/$TAMOSS_ENV/operator"
+kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
+kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
 
-task env:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:status ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task e2e:deployed PROFILE=multi-server KUBECONFIG="$KUBECONFIG"
+# Edit spec.version in instances/$INSTANCE/tamoss.yaml.
+kubectl --kubeconfig "$KUBECONFIG" diff -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+task env:wait ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
+task env:status ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
 ```
 
-`kubectl diff` exits with code 1 when differences are found; that is expected
-during review.
+`task env:diff`, `task env:instance:apply`, `task env:wait` and `task env:status`
+remain optional convenience commands. `kubectl diff` exit code 1 means changes
+were found; values greater than 1 indicate an error.
 
-If automation cannot call Task, keep the same source-controlled inputs and
-apply the same layers in the same order:
+## Installation defaults
+
+To change shared defaults, edit the environment's `operator/defaults.yaml`,
+review the diff and apply the operator overlay as above. Its generated ConfigMap
+changes the Pod template, causing a rollout that loads the new settings.
+Changing shared defaults affects every instance inheriting those fields,
+independently of its pinned release. Review that change separately from a
+release update and keep the platform's DNS and TLS configuration aligned.
+
+After the operator rollout, run `task env:wait` for the environment. It checks
+the observed instance generation and requested release, then checks
+`status.appliedDefaultsRevision` against the non-empty environment defaults
+file before accepting `Ready=True`.
+
+Existing explicit settings remain overrides. This includes persisted CRD
+defaults such as `spec.console.enabled: false`; remove that field only if the
+instance should inherit the shared Console setting. Keep the existing resource
+name, namespace and immutable `spec.fullnameOverride`. Preserve endpoint and TLS
+overrides to retain public addresses and certificates. The minimal resource is
+the starting point for new instances; adoption does not require removing
+existing configuration.
+
+## Managed storage and identity
+
+Platform updates stop on failure without automatic Helm rollback. Diagnose and
+correct the failed release, or restore the verified backup into a matching
+installation. Reverting image versions does not undo data migrations.
+
+### RustFS
+
+Managed RustFS follows `spec.version` when its image override is absent.
+Preserve Tenant names, pools, PVCs and credentials. TAMOSS does not provide a
+default backup for managed RustFS data. Use a backup or replication method
+supported by the storage platform, and test restoring the complete Tenant
+before relying on it. Wait for the StatefulSet rollout, and test existing media
+and new writes. Do not downgrade an upgraded data volume.
+
+Generated TAMOSS credentials need no rotation. Before upgrading to RustFS
+1.0.0, configure a valid explicit `RUSTFS_RPC_SECRET` if either root credential
+uses the public `rustfsadmin` default. Invalid credentials can interrupt
+storage; correct the configuration to resume the upgrade. TAMOSS does not
+replace user-owned Secrets.
+
+Include any `x-amz-*` checksum headers, such as
+`x-amz-checksum-mode: ENABLED`, when signing presigned URLs. RustFS 1.0.0 rejects
+unsigned additions. Presigned uploads also support `Content-MD5`.
+
+### Authentik
+
+Authentik follows the shared platform release. Follow its supported upgrade
+sequence and preserve its database, secret key, users and provider identities.
+Verify login, logout and OAuth client access after server and worker rollouts.
+Separate outposts must match the server version.
+
+## Status and failed upgrades
 
 ```bash
-(
-  cd deploy/platform
-  helmfile --kubeconfig "$KUBECONFIG" \
-    --file helmfile.yaml.gotmpl \
-    --state-values-file values/defaults.yaml \
-    --state-values-file "../../deploy/environments/$TAMOSS_ENV/platform-values.yaml" \
-    sync \
-    --sync-args "--server-side=true --rollback-on-failure" \
-    --wait \
-    --wait-for-jobs
-)
-kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/operator
-kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV"
+kubectl --kubeconfig "$KUBECONFIG" -n tams get tamoss <instance> \
+  -o jsonpath='{.spec.version}{"\n"}{.status.currentVersion}{"\n"}{.status.upgrade}{"\n"}{.status.schemaMigration}{"\n"}'
 ```
 
-## Upgrading a Pinned Environment Instance
+`status.resolved.versions.tamoss` is the selected release;
+`status.resolved.images` shows effective images, including overrides.
+`status.currentVersion` advances only after the schema and workload rollouts
+succeed. `status.schemaVersion` records the applied product schema, while
+`status.resolved.versions.schema` is the selected target. The BBC TAMS API
+version is recorded separately under `status.resolved.versions.tamsAPI`.
 
-Environment instances can pin `spec.api.image.tag`, `spec.ui.image.tag` and
-`spec.console.image.tag`. Update all configured pins to the candidate's matching
-images; the worker uses the API image. For an image-only update supported by the
-installed operator and schema, apply the instance layer and wait for `Ready=True`:
+`UnsupportedVersion` means the installation catalogue does not contain the
+requested release. `UnsupportedUpgrade` rejects a skipped path or downgrade.
+`VersionAdoptionRequired` asks for the installed release to be pinned before
+starting an upgrade. `UnsupportedSchemaVersion` means the installed schema is
+outside the selected release's supported starting revisions. `UpgradeInProgress`
+requires the target recorded in `status.upgrade.targetVersion` to finish before
+selecting another release.
 
-```bash
-task env:instance:apply ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-task env:wait ENV="$TAMOSS_ENV" KUBECONFIG="$KUBECONFIG"
-```
+If RustFS fails during rollout, inspect the Tenant conditions and the RustFS
+Pod's events and logs. Schema and application updates wait for backend
+readiness. Correct invalid custom configuration to resume the upgrade; storage
+may be unavailable until the rollout recovers. TAMOSS does not replace
+user-owned Secrets. Check the [RustFS credential requirements](#rustfs).
 
-Upgrade one instance at a time on shared clusters.
+For `SchemaMigrationFailed`, inspect migration Job logs, database connectivity
+and permissions. Correct the cause and use the existing schema retry action.
+Keep the requested release selected while an upgrade is in progress.
 
-The move from `8.1.0-oss6` to 8.2 changes both API and schema. Follow the full
-platform, operator and instance sequence above, using the compatibility metadata
-and image references from the same release. Validate existing Sources, Flows,
-media, webhooks and queued work after the migration. A fresh-install check does
-not exercise this upgrade path.
+## Schema migrations and recovery
 
-## Status Checks
+The upgrade to `8.2.0-oss2` applies Alembic revision `20260924_0008`, which
+converts Segment timestamp bounds from `BIGINT` to `NUMERIC`. PostgreSQL rewrites
+the Segment table and its indexes and refreshes statistics. Reserve a
+maintenance window and enough temporary database space; duration depends on
+Segment volume. Stop ingest and other writes during migration. Media objects
+and checksums are unchanged.
 
-```bash
-kubectl --kubeconfig "$KUBECONFIG" -n tams describe tamoss tamoss-multi-server
-kubectl --kubeconfig "$KUBECONFIG" -n tams get tamoss tamoss-multi-server \
-  -o jsonpath='{.status.upgrade}{"\n"}{.status.schemaMigration}{"\n"}{.status.resolved.versions}{"\n"}'
-```
+Rehearse migrations with a restored database to estimate locking, disk-space
+requirements and downtime. The migration Job uses the selected API image and
+its catalogue Alembic revision. Schema changes and the revision update are
+transactional. The operator runs the migration and reports its progress in
+`Tamoss.status.schemaMigration`; inspect the Job logs if it fails.
+The schema-state ConfigMap records the completed product schema. Alembic records
+the database revision and skips migrations already applied.
 
-`UnsupportedSchemaVersion` means the database revision is not the current
-release revision. Stop before rolling workloads forward and investigate the
-database state. `SchemaMigrationFailed` means the migration Job failed
-repeatedly; investigate PostgreSQL connectivity, permissions, and migration logs
-before applying another desired state.
-
-`status.schemaVersion`, `status.schemaMigration.appliedRevision`, and
-`status.resolved.versions.schema` identify the applied TAMOSS database schema
-revision. `status.schemaMigration.supportedTAMSAPI` and
-`status.resolved.versions.tamsAPI` identify the BBC TAMS API compatibility
-level; they are not the TAMOSS product version.
-
-## Schema Migrations
-
-The operator schema Job runs the TAMOSS application migration CLI from the API
-image:
-
-```bash
-tamoss-db migrate
-```
-
-Non-Kubernetes operators use the same command with the current PostgreSQL
-component environment:
-
-```bash
-POSTGRES_HOST=postgres POSTGRES_USER=tamoss POSTGRES_PASSWORD=secret POSTGRES_DB=tams tamoss-db migrate
-```
-
-Fresh installs run from an empty database to the current head.
-
-## Operator Manifests
-
-`task operator:template` renders the checked-in
-[Kustomize](https://kustomize.io/) operator install
-for review:
-
-```bash
-task operator:template
-```
-
-## Rollback
-
-For planned changes, roll back by reverting source-controlled manifests and
-reapplying the changed layer.
-
-The operator does not automatically roll back application images or database
-schema. Restore provider data from your backup plan when a failed migration
-requires a data rollback.
-
-For short investigations, pause reconciliation before manual edits and resume
-afterwards. See [Day 2 Operations](day-2.md).
+The operator does not automatically roll back images or schema. Product release
+downgrades are unsupported. Restore the PostgreSQL and storage backups into a
+matching installation when a completed upgrade must be reversed. For temporary
+manual diagnosis, pause reconciliation as described in [Day 2 Operations](day-2.md).

@@ -53,6 +53,14 @@ Read `Tamoss` conditions first:
 | `Degraded=True` | User-actionable reconcile failure. |
 | `Paused=True` | `.spec.paused=true`; writes are suspended. |
 
+For `InstallationDefaultsRequired`, check that the environment's operator
+overlay was applied and supplies the omitted profile and site settings.
+For `InvalidInstallationDefaults`, correct `operator/defaults.yaml` and apply
+that overlay again; the operator reads it at startup. Inspect
+`status.resolved.defaults` and `status.appliedDefaultsRevision` to distinguish
+the loaded configuration from the revision whose rollout completed. See
+[Runtime Configuration](../reference/runtime-configuration.md#installation-defaults).
+
 Then inspect provider ownership:
 
 ```bash
@@ -114,26 +122,13 @@ Check registration time, active status and selectors before changing delivery
 configuration. An absent `flow_collected_by_ids` selects all collections;
 `[]` selects only top-level Flows. The same distinction applies to Sources.
 
-For retained delivery history, run the read-only diagnostic with the target's
-existing `POSTGRES_*` configuration:
-
-```bash
-umask 077
-uv run --project src python scripts/webhook_diagnostics.py \
-  --webhook-id 00000000-0000-4000-8000-000000000001 \
-  > webhook-diagnostics.json
-```
-
-Use a read-only database identity where available. The script enforces a
-read-only, repeatable-read transaction with a five-second statement timeout.
-It reports queue counts, expired claims, activity timestamps and at most 20
-recent deliveries without callback keys, full URLs, payloads or raw errors.
-Rows expire under `TAMOSS_WORKER_QUEUE_RETENTION_SECONDS` (seven days by
-default), so a missing success timestamp does not prove delivery never worked.
-`last_attempt_activity_at` is a state update, not an HTTP request start time.
+Use `task env:status` to inspect the instance, Pods and recent Kubernetes
+events. Check API and worker logs with `kubectl logs`, and compare delivery
+attempts with the receiver's logs. A missing receiver event does not by itself
+show whether TAMOSS queued or attempted delivery.
 
 - No queued event: inspect registration time, status and selectors.
-- Pending or expired claim: inspect worker readiness, queue age and leases.
+- Worker not progressing: inspect worker readiness, replica status and pod logs.
 - HTTP 401/403: compare callback authentication with the receiver's expected key.
 - Target blocked: inspect DNS and egress policy. Delivery pins the checked
   destination and ignores ambient proxies and netrc credentials. Do not enable
@@ -232,22 +227,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <pod-name> --prev
 
 Worker pods expose `/healthz` and `/readyz` on their metrics port. These
 constant-time probes report process progress and the result of the latest worker
-poll without opening new backend connections. For a deeper dependency check,
-run the diagnostic command in the container:
+poll without opening new backend connections. Use readiness, replica status,
+and pod logs to check the worker:
 
 ```bash
-WORKER_DEPLOYMENT="$(kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  get tamoss "$TAMOSS_NAME" -o jsonpath='{.status.resolved.resources.worker}')"
-kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  exec deploy/"$WORKER_DEPLOYMENT" -- /bin/uv run python -m tamoss.worker health
-
 kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get tamoss "$TAMOSS_NAME" \
   -o jsonpath='{.status.replicas.worker}'
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get pods
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <worker-pod> --tail=100
 ```
-
-The worker health command validates runtime configuration, PostgreSQL
-connectivity, and the mounted StorageBackend credentials file. It does not claim
-queue work, send webhooks, delete media, or register storage metadata.
 
 ## API or UI Fails
 
@@ -258,12 +246,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
   logs -l app.kubernetes.io/component=api --tail=100
 ```
 
-For remote clusters, use the public API hostname configured in the `Tamoss` CR.
+For remote clusters, use the effective API URL from `status.endpoints.api` or
+`task env:summary`.
 
 ## Support Bundle
 
 Generate a local diagnostic bundle before opening a public issue or handing off
-an incident:
+an incident. The instance and operator namespaces must already exist. If
+installation stopped before they were created, inspect the platform with
+`helm list --all-namespaces` and `kubectl --kubeconfig "$KUBECONFIG" get events --all-namespaces` first.
 
 ```bash
 task operator:support-bundle \
@@ -494,8 +485,7 @@ For an existing cluster, keep durable changes in the generated environment
 overlay and reapply the supported workflow:
 
 ```bash
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-prod
 ```
 
 For a disposable local Kind cluster, recreate the full local environment:
@@ -506,5 +496,6 @@ task kind:e2e PROFILE=local-kind
 task kind:down
 ```
 
-`task kind:down` deletes the local Kind cluster and local runtime state. Do not
-use it as a production reset path.
+`task kind:down` deletes the local Kind cluster and removes its kubeconfig
+context. It leaves other contexts and local files in place. Do not use it as a
+production reset path.

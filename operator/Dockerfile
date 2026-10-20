@@ -1,6 +1,6 @@
 # Build the manager binary. This Dockerfile is intended to be built from the
 # repository root with `docker build -f operator/Dockerfile .`.
-FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.0.1
@@ -28,10 +28,9 @@ COPY operator/internal/ internal/
 # be empty for a plain local build, in which case Go uses the builder image
 # architecture.
 RUN schema_version="${SCHEMA_VERSION:-$VERSION}" && \
-    previous_schema_version="${PREVIOUS_SCHEMA_VERSION:-}" && \
     operand_version="${OPERAND_VERSION:-dev}" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath \
-    -ldflags "-X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=${schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=${previous_schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=${TAMS_API_VERSION} -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=${operand_version}" \
+    -ldflags "-X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=${schema_version} -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=${operand_version}" \
     -o /workspace/manager ./cmd
 
 # Use distroless as minimal base image to package the manager binary

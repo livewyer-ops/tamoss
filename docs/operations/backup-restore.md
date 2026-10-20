@@ -122,9 +122,14 @@ For `providedBy: external`, use the external provider's backup,
 point-in-time recovery, credential rotation, and restore process. TAMOSS does
 not create or manage those backup resources.
 
-For managed RustFS Operator storage, follow RustFS backup, replication, and
-erasure-coding guidance for the selected pool layout. TAMOSS does not manage S3
-backup automation in the current operator.
+TAMOSS does not provide a default backup for data on managed RustFS Operator
+volumes. RustFS's [backup integrations](https://docs.rustfs.com/en/developer/integration/backup)
+describe tools that store backup repositories in RustFS; they do not back up
+RustFS's own data. Use a backup or replication method supported by the storage
+platform, keep its destination in an independent failure domain, and test
+restoring all Tenant volumes and configuration before relying on it. The
+method depends on the cluster storage provider, so TAMOSS does not prescribe a
+generic snapshot command.
 
 For managed [Authentik](https://goauthentik.io/) Blueprints, back up the
 shared platform Authentik

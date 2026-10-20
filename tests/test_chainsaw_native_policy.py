@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,6 +30,27 @@ def _write_test(tmp_path: Path, operation: str) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+@pytest.mark.parametrize("platform", [None, "managed", "simulated", "typo"])
+def test_optional_platform_label_is_validated(
+    tmp_path: Path, platform: str | None
+) -> None:
+    module = _policy_module()
+    labels = {axis: sorted(values)[0] for axis, values in module.AXES.items()}
+    labels.update(target="kind", profile="none")
+    if platform is not None:
+        labels["platform"] = platform
+    (tmp_path / "chainsaw-test.yaml").write_text(
+        "apiVersion: chainsaw.kyverno.io/v1alpha1\n"
+        "kind: Test\nmetadata:\n  labels:\n"
+        + "".join(
+            f"    test.tamoss.io/{axis}: {value}\n" for axis, value in labels.items()
+        )
+        + "spec:\n  steps: []\n"
+    )
+
+    assert module.validate_labels(tmp_path) == (1 if platform == "typo" else 0)
 
 
 def test_inline_scripts_are_rejected(tmp_path: Path) -> None:
@@ -91,6 +114,42 @@ def test_missing_operation_file_references_are_rejected(tmp_path: Path) -> None:
     failures = module._validate_file_references(path)
 
     assert any("referenced file does not exist" in failure for failure in failures)
+
+
+def test_embedded_fixture_programmes_are_rejected(tmp_path: Path) -> None:
+    module = _policy_module()
+    resource = tmp_path / "fixture.yaml"
+    resource.write_text(
+        "apiVersion: v1\nkind: ConfigMap\ndata:\n"
+        "  check.py: |\n    print('embedded')\n"
+        "---\napiVersion: v1\nkind: Pod\nspec:\n"
+        "  containers:\n    - name: fixture\n      command:\n"
+        "        - /app/.venv/bin/python\n        - -u\n        - -c\n"
+        "        - print('embedded')\n",
+        encoding="utf-8",
+    )
+
+    failures = module._validate_no_shell_resources(tmp_path)
+
+    assert any("keep fixture programmes in source files" in item for item in failures)
+    assert any("invoke a Python source file" in item for item in failures)
+
+
+def test_fixture_source_entrypoints_are_allowed(tmp_path: Path) -> None:
+    module = _policy_module()
+    resource = tmp_path / "fixture.yaml"
+    resource.write_text(
+        "apiVersion: v1\nkind: Pod\nspec:\n"
+        "  containers:\n    - name: fixture\n      command:\n"
+        "        - /app/.venv/bin/python\n        - /tests/issuer.py\n"
+        "        - -c\n        - fixture.toml\n"
+        "    - name: check\n      command:\n"
+        "        - python\n        - -m\n        - pytest\n"
+        "        - -c\n        - pytest.ini\n",
+        encoding="utf-8",
+    )
+
+    assert module._validate_no_shell_resources(tmp_path) == []
 
 
 def test_kubernetes_orchestration_commands_are_rejected(tmp_path: Path) -> None:

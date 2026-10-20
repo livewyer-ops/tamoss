@@ -21,7 +21,7 @@ from tamoss.domain.model import (
     utc_now,
 )
 from tamoss.errors import ConfigurationError
-from tamoss.settings import Settings
+from tamoss.settings import Settings, aws_web_identity_configured
 from tamoss.storage_credentials import StorageBackendCredentialFile
 
 
@@ -195,6 +195,7 @@ class ConfiguredObjectStorage:
         response = self._s3_client(source).get_object(
             Bucket=_require_bucket(source),
             Key=object_id,
+            ChecksumMode="ENABLED",
         )
         body = response["Body"]
         try:
@@ -307,15 +308,27 @@ class ConfiguredObjectStorage:
         endpoint_url = (
             backend.public_endpoint_url if public else backend.endpoint_url
         ) or backend.endpoint_url
-        if not endpoint_url or not backend.access_key or not backend.secret_key:
+        configured = self._settings.storage_backend
+        use_web_identity = (
+            not backend.access_key
+            and not backend.secret_key
+            and configured is not None
+            and configured.id == backend.id
+            and not configured.access_key
+            and not configured.secret_key
+            and aws_web_identity_configured()
+        )
+        if not endpoint_url or (
+            not use_web_identity and (not backend.access_key or not backend.secret_key)
+        ):
             raise ConfigurationError(
                 f"Storage backend {backend.id} is missing S3 endpoint or credentials."
             )
         return boto3.client(
             "s3",
             endpoint_url=endpoint_url,
-            aws_access_key_id=backend.access_key,
-            aws_secret_access_key=backend.secret_key,
+            aws_access_key_id=backend.access_key or None,
+            aws_secret_access_key=backend.secret_key or None,
             region_name=backend.region or "us-east-1",
             config=Config(
                 signature_version="s3v4",
@@ -410,6 +423,22 @@ def _copy_upload_args(response: dict[str, Any]) -> dict[str, Any]:
         extra_args["ContentType"] = response["ContentType"]
     if response.get("Metadata"):
         extra_args["Metadata"] = response["Metadata"]
+    for algorithm in (
+        "SHA256",
+        "SHA1",
+        "CRC64NVME",
+        "CRC32C",
+        "CRC32",
+        "SHA512",
+        "MD5",
+        "XXHASH64",
+        "XXHASH3",
+        "XXHASH128",
+    ):
+        if response.get(f"Checksum{algorithm}"):
+            # The SDK calculates the destination checksum for its upload part layout.
+            extra_args["ChecksumAlgorithm"] = algorithm
+            break
     return extra_args
 
 

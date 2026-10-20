@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response, status
 
 from tamoss.api.dependencies import get_flow_use_cases, get_object_use_cases
 from tamoss.api.presenters import head_response, object_response, with_page_headers
@@ -18,8 +17,7 @@ from tamoss.api.query_params import (
 )
 from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.application.contexts.objects import ObjectUseCases
-from tamoss.contract.generated import contract_models
-from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import ContractUUID
 
 router = APIRouter(tags=["Objects"])
 
@@ -36,12 +34,12 @@ router = APIRouter(tags=["Objects"])
 )
 def post_object_instance(
     object_id: Annotated[str, Path(alias="objectId")],
-    registration: contract_models.ObjectsInstancesPost,
+    registration: dict[str, Any] = Body(...),
     objects: ObjectUseCases = Depends(get_object_use_cases),
 ) -> Response:
     objects.register_object_instance(
         object_id=object_id,
-        registration=contract_dump(registration),
+        registration=registration,
     )
     return Response(status_code=status.HTTP_201_CREATED)
 
@@ -58,7 +56,7 @@ def post_object_instance(
 def delete_object_instance(
     object_id: Annotated[str, Path(alias="objectId")],
     request: Request,
-    storage_id: UUID | None = None,
+    storage_id: ContractUUID | None = None,
     label: str | None = None,
     objects: ObjectUseCases = Depends(get_object_use_cases),
 ) -> Response:

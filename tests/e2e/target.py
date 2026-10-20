@@ -67,6 +67,7 @@ class E2ETarget:
     oauth_client_secret: str | None = field(repr=False)
     readiness_mode: str
     upload_checksum_header: bool
+    cr_name: str | None = None
     timeout_seconds: float = 10.0
     memory_budget_mib: int | None = None
     browser_api_available: bool = True
@@ -148,6 +149,7 @@ class E2ETarget:
             upload_checksum_header=_env_bool(
                 values.get("TEST_TAMOSS_UPLOAD_CHECKSUM_HEADER", "true")
             ),
+            cr_name=cr_name,
             timeout_seconds=float(values.get("TEST_TIMEOUT_SECONDS", "10")),
             memory_budget_mib=_memory_budget_mib(
                 values.get("TEST_TAMOSS_MEMORY_BUDGET_MIB")

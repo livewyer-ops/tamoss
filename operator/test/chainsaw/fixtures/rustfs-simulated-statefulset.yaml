@@ -1,0 +1,27 @@
+# Provider simulation: S3 traffic uses the separate RustFS fixture.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: (join('-', [$tenant.metadata.name, $tenant.spec.pools[0].name]))
+  namespace: ($tenant.metadata.namespace)
+  ownerReferences:
+    - apiVersion: rustfs.com/v1alpha1
+      kind: Tenant
+      name: ($tenant.metadata.name)
+      uid: ($tenant.metadata.uid)
+      controller: true
+spec:
+  serviceName: ($tenant.metadata.name)
+  replicas: ($tenant.spec.pools[0].servers)
+  selector:
+    matchLabels:
+      simulated-tenant: ($tenant.metadata.name)
+  template:
+    metadata:
+      labels:
+        simulated-tenant: ($tenant.metadata.name)
+    spec:
+      containers:
+        - name: rustfs
+          image: ($tenant.spec.image)
+          command: [/bin/sleep, infinity]

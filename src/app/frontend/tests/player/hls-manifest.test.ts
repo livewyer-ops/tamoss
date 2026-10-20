@@ -484,80 +484,121 @@ describe("playback plans", () => {
     expect(plan.audioTracks).toEqual([]);
   });
 
-  it("builds fragmented MP4 playlists with initialisation Objects", () => {
-    const fragmented = track("video", {
-      container: "video/mp4",
-      initSegments: true,
-      segments: [
-        {
-          object_id: "one",
-          timerange: "[100:0_106:0)",
-          get_urls: [{ url: "https://media.example/one.m4s" }],
-          init_object: {
-            object_id: "init-one",
-            get_urls: [{ url: "https://media.example/init-one.mp4" }],
+  it.each(["video/mp4", "video/iso.segment", "audio/iso.segment"])(
+    "builds %s playlists with shared and changing initialisation Objects",
+    (container) => {
+      const fragmented = track("video", {
+        container,
+        initSegments: true,
+        segments: [
+          {
+            object_id: "one",
+            timerange: "[100:0_106:0)",
+            get_urls: [{ url: "https://media.example/one.m4s" }],
+            init_object: {
+              object_id: "init-one",
+              get_urls: [{ url: "https://media.example/init-one.mp4" }],
+            },
           },
-        },
-        {
-          object_id: "two",
-          timerange: "[106:0_112:0)",
-          get_urls: [{ url: "https://media.example/two.m4s" }],
-          init_object: {
-            object_id: "init-two",
-            get_urls: [{ url: "https://media.example/init-two.mp4" }],
+          {
+            object_id: "two",
+            timerange: "[106:0_112:0)",
+            get_urls: [{ url: "https://media.example/two.m4s" }],
+            init_object: {
+              object_id: "init-two",
+              get_urls: [{ url: "https://media.example/init-two.mp4" }],
+            },
           },
-        },
-      ],
-    });
-    const plan = compilePlaybackPlan(
-      { initialTimerange: "[90:0_120:0)", tracks: [fragmented] },
-      blobApi(),
-    );
+          {
+            object_id: "three",
+            timerange: "[112:0_118:0)",
+            get_urls: [{ url: "https://media.example/three.m4s" }],
+            init_object: {
+              object_id: "init-two",
+              get_urls: [{ url: "https://media.example/init-two.mp4" }],
+            },
+          },
+        ],
+      });
+      const plan = compilePlaybackPlan(
+        { initialTimerange: "[90:0_120:0)", tracks: [fragmented] },
+        blobApi(),
+      );
 
-    expect(plan.kind).toBe("hls");
-    if (plan.kind !== "hls") return;
-    expect(plan.mediaManifests.get("video-flow")).toContain("#EXT-X-VERSION:7");
-    expect(plan.mediaManifests.get("video-flow")).toContain(
-      '#EXT-X-MAP:URI="https://media.example/init-one.mp4"',
-    );
-    expect(plan.mediaManifests.get("video-flow")).toContain(
-      '#EXT-X-MAP:URI="https://media.example/init-two.mp4"',
-    );
-    expect(plan.mediaManifests.get("video-flow")).toContain(
-      "https://media.example/two.m4s",
-    );
-  });
+      expect(plan.kind).toBe("hls");
+      if (plan.kind !== "hls") return;
+      expect(plan.mediaManifests.get("video-flow")).toContain(
+        "#EXT-X-VERSION:7",
+      );
+      expect(
+        plan.mediaManifests.get("video-flow")?.match(/#EXT-X-MAP:/gu),
+      ).toHaveLength(2);
+      expect(plan.mediaManifests.get("video-flow")).toContain(
+        '#EXT-X-MAP:URI="https://media.example/init-one.mp4"',
+      );
+      expect(plan.mediaManifests.get("video-flow")).toContain(
+        '#EXT-X-MAP:URI="https://media.example/init-two.mp4"',
+      );
+      expect(plan.mediaManifests.get("video-flow")).toContain(
+        "https://media.example/two.m4s",
+      );
+    },
+  );
 
-  it("rejects declared fragmented MP4 without init Objects and unsupported containers", () => {
-    const multiObject = track("video", {
-      container: "video/mp4",
-      initSegments: true,
-      segments: [
-        {
-          object_id: "one",
-          timerange: "[100:0_106:0)",
-          get_urls: [{ url: "https://media.example/one.mp4" }],
-        },
-        {
-          object_id: "two",
-          timerange: "[106:0_112:0)",
-          get_urls: [{ url: "https://media.example/two.mp4" }],
-        },
-      ],
-    });
-    expect(() =>
-      compilePlaybackPlan({
-        initialTimerange: "[90:0_120:0)",
-        tracks: [multiObject],
-      }),
-    ).toThrowError(expect.objectContaining({ code: "missing-init-object" }));
-    expect(() =>
-      compilePlaybackPlan({
-        initialTimerange: "[90:0_120:0)",
-        tracks: [track("video", { container: "application/mxf" })],
-      }),
-    ).toThrowError(expect.objectContaining({ code: "unsupported-container" }));
-  });
+  it.each(["video/mp4", "video/iso.segment", "audio/iso.segment"])(
+    "rejects %s without init Objects and unsupported containers",
+    (container) => {
+      const multiObject = track("video", {
+        container,
+        initSegments: true,
+        segments: [
+          {
+            object_id: "one",
+            timerange: "[100:0_106:0)",
+            get_urls: [{ url: "https://media.example/one.mp4" }],
+          },
+          {
+            object_id: "two",
+            timerange: "[106:0_112:0)",
+            get_urls: [{ url: "https://media.example/two.mp4" }],
+          },
+        ],
+      });
+      expect(() =>
+        compilePlaybackPlan({
+          initialTimerange: "[90:0_120:0)",
+          tracks: [multiObject],
+        }),
+      ).toThrowError(expect.objectContaining({ code: "missing-init-object" }));
+      expect(() =>
+        compilePlaybackPlan({
+          initialTimerange: "[90:0_120:0)",
+          tracks: [track("video", { container: "application/mxf" })],
+        }),
+      ).toThrowError(
+        expect.objectContaining({ code: "unsupported-container" }),
+      );
+    },
+  );
+
+  it.each([undefined, false])(
+    "requires init Objects for ISO segments with init_segments=%s",
+    (initSegments) => {
+      const isoSegment = track("video", {
+        container: "video/iso.segment",
+        initSegments,
+      });
+      expect(() =>
+        compilePlaybackPlan({
+          initialTimerange: "[90:0_120:0)",
+          tracks: [isoSegment],
+        }),
+      ).toThrowError(expect.objectContaining({ code: "missing-init-object" }));
+      expect(() =>
+        compileHlsMediaManifest(isoSegment, "[90:0_120:0)"),
+      ).toThrowError(expect.objectContaining({ code: "missing-init-object" }));
+    },
+  );
 
   it("does not expose a signed URL through validation errors", () => {
     const signedUrl = "https://media.example/asset.ts?X-Amz-Signature=private";

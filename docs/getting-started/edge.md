@@ -82,36 +82,37 @@ other existing ARM64 cluster, export the path to its kubeconfig first:
 export KUBECONFIG=/path/to/kubeconfig
 ```
 
-Create the environment composition, edit the two generated files, then
-apply and inspect it:
+[Select a release](../operations/install.md) and install
+[Helm diff](../operations/install.md#helm-diff). The generated edge platform
+values disable Authentik and use self-signed TLS. Review the [key settings](#key-settings)
+when editing the files, then apply and wait for the instance:
 
 ```bash
-task env:init NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 $EDITOR deploy/environments/my-edge/platform-values.yaml
-$EDITOR deploy/environments/my-edge/tamoss-patch.yaml
+$EDITOR deploy/environments/my-edge/operator/defaults.yaml
 task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:wait ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-edge KUBECONFIG="$KUBECONFIG"
 ```
 
-The generated edge platform values disable Authentik and use self-signed TLS
-by default. Work through the [Key Settings](#key-settings) while
-editing the two generated files, before `task env:apply`.
+The [install guide](../operations/install.md) describes the equivalent native
+Helmfile and Kubernetes commands.
 
 ## Key Settings
 
 ### Auth: bearer token (default)
 
 The operator defaults `edge` to token-only runtime auth. The API token lives
-in the generated `<fullname>-api-token` Secret — `tams-api-token` for the
-default fullname — under the `TAMOSS_API_TOKEN` key; `task env:summary` prints
-the resolved value once the instance is ready. Read it into a variable and
-send it as a bearer header:
+in the generated `<instance>-api-token` Secret (`tamoss-edge-api-token` for the
+generated instance) under the `TAMOSS_API_TOKEN` key. Retrieve it with
+`task env:credentials ENV=my-edge INSTANCE=tamoss-edge KUBECONFIG="$KUBECONFIG"`
+or read the Secret into a variable, then send it as a bearer header:
 
 ```bash
-export TAMOSS_API_TOKEN=$(kubectl -n tams get secret tams-api-token \
+export TAMOSS_API_TOKEN=$(kubectl -n tams get secret tamoss-edge-api-token \
   -o jsonpath='{.data.TAMOSS_API_TOKEN}' | base64 -d)
-curl -k -H "Authorization: Bearer $TAMOSS_API_TOKEN" https://api.tamoss.edge/
+curl -k -H "Authorization: Bearer $TAMOSS_API_TOKEN" https://api.tamoss-edge.tams.tamoss.edge/
 ```
 
 `-k` accepts the profile's default self-signed certificate; for real use,
@@ -125,14 +126,13 @@ tokens.
 ### Auth: managed OAuth
 
 Declaring the Authentik provider runs the full OAuth stack on the node.
-Managed OAuth on edge is supported from `8.1.0-oss5`.
 
 On a live instance, apply the change in this order.
 
 First, in `platform-values.yaml`, enable Authentik and set its ingress host
-to `auth.` followed by your instance's `spec.publicEndpoint.baseDomain`
-value. The operator derives the OAuth issuer hostname from the base domain,
-so the two must agree. The generated platform values already contain the
+to `auth.` followed by the shared `baseDomain` in `operator/defaults.yaml`.
+If `authentik.issuerURL` overrides that shared URL, use its hostname instead.
+The generated platform values already contain the
 `authentikChart` sizing block that bounds the Authentik server, worker, and
 PostgreSQL for a 4 GB node; `task env:init PROFILE=edge` copies it from
 [`deploy/platform/values/edge-reference.yaml`](../../deploy/platform/values/edge-reference.yaml).
@@ -141,25 +141,27 @@ PostgreSQL for a 4 GB node; `task env:init PROFILE=edge` copies it from
 authentik:
   enabled: true
   ingress:
-    host: auth.<base-domain>
+    host: auth.<installation-base-domain>
 ```
 
-Re-run `task env:apply` to roll out the Authentik stack.
+Reapply the platform Helmfile state as described in the
+[install guide](../operations/install.md#existing-cluster) to roll out the
+Authentik stack.
 
 Then switch the provider on the running instance with a merge patch. The
 API server rejects a spec that carries both auth blocks, and `kubectl apply`
 does not delete the old `external` block it does not own, so on a live
-token-mode instance `task env:apply` alone fails that one-of admission
+token-mode instance applying the Kustomize directory alone fails that one-of admission
 rule; the patch must come first. The generated composition keeps the
-instance name `tamoss-edge` and the `tams` namespace from the checked-in
-edge instance manifest:
+instance name `tamoss-edge` and namespace `tams`:
 
 ```bash
 kubectl -n tams patch tamoss tamoss-edge --type=merge \
   -p '{"spec":{"auth":{"providedBy":"authentik-blueprints","external":null}}}'
 ```
 
-Finally, record the same change in `tamoss-patch.yaml` so later applies
+Finally, record the same change in
+`instances/tamoss-edge/tamoss.yaml` so later applies
 agree with the cluster:
 
 ```yaml
@@ -168,6 +170,9 @@ agree with the cluster:
     external: null
 ```
 
+Apply the saved instance composition with
+`kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-edge/instances/tamoss-edge`.
+
 The operator submits the blueprint, waits for the issuer, and redeploys the
 API and UI against it. The UI then redirects to the Authentik login. The
 static API token stays valid in OAuth mode: the API accepts the generated
@@ -175,15 +180,8 @@ token as a bearer credential alongside Authentik-issued OAuth2 tokens.
 
 ### Memory budget
 
-The 8.1 measurements provide a planning baseline for a 4 GB ARM64 node:
-
-| Mode | Node memory used |
-| --- | --- |
-| Bearer token | ~1.9 GiB |
-| Managed OAuth | ~3.2 GiB |
-
-Measure the complete 8.2 deployment on the target node before accepting a
-workload. The Console and managed ingest add processes beyond that baseline.
+Measure the complete deployment on the target node before accepting a
+workload. Include the Console and any managed ingest Jobs in the memory budget.
 
 For OAuth mode on a 4 GB node, configure SSD-backed swap before enabling
 Authentik. The generated platform values bound the Authentik components for
@@ -193,7 +191,7 @@ PostgreSQL memory limit, which also carries the Authentik task queue.
 ### UI on and off
 
 The UI serves static assets from nginx. To disable it, add this to the spec in
-`tamoss-patch.yaml`:
+`instances/tamoss-edge/tamoss.yaml`:
 
 ```yaml
   ui:
@@ -233,18 +231,25 @@ The checked-in target file behind this command,
 [`tests/targets/edge.env`](../../tests/targets/edge.env), carries the Kind
 validation hostnames. For a remote node whose hostnames differ, copy
 [`tests/targets/remote.env.example`](../../tests/targets/remote.env.example)
-into the environment directory, set the API, UI, and auth URLs plus
-`TEST_TAMOSS_TOKEN_SECRET=tams-api-token` and
-`TEST_TAMOSS_CR_NAME=tamoss-edge`, and point the checks at it:
+into the environment directory. Use `task env:summary` and the instance's
+`status.endpoints` and `status.resolved.generatedSecrets` for the effective
+URLs and Secret names. Set `TEST_TAMOSS_NAMESPACE=tams`,
+`TEST_TAMOSS_CR_NAME=tamoss-edge` and the resolved token Secret name in
+`TEST_TAMOSS_TOKEN_SECRET`. For the default token-only mode, set
+`TEST_TAMOSS_BROWSER_API_AVAILABLE=false`, `TEST_TAMOSS_UI_EXPECT_STATUS=200`
+and `TEST_TAMOSS_AUTH_PASSWORD=unused`. Trust the self-signed CA on the test host
+or set `TEST_INSECURE_SKIP_TLS_VERIFY=true` for this test target. Point the
+checks at that file:
 
 ```bash
 task e2e:deployed PROFILE=edge KUBECONFIG="$KUBECONFIG" \
   TARGET_ENV=deploy/environments/my-edge/target.env
 ```
 
-To validate the OAuth mode, apply the two [Key Settings](#key-settings)
-changes to the environment and run the same deployed checks. The UI check
-expects a redirect to the Authentik login instead of a direct 200.
+To validate OAuth mode, apply the [Key Settings](#key-settings) changes, set
+`TEST_TAMOSS_BROWSER_API_AVAILABLE=true` and `TEST_TAMOSS_UI_EXPECT_STATUS=302`,
+and supply the browser login credentials reported by `task env:credentials`.
+Run the same deployed checks against that target.
 
 The deployed checks exercise the API with the bearer token, certificate
 state, and UI availability against the running instance. Set

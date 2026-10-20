@@ -38,8 +38,8 @@ tasks:
         msg: "uv binary not found"
     cmds:
       # Tests are first-class Ruff targets; generated/vendor material stays out.
-      - uv run --project src ruff check --config src/pyproject.toml --fix --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
-      - uv run --project src ruff format --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
+      - uv run --project src ruff check --config src/pyproject.toml --fix --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts operator/test/chainsaw
+      - uv run --project src ruff format --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts operator/test/chainsaw
 
   ruff:lint:
     silent: true
@@ -48,8 +48,8 @@ tasks:
         msg: "uv binary not found"
     cmds:
       # Tests are first-class Ruff targets; generated/vendor material stays out.
-      - uv run --project src ruff check --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
-      - uv run --project src ruff format --config src/pyproject.toml --check --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts
+      - uv run --project src ruff check --config src/pyproject.toml --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts operator/test/chainsaw
+      - uv run --project src ruff format --config src/pyproject.toml --check --exclude src/vendor/ --exclude src/app/tamoss/contract/generated/ src tests scripts operator/test/chainsaw
 
   eslint:
     silent: true

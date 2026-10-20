@@ -1,6 +1,8 @@
 package workload_renderer
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -32,6 +34,12 @@ func deploymentFor(
 	replicas := spec.DesiredReplicaCount()
 	podLabels := mergeStringMaps(labels(tamoss, component), spec.PodLabels)
 	podAnnotations := mergeStringMaps(nil, spec.PodAnnotations)
+	if tamoss.UsesS3WebIdentity() && tamoss.Spec.ServiceAccount.Create && (component == "api" || component == "worker") {
+		annotations, _ := json.Marshal(tamoss.Spec.ServiceAccount.Annotations)
+		podAnnotations = mergeStringMaps(podAnnotations, map[string]string{
+			"tamoss.livewyer.io/workload-identity-hash": fmt.Sprintf("%x", sha256.Sum256(annotations)),
+		})
+	}
 	container := corev1.Container{
 		Name:            component,
 		Image:           image,
@@ -69,6 +77,9 @@ func deploymentFor(
 	if spec.TerminationGracePeriodSeconds != nil {
 		podSpec.TerminationGracePeriodSeconds = spec.TerminationGracePeriodSeconds
 	}
+	if component == "api" || component == "worker" {
+		podSpec = WithDatabaseTLS(podSpec, tamoss)
+	}
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      tamoss.ResourceName(component),
@@ -97,14 +108,19 @@ func deploymentFor(
 func backendEnv(tamoss *tamossv1alpha1.Tamoss) []corev1.EnvVar {
 	db := tamoss.DBConnection()
 	s3 := tamoss.S3Connection()
-	return []corev1.EnvVar{
+	env := []corev1.EnvVar{
 		secretKeyEnv("POSTGRES_USER", db.Auth.ExistingSecret, db.Auth.SecretKeys.Username),
 		secretKeyEnv("POSTGRES_PASSWORD", db.Auth.ExistingSecret, db.Auth.SecretKeys.Password),
-		secretKeyEnv("TAMOSS_S3_ACCESS_KEY", s3.Auth.ExistingSecret, s3.Auth.SecretKeys.AccessKey),
-		secretKeyEnv("TAMOSS_S3_SECRET_KEY", s3.Auth.ExistingSecret, s3.Auth.SecretKeys.SecretKey),
 		{Name: "TAMOSS_STORAGE_BACKEND_REGISTRATION_ENABLED", Value: "false"},
 		{Name: "TAMOSS_STORAGE_BACKEND_CREDENTIALS_FILE", Value: StorageBackendCredentialsFilePath()},
 	}
+	if !tamoss.UsesS3WebIdentity() {
+		env = append(env,
+			secretKeyEnv("TAMOSS_S3_ACCESS_KEY", s3.Auth.ExistingSecret, s3.Auth.SecretKeys.AccessKey),
+			secretKeyEnv("TAMOSS_S3_SECRET_KEY", s3.Auth.ExistingSecret, s3.Auth.SecretKeys.SecretKey),
+		)
+	}
+	return env
 }
 
 func StorageBackendCredentialsSecretName(tamoss *tamossv1alpha1.Tamoss) string {

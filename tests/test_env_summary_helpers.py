@@ -58,12 +58,63 @@ def test_rustfs_access_is_only_printed_for_managed_rustfs(tmp_path: Path) -> Non
         "task_print_rustfs_access rustfs-operator https://s3.example.com user password",
         tmp_path,
     )
+    managed_with_credentials = _run_bash(
+        "task_print_rustfs_access rustfs-operator https://s3.example.com "
+        "user password true",
+        tmp_path,
+    )
 
     assert external.returncode == 0
     assert external.stdout == ""
     assert managed.returncode == 0
     assert "RustFS Admin URL: https://s3.example.com/rustfs/console/" in managed.stdout
-    assert "RustFS Username:  user" in managed.stdout
+    assert "RustFS Username:" not in managed.stdout
+    assert managed_with_credentials.returncode == 0
+    assert "RustFS Username:  user" in managed_with_credentials.stdout
+
+
+@pytest.mark.parametrize("status", [0, 23])
+def test_platform_apply_waits_on_success_and_preserves_failed_release(
+    tmp_path: Path, status: int
+) -> None:
+    (tmp_path / "platform-values.yaml").touch()
+    (tmp_path / "helmfile.yaml").touch()
+    result = _run_bash(
+        "set -e; "
+        'task_step() { shift; "$@"; }; '
+        'task_platform_helmfile() { printf "%s\\n" "$@"; '
+        'if [ "$5" = template ]; then return 0; fi; '
+        f"return {status}; }}; "
+        "task_wait_env_platform() { touch waited; }; "
+        "task_apply_env_platform kubeconfig . helmfile.yaml 15m",
+        tmp_path,
+    )
+    assert result.returncode == status, result.stderr
+    assert "--skip-diff-on-install" in result.stdout
+    assert "--server-side=true" in result.stdout
+    assert "--rollback-on-failure" not in result.stdout
+    assert "--atomic" not in result.stdout
+    assert (tmp_path / "waited").exists() == (status == 0)
+
+
+def test_platform_validation_failure_prevents_any_apply(tmp_path: Path) -> None:
+    (tmp_path / "platform-values.yaml").touch()
+    (tmp_path / "helmfile.yaml").touch()
+    result = _run_bash(
+        "set -e; "
+        'task_platform_helmfile() { if [ "$5" = template ]; then '
+        'printf "rendered-secret\\n"; return 42; fi; touch applied; }; '
+        "task_wait_env_platform() { touch waited; }; "
+        "task_apply_env_platform kubeconfig . helmfile.yaml 15m",
+        tmp_path,
+    )
+    assert result.returncode == 42
+    assert "rendered-secret" not in result.stdout
+    assert "rendered-secret" not in result.stderr
+    for log in tmp_path.glob(".local/logs/task/*.log"):
+        assert "rendered-secret" not in log.read_text()
+    assert not (tmp_path / "applied").exists()
+    assert not (tmp_path / "waited").exists()
 
 
 def _run_bash(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:

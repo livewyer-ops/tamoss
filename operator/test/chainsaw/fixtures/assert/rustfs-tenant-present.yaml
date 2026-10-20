@@ -1,0 +1,4 @@
+apiVersion: rustfs.com/v1alpha1
+kind: Tenant
+metadata:
+  name: tamoss-s3

@@ -27,6 +27,7 @@ from tests.adapters.postgres.support import (
     use_cases,
     video_flow_write,
 )
+from tests.support.bbc_contract import bbc_validator
 
 pytestmark = pytest.mark.needs_db
 
@@ -351,6 +352,49 @@ def test_init_segments_change_serializes_before_incompatible_first_segment(
     assert stored_flow is not None
     assert stored_flow.init_segments is True
     assert postgres_repo.segment_repository.list_segments(flow_id) == []
+
+
+@pytest.mark.parametrize("profile_backed", [False, True])
+def test_invalid_flow_replacement_preserves_persisted_metadata(
+    postgres_repo: PostgresRepository, profile_backed: bool
+) -> None:
+    flow_id, source_id, profile_id = uuid4(), uuid4(), uuid4()
+    flows = use_cases(postgres_repo).flows
+    if profile_backed:
+        assert postgres_repo.profile_repository.create_profile(
+            _profile_record(profile_id)
+        )
+        payload = _profile_flow_payload(flow_id, source_id, profile_id)
+        required_fields = ["profile_id"]
+    else:
+        payload = video_flow_write(flow_id, source_id)
+        required_fields = ["format", "codec", "essence_parameters"]
+    bbc_validator("flow-put.json").validate(payload)
+    flows.put_flow(flow_id=flow_id, flow=payload, identity=identity())
+    before = postgres_repo.flow_repository.get_flow(flow_id)
+    source_before = postgres_repo.source_repository.get_source(source_id)
+    for field in required_fields:
+        invalid = {**payload, "label": "Invalid replacement"}
+        del invalid[field]
+        assert not bbc_validator("flow-put.json").is_valid(invalid)
+        with pytest.raises(BadRequest, match="Invalid Flow JSON"):
+            flows.put_flow(flow_id=flow_id, flow=invalid, identity=identity())
+        assert postgres_repo.flow_repository.get_flow(flow_id) == before
+        assert postgres_repo.source_repository.get_source(source_id) == source_before
+
+    valid = {**payload, "label": "Valid replacement"}
+    _, created = flows.put_flow(flow_id=flow_id, flow=valid, identity=identity())
+    assert created is False
+    assert (
+        postgres_repo.flow_repository.get_flow(flow_id).data["label"]
+        == "Valid replacement"
+    )
+    if profile_backed:
+        unlink = {**video_flow_write(flow_id, source_id), "profile_id": ""}
+        bbc_validator("flow-put.json").validate(unlink)
+        flows.put_flow(flow_id=flow_id, flow=unlink, identity=identity())
+        stored = postgres_repo.flow_repository.get_flow(flow_id)
+        assert stored.profile_id is None and "profile_id" not in stored.data
 
 
 def test_profile_deletion_rejects_a_persisted_flow_reference(

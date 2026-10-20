@@ -26,11 +26,7 @@ spec:
         - apply:
             file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
         - assert:
-            resource:
-              apiVersion: rustfs.com/v1alpha1
-              kind: Tenant
-              metadata:
-                name: tamoss-s3
+            file: ../../fixtures/assert/rustfs-tenant-present.yaml
             timeout: 120s
         - patch:
             resource:
@@ -40,6 +36,7 @@ spec:
                 name: tamoss-s3
                 namespace: ($namespace)
               status:
+                observedGeneration: 1
                 availableReplicas: 1
                 currentState: Ready
                 pools:
@@ -52,6 +49,11 @@ spec:
                     message: Tenant is ready
             subresource: status
             timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
         - assert:
             file: assert/tamoss-ready.yaml
             timeout: 5m

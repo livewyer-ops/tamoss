@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -26,7 +26,8 @@ func (r *StorageBackendReconciler) schemaStateReady(ctx context.Context, tamoss 
 	if err := r.Client.Get(ctx, key, state); err != nil {
 		return false
 	}
-	return state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion
+	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
+	return err == nil && schemaStateMatchesTarget(state, release.Schema)
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendDatabase(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) (storageBackendReconcileResult, error) {
@@ -103,7 +104,7 @@ func storageBackendRegistrationJob(storageBackend *tamossv1alpha1.StorageBackend
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
+				Spec: workload_renderer.WithDatabaseTLS(corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:            "storage-backend-register",
@@ -112,7 +113,7 @@ func storageBackendRegistrationJob(storageBackend *tamossv1alpha1.StorageBackend
 						Command:         []string{"/bin/sh", "-ec", storageBackendRegistrationScript()},
 						Env:             storageBackendRegistrationEnv(tamoss, spec),
 					}},
-				},
+				}, tamoss),
 			},
 		},
 	}
@@ -134,7 +135,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
+				Spec: workload_renderer.WithDatabaseTLS(corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:            "storage-backend-deregister",
@@ -143,7 +144,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 						Command:         []string{"/bin/sh", "-ec", storageBackendDeregistrationScript()},
 						Env:             storageBackendDeregistrationEnv(tamoss, spec),
 					}},
-				},
+				}, tamoss),
 			},
 		},
 	}

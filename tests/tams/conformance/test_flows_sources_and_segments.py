@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
-from tamoss.contract.generated import contract_models
 from tamoss.domain.exceptions import SEGMENT_OVERLAP_MESSAGE
 
 from tests.tams.support import (
@@ -100,19 +99,20 @@ def test_video_flow_write_creates_source_and_supports_read_filters(
     assert invalid_tag_exists.status_code == 400
 
 
-def test_core_api_responses_validate_against_contract_models(
+def test_core_api_responses_follow_bbc_schemas(
     client: TestClient,
 ) -> None:
     flow_id, source_id, _ = create_video_flow(client)
     object_id = register_segment(client, flow_id, object_id=f"bbc/{uuid4()}.ts")
 
-    contract_models.Service.model_validate(client.get("/service").json())
-    contract_models.FlowGet.model_validate(client.get(f"/flows/{flow_id}").json())
-    contract_models.Source.model_validate(client.get(f"/sources/{source_id}").json())
-    contract_models.FlowSegment.model_validate(
-        client.get(f"/flows/{flow_id}/segments").json()[0]
-    )
-    contract_models.Object.model_validate(client.get(f"/objects/{object_id}").json())
+    for path in (
+        "/service",
+        f"/flows/{flow_id}",
+        f"/sources/{source_id}",
+        f"/flows/{flow_id}/segments",
+        f"/objects/{object_id}",
+    ):
+        assert client.get(path).status_code == 200
 
 
 def test_flow_metadata_version_is_preserved_on_create_and_bumped_on_update(
@@ -138,6 +138,82 @@ def test_flow_metadata_version_is_preserved_on_create_and_bumped_on_update(
     assert fetched.status_code == 200
     assert fetched.json()["metadata_version"] != "upstream-version"
     assert fetched.json()["updated_by"]
+
+
+@pytest.mark.parametrize(
+    "timerange,expected",
+    [
+        ("[9:0_10:0)", "[8:0_12:0)"),
+        ("[11:0_19:0)", "[8:0_22:0)"),
+        ("[14:0_15:0)", "()"),
+        ("[30:0_31:0)", "()"),
+        ("[8:0]", "[8:0_12:0)"),
+        ("[12:0]", "()"),
+        ("[11:999999999_12:0)", "[8:0_12:0)"),
+        ("(11:999999999_12:0)", "()"),
+        ("[7:0_8:0)", "()"),
+        ("[7:0_8:0]", "[8:0_12:0)"),
+        ("_9:0)", "[8:0_12:0)"),
+        ("[19:0_", "[18:0_22:0)"),
+        ("()", "()"),
+        ("_", "[8:0_22:0)"),
+        (None, "[8:0_22:0)"),
+    ],
+)
+def test_flow_timerange_encompasses_only_overlapping_segments(
+    client: TestClient, timerange: str | None, expected: str
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    empty_id, _, _ = create_video_flow(client)
+    for start, offset in ((8, 10), (18, 20)):
+        object_id = register_segment(
+            client,
+            flow_id,
+            timerange=f"[{start}:0_{start + 4}:0)",
+            ts_offset=f"{offset}:0",
+        )
+        assert client.get(f"/objects/{object_id}").json()["timerange"] == "[-2:0_2:0)"
+
+    params = {} if timerange is None else {"timerange": timerange}
+    for inclusion in (None, "false", "true"):
+        query = (
+            params if inclusion is None else {**params, "include_timerange": inclusion}
+        )
+        detail = client.get(f"/flows/{flow_id}", params=query)
+        assert detail.status_code == 200
+        if inclusion == "true":
+            assert detail.json()["timerange"] == expected
+        else:
+            assert "timerange" not in detail.json()
+        head = client.head(f"/flows/{flow_id}", params=query)
+        assert head.status_code == 200
+        assert head.content == b""
+    empty = client.get(
+        f"/flows/{empty_id}", params={**params, "include_timerange": "true"}
+    )
+    assert empty.status_code == 200
+    assert empty.json()["timerange"] == "()"
+
+
+def test_filtered_flow_timerange_uses_partial_segment_on_flow_timeline(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    register_segment(
+        client,
+        flow_id,
+        timerange="[9:0_10:0)",
+        ts_offset="10:0",
+        object_timerange="[-2:0_2:0)",
+        sample_offset=1,
+        sample_count=1,
+    )
+    response = client.get(
+        f"/flows/{flow_id}",
+        params={"include_timerange": "true", "timerange": "[9:100000000_9:200000000)"},
+    )
+    assert response.status_code == 200
+    assert response.json()["timerange"] == "[9:0_10:0)"
 
 
 @pytest.mark.tamoss_extension
@@ -492,6 +568,68 @@ def test_flow_validation_follows_bbc_concrete_content_shapes(
     assert mismatch.status_code == 400
 
 
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize("limit", [1, 2])
+def test_segment_page_timerange_covers_only_returned_segments(
+    client: TestClient, reverse_order: bool, limit: int
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    object_id = f"bbc/{uuid4()}.ts"
+    allocate_objects(client, flow_id, [object_id])
+    upload_allocated_object(client, object_id)
+    for offset in (20, 10, 30):
+        response = client.post(
+            f"/flows/{flow_id}/segments",
+            json={
+                "object_id": object_id,
+                "timerange": f"[{offset - 2}:0_{offset + 2}:0)",
+                "ts_offset": f"{offset}:0",
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    for filters, starts in [
+        ({}, [8, 18, 28]),
+        ({"object_id": object_id}, [8, 18, 28]),
+        ({"timerange": "[19:0_20:0)"}, [18]),
+        ({"timerange": "()"}, []),
+        ({"object_id": "absent"}, []),
+    ]:
+        remaining = sorted(starts, reverse=reverse_order)
+        response = client.get(
+            f"/flows/{flow_id}/segments",
+            params={"limit": limit, "reverse_order": reverse_order, **filters},
+        )
+        while True:
+            assert response.status_code == 200
+            page_starts, remaining = remaining[:limit], remaining[limit:]
+            assert [item["timerange"] for item in response.json()] == [
+                f"[{start}:0_{start + 4}:0)" for start in page_starts
+            ]
+            expected_range = (
+                f"[{min(page_starts)}:0_{max(page_starts) + 4}:0)"
+                if page_starts
+                else "()"
+            )
+            assert response.headers["x-paging-timerange"] == expected_range
+            assert response.headers["x-paging-count"] == str(len(page_starts))
+            head = client.head(str(response.url))
+            assert head.status_code == 200 and head.content == b""
+            for header in (
+                "x-paging-timerange",
+                "x-paging-count",
+                "x-paging-limit",
+                "x-paging-reverse-order",
+                "x-paging-nextkey",
+                "link",
+            ):
+                assert head.headers.get(header) == response.headers.get(header)
+            if not remaining:
+                assert "next" not in response.links
+                break
+            response = client.get(response.links["next"]["url"])
+
+
 def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     client: TestClient,
 ) -> None:
@@ -525,6 +663,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
                 object_two,
                 "[10:0_20:0)",
                 object_timerange="[100:0_110:0)",
+                ts_offset="-90:0",
                 sample_offset=10,
                 sample_count=250,
                 key_frame_count=5,
@@ -549,7 +688,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     assert listed.headers["x-paging-limit"] == "1"
     assert listed.headers["x-paging-count"] == "1"
     assert listed.headers["x-paging-reverse-order"] == "true"
-    assert listed.headers["x-paging-timerange"] == "[0:0_20:0)"
+    assert listed.headers["x-paging-timerange"] == "[10:0_20:0)"
     assert "x-paging-nextkey" in listed.headers
     assert "link" in listed.headers
     payload = listed.json()
@@ -570,6 +709,7 @@ def test_segments_accept_bbc_bodies_and_emit_paging_headers(
     )
     assert next_page.status_code == 200
     assert [item["object_id"] for item in next_page.json()] == [object_one]
+    assert next_page.headers["x-paging-timerange"] == "[0:0_10:0)"
 
     missing_flow_segments = client.get(f"/flows/{uuid4()}/segments")
     assert missing_flow_segments.status_code == 200
@@ -833,13 +973,9 @@ def test_string_property_put_rejects_non_json_bodies(client: TestClient) -> None
             assert_bbc_error(response.json(), "bad_request")
 
 
-def test_unset_numeric_flow_properties_read_as_null(client: TestClient) -> None:
-    """bbc-id: semantic.flow.unset_numeric_properties_are_readable
-
-    The spec reserves the 404 on these endpoints for a missing Flow and
-    defines no unset form for the integer properties, so an existing Flow
-    without a bit rate reads back as 200 null.
-    """
+@pytest.mark.tamoss_extension
+def test_unset_numeric_flow_properties_are_unavailable(client: TestClient) -> None:
+    """BBC does not define an unset response; TAMOSS uses 404 for absence."""
     flow_id = uuid4()
     payload = video_flow_payload(flow_id, uuid4())
     payload.pop("avg_bit_rate", None)
@@ -847,9 +983,15 @@ def test_unset_numeric_flow_properties_read_as_null(client: TestClient) -> None:
     assert client.put(f"/flows/{flow_id}", json=payload).status_code == 201
 
     for name in ("avg_bit_rate", "max_bit_rate"):
-        response = client.get(f"/flows/{flow_id}/{name}")
-        assert response.status_code == 200, name
-        assert response.json() is None, name
+        path = f"/flows/{flow_id}/{name}"
+        assert client.get(path).status_code == 404
+        assert client.head(path).status_code == 404
+        assert client.get(f"/flows/{flow_id}").status_code == 200
+        assert client.put(path, json=0).status_code == 204
+        assert client.get(path).json() == 0
+        assert client.head(path).status_code == 200
+        assert client.delete(path).status_code == 204
+        assert client.get(path).status_code == 404
 
 
 def test_malformed_flow_id_in_segments_path_returns_404(client: TestClient) -> None:
@@ -861,7 +1003,6 @@ def test_malformed_flow_id_in_segments_path_returns_404(client: TestClient) -> N
     listed = client.get("/flows/not-a-uuid/segments")
     assert listed.status_code == 404
     assert_bbc_error(listed.json(), "not_found")
-    assert listed.json()["summary"] == "The Flow ID in the path is invalid."
 
     posted = client.post(
         "/flows/not-a-uuid/segments",

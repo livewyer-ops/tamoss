@@ -3,7 +3,7 @@
 `IngestRun` declares one durable attempt to ingest media into a `Tamoss`
 instance. The operator validates its immutable input against the instance's
 source policy and owns the resulting
-[TAMSin 8.2.0-in2](https://github.com/livewyer-ops/tamsin/releases/tag/8.2.0-in2)
+[TAMSin](https://github.com/livewyer-ops/tamsin)
 Kubernetes Job.
 
 Group: `tamoss.livewyer.io`
@@ -28,6 +28,7 @@ metadata:
   name: tamoss-media
   namespace: tams
 spec:
+  version: <release>
   profile: single-server
   ingest:
     sourcePolicy:
@@ -69,9 +70,7 @@ query strings, or fragments. The operator resolves and validates the selector
 immediately before creating the Job.
 
 For H.264/AAC browser playback, use `profile: mpegts-segments@1`. Source-family
-MP4 segmentation does not create fragmented MP4 HLS Objects. TAMSin `8.2.0-in2`
-corrects rendered Segment timing; re-ingest affected media as a new run rather
-than editing or replaying an existing run. Existing stored Flows are unchanged.
+MP4 segmentation does not create fragmented MP4 HLS Objects.
 
 ## Restricted HTTP Source Example
 
@@ -254,7 +253,7 @@ The run never creates, updates, or deletes Profiles. See
 | `.spec.ingest.sources[].s3.allowPrivateAddresses` | Explicitly permits private resolved endpoint addresses. |
 | `.spec.ingest.sources[].s3.credentialSecretRef.name` | Optional source-owned AWS credential Secret. |
 
-Wildcard hosts and workload identity are not supported in this release.
+Wildcard hosts and workload identity are not supported.
 
 ## Status Fields
 

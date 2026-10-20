@@ -18,6 +18,32 @@ DEMO_AUDIO_SEGMENT = ROOT / "deploy/demo/tamoss-demo-audio.ts"
 NANOS_PER_SECOND = Decimal("1000000000")
 
 
+def test_iso_segment_fixture_starts_after_zero_and_uses_shared_initialisation() -> None:
+    playlist = ROOT / "tests/fixtures/e2e/iso-segments/stream.m3u8"
+    stream = _probe_json(
+        _ffprobe(),
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_frames",
+        "-show_entries",
+        "stream=codec_name,width,height,start_time,avg_frame_rate,nb_read_frames",
+        "-of",
+        "json",
+        str(playlist),
+    )["streams"][0]
+
+    assert stream["codec_name"] == "h264"
+    assert (stream["width"], stream["height"]) == (64, 64)
+    assert stream["avg_frame_rate"] == "10/1"
+    assert stream["nb_read_frames"] == "30"
+    assert _decimal_seconds_to_ns(stream["start_time"]) == 200_000_000
+    content = playlist.read_text()
+    assert content.count('#EXT-X-MAP:URI="init.mp4"') == 1
+    assert content.count("#EXTINF:1.000000,") == 3
+
+
 def test_demo_fixture_media_timing_matches_registered_metadata() -> None:
     ffprobe = _ffprobe()
     stream_info = _probe_json(

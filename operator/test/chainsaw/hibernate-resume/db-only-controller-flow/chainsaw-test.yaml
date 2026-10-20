@@ -55,6 +55,13 @@ spec:
                     status: "True"
                     reason: ClusterReady
                     message: Cluster is ready
+        - apply:
+            file: ../../fixtures/cnpg-simulated-pod.yaml
+            bindings:
+              - name: cluster
+                value: (x_k8s_get($client, 'postgresql.cnpg.io/v1', 'Cluster', $namespace, 'tamoss-db'))
+              - name: ordinal
+                value: "1"
         - assert:
             file: assert/source-workloads-present.yaml
             timeout: 120s
@@ -148,6 +155,13 @@ spec:
                     status: "True"
                     reason: ClusterReady
                     message: Cluster is ready
+        - apply:
+            file: ../../fixtures/cnpg-simulated-pod.yaml
+            bindings:
+              - name: cluster
+                value: (x_k8s_get($client, 'postgresql.cnpg.io/v1', 'Cluster', $namespace, 'restored-db'))
+              - name: ordinal
+                value: "1"
         - assert:
             file: assert/resume-completed.yaml
             timeout: 180s

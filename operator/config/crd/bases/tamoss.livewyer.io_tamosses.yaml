@@ -4392,7 +4392,6 @@ spec:
                                 type: boolean
                             type: object
                           postgresVersion:
-                            default: "18"
                             type: string
                           resources:
                             description: ResourceRequirements describes the compute
@@ -4562,6 +4561,43 @@ spec:
                           port:
                             default: "5432"
                             type: string
+                          tls:
+                            description: TLS enables certificate and hostname verification
+                              for every database consumer.
+                            properties:
+                              caConfigMap:
+                                description: CAConfigMap selects the PEM CA bundle
+                                  in the Tamoss namespace.
+                                properties:
+                                  key:
+                                    description: The key to select.
+                                    type: string
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                  optional:
+                                    description: Specify whether the ConfigMap or
+                                      its key must be defined
+                                    type: boolean
+                                required:
+                                - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                            required:
+                            - caConfigMap
+                            type: object
+                            x-kubernetes-validations:
+                            - message: database TLS requires a non-optional CA ConfigMap
+                                name and key
+                              rule: has(self.caConfigMap.name) && self.caConfigMap.name.size()
+                                > 0 && self.caConfigMap.key.size() > 0 && (!has(self.caConfigMap.optional)
+                                || !self.caConfigMap.optional)
                         type: object
                       providedBy:
                         enum:
@@ -4763,6 +4799,13 @@ spec:
                             default: tamoss
                             minLength: 1
                             type: string
+                          credentialSource:
+                            description: CredentialSource selects static Secret credentials
+                              or the workload's web identity.
+                            enum:
+                            - secret
+                            - web-identity
+                            type: string
                           endpoint:
                             properties:
                               default:
@@ -4782,6 +4825,11 @@ spec:
                             default: us-east-1
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: web-identity must not reference a credentials Secret
+                          rule: '!has(self.credentialSource) || self.credentialSource
+                            != ''web-identity'' || !has(self.auth) || !has(self.auth.existingSecret)
+                            || self.auth.existingSecret.size() == 0'
                       providedBy:
                         enum:
                         - external
@@ -5993,7 +6041,6 @@ spec:
                         when autoscaling is enabled
                       rule: '!self.enabled || self.maxReplicas >= self.minReplicas'
                   enabled:
-                    default: false
                     type: boolean
                   env:
                     additionalProperties:
@@ -9308,6 +9355,10 @@ spec:
                   schemaMigrationPostgresClient:
                     description: SchemaMigrationPostgresClient is the image used by
                       storage backend database registration Jobs.
+                    type: string
+                  tamsin:
+                    description: TAMSin overrides the selected release's ingest runtime.
+                      Use an immutable digest.
                     type: string
                 type: object
               ingest:
@@ -15634,6 +15685,12 @@ spec:
                       type: object
                     type: array
                 type: object
+              version:
+                description: |-
+                  Version selects an exact release from the operator installation catalogue.
+                  An omitted version blocks reconciliation until the installed release is pinned.
+                minLength: 1
+                type: string
               worker:
                 default: {}
                 properties:
@@ -19643,11 +19700,17 @@ spec:
           status:
             description: TamossStatus defines the observed state of Tamoss
             properties:
+              appliedDefaultsRevision:
+                description: AppliedDefaultsRevision identifies installation defaults
+                  whose rollout completed.
+                type: string
               auth:
                 properties:
                   applicationSlug:
                     type: string
                   managedBlueprint:
+                    type: string
+                  platformNamespace:
                     type: string
                   provider:
                     type: string
@@ -19744,9 +19807,17 @@ spec:
                   - type
                   type: object
                 type: array
+              currentVersion:
+                description: CurrentVersion is the last release with completed schema
+                  and workload rollouts.
+                type: string
               endpoints:
                 properties:
                   api:
+                    type: string
+                  auth:
+                    type: string
+                  s3:
                     type: string
                   ui:
                     type: string
@@ -20134,6 +20205,13 @@ spec:
                 type: object
               resolved:
                 properties:
+                  defaults:
+                    properties:
+                      revision:
+                        type: string
+                      source:
+                        type: string
+                    type: object
                   generatedSecrets:
                     properties:
                       apiToken:
@@ -20162,6 +20240,8 @@ spec:
                       worker:
                         type: string
                     type: object
+                  profile:
+                    type: string
                   resources:
                     properties:
                       api:
@@ -20224,6 +20304,10 @@ spec:
                   phase:
                     type: string
                   reason:
+                    type: string
+                  targetVersion:
+                    description: TargetVersion records an unfinished release reconciliation
+                      across retries.
                     type: string
                 type: object
             type: object

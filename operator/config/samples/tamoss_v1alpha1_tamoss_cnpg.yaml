@@ -4,12 +4,13 @@ metadata:
   name: tamoss-cnpg
   namespace: tams
 spec:
+  version: dev
   backends:
     db:
       providedBy: cnpg
       cnpg:
         instances: 3
-        postgresVersion: "18"
+        postgresVersion: "18.6"
         storage:
           size: 50Gi
         monitoring:

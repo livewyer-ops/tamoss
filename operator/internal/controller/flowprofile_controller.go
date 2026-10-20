@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,7 +29,8 @@ import (
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/resource"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -54,10 +56,12 @@ const (
 )
 
 type FlowProfileReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	WatchNamespaces WatchNamespaceSet
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	Recorder         record.EventRecorder
+	WatchNamespaces  WatchNamespaceSet
 }
 
 type resolvedFlowProfile struct {
@@ -116,7 +120,11 @@ func (r *FlowProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	tamoss, found, err := r.flowProfileTamoss(ctx, profile.Namespace, resolved.Spec.TamossRef.Name)
 	if err != nil {
-		return ctrl.Result{}, err
+		var selection *releases.SelectionError
+		if !errors.As(err, &selection) {
+			return ctrl.Result{}, err
+		}
+		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{Phase: tamossv1alpha1.FlowProfilePhasePending, Reason: selection.Reason, Message: err.Error(), RequeueAfter: flowProfileRetryInterval})
 	}
 	if !found {
 		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{
@@ -126,7 +134,7 @@ func (r *FlowProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			RequeueAfter: flowProfileRetryInterval,
 		})
 	}
-	if !r.flowProfileSchemaReady(ctx, tamoss) || tamoss.Status.Resolved.Versions.TAMSAPI != schemabundle.SupportedTAMSAPIVersion {
+	if !r.flowProfileSchemaReady(ctx, tamoss) || tamoss.Status.Resolved.Versions.TAMSAPI != r.Releases[tamoss.Spec.Version].Schema.TAMSAPI {
 		return r.updateFlowProfileStatus(ctx, profile, flowProfileStatusInput{
 			Phase: tamossv1alpha1.FlowProfilePhasePending, Reason: operatorstatus.ReasonWaitingForSchema,
 			Message: "The target TAMS 8.2 schema is not ready", ProfileID: resolved.Spec.ID,
@@ -321,18 +329,21 @@ func (r *FlowProfileReconciler) flowProfileTamoss(ctx context.Context, namespace
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
-	return resolved, true, nil
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
+	return resolved, true, err
 }
 
 func (r *FlowProfileReconciler) flowProfileSchemaReady(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) bool {
+	if !r.InstanceDefaults.AppliedTo(tamoss) {
+		return false
+	}
 	state := &corev1.ConfigMap{}
 	key := types.NamespacedName{Namespace: tamoss.Namespace, Name: tamossResourceName(tamoss, "schema-state")}
 	if err := r.Client.Get(ctx, key, state); err != nil {
 		return false
 	}
-	return state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion
+	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
+	return err == nil && schemaStateMatchesTarget(state, release.Schema)
 }
 
 func (r *FlowProfileReconciler) flowProfileIDWinner(ctx context.Context, current *tamossv1alpha1.FlowProfile, spec tamossv1alpha1.FlowProfileSpec) (string, error) {
@@ -451,7 +462,7 @@ func flowProfileJob(profile *tamossv1alpha1.FlowProfile, tamoss *tamossv1alpha1.
 	}, Spec: batchv1.JobSpec{
 		BackoffLimit:          &backoff,
 		ActiveDeadlineSeconds: ptr.To[int64](300),
-		Template:              corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec},
+		Template:              corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: workload_renderer.WithDatabaseTLS(podSpec, tamoss)},
 	}}
 }
 
@@ -470,6 +481,9 @@ func flowProfileJobInputHash(tamoss *tamossv1alpha1.Tamoss, resolved resolvedFlo
 		db.Auth.SecretKeys.Password,
 	)
 	values = append(values, args...)
+	if db.TLS != nil {
+		values = append(values, "verify-full", db.TLS.CAConfigMap.Name, db.TLS.CAConfigMap.Key)
+	}
 	hash := sha256.Sum256([]byte(strings.Join(values, "\x00")))
 	return fmt.Sprintf("%x", hash[:])
 }

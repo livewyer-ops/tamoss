@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Connection
 from tamoss.db.migrations import (
     CURRENT_SCHEMA_REVISION,
-    PREVIOUS_SUPPORTED_SCHEMA_REVISION,
+    PREVIOUS_SUPPORTED_SCHEMA_REVISIONS,
 )
 from tamoss.settings import Settings, get_settings
 
@@ -76,14 +76,9 @@ def observed_revision(connection: Connection) -> str | None:
 def validate_supported_revision(observed: str | None) -> None:
     if observed in {None, "", CURRENT_SCHEMA_REVISION}:
         return
-    if (
-        PREVIOUS_SUPPORTED_SCHEMA_REVISION
-        and observed == PREVIOUS_SUPPORTED_SCHEMA_REVISION
-    ):
+    if observed in PREVIOUS_SUPPORTED_SCHEMA_REVISIONS:
         return
-    supported = [CURRENT_SCHEMA_REVISION]
-    if PREVIOUS_SUPPORTED_SCHEMA_REVISION:
-        supported.append(PREVIOUS_SUPPORTED_SCHEMA_REVISION)
+    supported = [CURRENT_SCHEMA_REVISION, *PREVIOUS_SUPPORTED_SCHEMA_REVISIONS]
     supported_text = ", ".join(supported)
     raise UnsupportedSchemaRevision(
         f"database schema revision {observed!r} is unsupported; "

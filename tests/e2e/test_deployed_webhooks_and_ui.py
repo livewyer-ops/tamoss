@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 from uuid import uuid4
 
 import pytest
+from mediatimestamp import Timestamp
 from playwright.sync_api import (
     Browser,
     Locator,
@@ -22,7 +23,7 @@ from playwright.sync_api import (
 )
 
 from tests.e2e.client import E2EClient
-from tests.e2e.kubernetes import kubectl
+from tests.e2e.kubernetes import kubectl, load_jsonpath
 from tests.e2e.target import E2ETarget
 from tests.support.fixtures import load_json_fixture
 from tests.support.paths import REPO_ROOT
@@ -49,10 +50,12 @@ def test_deployed_webhook_registration_and_event_status(
     receiver = _start_webhook_receiver(e2e_target)
 
     try:
+        payload = _webhook_payload(receiver["url"], source_id)
+        payload["events"].extend(["flows/segments_deleted", "flows/deleted"])
         created = e2e_client.request_json(
             "POST",
             "/service/webhooks",
-            json=_webhook_payload(receiver["url"], source_id),
+            json=payload,
             expected=201,
         )
         webhook_id = created["id"]
@@ -93,12 +96,41 @@ def test_deployed_webhook_registration_and_event_status(
             deliveries_by_type["flows/created"]["body"]["event"]["flow"]["id"]
             == flow_id
         )
+        e2e_client.request(
+            "POST",
+            f"/flows/{flow_id}/segments",
+            expected=201,
+            json={
+                "object_id": str(uuid4()),
+                "timerange": "[0:0_1:0)",
+                "get_urls": [
+                    {"url": "https://media.example/segment.ts", "label": "external"}
+                ],
+            },
+        )
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected=202)
+        deliveries = _poll_webhook_receiver_events(
+            e2e_target,
+            receiver["pod"],
+            expected_event_types={
+                "sources/created",
+                "flows/created",
+                "flows/segments_deleted",
+                "flows/deleted",
+            },
+        )
+        deleted_segments = [
+            delivery["body"]["event"]
+            for delivery in deliveries
+            if delivery["body"]["event_type"] == "flows/segments_deleted"
+        ]
+        assert deleted_segments == [{"flow_id": flow_id, "timerange": "[0:0_1:0)"}]
     finally:
         if webhook_id is not None:
             e2e_client.request(
                 "DELETE", f"/service/webhooks/{webhook_id}", expected={204, 404}
             )
-        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={204, 404})
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={202, 204, 404})
         _delete_webhook_receiver(e2e_target, receiver["name"])
 
 
@@ -738,6 +770,80 @@ def test_deployed_ui_playback_preview_buffers_demo_media(
     assert not signed_url_console_leak
 
 
+def test_deployed_ui_plays_iso_segments_with_shared_init_object(
+    e2e_client: E2EClient,
+    e2e_target: E2ETarget,
+    e2e_browser: Browser,
+) -> None:
+    if not e2e_target.browser_api_available:
+        pytest.skip("target does not provide browser API access")
+    fixture_dir = REPO_ROOT / "tests/fixtures/e2e/iso-segments"
+    flow_id, source_id = str(uuid4()), str(uuid4())
+    flow = _video_flow_payload(flow_id, source_id)
+    flow["container"] = "video/iso.segment"
+    flow["essence_parameters"].update(
+        init_segments=True,
+        frame_width=64,
+        frame_height=64,
+        frame_rate={"numerator": 10, "denominator": 1},
+    )
+    context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
+    try:
+        e2e_client.request("PUT", f"/flows/{flow_id}", json=flow, expected=201)
+        for path in sorted([fixture_dir / "init.mp4", *fixture_dir.glob("*.m4s")]):
+            allocation = e2e_client.request_json(
+                "POST",
+                f"/flows/{flow_id}/storage",
+                expected=201,
+                json={
+                    "object_ids": [f"{flow_id}/{path.name}"],
+                    **({"content_type": "video/mp4"} if path.suffix == ".mp4" else {}),
+                },
+            )["media_objects"][0]["put_url"]
+            e2e_client.upload_put_url(
+                allocation["url"],
+                body=path.read_bytes(),
+                headers=allocation.get("headers"),
+            )
+        start = Timestamp.from_str("0.2")
+        segments = []
+        for duration, name in re.findall(
+            r"#EXTINF:([\d.]+),\n([^\n]+)", (fixture_dir / "stream.m3u8").read_text()
+        ):
+            end = start + Timestamp.from_str(duration)
+            segments.append(
+                {
+                    "object_id": f"{flow_id}/{name}",
+                    "init_object_id": f"{flow_id}/init.mp4",
+                    "timerange": f"[{start}_{end})",
+                }
+            )
+            start = end
+        assert len(segments) >= 2
+        e2e_client.request(
+            "POST", f"/flows/{flow_id}/segments", json=segments, expected=201
+        )
+        page = context.new_page()
+        page.set_default_timeout(60_000)
+        _login_through_ui_ingress(page, e2e_target)
+        page.goto(f"{e2e_target.ui_url}/playback?flow={flow_id}")
+        expect(page.get_by_role("status").filter(has_text="Ready")).to_be_visible(
+            timeout=30_000
+        )
+        page.locator("omakase-play-button").first.click()
+        page.wait_for_function(
+            """() => {
+            const video = document.querySelector('video:not([hidden])');
+            return video && video.videoWidth === 64 && video.currentTime > 1.5 &&
+                video.buffered.length > 0 && video.buffered.end(0) > 1.5;
+        }""",
+            timeout=30_000,
+        )
+    finally:
+        context.close()
+        e2e_client.request("DELETE", f"/flows/{flow_id}", expected={202, 204, 404})
+
+
 def _assert_preview_buffers(
     page: Page,
     target: E2ETarget,
@@ -1037,13 +1143,21 @@ def _split_resource_ref(ref: str, *, default_namespace: str) -> tuple[str, str]:
 
 
 def _deployed_worker_image(target: E2ETarget) -> str:
+    assert target.cr_name, "Webhook receiver setup requires TEST_TAMOSS_CR_NAME"
+    worker = load_jsonpath(
+        kubeconfig=target.kubeconfig,
+        namespace=target.namespace,
+        resource=f"tamoss/{target.cr_name}",
+        jsonpath="{.status.resolved.resources.worker}",
+    )
+    assert worker, "The selected instance must have an enabled worker"
     result = _kubectl_for_target(
         target,
         "-n",
         target.namespace,
         "get",
         "deploy",
-        "tams-worker",
+        worker,
         "-o",
         "jsonpath={.spec.template.spec.containers[0].image}",
     )

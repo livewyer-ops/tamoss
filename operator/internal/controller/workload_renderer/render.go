@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -89,6 +90,9 @@ func image(repository, tag string) string {
 	}
 	if tag == "" {
 		tag = defaults.DefaultOperandTag
+	}
+	if strings.HasPrefix(tag, "@") {
+		return repository + tag
 	}
 	return fmt.Sprintf("%s:%s", repository, tag)
 }

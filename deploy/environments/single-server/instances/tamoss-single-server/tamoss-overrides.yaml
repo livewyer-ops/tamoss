@@ -1,21 +1,28 @@
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: Tamoss
 metadata:
-  name: tamoss-edge
+  name: tamoss-single-server
   namespace: tams
 spec:
+  version: dev
   console:
     enabled: true
   publicEndpoint:
     baseDomain: tamoss.localtest.me
-    tlsSecretName: tamoss-edge-tls
-    s3TLSSecretName: tamoss-edge-s3-tls
+    tlsSecretName: tamoss-localtest-tls
+    s3TLSSecretName: tamoss-localtest-s3-tls
   ingress:
     annotations:
-      cert-manager.io/cluster-issuer: tamoss-edge-selfsigned
+      cert-manager.io/cluster-issuer: tamoss-selfsigned
   api:
     env:
       TAMOSS_WEBHOOK_ALLOWED_HOSTS: .svc.cluster.local
   worker:
     env:
       TAMOSS_WEBHOOK_ALLOWED_HOSTS: .svc.cluster.local
+  backends:
+    s3:
+      rustfsOperator:
+        env:
+          - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
+            value: "true"

@@ -3229,7 +3229,8 @@
           "404": {
             "$ref": "#/components/responses/trait_resource_info_head_404"
           }
-        }
+        },
+        "x-tamoss-unset-property": "TAMOSS returns 404 when this property is unset. BBC 8.2 does not define a response for an unset bit rate."
       },
       "get": {
         "summary": "Flow Maximum Bit Rate",
@@ -3257,7 +3258,8 @@
               "$ref": "#/components/schemas/ErrorPayload"
             }
           }
-        }
+        },
+        "x-tamoss-unset-property": "TAMOSS returns 404 when this property is unset. BBC 8.2 does not define a response for an unset bit rate."
       },
       "put": {
         "summary": "Create or Update Flow Maximum Bit Rate",
@@ -3354,7 +3356,8 @@
           "404": {
             "$ref": "#/components/responses/trait_resource_info_head_404"
           }
-        }
+        },
+        "x-tamoss-unset-property": "TAMOSS returns 404 when this property is unset. BBC 8.2 does not define a response for an unset bit rate."
       },
       "get": {
         "summary": "Flow Average Bit Rate",
@@ -3382,7 +3385,8 @@
               "$ref": "#/components/schemas/ErrorPayload"
             }
           }
-        }
+        },
+        "x-tamoss-unset-property": "TAMOSS returns 404 when this property is unset. BBC 8.2 does not define a response for an unset bit rate."
       },
       "put": {
         "summary": "Create or Update Flow Average Bit Rate",

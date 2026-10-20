@@ -391,7 +391,7 @@ def test_repository_lists_segments_with_database_paging_and_filters(
         "bbc/adapter/marker-015.ts",
     ]
     assert first_page.next_page == "2"
-    assert first_page.timerange == "[0:0_30:0)"
+    assert first_page.timerange == "[0:0_15:0]"
 
     point_page = postgres_repo.segment_repository.list_segments_page(
         flow_id=flow_id,
@@ -441,6 +441,55 @@ def test_repository_lists_segments_with_database_paging_and_filters(
     ]
     assert filtered_page.next_page is None
     assert filtered_page.timerange == "[20:0_30:0)"
+
+
+@pytest.mark.parametrize(
+    "reverse_order,limit,expected_ranges",
+    [
+        (False, 1, ["[8:1_12:2]", "(18:3_22:4)", "[28:5]"]),
+        (True, 1, ["[28:5]", "(18:3_22:4)", "[8:1_12:2]"]),
+        (False, 2, ["[8:1_22:4)", "[28:5]"]),
+        (True, 2, ["(18:3_28:5]", "[8:1_12:2]"]),
+    ],
+)
+def test_segment_pages_preserve_returned_boundaries(
+    postgres_repo: PostgresRepository,
+    reverse_order: bool,
+    limit: int,
+    expected_ranges: list[str],
+) -> None:
+    flow_id = uuid4()
+    postgres_repo.flow_repository.save_flow(
+        FlowRecord(
+            id=flow_id,
+            data={},
+            source_id=uuid4(),
+            format="urn:x-nmos:format:video",
+            container="video/mp2t",
+        )
+    )
+    for timerange in ("(18:3_22:4)", "[8:1_12:2]", "[28:5]"):
+        postgres_repo.segment_repository.append_segment(
+            SegmentRecord(flow_id=flow_id, object_id=str(uuid4()), timerange=timerange)
+        )
+    query = {
+        "flow_id": flow_id,
+        "object_id": None,
+        "timerange_start": None,
+        "timerange_end": None,
+        "timerange_is_empty": False,
+        "timerange_is_point": False,
+        "reverse_order": reverse_order,
+        "limit": limit,
+    }
+    page = None
+    for expected in expected_ranges:
+        result = postgres_repo.segment_repository.list_segments_page(**query, page=page)
+        assert result.timerange == expected
+        page = result.next_page
+    assert page is None
+    empty = postgres_repo.segment_repository.list_segments_page(**query, page="999")
+    assert empty.items == [] and empty.timerange == "()"
 
 
 def test_repository_lists_flows_page_with_sql_filters_and_relationships(
