@@ -3,10 +3,8 @@
 This package provides the TAMOSS FastAPI application for the BBC
 Time-addressable Media Store API contract.
 
-The package metadata in `pyproject.toml` uses this file as its Python package
-README. Keep it focused on the installable API server package; deployment,
-operator install, frontend, and contributor workflows are documented from the
-repository root.
+Deployment, operator installation and contributor workflows are documented in
+the repository [README](../README.md).
 
 ## Package Scope
 

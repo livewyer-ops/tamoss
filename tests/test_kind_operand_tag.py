@@ -261,6 +261,33 @@ def test_schema_versions_remain_consistent_across_entry_points(
     assert set(re.findall(r'PREVIOUS_SCHEMA_VERSION="([^"]*)"', plan)) == {previous}
 
 
+@pytest.mark.parametrize("entry_point", ["kind:up", "kind:test", "kind:e2e"])
+def test_kind_workflows_preserve_environment_overrides(entry_point: str) -> None:
+    if any(
+        shutil.which(binary) is None for binary in (*_PLAN_BINARIES, "helm", "helmfile")
+    ):
+        pytest.skip("Task, Docker and the Kubernetes deployment tools are required")
+    environment_dir = "deploy/environments/single-server"
+    target = "tests/targets/single-server.env"
+    result = subprocess.run(
+        [
+            "task",
+            "--verbose",
+            "--dry",
+            entry_point,
+            f"PROFILE_KIND_ENVIRONMENT_DIR={environment_dir}",
+            f"PROFILE_TARGET_ENV={target}",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    plan = result.stdout + result.stderr
+    assert f'task_apply_env_instance "{environment_dir}"' in plan
+    assert f'.tasks/lib/demo_ingest.sh "{target}"' in plan
+
+
 def _kind_image_plan(profile: str = "local-kind") -> str:
     """Dry-run the image subtree of kind:up rather than kind:up itself.
 

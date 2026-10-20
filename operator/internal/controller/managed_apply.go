@@ -146,7 +146,7 @@ func reclaimAuthoritativeFields(ctx context.Context, c client.Client, live clien
 			if err != nil {
 				return err
 			}
-			entry.FieldsV1 = &metav1.FieldsV1{Raw: raw}
+			entry.FieldsV1 = metav1.NewFieldsV1(string(raw))
 			next = append(next, entry)
 		}
 	}

@@ -180,7 +180,7 @@ func backupMonitoring(spec tamossv1alpha1.DBCNPGMonitoringSpec) *cnpgv1.Monitori
 	if !spec.ShouldEnablePodMonitor() {
 		return nil
 	}
-	return &cnpgv1.MonitoringConfiguration{EnablePodMonitor: true}
+	return &cnpgv1.MonitoringConfiguration{EnablePodMonitor: true} //nolint:staticcheck // CNPG 1.30 still manages PodMonitors through this field.
 }
 
 func backup(clusterName string, spec tamossv1alpha1.DBCNPGBackupSpec) *cnpgv1.BackupConfiguration {

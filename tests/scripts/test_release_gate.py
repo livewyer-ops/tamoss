@@ -105,6 +105,7 @@ def test_dependency_scanner_failures_are_fatal(tmp_path, status, task) -> None:
             "pipefail",
             "-c",
             'npm() { return "$SCANNER_STATUS"; }\n'
+            "node() { return 0; }\n"
             'go() { printf "example.org/safe\\n"; }\n'
             'osv-scanner() { return "$SCANNER_STATUS"; }\n' + command,
         ],
@@ -176,6 +177,7 @@ def test_openpgp_exclusion_fails_closed_and_still_scans(
             "  fi\n"
             '  printf "example.org/safe\\n"\n'
             "}\n"
+            "node() { return 0; }\n"
             'osv-scanner() { touch "$SCAN_LOG"; }\n' + command,
         ],
         cwd=tmp_path,
@@ -198,23 +200,76 @@ def test_openpgp_exclusion_fails_closed_and_still_scans(
 
 
 def test_audit_policy_only_excludes_approved_advisories() -> None:
-    for directory, advisory in (
-        ("operator", "GO-2026-5932"),
-        ("src/app/frontend", "GHSA-776f-qx25-q3cc"),
+    for directory, advisories in (
+        ("operator", {"GO-2026-5932"}),
+        ("src/app/frontend", {"GHSA-776f-qx25-q3cc", "GHSA-vfj7-8cjw-p6xm"}),
     ):
         policy = tomllib.loads((REPO_ROOT / directory / "osv-scanner.toml").read_text())
         assert set(policy) == {"IgnoredVulns"}
-        assert len(policy["IgnoredVulns"]) == 1
-        assert policy["IgnoredVulns"][0]["id"] == advisory
-        assert policy["IgnoredVulns"][0]["reason"]
+        assert len(policy["IgnoredVulns"]) == len(advisories)
+        assert {entry["id"] for entry in policy["IgnoredVulns"]} == advisories
+        assert all(entry["reason"] for entry in policy["IgnoredVulns"])
     tasks = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"]
-    assert tasks["audit:frontend"]["cmds"] == [
+    assert (
         "osv-scanner --lockfile=package-lock.json"
-    ]
+        in tasks["audit:frontend"]["cmds"][-1]
+    )
     assert tasks["audit:frontend:dev"]["cmds"] == [{"task": "audit:frontend"}]
     assert tasks["audit:frontend:signatures"]["cmds"] == ["npm audit signatures"]
     frontend = json.loads((REPO_ROOT / "src/app/frontend/package.json").read_text())
     assert frontend["dependencies"]["@byomakase/omakase-player"] == "1.1.1"
+
+
+@pytest.mark.parametrize("task", ["audit:frontend", "audit:osv"])
+@pytest.mark.parametrize("guard_status", [0, 1, 127])
+def test_dependency_mitigation_failures_are_fatal_and_still_scan(
+    tmp_path, task, guard_status
+) -> None:
+    command = yaml.safe_load((REPO_ROOT / ".tasks/security.yaml").read_text())["tasks"][
+        task
+    ]["cmds"][-1]
+    (tmp_path / "operator").mkdir()
+    result = subprocess.run(
+        [
+            "bash",
+            "-eu",
+            "-o",
+            "pipefail",
+            "-c",
+            'node() { printf "%s\\n" "$*" > "$GUARD_LOG"; return "$GUARD_STATUS"; }\n'
+            'go() { printf "example.org/safe\\n"; }\n'
+            'osv-scanner() { touch "$SCAN_LOG"; }\n' + command,
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "GUARD_STATUS": str(guard_status),
+            "GUARD_LOG": str(tmp_path / "guard.log"),
+            "SCAN_LOG": str(tmp_path / "scan.log"),
+        },
+        check=False,
+    )
+    assert (result.returncode != 0) == (guard_status != 0)
+    assert (tmp_path / "scan.log").exists()
+    prefix = "src/app/frontend/" if task == "audit:osv" else ""
+    assert (tmp_path / "guard.log").read_text().strip() == (
+        f"{prefix}scripts/check-dependency-mitigation.mjs"
+    )
+
+
+def test_frontend_image_disables_install_scripts_and_serves_only_built_assets() -> None:
+    frontend = REPO_ROOT / "src/app/frontend"
+    assert "ignore-scripts=true" in (frontend / ".npmrc").read_text().splitlines()
+    build, runtime = (
+        (frontend / "Dockerfile").read_text().split("# Stage 2: Production")
+    )
+    assert build.index("COPY package.json package-lock.json* .npmrc ./") < build.index(
+        "RUN npm ci"
+    )
+    assert "FROM nginx:" in runtime
+    assert "COPY --from=build /app/dist /usr/share/nginx/html" in runtime
+    assert "node_modules" not in runtime
+    assert "npm " not in runtime
 
 
 def test_shell_lint_checks_later_helpers(tmp_path) -> None:

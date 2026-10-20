@@ -14,8 +14,7 @@
       `docs/configuration.md`.
 - [ ] TAMS conformance is unaffected, or `task test:tams` and the
       TAMS conformance inventory were updated.
-- [ ] Operator Chainsaw changes include the relevant local/CI run result, plus
-      follow-up links for deferred branch-protection, flake-soak, or HA cases.
+- [ ] Operator Chainsaw changes include the relevant local or CI run result.
 
 ## Risk
 

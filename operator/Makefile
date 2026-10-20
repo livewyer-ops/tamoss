@@ -9,7 +9,7 @@ VERSION ?= 0.0.1
 IMG ?= livewyer/tamoss-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # Keep this on the same Kubernetes minor as the Kind node image used by the
-# chainsaw suite (kind v0.32.0 defaults to kindest/node v1.36.1).
+# Chainsaw suite (all Kind configurations pin Kubernetes v1.36.4).
 ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
@@ -154,8 +154,8 @@ DEADCODE ?= $(LOCALBIN)/deadcode-$(GO_TOOLS_VERSION)
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
 ENVTEST_VERSION ?= release-0.24
-GOLANGCI_LINT_VERSION ?= v2.12.2
-GO_TOOLS_VERSION ?= v0.44.0
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GO_TOOLS_VERSION ?= v0.50.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
