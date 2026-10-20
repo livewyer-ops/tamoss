@@ -133,6 +133,35 @@ restart the Cilium DaemonSet after changing it so every agent loads the mode.
 This is not needed when the API endpoint is external to the cluster's node
 identities, and not needed at all when the blocks are omitted.
 
+## External database TLS
+
+Set `.spec.backends.db.external.tls.caConfigMap` to a PEM CA bundle in the
+Tamoss namespace:
+
+```yaml
+spec:
+  backends:
+    db:
+      providedBy: external
+      external:
+        host: database.example.com
+        tls:
+          caConfigMap:
+            name: database-ca
+            key: ca.pem
+```
+
+This enables libpq `verify-full` for the API, worker, schema migration,
+storage registration and deregistration, and FlowProfile Jobs. The database
+hostname must match its certificate. The CA reference is required and cannot
+be optional. These TLS settings take precedence over API and worker
+`PGSSLMODE` and `PGSSLROOTCERT` environment overrides. Omitting `tls` preserves
+the existing connection behaviour.
+
+Changing the CA reference refreshes pending schema and FlowProfile Jobs through
+their existing retry and reconciliation controls. Updating a ConfigMap's contents
+uses Kubernetes volume projection; new database connections consume the new file.
+
 ## Image Overrides
 
 The operator selects image defaults from `spec.version` and reports the effective

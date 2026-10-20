@@ -77,6 +77,9 @@ func deploymentFor(
 	if spec.TerminationGracePeriodSeconds != nil {
 		podSpec.TerminationGracePeriodSeconds = spec.TerminationGracePeriodSeconds
 	}
+	if component == "api" || component == "worker" {
+		podSpec = WithDatabaseTLS(podSpec, tamoss)
+	}
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      tamoss.ResourceName(component),
