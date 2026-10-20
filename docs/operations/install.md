@@ -1,11 +1,21 @@
 # Install
 
-TAMOSS installs through source-controlled environment inputs. For existing
-clusters, create an environment composition, review the generated platform
-values and operator defaults, then apply it:
+TAMOSS uses native Helmfile and Kubernetes manifests for installation. Task can
+create an environment directory, but the cluster resources remain ordinary
+Helmfile state and Kustomize compositions that can be managed by any Kubernetes
+workflow.
 
-Set `TAMOSS_VERSION` to the exact release to install. The generated environment
-pins its operator installation and each instance independently.
+Choose the product release and export it as `TAMOSS_VERSION`. The generated
+environment uses it for the operator install reference and initial instance.
+Run `task env:init` from the source revision that publishes that release; the
+same checkout supplies the platform dependency pins.
+Install the [Helm diff plugin](https://github.com/databus23/helm-diff) before
+using Helmfile `apply`:
+
+```bash
+helm plugin install https://github.com/databus23/helm-diff --verify=false
+helm diff version
+```
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -13,11 +23,25 @@ export KUBECONFIG=/path/to/kubeconfig
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/operator/defaults.yaml
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+(
+  cd deploy/platform
+  helmfile --kubeconfig "$KUBECONFIG" \
+    --file helmfile.yaml.gotmpl \
+    --state-values-file values/defaults.yaml \
+    --state-values-file ../environments/my-prod/platform-values.yaml \
+    apply \
+    --skip-diff-on-install \
+    --sync-args "--server-side=true" \
+    --wait \
+    --wait-for-jobs
+)
+kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/environments/my-prod/operator
+kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
+kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
+kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-prod
 ```
 
-The task workflow applies ordered layers. The platform layer uses
+Apply the layers in order. The platform layer uses
 `deploy/platform/helmfile.yaml.gotmpl` to install shared prerequisites as
 separate [Helm](https://helm.sh/) releases, waits for the dependency
 operators, then applies
@@ -25,9 +49,10 @@ TAMOSS-owned platform configuration through `deploy/platform/charts/config`.
 The platform state is built from `deploy/platform/values/defaults.yaml` plus the
 environment's `platform-values.yaml`. The operator layer uses the environment's
 `operator/kustomization.yaml`, which references the selected release's published
-installation and catalogue and mounts the installation defaults. It installs
-the CRDs, controller, RBAC and webhooks. The environment layer applies one or more
-namespaced `Tamoss` custom resources.
+installation and mounts the installation defaults. It installs the CRDs,
+controller, RBAC and webhooks. The environment layer applies one or more
+namespaced `Tamoss` custom resources. `task env:apply` is an optional shortcut;
+`task env:wait` and `task env:status` are optional status helpers.
 
 For multiple tenant namespaces, install the platform and operator once, then
 apply namespace-local `Tamoss`, `StorageBackend`, and optional `FlowProfile`
@@ -77,21 +102,24 @@ normal environment compositions.
 
 The generated environment is the composition root. `platform-values.yaml`
 selects shared platform components. `operator/defaults.yaml` supplies site
-settings to the operator. `tamoss-patch.yaml` is a complete instance resource
-containing its identity and `spec.version`; add fields there only when the
-instance needs overrides.
+settings to the operator. Each instance has a Kustomize directory containing a
+namespace, a minimal `Tamoss` resource and any other resources owned by that
+instance.
 
 `task env:init` generates this composition:
 
 ```text
 deploy/environments/<name>/
-├── kustomization.yaml     # instance resources
-├── namespace.yaml
+├── kustomization.yaml     # composes all instance directories
 ├── platform-values.yaml   # shared Helm releases
 ├── operator/
 │   ├── kustomization.yaml # published operator and installation defaults mount
-│   └── defaults.yaml     # shared profile, domain and ingress settings
-└── tamoss-patch.yaml      # instance identity and release
+│   └── defaults.yaml      # shared profile, domain and ingress settings
+└── instances/
+    └── tamoss-<profile>/
+        ├── kustomization.yaml
+        ├── namespace.yaml
+        └── tamoss.yaml    # instance identity and selected release
 ```
 
 The generated instance is named `tamoss-<profile>` in namespace `tams`.
@@ -132,38 +160,16 @@ ingress TLS Secret.
 
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
-task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
 ```
 
 Review the generated storage sizes and hostnames before applying to an ARM64
 single-node cluster.
 
-If automation cannot call Task, keep the same checked-in inputs and apply the
-same layers in order:
-
-```bash
-(
-  cd deploy/platform
-  helmfile --kubeconfig "$KUBECONFIG" \
-    --file helmfile.yaml.gotmpl \
-    --state-values-file values/defaults.yaml \
-    --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
-    sync \
-    --sync-args "--server-side=true" \
-    --wait \
-    --wait-for-jobs
-)
-kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k deploy/environments/<name>/operator
-kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
-kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
-kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<name>
-```
-
 ## Several Instances in One Environment
 
 An environment directory may hold several `Tamoss` instances on one cluster:
-one file per instance plus a shared `kustomization.yaml`, with each instance
-in its own namespace. Platform components (Authentik,
+one Kustomize directory per instance, with each instance in its own namespace.
+Platform components (Authentik,
 [Traefik](https://traefik.io/), cert-manager,
 [CNPG](https://cloudnative-pg.io/),
 [RustFS](https://github.com/rustfs/rustfs) Operator) are installed once per
@@ -174,20 +180,26 @@ An environment with two instances looks like this:
 
 ```text
 deploy/environments/<env>/
-├── kustomization.yaml         # lists every instance manifest below
+├── kustomization.yaml         # lists each instance directory below
 ├── platform-values.yaml       # shared platform components, applied once
 ├── operator/
 │   ├── kustomization.yaml     # shared operator installation
 │   └── defaults.yaml          # inherited instance settings
-├── prod-a.yaml                # Tamoss CR in namespace prod-a
-├── prod-a-storage.yaml        # default StorageBackend for prod-a
-├── prod-b.yaml                # Tamoss CR in namespace prod-b
+├── instances/
+│   ├── prod-a/
+│   │   ├── kustomization.yaml # resources owned by prod-a
+│   │   ├── namespace.yaml
+│   │   └── tamoss.yaml
+│   └── prod-b/
+│       ├── kustomization.yaml
+│       ├── namespace.yaml
+│       └── tamoss.yaml
 └── monitoring/
     └── prod-a/                # optional per-instance dashboards and alerts
 ```
 
-Add an instance with `task env:instance:init`, which writes the manifest and
-registers it in `kustomization.yaml`:
+Add an instance with `task env:instance:init`, which writes its Kustomize
+directory and registers it in the root composition:
 
 ```bash
 task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=<env> INSTANCE=prod-b
@@ -197,9 +209,17 @@ The namespace defaults to the instance name. The resource contains only
 `spec.version` unless optional `PROFILE` or `DOMAIN` overrides are supplied.
 Use `NAMESPACE` to select another namespace.
 
-`task env:instance:apply` then applies the whole kustomization. Instances
-using `s3.providedBy: external` need their default `StorageBackend` manifest
-alongside the CR, as `prod-a-storage.yaml` shows.
+Apply one instance and its namespace-scoped resources with:
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/<env>/instances/prod-b
+task env:wait ENV=<env> INSTANCE=prod-b KUBECONFIG="$KUBECONFIG"
+```
+
+Add `StorageBackend`, `FlowProfile` or other instance resources to that
+directory and list them in its `kustomization.yaml`. `kubectl apply -k` then
+applies only the selected instance's resources. Give each instance its own
+namespace.
 
 `env:wait`, `env:status`, and `env:summary` report on every instance in the
 environment. Pass `INSTANCE=<name>` to work with one:
@@ -214,10 +234,13 @@ The platform Authentik flow needs no secrets in the environment files: when
 `platform-values.yaml` leaves the Authentik secret key, bootstrap
 credentials, and database passwords unset, the platform chart generates that
 material in-cluster on first apply and preserves it across later applies.
-`task env:summary` prints the resolved admin credentials. Environment files
-carry secret material only when operators choose to set those values
-explicitly; in that case keep the environment directory out of version
-control, restrict file permissions, and take care with broad staging
+`task kind:up PROFILE=local-kind` prints local credentials with its summary.
+Remote `task env:summary` output contains URLs and lifecycle status but no
+secret values. Retrieve them when needed with
+`task env:credentials ENV=<env> INSTANCE=<name> KUBECONFIG="$KUBECONFIG"`.
+Environment files carry secret material only when operators choose to set
+those values explicitly; in that case keep the environment directory out of
+version control, restrict file permissions, and take care with broad staging
 commands such as `git add -A` in a worktree that contains live environment
 directories.
 

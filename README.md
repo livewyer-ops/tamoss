@@ -43,12 +43,15 @@ integrations.
 [aqua](https://aquaproj.github.io/docs/install) — a single-binary CLI version
 manager. With aqua installed, the rest of the toolchain (`task`, `kind`,
 `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
+Helmfile `apply` also needs the Helm diff plugin.
 
 Use the local [Kind](https://kind.sigs.k8s.io/) profile first:
 
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
+helm plugin install https://github.com/databus23/helm-diff --verify=false
+helm diff version
 
 task kind:up PROFILE=local-kind
 ```
@@ -70,29 +73,27 @@ Open:
 To install on an existing Kubernetes cluster instead of the disposable
 Kind cluster, use the environment workflow:
 
-Set `TAMOSS_VERSION` to the exact release to install. The generated environment
-pins its operator installation and each instance independently.
+Use `task env:init` to scaffold an environment, then apply its native Helmfile
+and Kubernetes resources as described in the [install guide](docs/operations/install.md).
 
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
 $EDITOR deploy/environments/my-prod/operator/defaults.yaml
-task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
-task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
 ```
 
 Remote environments are composition roots: `platform-values.yaml` configures the
 [Helmfile](https://helmfile.readthedocs.io/)-managed platform releases,
-`operator/defaults.yaml` supplies shared site settings, and `tamoss-patch.yaml`
-contains the instance identity and `spec.version`. Add instance fields only
-when they need to override the defaults.
+`operator/defaults.yaml` supplies shared site settings, and each directory under
+`instances/` contains one namespace's Kustomize resources and minimal `Tamoss`
+resource. Add instance fields only when they need to override the defaults.
 Generated single-server and multi-server environments default to public ACME TLS through
 `ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
 before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
 `tls.mode: disabled` when TLS Secrets are supplied outside
 [cert-manager](https://cert-manager.io/).
 See [Install](docs/operations/install.md#existing-cluster) for DNS, TLS and the
-equivalent Helmfile and Kubernetes commands.
+Helmfile and Kubernetes apply commands.
 
 ## Profiles
 

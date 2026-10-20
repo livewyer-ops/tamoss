@@ -50,6 +50,7 @@ def queue(request, postgres_repo, peer_repo):
             event_timestamp=utc_now(),
             payload={},
             status="pending",
+            attempt_count=2,
         ),
         "delete_request": lambda: DeletionRequestRecord(
             id=uuid4(),
@@ -105,10 +106,12 @@ def expire(connection, table):
 
 
 def test_stale_claim_cannot_overwrite_or_recreate_work(queue, postgres_connection):
-    _, _, save, claim, peer_claim, table = queue
+    record, _, save, claim, peer_claim, table = queue
     stale = claim(worker_id="a", limit=1, lease_seconds=30)[0]
     expire(postgres_connection, table)
     current = peer_claim(worker_id="b", limit=1, lease_seconds=30)[0]
+    if isinstance(record, WebhookDeliveryRecord):
+        assert current.attempt_count == stale.attempt_count == 2
     stale.status = "done"
     stale.claimed_at = stale.claimed_by = stale.claim_expires_at = None
     with pytest.raises(WorkerClaimLost):

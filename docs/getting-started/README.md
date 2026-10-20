@@ -1,9 +1,10 @@
 # Getting Started
 
-Pick a profile and follow its guide. Remote installs use the environment
-workflow: run `task env:init`, edit the generated `platform-values.yaml` and
-`operator/defaults.yaml`, then run `task env:apply` and `task env:wait`.
-`local-kind` runs the whole flow with `task kind:up`.
+Pick a profile and follow its guide. For an existing cluster, use Helmfile and
+`kubectl` with the generated manifests; `task env:init` is an optional way to
+scaffold the environment. The [install guide](../operations/install.md) gives
+the native commands. `local-kind` is a local evaluation path using
+`task kind:up`.
 
 | Profile | Use it for |
 | --- | --- |
@@ -14,7 +15,7 @@ workflow: run `task env:init`, edit the generated `platform-values.yaml` and
 
 ## Common Configuration
 
-Review DNS, TLS and authentication before `task env:apply`. Each guide's Key
+Review DNS, TLS and authentication before applying resources. Each guide's Key
 Settings section covers the profile-specific parts.
 
 ### DNS

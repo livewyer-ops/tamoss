@@ -8,6 +8,7 @@ the same operator flow used by the other profiles.
 - Docker or a compatible container runtime.
 - [`aqua`](https://aquaproj.github.io/) for the pinned toolchain, or
   equivalent versions of Task, Kind, kubectl, Helm, Helmfile, uv, yq, and jq.
+- The [Helm diff plugin](https://github.com/databus23/helm-diff) for Helmfile `apply`.
 - `curl` and `git`.
 
 `aqua install` installs the pinned command-line tools used by the tasks. It
@@ -19,6 +20,8 @@ bootstrap those as needed on first run.
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
+helm plugin install https://github.com/databus23/helm-diff --verify=false
+helm diff version
 
 task kind:up PROFILE=local-kind
 ```
@@ -68,7 +71,7 @@ targeting one of the other profiles.
 ## Access
 
 The local Kind profile uses [Traefik](https://traefik.io/) on host port 443.
-It does not require
+Keep that port free of other local cluster routing rules. It does not require
 application NodePorts or port-forwarding.
 
 - API docs: <https://api.tamoss.localtest.me/docs>
@@ -117,8 +120,10 @@ and runs the deployed TAMS/product checks.
 task kind:down
 ```
 
-`task kind:down` deletes the disposable Kind cluster and local runtime state. It
-does not delete `Tamoss` resources individually before removing the cluster.
+`task kind:down` deletes the disposable Kind cluster and removes its context
+from the selected kubeconfig. It leaves other kubeconfig contexts and local
+files in place. It does not delete `Tamoss` resources individually before
+removing the cluster.
 
 See also:
 

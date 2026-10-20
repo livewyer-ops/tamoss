@@ -123,9 +123,9 @@ For durable scaling, edit the environment overlay that owns the `Tamoss` CR,
 then reapply it:
 
 ```bash
-$EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task env:instance:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+$EDITOR "deploy/environments/my-prod/instances/$TAMOSS_NAME/tamoss.yaml"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/my-prod/instances/$TAMOSS_NAME"
+task env:wait ENV=my-prod INSTANCE="$TAMOSS_NAME" KUBECONFIG="$KUBECONFIG"
 ```
 
 For a short investigation, patch the live `Tamoss` CR and then copy the chosen

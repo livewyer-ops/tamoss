@@ -10,8 +10,9 @@ The lifecycle is declared on the `Tamoss` spec. The operator materialises a
 `TamossHibernate` operation for each hibernation cycle; the operation records
 progress, the artefact identity, and its trusted checksum.
 
-This workflow is database-only. It does not copy TAMS media objects or
-[Authentik](https://goauthentik.io/) state.
+Hibernate and resume are supported only with CNPG-managed PostgreSQL and
+external S3 media storage. The workflow is database-only; it does not copy TAMS
+media objects or [Authentik](https://goauthentik.io/) state.
 
 ## Supported Backend Combinations
 

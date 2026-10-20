@@ -73,10 +73,10 @@ task_kind_delete_cluster() {
   local kubeconfig="${2:-}"
 
   if [ -n "$kubeconfig" ]; then
-    kind delete cluster --name "$project_name" --kubeconfig "$kubeconfig" || true
-    return
+    kind delete cluster --name "$project_name" --kubeconfig "$kubeconfig"
+  else
+    kind delete cluster --name "$project_name"
   fi
-  kind delete cluster --name "$project_name" || true
 }
 
 task_kind_load_image() {
@@ -132,11 +132,4 @@ task_kind_assert_ready_node_count() {
   echo "If this cluster was created for another profile, run task kind:down and retry." >&2
   kubectl --kubeconfig "$kubeconfig" get nodes >&2 || true
   return 1
-}
-
-task_remove_local_kind_state() {
-  local kubeconfig="$1"
-  local secrets_dir="$2"
-
-  rm -rf "$kubeconfig" "$secrets_dir" || true
 }
