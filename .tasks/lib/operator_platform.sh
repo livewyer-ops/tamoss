@@ -48,6 +48,7 @@ task_check_platform_dependency_pins() {
   test -f "$values_file"
   test -f "$(yq -r ".spec.rustfsOperator.manifest" "$dependencies_file")"
   test -f "$(yq -r ".spec.rustfsOperator.crdManifest" "$dependencies_file")"
+  test -f "$(yq -r ".spec.rustfsOperator.policyBindingCRDManifest" "$dependencies_file")"
 
   rg -q "chart: jetstack/cert-manager" "$helmfile_file"
   rg -q "version: ${cert_manager_chart_version}" "$helmfile_file"

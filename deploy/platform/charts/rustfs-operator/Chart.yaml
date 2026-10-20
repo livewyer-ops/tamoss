@@ -2,5 +2,5 @@ apiVersion: v2
 name: tamoss-rustfs-operator
 description: RustFS operator prerequisites for TAMOSS platform installs.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.0.8"

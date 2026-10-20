@@ -15,7 +15,7 @@ kind: Tamoss
 metadata:
   name: candidate
 status:
-  currentVersion: 8.2.0-oss2-rc2
+  currentVersion: 8.2.0-oss2
   upgrade:
     targetVersion: dev
   (conditions[?type == 'Ready'].status | [0]): "False"

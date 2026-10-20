@@ -95,6 +95,19 @@ def test_oss2_requires_numeric_bounds_schema_upgrade() -> None:
     assert metadata["upgrade_from"] == "8.2.0-oss1"
 
 
+def test_oss3_preserves_oss2_schema() -> None:
+    result = run_metadata("8.2.0-oss3")
+    assert result.returncode == 0, result.stderr
+    metadata = parse_output(result.stdout)
+    assert (
+        metadata["schema_revision"]
+        == metadata["previous_schema_revision"]
+        == "8.2.0-oss2"
+    )
+    assert metadata["upgrade_class"] == "APIOnly"
+    assert metadata["upgrade_from"] == "8.2.0-oss2"
+
+
 def test_release_metadata_rejects_unknown_or_malformed_release_candidates() -> None:
     for version in (
         "8.3.0-oss1-rc0",

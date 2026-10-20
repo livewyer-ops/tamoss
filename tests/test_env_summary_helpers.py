@@ -91,7 +91,7 @@ def test_platform_apply_waits_on_success_and_preserves_failed_release(
     )
     assert result.returncode == status, result.stderr
     assert "--skip-diff-on-install" in result.stdout
-    assert "--server-side=true" in result.stdout
+    assert "--server-side" not in result.stdout
     assert "--rollback-on-failure" not in result.stdout
     assert "--atomic" not in result.stdout
     assert (tmp_path / "waited").exists() == (status == 0)

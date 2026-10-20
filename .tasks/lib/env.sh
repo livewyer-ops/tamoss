@@ -429,7 +429,6 @@ task_apply_env_platform() {
     task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
       apply \
       --skip-diff-on-install \
-      --sync-args "--server-side=true" \
       --wait \
       --wait-for-jobs
 

@@ -1,119 +1,263 @@
----
-# Source: rustfs-operator/templates/serviceaccount.yaml
+# Source: rustfs/operator at f291e13af4648dda57aff1e01e4fb869f43d976e.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: rustfs-operator
   namespace: {{ .Release.Namespace | quote }}
   labels:
-    helm.sh/chart: tamoss-rustfs-operator-0.1.0
+    helm.sh/chart: tamoss-rustfs-operator-0.2.0
     app.kubernetes.io/name: rustfs-operator
     app.kubernetes.io/instance: rustfs-operator
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.8"
     app.kubernetes.io/managed-by: Helm
 ---
-# Source: rustfs-operator/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: rustfs-operator
   labels:
-    helm.sh/chart: tamoss-rustfs-operator-0.1.0
+    helm.sh/chart: tamoss-rustfs-operator-0.2.0
     app.kubernetes.io/name: rustfs-operator
     app.kubernetes.io/instance: rustfs-operator
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.8"
     app.kubernetes.io/managed-by: Helm
 rules:
-  # Tenant resources
-  - apiGroups: ["rustfs.com"]
-    resources: ["tenants"]
-    verbs: ["get", "list", "watch", "update", "patch"]
-  - apiGroups: ["rustfs.com"]
-    resources: ["tenants/status"]
-    verbs: ["update", "patch"]
-
-  # Core resources managed by the operator
-  - apiGroups: [""]
-    resources: ["configmaps", "secrets", "serviceaccounts", "pods", "services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods/log"]
-    verbs: ["get"]
-
-  # Node status lookup (node down detection)
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list", "watch"]
-
-  # RBAC resources created for tenants
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["roles", "rolebindings"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
-  # StatefulSets for tenant pools
-  - apiGroups: ["apps"]
-    resources: ["statefulsets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
-  # cert-manager Certificate orchestration and readiness watches
-  - apiGroups: ["cert-manager.io"]
-    resources: ["certificates"]
-    verbs: ["get", "list", "watch", "create", "patch", "update"]
-  - apiGroups: ["cert-manager.io"]
-    resources: ["issuers", "clusterissuers"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    resourceNames: ["certificates.cert-manager.io"]
-    verbs: ["get"]
-
-  # PersistentVolumeClaims for tenant pool volumes.
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
-  # Events for reconciliation notifications and console event list (core + events.k8s.io)
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "list", "watch", "create", "patch"]
-  - apiGroups: ["events.k8s.io"]
-    resources: ["events"]
-    verbs: ["get", "list", "watch", "create", "patch"]
+- apiGroups:
+  - rustfs.com
+  resources:
+  - tenants
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - rustfs.com
+  resources:
+  - tenants/status
+  verbs:
+  - update
+  - patch
+- apiGroups:
+  - rustfs.com
+  resources:
+  - tenants/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ''
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  - pods
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - ''
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - sts.rustfs.com
+  resources:
+  - policybindings
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  - replicasets
+  - deployments
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+  - update
+  - delete
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - issuers
+  - clusterissuers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  resourceNames:
+  - certificates.cert-manager.io
+  verbs:
+  - get
+- apiGroups:
+  - ''
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 ---
-# Source: rustfs-operator/templates/clusterrolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: rustfs-operator
   labels:
-    helm.sh/chart: tamoss-rustfs-operator-0.1.0
+    helm.sh/chart: tamoss-rustfs-operator-0.2.0
     app.kubernetes.io/name: rustfs-operator
     app.kubernetes.io/instance: rustfs-operator
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.8"
     app.kubernetes.io/managed-by: Helm
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: rustfs-operator
 subjects:
-  - kind: ServiceAccount
-    name: rustfs-operator
-    namespace: {{ .Release.Namespace | quote }}
+- kind: ServiceAccount
+  name: rustfs-operator
+  namespace: {{ .Release.Namespace | quote }}
 ---
-# Source: rustfs-operator/templates/deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs-operator-metrics
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    helm.sh/chart: tamoss-rustfs-operator-0.2.0
+    app.kubernetes.io/name: rustfs-operator
+    app.kubernetes.io/instance: rustfs-operator
+    app.kubernetes.io/version: "0.0.8"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: operator-metrics
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+  selector:
+    app.kubernetes.io/name: rustfs-operator
+    app.kubernetes.io/instance: rustfs-operator
+    app.kubernetes.io/component: operator
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rustfs-operator
   namespace: {{ .Release.Namespace | quote }}
   labels:
-    helm.sh/chart: tamoss-rustfs-operator-0.1.0
+    helm.sh/chart: tamoss-rustfs-operator-0.2.0
     app.kubernetes.io/name: rustfs-operator
     app.kubernetes.io/instance: rustfs-operator
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.8"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: operator
 spec:
   replicas: 1
+  # Avoid overlapping controllers with different Tenant security defaults.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels:
       app.kubernetes.io/name: rustfs-operator
@@ -123,26 +267,81 @@ spec:
       labels:
         app.kubernetes.io/name: rustfs-operator
         app.kubernetes.io/instance: rustfs-operator
+        app.kubernetes.io/component: operator
     spec:
       serviceAccountName: rustfs-operator
       securityContext:
         fsGroup: 65534
       containers:
-        - name: operator
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
-          command: ["./operator", "server"]
-          env:
-            - name: RUST_LOG
-              value: info
-          resources:
-{{ toYaml .Values.resources | indent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-              - ALL
-            runAsNonRoot: true
-            runAsUser: 65534
-            seccompProfile:
-              type: RuntimeDefault
+      - name: operator
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
+        command:
+        - ./operator
+        - server
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: metrics
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        env:
+        - name: OPERATOR_METRICS_ENABLED
+          value: 'true'
+        - name: OPERATOR_METRICS_PORT
+          value: '8080'
+        - name: OPERATOR_TENANT_MONITOR_ENABLED
+          value: 'true'
+        - name: OPERATOR_TENANT_MONITOR_INTERVAL_SECONDS
+          value: '300'
+        - name: OPERATOR_CLUSTER_DOMAIN
+          value: cluster.local
+        - name: OPERATOR_STS_ENABLED
+          value: 'false'
+        - name: OPERATOR_STS_AUDIENCE
+          value: sts.rustfs.com
+        - name: OPERATOR_STS_ADMISSION_REQUESTS_PER_SECOND
+          value: '5'
+        - name: OPERATOR_STS_ADMISSION_BURST
+          value: '10'
+        - name: OPERATOR_STS_ADMISSION_MAX_IN_FLIGHT
+          value: '16'
+        - name: OPERATOR_STS_ADMISSION_BODY_LIMIT_BYTES
+          value: '65536'
+        - name: OPERATOR_STS_ADMISSION_TIMEOUT_SECONDS
+          value: '30'
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: RUST_LOG
+          value: info
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65534
+          seccompProfile:
+            type: RuntimeDefault

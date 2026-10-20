@@ -4,6 +4,34 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## 8.2.0-oss3
+
+### Changed
+
+- Update Authentik to 2026.5.7 with chart 2026.5.6 and preserve existing OAuth grants.
+- Update the RustFS controller to 0.0.8 and prevent concurrent controller versions during upgrades, retaining the RustFS 1.0.0 runtime.
+- Update CloudNativePG to 1.30.1 with chart 0.29.1, retaining PostgreSQL 18.6.
+
+### Upgrade notes
+
+Upgrade directly from `8.2.0-oss2` using the [upgrade guide](docs/operations/upgrades.md).
+The TAMOSS schema remains at `8.2.0-oss2`; no new TAMOSS database migration is required.
+Apply the platform, then the TAMOSS operator, then select `8.2.0-oss3` on each instance.
+
+Verify restorable backups and allow a maintenance window for database, identity
+and storage restarts. Authentik advances one release series to 2026.5; update
+separate outposts to match. Its bundled PostgreSQL stays on major 17.
+
+The RustFS controller applies native workload security defaults and removes
+legacy Tenant workload RBAC. Existing Tenants retain their PVCs and credentials.
+Custom images and digest references require the
+`operator.rustfs.com/runtime-default-image-ack` Tenant annotation set to the
+exact image reference before upgrading.
+Custom sidecars that use the Kubernetes API require a user-owned ServiceAccount
+and explicit token projection; see the
+[upstream controller upgrade notes](https://github.com/rustfs/operator/blob/0.0.8/docs/operator-user-guide.md#4-install-the-operator).
+Do not downgrade the updated CRDs or workload security state.
+
 ## 8.2.0-oss2 - 2026-10-20
 
 ### Added

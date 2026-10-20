@@ -128,6 +128,24 @@
         "rustfs": "rustfs/rustfs:1.0.0",
         "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
       }
+    },
+    {
+      "version": "8.2.0-oss3",
+      "tamsAPI": "8.2",
+      "schemaRevision": "8.2.0-oss2",
+      "upgrade": {
+        "class": "APIOnly",
+        "from": [
+          "8.2.0-oss2"
+        ]
+      },
+      "databaseRevision": "20260924_0008",
+      "runtimeImages": {
+        "postgresClient": "postgres:18.6-alpine",
+        "cnpgPostgresVersion": "18.6",
+        "rustfs": "rustfs/rustfs:1.0.0",
+        "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
+      }
     }
   ]
 }

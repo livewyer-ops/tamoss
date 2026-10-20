@@ -73,7 +73,7 @@ func TestDatabaseTLSReachesEveryJob(t *testing.T) {
 
 func TestDatabaseTLSRetainsReleaseTargets(t *testing.T) {
 	catalogue := selectionCatalogue(t)
-	for _, version := range []string{"8.2.0-oss1", "8.2.0-oss2-rc2", "dev"} {
+	for _, version := range []string{"8.2.0-oss2", "dev"} {
 		t.Run(version, func(t *testing.T) {
 			instance := recoveryTamoss()
 			instance.Spec.Version = version

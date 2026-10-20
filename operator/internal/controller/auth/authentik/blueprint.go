@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	TargetAuthentikVersion = "2026.2"
+	TargetAuthentikVersion = "2026.5"
 )
 
 var tamossAPIScopes = []string{
@@ -101,6 +101,12 @@ func providerEntries(slug string, credentials Credentials, redirectURIs []string
 			scalar("name"), scalar(slug),
 			scalar("client_id"), scalar(string(credentials.ClientID)),
 			scalar("client_secret"), scalar(string(credentials.ClientSecret)),
+			// Preserve the grants enabled before Authentik 2026.5 introduced this list.
+			scalar("grant_types"), sequence(
+				scalar("authorization_code"), scalar("implicit"), scalar("hybrid"),
+				scalar("refresh_token"), scalar("client_credentials"), scalar("password"),
+				scalar("urn:ietf:params:oauth:grant-type:device_code"),
+			),
 			scalar("authorization_flow"), find("authentik_flows.flow", "slug", "default-provider-authorization-implicit-consent"),
 			scalar("invalidation_flow"), find("authentik_flows.flow", "slug", "default-provider-invalidation-flow"),
 			scalar("signing_key"), find("authentik_crypto.certificatekeypair", "name", "authentik Self-signed Certificate"),
