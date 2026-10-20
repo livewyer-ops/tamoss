@@ -53,7 +53,7 @@
     "schema": {
       "version": "dev",
       "previousVersion": "8.2.0-oss1",
-      "databaseRevision": "20261019_0009",
+      "databaseRevision": "20260924_0008",
       "tamsAPI": "8.2"
     },
     "images": {

@@ -180,7 +180,7 @@ spec:
               - "SELECT label || ':' || (SELECT version_num FROM alembic_version) FROM tamoss_sources WHERE id='10000000-0000-4000-8000-000000000001';"
             check:
               ($error == null): true
-              (trim_space($stdout)): "upgrade-probe:20261019_0009"
+              (trim_space($stdout)): "upgrade-probe:20260924_0008"
         - apply:
             file: resources/object-job.yaml
             bindings:
@@ -352,7 +352,7 @@ spec:
               - "SELECT label || ':' || (SELECT version_num FROM alembic_version) FROM tamoss_sources WHERE id='10000000-0000-4000-8000-000000000001';"
             check:
               ($error == null): true
-              (trim_space($stdout)): "upgrade-probe:20261019_0009"
+              (trim_space($stdout)): "upgrade-probe:20260924_0008"
         - apply:
             file: resources/object-job.yaml
             bindings:

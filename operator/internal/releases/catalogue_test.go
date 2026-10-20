@@ -14,7 +14,7 @@ func TestPublishedEntriesAndTransitions(t *testing.T) {
 	}
 	old := catalogue["8.2.0-oss1"]
 	rc := catalogue["8.2.0-oss2-rc2"]
-	if rc.Schema.Version != old.Schema.Version || rc.Schema.DatabaseRevision != "20260810_0007" || catalogue["dev"].Schema.DatabaseRevision != "20261019_0009" {
+	if rc.Schema.Version != old.Schema.Version || rc.Schema.DatabaseRevision != "20260810_0007" || catalogue["dev"].Schema.DatabaseRevision != "20260924_0008" {
 		t.Fatal("published RC schema was replaced by current family metadata")
 	}
 	for _, tc := range []struct {

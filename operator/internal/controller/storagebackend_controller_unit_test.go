@@ -121,7 +121,6 @@ func TestStorageBackendSchemaStateRequiresCurrentVersion(t *testing.T) {
 		t.Fatalf("expected schema state: %v", err)
 	}
 	state.Data[schemaStateAppliedVersionKey] = schemabundle.SchemaVersion
-	state.Data[schemaStateDatabaseRevisionKey] = schemabundle.CurrentDatabaseRevision
 	if err := reconciler.Client.Update(ctx, state); err != nil {
 		t.Fatalf("update schema state: %v", err)
 	}
@@ -736,7 +735,7 @@ func TestFinalizeExternalStorageBackendSkipsBucketDeletion(t *testing.T) {
 	}
 	schemaState := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-schema-state", Namespace: "media"},
-		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision},
+		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
 		Releases: testReleases(),
@@ -828,7 +827,7 @@ func TestFinalizeStorageBackendRunsBucketAndDatabaseCleanup(t *testing.T) {
 	}
 	schemaState := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-schema-state", Namespace: "media"},
-		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision},
+		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
 		Releases: testReleases(),
@@ -901,7 +900,7 @@ func TestFinalizeStorageBackendSkipsBucketDeletionWithoutBucketState(t *testing.
 	}
 	schemaState := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-schema-state", Namespace: "media"},
-		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision},
+		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
 		Releases: testReleases(),
@@ -948,7 +947,7 @@ func TestFinalizeStorageBackendSkipsRuntimeCredentialsWhenTamossDeleting(t *test
 	}
 	schemaState := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "example-schema-state", Namespace: "media"},
-		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision},
+		Data:       map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion},
 	}
 	reconciler := StorageBackendReconciler{
 		Releases: testReleases(),

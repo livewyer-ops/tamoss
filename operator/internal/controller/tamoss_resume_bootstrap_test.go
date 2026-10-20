@@ -45,7 +45,7 @@ func bootstrapManifestFixture() hibernationManifest {
 		},
 		Schema: hibernationManifestSchema{
 			Version:      schemabundle.SchemaVersion,
-			TAMSAPI:      schemabundle.SupportedTAMSAPIVersion,
+			TAMSAPI:      testRelease().Schema.TAMSAPI,
 			ManifestKind: "TamossHibernate",
 		},
 		Database: hibernationManifestDatabase{

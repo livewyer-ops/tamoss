@@ -3,6 +3,5 @@ kind: ConfigMap
 metadata:
   name: tamoss-schema-state
 (data.appliedVersion): ($values.schemaVersion)
-(data.databaseRevision): ($values.databaseRevision)
 (data.fixturesApplied): "true"
 (data.jobUID != ''): true

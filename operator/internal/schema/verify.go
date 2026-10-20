@@ -5,17 +5,9 @@ import (
 	"strings"
 )
 
-const (
-	DevelopmentSchemaVersion = "dev"
-	// CurrentDatabaseRevision binds migration Jobs to the Alembic revision
-	// shipped in the matching API image.
-	CurrentDatabaseRevision = "20261019_0009"
-)
+const DevelopmentSchemaVersion = "dev"
 
-var (
-	SchemaVersion                  = DevelopmentSchemaVersion
-	PreviousSupportedSchemaVersion = ""
-)
+var SchemaVersion = DevelopmentSchemaVersion
 
 func Verify() error {
 	return ValidateVersion(SchemaVersion)

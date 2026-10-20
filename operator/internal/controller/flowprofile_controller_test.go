@@ -76,7 +76,7 @@ func TestFlowProfileReconcileLaunchesRegistrationAndPublishesReadyState(t *testi
 	scheme := flowProfileTestScheme(t)
 	profile := flowProfileFixture()
 	tamoss := flowProfileTamossFixture()
-	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision}}
+	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion}}
 	c := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.FlowProfile{}, &batchv1.Job{}).
 		WithIndex(&tamossv1alpha1.FlowProfile{}, flowProfileTamossIndex, func(obj client.Object) []string {
@@ -238,7 +238,7 @@ func TestFlowProfileDeletionRemainsBlockedWhileAFlowUsesTheProfile(t *testing.T)
 		t.Fatal(err)
 	}
 	tamoss := flowProfileTamossFixture()
-	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision}}
+	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion}}
 	registrationState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: flowProfileResourceName(profile, "state"), Namespace: profile.Namespace}, Data: map[string]string{
 		flowProfileStateReady: "true", flowProfileStateID: resolved.Spec.ID, flowProfileStateHash: resolved.Hash,
 	}}
@@ -322,7 +322,7 @@ func TestFlowProfileDuplicateLoserClearsRegistrationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	tamoss := flowProfileTamossFixture()
-	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision}}
+	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion}}
 	registrationState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: flowProfileResourceName(profile, "state"), Namespace: profile.Namespace}, Data: map[string]string{
 		flowProfileStateReady: flowProfileStateValueReady, flowProfileStateID: resolved.Spec.ID, flowProfileStateHash: resolved.Hash,
 	}}
@@ -441,7 +441,7 @@ func flowProfileTamossFixture() *tamossv1alpha1.Tamoss {
 	tamoss.Namespace = "media"
 	tamoss.Spec.API.Image.Repository = "livewyer/tamoss-api"
 	tamoss.Spec.API.Image.Tag = "8.2.0-oss1"
-	tamoss.Status.Resolved.Versions.TAMSAPI = schemabundle.SupportedTAMSAPIVersion
+	tamoss.Status.Resolved.Versions.TAMSAPI = testRelease().Schema.TAMSAPI
 	return tamoss
 }
 
@@ -477,7 +477,7 @@ func TestFlowProfileDeletionWaitsForRegistrationBeforeCheckingReferences(t *test
 	if err := controllerutil.SetControllerReference(profile, job, scheme); err != nil {
 		t.Fatal(err)
 	}
-	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion, schemaStateDatabaseRevisionKey: schemabundle.CurrentDatabaseRevision}}
+	schemaState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: tamoss.ResourceName("schema-state"), Namespace: tamoss.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: schemabundle.SchemaVersion}}
 	c := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).
 		WithStatusSubresource(&tamossv1alpha1.FlowProfile{}, &batchv1.Job{}).
 		WithIndex(&tamossv1alpha1.FlowProfile{}, flowProfileTamossIndex, func(obj client.Object) []string {

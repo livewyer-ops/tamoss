@@ -4,7 +4,6 @@ metadata:
   name: alpha-schema-state
 data:
   appliedVersion: ($values.schemaVersion)
-  databaseRevision: ($values.databaseRevision)
   fixturesApplied: "false"
 ---
 apiVersion: v1
@@ -13,5 +12,4 @@ metadata:
   name: beta-schema-state
 data:
   appliedVersion: ($values.schemaVersion)
-  databaseRevision: ($values.databaseRevision)
   fixturesApplied: "false"

@@ -4,5 +4,4 @@ metadata:
   name: external-oauth-schema-state
 data:
   appliedVersion: ($values.schemaVersion)
-  databaseRevision: ($values.databaseRevision)
   fixturesApplied: "false"

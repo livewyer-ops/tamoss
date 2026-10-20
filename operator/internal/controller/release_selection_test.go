@@ -64,7 +64,7 @@ func TestReleaseSelectionIsPerInstanceAndDoesNotPersistDefaults(t *testing.T) {
 		}
 	}
 	scheme := storageBackendTestScheme(t)
-	firstState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: first.ResourceName("schema-state"), Namespace: first.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: old.Schema.Version, schemaStateDatabaseRevisionKey: old.Schema.DatabaseRevision}}
+	firstState := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: first.ResourceName("schema-state"), Namespace: first.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: old.Schema.Version}}
 	secondState := firstState.DeepCopy()
 	secondState.Name = second.ResourceName("schema-state")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(fakeApplyInterceptor()).WithObjects(first, second, firstState, secondState).Build()
@@ -247,23 +247,12 @@ func TestDependentControllersUseTheInstanceSchemaTarget(t *testing.T) {
 	profiles := &FlowProfileReconciler{Client: c, Releases: catalogue}
 	for _, version := range []string{"8.2.0-oss1", "8.2.0-oss2-rc2", "dev"} {
 		instance := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: version, Namespace: "media"}, Spec: tamossv1alpha1.TamossSpec{Version: version}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: version}}
-		state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: catalogue[version].Schema.Version, schemaStateDatabaseRevisionKey: catalogue[version].Schema.DatabaseRevision}}
+		state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: catalogue[version].Schema.Version}}
 		if err := c.Create(ctx, state); err != nil {
 			t.Fatal(err)
 		}
 		if !storage.schemaStateReady(ctx, instance) || !profiles.flowProfileSchemaReady(ctx, instance) {
 			t.Fatalf("dependent controllers rejected the selected schema for %s", version)
-		}
-		state.Data[schemaStateDatabaseRevisionKey] = "previous-revision"
-		if err := c.Update(ctx, state); err != nil {
-			t.Fatal(err)
-		}
-		if storage.schemaStateReady(ctx, instance) || profiles.flowProfileSchemaReady(ctx, instance) {
-			t.Fatal("dependent controllers admitted work before revision maintenance completed")
-		}
-		state.Data[schemaStateDatabaseRevisionKey] = catalogue[version].Schema.DatabaseRevision
-		if err := c.Update(ctx, state); err != nil {
-			t.Fatal(err)
 		}
 		if version != "dev" {
 			instance.Spec.Version = "dev"

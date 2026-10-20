@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -141,12 +142,10 @@ def test_local_operator_builds_forward_release_metadata() -> None:
 
 
 def test_operator_migration_target_matches_api_database_head() -> None:
-    operator_schema = (REPO_ROOT / "operator/internal/schema/verify.go").read_text(
-        encoding="utf-8"
-    )
+    metadata = json.loads((REPO_ROOT / "operator/compatibility.yaml").read_text())
     kind_taskfile = (REPO_ROOT / ".tasks/kind.yaml").read_text(encoding="utf-8")
 
-    assert f'CurrentDatabaseRevision = "{CURRENT_SCHEMA_REVISION}"' in operator_schema
+    assert metadata["releases"][-1]["databaseRevision"] == CURRENT_SCHEMA_REVISION
     kind_revision = CURRENT_SCHEMA_REVISION.replace("_", "-")
     assert f'default "dev-{kind_revision}"' in kind_taskfile
 

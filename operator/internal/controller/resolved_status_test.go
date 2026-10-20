@@ -11,7 +11,6 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
 )
 
 func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
@@ -66,7 +65,7 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Versions.Tamoss != "dev" {
 		t.Fatalf("expected runtime version from local-kind image tag, got %#v", tamoss.Status.Resolved.Versions)
 	}
-	if tamoss.Status.Resolved.Versions.TAMSAPI != schemabundle.SupportedTAMSAPIVersion {
+	if tamoss.Status.Resolved.Versions.TAMSAPI != testRelease().Schema.TAMSAPI {
 		t.Fatalf("expected TAMS API compatibility version, got %#v", tamoss.Status.Resolved.Versions)
 	}
 	if tamoss.Status.Resolved.Resources.API != "example-api" ||

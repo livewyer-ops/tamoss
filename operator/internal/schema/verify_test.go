@@ -11,12 +11,6 @@ func TestSchemaVersionDefaultsToDevelopmentMarker(t *testing.T) {
 	}
 }
 
-func TestSupportedTAMSAPIVersionDefaultsTo82(t *testing.T) {
-	if SupportedTAMSAPIVersion != "8.2" {
-		t.Fatalf("expected default TAMS API compatibility version %q, got %q", "8.2", SupportedTAMSAPIVersion)
-	}
-}
-
 func TestValidateVersionRejectsPlaceholders(t *testing.T) {
 	for _, version := range []string{"", "0.0.0", "v0.0.0"} {
 		if err := ValidateVersion(version); err == nil {

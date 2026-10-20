@@ -27,18 +27,17 @@ import (
 )
 
 const (
-	schemaStateAppliedVersionKey   = "appliedVersion"
-	schemaStateDatabaseRevisionKey = "databaseRevision"
-	schemaStateLastAppliedAtKey    = "lastAppliedAt"
-	schemaStateJobUIDKey           = "jobUID"
-	schemaStateFixturesKey         = "fixturesApplied"
-	schemaStateSupportedTAMSAPI    = "supportedTAMSAPI"
-	schemaStateFailureCountKey     = "failureCount"
-	schemaStateFailedGeneration    = "failedGeneration"
-	schemaStateFailedVersion       = "failedVersion"
-	schemaStateFailedJobUID        = "failedJobUID"
-	schemaStateFailedAtKey         = "failedAt"
-	schemaJobCleanupRequeueAfter   = 2 * time.Second
+	schemaStateAppliedVersionKey = "appliedVersion"
+	schemaStateLastAppliedAtKey  = "lastAppliedAt"
+	schemaStateJobUIDKey         = "jobUID"
+	schemaStateFixturesKey       = "fixturesApplied"
+	schemaStateSupportedTAMSAPI  = "supportedTAMSAPI"
+	schemaStateFailureCountKey   = "failureCount"
+	schemaStateFailedGeneration  = "failedGeneration"
+	schemaStateFailedVersion     = "failedVersion"
+	schemaStateFailedJobUID      = "failedJobUID"
+	schemaStateFailedAtKey       = "failedAt"
+	schemaJobCleanupRequeueAfter = 2 * time.Second
 )
 
 type SchemaResult struct {
@@ -116,7 +115,7 @@ func schemaStateHasAppliedVersion(state *corev1.ConfigMap) bool {
 }
 
 func schemaStateMatchesTarget(state *corev1.ConfigMap, target schemabundle.Target) bool {
-	return state != nil && state.Data[schemaStateAppliedVersionKey] == target.Version && state.Data[schemaStateDatabaseRevisionKey] == target.DatabaseRevision
+	return state != nil && state.Data[schemaStateAppliedVersionKey] == target.Version
 }
 
 func schemaManagedObjects(state *corev1.ConfigMap, stateFound bool) []client.Object {
@@ -475,12 +474,11 @@ func (s *SchemaController) schemaStateConfigMap(tamoss *tamossv1alpha1.Tamoss, j
 			Annotations: schemaStateAnnotations(previous),
 		},
 		Data: map[string]string{
-			schemaStateAppliedVersionKey:   s.Target.Version,
-			schemaStateDatabaseRevisionKey: s.Target.DatabaseRevision,
-			schemaStateLastAppliedAtKey:    time.Now().UTC().Format(time.RFC3339),
-			schemaStateJobUIDKey:           string(job.UID),
-			schemaStateFixturesKey:         fmt.Sprintf("%t", fixturesApplied),
-			schemaStateSupportedTAMSAPI:    s.Target.TAMSAPI,
+			schemaStateAppliedVersionKey: s.Target.Version,
+			schemaStateLastAppliedAtKey:  time.Now().UTC().Format(time.RFC3339),
+			schemaStateJobUIDKey:         string(job.UID),
+			schemaStateFixturesKey:       fmt.Sprintf("%t", fixturesApplied),
+			schemaStateSupportedTAMSAPI:  s.Target.TAMSAPI,
 		},
 	}
 }

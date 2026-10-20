@@ -153,7 +153,7 @@ def test_numeric_bounds_migration_is_atomic_and_retryable(migration_database) ->
     def fail_after_conversion(
         conn, cursor, statement, parameters, context, executemany
     ):
-        if statement == "ANALYZE tamoss_segments":
+        if statement.startswith("ANALYZE tamoss_segments"):
             raise RuntimeError("Interrupted after type conversion")
 
     event.listen(Engine, "before_cursor_execute", fail_after_conversion)
@@ -186,12 +186,11 @@ def test_fresh_install_has_numeric_bounds(migration_database) -> None:
     )
 
 
-def test_statistics_upgrade_repairs_owned_gin_tables_without_rewriting_media(
+def test_upgrade_repairs_only_owned_gin_table_statistics(
     migration_database,
 ) -> None:
     connection, config = migration_database
     _seed_previous_schema(connection, config)
-    command.upgrade(config, "20260924_0008")
     tables = (
         "tamoss_storage_backends",
         "tamoss_sources",
@@ -207,8 +206,7 @@ def test_statistics_upgrade_repairs_owned_gin_tables_without_rewriting_media(
             (table,),
         )
     before = connection.execute(
-        "SELECT pg_relation_filenode('tamoss_segments'), "
-        "(SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s)"
+        "SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s"
     ).fetchone()
 
     command.upgrade(config, "head")
@@ -225,8 +223,7 @@ def test_statistics_upgrade_repairs_owned_gin_tables_without_rewriting_media(
     )
     assert (
         connection.execute(
-            "SELECT pg_relation_filenode('tamoss_segments'), "
-            "(SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s)"
+            "SELECT jsonb_agg(to_jsonb(s)) FROM tamoss_segments s"
         ).fetchone()
         == before
     )
@@ -240,32 +237,3 @@ def test_statistics_upgrade_repairs_owned_gin_tables_without_rewriting_media(
         command.upgrade(config, "head")
     finally:
         event.remove(Engine, "before_cursor_execute", reject_analysis)
-
-
-def test_statistics_upgrade_failure_preserves_revision_and_can_be_retried(
-    migration_database,
-) -> None:
-    connection, config = migration_database
-    _seed_previous_schema(connection, config)
-    command.upgrade(config, "20260924_0008")
-
-    def interrupt_analysis(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().startswith("ANALYZE"):
-            raise RuntimeError("Interrupted statistics maintenance")
-
-    event.listen(Engine, "before_cursor_execute", interrupt_analysis)
-    try:
-        with pytest.raises(RuntimeError, match="Interrupted statistics maintenance"):
-            command.upgrade(config, "head")
-    finally:
-        event.remove(Engine, "before_cursor_execute", interrupt_analysis)
-    assert (
-        connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        == "20260924_0008"
-    )
-    assert connection.execute("SELECT count(*) FROM tamoss_segments").fetchone()[0] == 3
-    command.upgrade(config, "head")
-    assert (
-        connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        == CURRENT_SCHEMA_REVISION
-    )
