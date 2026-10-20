@@ -77,7 +77,8 @@ jobs:
 
       - name: Render remote environment overlay
         run: |
-          export TAMOSS_VERSION="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["version"])')"
+          TAMOSS_VERSION="$(python3 -c 'import json; print(json.load(open("operator/compatibility.yaml"))["releases"][-1]["version"])')"
+          export TAMOSS_VERSION
           python3 .github/scripts/release-metadata.py "$TAMOSS_VERSION"
           environment="ci-single-server"
           rm -rf "deploy/environments/${environment}"
