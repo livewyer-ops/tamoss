@@ -77,7 +77,7 @@ jobs:
 
       - name: Render remote environment overlay
         env:
-          TAMOSS_VERSION: 8.2.0-oss2-rc3
+          TAMOSS_VERSION: 8.2.0-oss2
         run: |
           python3 .github/scripts/release-metadata.py "$TAMOSS_VERSION"
           environment="ci-single-server"

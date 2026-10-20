@@ -4,6 +4,187 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## Unreleased
+
+## 8.2.0-oss2
+
+Second stable TAMOSS release implementing BBC TAMS 8.2.
+
+### Added
+
+- Select each Tamoss instance's release through `spec.version`. Operator updates
+  preserve pinned instance images and schema targets; `status.currentVersion`
+  records the last completed release. Explicit component overrides remain available.
+- Inherit installation defaults while preserving explicit overrides, distinct
+  instance hostnames and shared authentication. Track applied defaults revisions.
+- Support AWS web identity for the default external S3 media backend in API and
+  worker workloads, including operator configuration. Additional backends, managed
+  RustFS and database backup credentials continue to use Secrets.
+- Publish the instance release catalogue and tested platform dependency pins
+  alongside the install manifest and immutable release record.
+
+### Fixed
+
+- Validate resource identifiers, JSON types, raw codec metadata and Flow
+  replacements consistently against BBC TAMS 8.2. Preserve response-field
+  omission and return 404 for unset bit-rate properties.
+- Preserve large Segment timestamps with exact numeric database bounds.
+  Limit Segment paging timeranges to the returned page without losing precision
+  or boundary inclusivity.
+- Reject invalid Segment registrations without changing stored Objects or later
+  entries in the batch. Validate ranges after applying timestamp offsets.
+- Emit Segment-deletion webhooks during full Flow deletion and retain collection
+  filters until completion. Retry HTTP 401 and 403 within the existing retry limit.
+- Play ISO segments with their initialisation Objects. Start playback and replay
+  at the first sample when media begins after zero.
+- Fix oversized playback response headers and long-filter pagination failures.
+  Bound collection traversal and HTTP method metric labels.
+- Run database maintenance when the Alembic revision changes, including on
+  installations already using the current product schema.
+- Validate platform Helm releases before applying changes. Wait for RustFS to
+  observe its updated Tenant configuration before advancing the upgrade.
+- Enable TLS routing for Traefik ingress resources.
+
+### Changed
+
+- Compose each instance as a Kustomize directory and update installation and
+  upgrade commands accordingly.
+- Update the platform baseline to Authentik 2026.2.7, CNPG 1.30.0,
+  PostgreSQL 18.6, Traefik 3.7.13 and cert-manager 1.21.2.
+- Update RustFS to 1.0.0 while retaining RustFS operator 0.0.1.
+  Preserve stored checksums during media copies.
+- Update PyJWT to 2.15.1, Mako to 1.4.2, virtualenv to 21.7.13,
+  brace-expansion to 2.1.7 and source-map-js to 1.2.2. Build the operator and
+  Console API with Go 1.27.2 and golang.org/x/net 0.60.0; use golangci-lint
+  2.14.0 to support the updated compiler. Enforce dependency advisory mitigations
+  during audits.
+- Include patch updates to boto3 and botocore 1.43.110, cryptography 50.0.2,
+  httpx2 and httpcore2 2.13.1, Ruff 0.16.10, Vite 8.3.4, its React plugin 6.1.2,
+  Biome 2.5.15, Node types 26.6.4, Gomega 1.43.1 and Gateway API 1.6.3.
+  Refresh the pinned CodeQL, artifact upload, Buildx and prek actions.
+
+### Upgrade notes
+
+Web identity adds optional `credentialSource` fields to the Tamoss and
+StorageBackend CRDs, with no database migration. Apply the updated CRDs and
+operator, then select a runtime containing web identity support before enabling
+the option. Existing static-key installations retain their behaviour without
+manifest changes. Switching credentials preserves backend IDs and media; restore
+Secret mode before downgrading to a release without this option. See
+[Configure S3 web identity](docs/operations/s3-web-identity.md).
+
+The `8.2.0-oss2` release advances the schema from `8.2.0-oss1` to
+`8.2.0-oss2`. Published `8.2.0-oss2-rc2` uses the preceding schema and follows
+the same migration path. Upgrade older installations through the predecessors
+declared in `operator/compatibility.yaml`.
+
+Alembic revision `20260924_0008` follows `20260810_0007` and converts Segment
+timestamp bounds from `BIGINT` to `NUMERIC`. PostgreSQL rewrites the Segment
+table and its indexes and refreshes statistics. Reserve a maintenance window
+and enough temporary database space; duration depends on Segment volume.
+Existing values convert without recalculation, and media objects and checksums
+are unchanged. Follow the [upgrade procedure](docs/operations/upgrades.md#upgrade-sequence).
+
+The upgrade automatically refreshes PostgreSQL statistics for TAMOSS tables.
+No manual statistics maintenance is required. Installations that have already
+completed the Segment timestamp conversion do not repeat it.
+
+Generated TAMOSS RustFS credentials need no rotation. For inter-node
+authentication, RustFS 1.0.0 requires a valid explicit RPC secret if either
+root credential uses the public `rustfsadmin` default.
+Check custom credentials before upgrading: invalid credentials can interrupt
+storage during rollout. Correct the configuration to resume the upgrade;
+TAMOSS does not replace user-owned Secrets.
+
+The embedded Authentik outpost updates with the server. Authentik-managed
+outposts update through their native integration; manually deployed outposts
+must be updated separately.
+
+Default TAMOSS Traefik values require no changes. If you customise logging or
+file-provider settings, follow the
+[Traefik chart 41 upgrade notes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).
+
+Default cert-manager values require no changes. For custom overrides:
+
+- Remove cert-manager `prometheus.servicemonitor.targetPort`,
+  `prometheus.servicemonitor.path` and `prometheus.podmonitor.path` overrides.
+  The metrics port is now `http-metrics`.
+- Issuers that request tokens for the cert-manager controller ServiceAccount
+  need an explicit Role/RoleBinding or a dedicated ServiceAccount. Custom
+  tooling that creates ACME Challenges or Orders needs explicit permissions.
+  The default TAMOSS issuers do not require these permissions.
+
+Pin existing instances explicitly to `8.2.0-oss1` or `8.2.0-oss2-rc2` before
+selecting the next release. Unversioned resources keep their workloads running
+and report `VersionRequired` until pinned. Remove unwanted component overrides
+once, including PostgreSQL defaults persisted by the previous CRD, to follow
+the selected release.
+
+The final Alembic revision is `20261019_0009`. Schema downgrades are unsupported;
+recover a completed upgrade by restoring verified database and storage backups
+into a matching installation. Platform failures stop the upgrade without
+attempting an automatic rollback.
+
+Follow the [upgrade procedure](docs/operations/upgrades.md) for sequencing and
+recovery. Deployments with an additional Nginx gateway must also apply the
+[pagination response-header settings](docs/operations/troubleshooting.md#paginated-listings-return-502-through-a-proxy).
+
+## 8.2.0-oss2-rc2 - 2026-09-23
+
+Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
+
+- Validate resource identifiers, codec filters and JSON body types consistently.
+  Reject exclusive instantaneous timeranges before selection or deletion, and
+  keep omitted storage response fields omitted during serialisation.
+- Validate HTTP responses against the unmodified BBC schemas and report
+  unexercised response branches separately from published OpenAPI alignment.
+  Unset bit-rate properties now return 404; see the [API reference](docs/reference/api.md).
+- Keep rejected Segment registrations from changing Objects or later entries in
+  the same batch. Check that Segment ranges fit within their Objects after
+  applying timestamp offsets, including when reusing media.
+- Emit `flows/segments_deleted` webhooks during full Flow deletion, retaining
+  collection filters until deletion completes. Retry HTTP 401 and 403 responses
+  within the existing webhook attempt limit and backoff.
+- Play `video/iso.segment` and `audio/iso.segment` media through the
+  initialisation-aware HLS preview, rejecting media without an init Object.
+  Start playback and replay at the first sample when media begins after zero.
+- Publish the tested platform dependency pins with each release. Update to
+  Authentik 2026.2.7, CNPG 1.30.0, PostgreSQL 18.6, Traefik 3.7.13 and
+  cert-manager 1.21.2 through the normal platform workflow.
+- Update RustFS to 1.0.0 while retaining operator 0.0.1. Preserve stored checksums
+  when copying media; existing objects need no checksum conversion.
+- Refresh the application dependencies and build toolchains. Platform updates
+  stop on failure without attempting to roll back database migrations.
+
+These fixes retain schema revision `8.2.0-oss1`. Upgrade `8.1.0-oss6`
+deployments to `8.2.0-oss1` before applying this update.
+
+### Upgrade notes
+
+- RustFS upgrades from `1.0.0-beta.3` to `1.0.0`. Rotate credentials still using
+  `rustfsadmin` before upgrading: the new runtime rejects those legacy defaults.
+  Generated TAMOSS credentials do not need replacement. Update any explicit
+  `spec.backends.s3.rustfsOperator.image` override to `rustfs/rustfs:1.0.0`.
+  RustFS 1.0.0 rejects unsigned `x-amz-*` checksum headers added to presigned
+  URLs, including `x-amz-checksum-mode: ENABLED`; include them when signing.
+  Presigned uploads also support `Content-MD5`.
+- Authentik updates directly from `2026.2.3` to `2026.2.7`, using chart
+  `2026.2.3` and its native image override. Its PostgreSQL database remains on
+  major 17. Separate outposts must match the server version.
+- Review custom Traefik logging values and file-provider content against the
+  [chart 41 notes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).
+  Review custom cert-manager monitoring values and controller service-account
+  permissions against the [1.21 notes](https://github.com/cert-manager/cert-manager/releases/tag/v1.21.0).
+- PostgreSQL 18.6 fixes incorrect row estimates after parallel GIN index
+  creation. When upgrading from an earlier 18.x release, inspect tables with
+  GIN indexes using the query in the
+  [PostgreSQL release notes](https://www.postgresql.org/docs/release/18.6/).
+  Run `ANALYZE schema_name.table_name` for incorrect estimates, including
+  `Infinity` or `NaN`.
+
+Follow the [upgrade guide](docs/operations/upgrades.md) for backup, sequencing,
+validation and recovery procedures.
+
 ## 8.2.0-oss2-rc1 - 2026-09-15
 
 Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
@@ -53,6 +234,9 @@ declarative, Kubernetes-managed ingest.
   migration. Existing 8.2 candidates retain the same schema revision.
 - Browser upload controls are replaced by API-client or managed `IngestRun`
   workflows.
+- TAMSin `8.2.0-in2` corrects rendered Segment timing. Re-ingest affected media
+  as a new run rather than editing or replaying an existing run; stored Flows
+  are unchanged.
 
 ## 8.1.0-oss6 - 2026-08-08
 
