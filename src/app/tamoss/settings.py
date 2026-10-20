@@ -137,12 +137,14 @@ def _s3_backend_from_env() -> StorageBackendSettings | None:
     public_endpoint_url = _env_url("TAMOSS_S3_PUBLIC_ENDPOINT", endpoint_url)
     access_key = _env_str("TAMOSS_S3_ACCESS_KEY")
     secret_key = _env_str("TAMOSS_S3_SECRET_KEY")
-    if (not access_key or not secret_key) and (
-        access_key
-        or secret_key
-        or not (_env_str("TAMOSS_S3_ENDPOINT") or "").strip()
-        or not aws_web_identity_configured()
-    ):
+    static_credentials = bool(access_key and secret_key)
+    web_identity = (
+        not access_key
+        and not secret_key
+        and bool((_env_str("TAMOSS_S3_ENDPOINT") or "").strip())
+        and aws_web_identity_configured()
+    )
+    if not static_credentials and not web_identity:
         return None
 
     region = _env_str("TAMOSS_S3_REGION", "us-east-1")

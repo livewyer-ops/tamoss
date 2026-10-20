@@ -108,6 +108,8 @@ Local builds use `spec.version: dev`. `task kind:up` generates a separate
 catalogue with the locally built operand tag and schema target. Published
 installations use exact releases as described in the
 [installation guide](../docs/operations/install.md).
+The resources in `config/samples/` target local builds; replace `dev` with a
+supported release when adapting them for a published installation.
 
 ## License
 

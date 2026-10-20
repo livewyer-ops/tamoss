@@ -7,4 +7,6 @@ metadata:
   name: tamoss-minimal
   namespace: tams
 spec:
+  # dev selects locally built images; published installs require an exact release.
   version: dev
+  profile: local-kind
