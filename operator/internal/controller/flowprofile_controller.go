@@ -29,6 +29,7 @@ import (
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/resource"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
@@ -461,7 +462,7 @@ func flowProfileJob(profile *tamossv1alpha1.FlowProfile, tamoss *tamossv1alpha1.
 	}, Spec: batchv1.JobSpec{
 		BackoffLimit:          &backoff,
 		ActiveDeadlineSeconds: ptr.To[int64](300),
-		Template:              corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec},
+		Template:              corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: workload_renderer.WithDatabaseTLS(podSpec, tamoss)},
 	}}
 }
 
@@ -480,6 +481,9 @@ func flowProfileJobInputHash(tamoss *tamossv1alpha1.Tamoss, resolved resolvedFlo
 		db.Auth.SecretKeys.Password,
 	)
 	values = append(values, args...)
+	if db.TLS != nil {
+		values = append(values, "verify-full", db.TLS.CAConfigMap.Name, db.TLS.CAConfigMap.Key)
+	}
 	hash := sha256.Sum256([]byte(strings.Join(values, "\x00")))
 	return fmt.Sprintf("%x", hash[:])
 }

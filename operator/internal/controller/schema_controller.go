@@ -20,6 +20,7 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
 	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
@@ -326,14 +327,16 @@ func schemaJobPodOwned(pod *corev1.Pod) bool {
 func schemaJobTemplateDrifted(live, desired *batchv1.Job) bool {
 	liveContainers := live.Spec.Template.Spec.Containers
 	desiredContainers := desired.Spec.Template.Spec.Containers
-	if len(liveContainers) != len(desiredContainers) {
+	if len(liveContainers) != len(desiredContainers) ||
+		!apiequality.Semantic.DeepEqual(live.Spec.Template.Spec.Volumes, desired.Spec.Template.Spec.Volumes) {
 		return true
 	}
 	for index := range desiredContainers {
 		if liveContainers[index].Image != desiredContainers[index].Image ||
 			!slices.Equal(liveContainers[index].Command, desiredContainers[index].Command) ||
 			!slices.Equal(liveContainers[index].Args, desiredContainers[index].Args) ||
-			!apiequality.Semantic.DeepEqual(liveContainers[index].Env, desiredContainers[index].Env) {
+			!apiequality.Semantic.DeepEqual(liveContainers[index].Env, desiredContainers[index].Env) ||
+			!apiequality.Semantic.DeepEqual(liveContainers[index].VolumeMounts, desiredContainers[index].VolumeMounts) {
 			return true
 		}
 	}
@@ -700,7 +703,7 @@ func (s *SchemaController) schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, inc
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: schemaLabels(tamoss),
 				},
-				Spec: corev1.PodSpec{
+				Spec: workload_renderer.WithDatabaseTLS(corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:            "schema-migrate",
@@ -710,7 +713,7 @@ func (s *SchemaController) schemaMigrationJob(tamoss *tamossv1alpha1.Tamoss, inc
 						Args:            args,
 						Env:             schemaMigrationEnv(tamoss),
 					}},
-				},
+				}, tamoss),
 			},
 		},
 	}

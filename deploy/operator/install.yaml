@@ -5619,6 +5619,43 @@ spec:
                           port:
                             default: "5432"
                             type: string
+                          tls:
+                            description: TLS enables certificate and hostname verification
+                              for every database consumer.
+                            properties:
+                              caConfigMap:
+                                description: CAConfigMap selects the PEM CA bundle
+                                  in the Tamoss namespace.
+                                properties:
+                                  key:
+                                    description: The key to select.
+                                    type: string
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                  optional:
+                                    description: Specify whether the ConfigMap or
+                                      its key must be defined
+                                    type: boolean
+                                required:
+                                - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                            required:
+                            - caConfigMap
+                            type: object
+                            x-kubernetes-validations:
+                            - message: database TLS requires a non-optional CA ConfigMap
+                                name and key
+                              rule: has(self.caConfigMap.name) && self.caConfigMap.name.size()
+                                > 0 && self.caConfigMap.key.size() > 0 && (!has(self.caConfigMap.optional)
+                                || !self.caConfigMap.optional)
                         type: object
                       providedBy:
                         enum:

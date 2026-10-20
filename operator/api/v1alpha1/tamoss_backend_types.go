@@ -39,6 +39,14 @@ type DBExternalSpec struct {
 	//+kubebuilder:validation:MinLength=1
 	Database string              `json:"database,omitempty"`
 	Auth     SecretReferenceSpec `json:"auth,omitempty"`
+	// TLS enables certificate and hostname verification for every database consumer.
+	TLS *DBTLSSpec `json:"tls,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.caConfigMap.name) && self.caConfigMap.name.size() > 0 && self.caConfigMap.key.size() > 0 && (!has(self.caConfigMap.optional) || !self.caConfigMap.optional)",message="database TLS requires a non-optional CA ConfigMap name and key"
+type DBTLSSpec struct {
+	// CAConfigMap selects the PEM CA bundle in the Tamoss namespace.
+	CAConfigMap corev1.ConfigMapKeySelector `json:"caConfigMap"`
 }
 
 type DBBundledSpec struct {
