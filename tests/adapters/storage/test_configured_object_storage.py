@@ -13,6 +13,7 @@ from tamoss.domain.model import ObjectGetUrlRequest, StorageBackend
 from tamoss.settings import Settings
 
 from tests.support.s3_storage import (
+    checksum_value,
     empty_and_delete_bucket,
     ensure_bucket,
     s3_backend_record,
@@ -110,6 +111,99 @@ def test_s3_write_read_and_delete_are_scoped_to_configured_backend(
     assert object_storage.read(object_id, backend=s3_backend) is None
 
 
+def test_signed_reads_return_native_checksums_for_mixed_objects(
+    object_storage: ConfiguredObjectStorage,
+    s3_backend: StorageBackend,
+) -> None:
+    body = b"media with stored checksums\n"
+    client = s3_client(s3_backend)
+    algorithms = ("SHA256", "SHA1")
+    for algorithm in algorithms:
+        client.put_object(
+            Bucket=s3_backend.bucket_name,
+            Key=algorithm,
+            Body=body,
+            **{f"Checksum{algorithm}": checksum_value(body, algorithm.lower())},
+        )
+
+    urls = object_storage.build_get_urls_batch(
+        ObjectGetUrlRequest(object_id=algorithm, backend=s3_backend)
+        for algorithm in algorithms
+    )
+    for algorithm in algorithms:
+        expected = checksum_value(body, algorithm.lower())
+        metadata = client.head_object(
+            Bucket=s3_backend.bucket_name, Key=algorithm, ChecksumMode="ENABLED"
+        )
+        assert metadata[f"Checksum{algorithm}"] == expected
+        get_url = next(
+            item["url"]
+            for item in urls[(s3_backend.id, algorithm)]
+            if item["presigned"]
+        )
+        response = requests.get(get_url, timeout=5)
+        assert response.status_code == 200, response.text
+        assert response.content == body
+        checked = client.get_object(
+            Bucket=s3_backend.bucket_name, Key=algorithm, ChecksumMode="ENABLED"
+        )
+        assert checked[f"Checksum{algorithm}"] == expected
+        assert checked["Body"].read() == body
+
+        bad_key = f"invalid-{algorithm}"
+        with pytest.raises(ClientError) as error:
+            client.put_object(
+                Bucket=s3_backend.bucket_name,
+                Key=bad_key,
+                Body=body,
+                **{f"Checksum{algorithm}": checksum_value(b"wrong", algorithm.lower())},
+            )
+        assert error.value.response["Error"]["Code"] == "BadDigest"
+        assert object_storage.object_metadata(bad_key, backend=s3_backend) is None
+
+
+def test_streamed_copy_preserves_source_checksum_algorithms(
+    object_storage: ConfiguredObjectStorage,
+    s3_backend: StorageBackend,
+) -> None:
+    assert s3_backend.endpoint_url is not None
+    source = replace(s3_backend, endpoint_url=s3_backend.endpoint_url.rstrip("/"))
+    # Distinct endpoint URLs exercise streaming with the same real S3 fixture.
+    destination = replace(
+        source,
+        id=uuid4(),
+        bucket_name=f"tamoss-checksum-copy-{uuid4().hex[:12]}",
+        endpoint_url=f"{source.endpoint_url}/",
+    )
+    ensure_bucket(destination)
+    body = b"copy media and its checksum algorithm\n"
+    try:
+        for algorithm in ("SHA256", "SHA1"):
+            checksum = checksum_value(body, algorithm.lower())
+            s3_client(source).put_object(
+                Bucket=source.bucket_name,
+                Key=algorithm,
+                Body=body,
+                ContentType="video/mp2t",
+                Metadata={"origin": "source"},
+                **{f"Checksum{algorithm}": checksum},
+            )
+            object_storage.copy(
+                algorithm, source_backend=source, destination_backend=destination
+            )
+            response = s3_client(destination).get_object(
+                Bucket=destination.bucket_name,
+                Key=algorithm,
+                ChecksumMode="ENABLED",
+            )
+            assert response["Body"].read() == body
+            assert response[f"Checksum{algorithm}"] == checksum
+            assert response["ContentType"] == "video/mp2t"
+            assert response["Metadata"] == {"origin": "source"}
+    finally:
+        empty_and_delete_bucket(destination)
+
+
 def test_managed_multipart_copy_preserves_bytes_and_metadata(
     object_storage, s3_backend
 ):
@@ -145,3 +239,63 @@ def test_managed_multipart_copy_preserves_bytes_and_metadata(
         assert metadata["Metadata"] == {"origin": "source"}
     finally:
         empty_and_delete_bucket(destination)
+
+
+@pytest.mark.tamoss_security
+def test_rustfs_presigned_checksum_headers_require_signing(
+    s3_backend: StorageBackend,
+) -> None:
+    client = s3_client(s3_backend)
+    body = b"signed checksum evidence\n"
+    checksum = checksum_value(body, "sha256")
+    params = {"Bucket": s3_backend.bucket_name, "Key": "signed"}
+    put_url = client.generate_presigned_url(
+        "put_object", Params={**params, "ChecksumSHA256": checksum}, ExpiresIn=120
+    )
+    uploaded = requests.put(
+        put_url, data=body, headers={"x-amz-checksum-sha256": checksum}, timeout=5
+    )
+    assert uploaded.status_code == 200, uploaded.text
+
+    for operation, method in (
+        ("get_object", requests.get),
+        ("head_object", requests.head),
+    ):
+        checked_url = client.generate_presigned_url(
+            operation, Params={**params, "ChecksumMode": "ENABLED"}, ExpiresIn=120
+        )
+        checked = method(
+            checked_url, headers={"x-amz-checksum-mode": "ENABLED"}, timeout=5
+        )
+        assert checked.status_code == 200, checked.text
+        assert checked.headers["x-amz-checksum-sha256"] == checksum
+        if operation == "get_object":
+            assert checked.content == body
+
+        plain_url = client.generate_presigned_url(
+            operation, Params=params, ExpiresIn=120
+        )
+        denied = method(
+            plain_url, headers={"x-amz-checksum-mode": "ENABLED"}, timeout=5
+        )
+        assert denied.status_code == 403, denied.text
+        assert method(plain_url, timeout=5).status_code == 200
+
+    for name, value in (
+        ("x-amz-checksum-sha256", checksum),
+        ("x-amz-checksum-sha1", checksum_value(body, "sha1")),
+        ("x-amz-meta-unapproved", "probe"),
+        ("x-amz-tagging", "probe=true"),
+        ("x-amz-acl", "private"),
+    ):
+        put_url = client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": s3_backend.bucket_name, "Key": name},
+            ExpiresIn=120,
+        )
+        denied = requests.put(put_url, data=body, headers={name: value}, timeout=5)
+        assert denied.status_code == 403, denied.text
+        assert "AccessDenied" in denied.text
+
+    stored = client.list_objects_v2(Bucket=s3_backend.bucket_name)
+    assert [item["Key"] for item in stored["Contents"]] == ["signed"]

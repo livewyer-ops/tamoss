@@ -50,7 +50,7 @@ type DBCNPGSpec struct {
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:default=1
 	Instances int32 `json:"instances,omitempty"`
-	//+kubebuilder:default="18"
+	//+kubebuilder:default="18.6"
 	PostgresVersion string                      `json:"postgresVersion,omitempty"`
 	Storage         BackendStorageSpec          `json:"storage,omitempty"`
 	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`

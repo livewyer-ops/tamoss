@@ -383,7 +383,7 @@ task_apply_env_platform() {
   task_step "Platform: apply Helmfile releases" \
     task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
       sync \
-      --sync-args "--server-side=true --rollback-on-failure" \
+      --sync-args "--server-side=true" \
       --wait \
       --wait-for-jobs
 

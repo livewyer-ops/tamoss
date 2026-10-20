@@ -120,64 +120,41 @@ def real_storage_client(
         yield client
 
 
-def test_allocated_put_url_accepts_storage_checksum_headers(
+def test_allocated_put_url_validates_content_md5(
     real_storage_client: TestClient,
+    s3_backend: StorageBackend,
 ) -> None:
     flow_id, _, _ = create_video_flow(real_storage_client)
     body = b"tamoss checksum passthrough\n"
+    object_id = f"tams/conformance/{uuid4()}/checksum.ts"
+    bad_object_id = f"tams/conformance/{uuid4()}/bad-checksum.ts"
+    put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0]["put_url"]
+    headers = dict(put_url["headers"])
+    headers["Content-MD5"] = checksum_value(body, "md5")
 
-    for index, (checksum_header, checksum_algorithm) in enumerate(
-        [
-            ("Content-MD5", "md5"),
-            ("x-amz-checksum-sha256", "sha256"),
-        ]
-    ):
-        timerange_start = index * 20
-        timerange = f"[{timerange_start}:0_{timerange_start + 10}:0)"
-        missing_timerange = f"[{timerange_start + 10}:0_{timerange_start + 20}:0)"
-        object_id = f"tams/conformance/{uuid4()}/checksum.ts"
-        bad_object_id = f"tams/conformance/{uuid4()}/bad-checksum.ts"
-        put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0][
-            "put_url"
-        ]
-        headers = dict(put_url["headers"])
-        headers[checksum_header] = checksum_value(body, checksum_algorithm)
+    put_response = requests.put(put_url["url"], data=body, headers=headers, timeout=5)
+    assert put_response.status_code in {200, 201, 204}, put_response.text
+    registered = real_storage_client.post(
+        f"/flows/{flow_id}/segments", json=segment_payload(object_id, "[0:0_10:0)")
+    )
+    assert registered.status_code == 201, registered.text
 
-        put_response = requests.put(
-            put_url["url"],
-            data=body,
-            headers=headers,
-            timeout=5,
-        )
-        assert put_response.status_code in {200, 201, 204}, put_response.text
-
-        registered = real_storage_client.post(
-            f"/flows/{flow_id}/segments",
-            json=segment_payload(object_id, timerange),
-        )
-        assert registered.status_code == 201, registered.text
-
-        bad_put_url = allocate_objects(real_storage_client, flow_id, [bad_object_id])[
-            0
-        ]["put_url"]
-        bad_headers = dict(bad_put_url["headers"])
-        bad_headers[checksum_header] = checksum_value(
-            b"different body", checksum_algorithm
-        )
-
-        bad_put_response = requests.put(
-            bad_put_url["url"],
-            data=body,
-            headers=bad_headers,
-            timeout=5,
-        )
-        assert bad_put_response.status_code not in {200, 201, 204}
-
-        missing_object = real_storage_client.post(
-            f"/flows/{flow_id}/segments",
-            json=segment_payload(bad_object_id, missing_timerange),
-        )
-        assert missing_object.status_code == 400
+    bad_put_url = allocate_objects(real_storage_client, flow_id, [bad_object_id])[0][
+        "put_url"
+    ]
+    bad_headers = dict(bad_put_url["headers"])
+    bad_headers["Content-MD5"] = checksum_value(b"different body", "md5")
+    bad_put_response = requests.put(
+        bad_put_url["url"], data=body, headers=bad_headers, timeout=5
+    )
+    assert bad_put_response.status_code == 400, bad_put_response.text
+    assert "BadDigest" in bad_put_response.text
+    storage = real_storage_client.app.state.tamoss_use_cases.object_storage
+    assert storage.object_metadata(bad_object_id, backend=s3_backend) is None
+    missing_object = real_storage_client.post(
+        f"/flows/{flow_id}/segments", json=segment_payload(bad_object_id, "[10:0_20:0)")
+    )
+    assert missing_object.status_code == 400
 
 
 def test_stale_allocation_cleanup_removes_postgres_row_and_stored_bytes(

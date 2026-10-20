@@ -505,7 +505,10 @@ def test_partial_batch_deletion_fails_and_can_be_retried(monkeypatch, deleted) -
     assert client.delete_objects.call_count == 2
 
 
-def test_copy_streams_between_different_s3_endpoints(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "algorithm", [None, "SHA256", "SHA1", "CRC64NVME", "CRC32C", "CRC32"]
+)
+def test_copy_streams_between_different_s3_endpoints(monkeypatch, algorithm) -> None:
     uploaded: list[tuple[str, str, bytes, dict | None]] = []
     source = _s3_backend()
     destination = replace(
@@ -518,11 +521,16 @@ def test_copy_streams_between_different_s3_endpoints(monkeypatch) -> None:
 
     class SourceS3Client:
         def get_object(self, **kwargs):
-            assert kwargs == {"Bucket": "tamoss-test", "Key": "media/object.ts"}
+            assert kwargs == {
+                "Bucket": "tamoss-test",
+                "Key": "media/object.ts",
+                "ChecksumMode": "ENABLED",
+            }
             return {
                 "Body": io.BytesIO(b"copied-bytes"),
                 "ContentType": "video/mp2t",
                 "Metadata": {"origin": "primary"},
+                **({f"Checksum{algorithm}": "source-checksum"} if algorithm else {}),
             }
 
     class DestinationS3Client:
@@ -560,6 +568,7 @@ def test_copy_streams_between_different_s3_endpoints(monkeypatch) -> None:
             {
                 "ContentType": "video/mp2t",
                 "Metadata": {"origin": "primary"},
+                **({"ChecksumAlgorithm": algorithm} if algorithm else {}),
             },
         )
     ]

@@ -4392,7 +4392,7 @@ spec:
                                 type: boolean
                             type: object
                           postgresVersion:
-                            default: "18"
+                            default: "18.6"
                             type: string
                           resources:
                             description: ResourceRequirements describes the compute

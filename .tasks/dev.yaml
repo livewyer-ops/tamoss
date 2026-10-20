@@ -50,8 +50,8 @@ tasks:
       POSTGRES_USER: '{{default "tams" (env "POSTGRES_USER")}}'
       POSTGRES_PASSWORD: '{{default "tams" (env "POSTGRES_PASSWORD")}}'
       TAMOSS_S3_ENDPOINT: '{{default "http://127.0.0.1:9000" (env "TAMOSS_S3_ENDPOINT")}}'
-      TAMOSS_S3_ACCESS_KEY: '{{default "rustfsadmin" (env "TAMOSS_S3_ACCESS_KEY")}}'
-      TAMOSS_S3_SECRET_KEY: '{{default "rustfsadmin" (env "TAMOSS_S3_SECRET_KEY")}}'
+      TAMOSS_S3_ACCESS_KEY: '{{default "tamoss-local" (env "TAMOSS_S3_ACCESS_KEY")}}'
+      TAMOSS_S3_SECRET_KEY: '{{default "tamoss-local-secret" (env "TAMOSS_S3_SECRET_KEY")}}'
     preconditions:
       - sh: command -v uv
         msg: "uv binary not found"

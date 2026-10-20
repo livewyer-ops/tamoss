@@ -93,8 +93,8 @@ tasks:
     vars:
       DB_URL: '{{default "postgresql://tams:tams@127.0.0.1:55432/tams" .TAMOSS_TEST_DB_URL}}'
       S3_ENDPOINT: '{{default "http://127.0.0.1:9000" (default (env "TAMOSS_TEST_S3_ENDPOINT") (env "TAMOSS_S3_ENDPOINT"))}}'
-      S3_ACCESS_KEY: '{{default "rustfsadmin" (default (env "BUCKET_USER") (env "TAMOSS_S3_ACCESS_KEY"))}}'
-      S3_SECRET_KEY: '{{default "rustfsadmin" (default (env "BUCKET_PASSWORD") (env "TAMOSS_S3_SECRET_KEY"))}}'
+      S3_ACCESS_KEY: '{{default "tamoss-local" (default (env "BUCKET_USER") (env "TAMOSS_S3_ACCESS_KEY"))}}'
+      S3_SECRET_KEY: '{{default "tamoss-local-secret" (default (env "BUCKET_PASSWORD") (env "TAMOSS_S3_SECRET_KEY"))}}'
     env:
       TAMOSS_TEST_DB_URL: "{{.DB_URL}}"
       TAMOSS_TEST_S3_ENDPOINT: "{{.S3_ENDPOINT}}"
@@ -224,8 +224,8 @@ tasks:
     silent: true
     vars:
       S3_ENDPOINT: '{{default "http://127.0.0.1:9000" (default (env "TAMOSS_TEST_S3_ENDPOINT") (env "TAMOSS_S3_ENDPOINT"))}}'
-      S3_ACCESS_KEY: '{{default "rustfsadmin" (default (env "BUCKET_USER") (env "TAMOSS_S3_ACCESS_KEY"))}}'
-      S3_SECRET_KEY: '{{default "rustfsadmin" (default (env "BUCKET_PASSWORD") (env "TAMOSS_S3_SECRET_KEY"))}}'
+      S3_ACCESS_KEY: '{{default "tamoss-local" (default (env "BUCKET_USER") (env "TAMOSS_S3_ACCESS_KEY"))}}'
+      S3_SECRET_KEY: '{{default "tamoss-local-secret" (default (env "BUCKET_PASSWORD") (env "TAMOSS_S3_SECRET_KEY"))}}'
     env:
       TAMOSS_TEST_S3_ENDPOINT: "{{.S3_ENDPOINT}}"
       TAMOSS_TEST_S3_ACCESS_KEY: "{{.S3_ACCESS_KEY}}"

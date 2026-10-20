@@ -37,7 +37,7 @@ spec:
     s3:
       providedBy: rustfs-operator
       rustfsOperator:
-        image: rustfs/rustfs:1.0.0-beta.3
+        image: rustfs/rustfs:1.0.0
         env:
           - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
             value: "true"
@@ -94,7 +94,7 @@ spec:
     s3:
       providedBy: rustfs-operator
       rustfsOperator:
-        image: rustfs/rustfs:1.0.0-beta.3
+        image: rustfs/rustfs:1.0.0
         env:
           - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
             value: "true"

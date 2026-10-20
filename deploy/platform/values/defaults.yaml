@@ -55,6 +55,8 @@ authentikChart:
   namespaceOverride: auth
   fullnameOverride: authentik
   global:
+    image:
+      tag: "2026.2.7"
     namespaceOverride: auth
     fullnameOverride: authentik
   authentik:
@@ -98,7 +100,7 @@ traefik:
     replicas: 2
   image:
     repository: traefik
-    tag: v3.7.1
+    tag: v3.7.13
     pullPolicy: IfNotPresent
   ingressClass:
     enabled: true

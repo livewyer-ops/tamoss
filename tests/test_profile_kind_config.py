@@ -12,6 +12,34 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("version", ["18.6", "18.3", "19.6"])
+@pytest.mark.parametrize("kind", ["source", "yaml"])
+def test_cnpg_default_guard_checks_patch_version(
+    tmp_path: Path, version: str, kind: str
+) -> None:
+    source = tmp_path / "operator/api/v1alpha1/tamoss_backend_types.go"
+    source.parent.mkdir(parents=True)
+    source.write_text(f'//+kubebuilder:default="{version}"\nPostgresVersion string\n')
+    (tmp_path / "defaults.yaml").write_text(
+        f'postgresVersion:\n  default: "{version}"\n'
+    )
+    argument = "defaults.yaml" if kind == "yaml" else ""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'. "$1"; task_check_cnpg_postgres_default_{kind} {argument} "18.6"',
+            "bash",
+            str(ROOT / ".tasks/lib/operator_platform.sh"),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == (version == "18.6"), result.stderr
+
+
 def test_profile_registry_selects_kind_configurations() -> None:
     registry = _load_yaml(ROOT / "deploy/profiles.yaml")
     profiles = {item["id"]: item for item in registry["profiles"]}

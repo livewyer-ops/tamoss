@@ -19,7 +19,7 @@ spec:
       providedBy: cnpg
       cnpg:
         instances: 3
-        postgresVersion: "18"
+        postgresVersion: "18.6"
         storage:
           size: 10Gi
         backup:

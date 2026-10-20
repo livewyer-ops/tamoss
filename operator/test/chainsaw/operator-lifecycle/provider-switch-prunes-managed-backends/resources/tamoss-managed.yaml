@@ -19,13 +19,13 @@ spec:
       providedBy: cnpg
       cnpg:
         instances: 1
-        postgresVersion: "18"
+        postgresVersion: "18.6"
         storage:
           size: 10Gi
     s3:
       providedBy: rustfs-operator
       rustfsOperator:
-        image: rustfs/rustfs:1.0.0-beta.3
+        image: rustfs/rustfs:1.0.0
         env:
           - name: RUSTFS_UNSAFE_BYPASS_DISK_CHECK
             value: "true"
