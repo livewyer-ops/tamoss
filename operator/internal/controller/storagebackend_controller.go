@@ -204,6 +204,16 @@ func (r *StorageBackendReconciler) loadStorageBackendTamossStage(ctx context.Con
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendCredentialsStage(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) (reconcileControl, error) {
+	if spec.CredentialSource == tamossv1alpha1.S3CredentialSourceWebIdentity ||
+		(tamoss.UsesS3WebIdentity() && spec.ID == tamossv1alpha1.DefaultStorageBackendID) {
+		if err := validateStorageWebIdentity(tamoss, spec); err != nil {
+			result, statusErr := r.updateStorageBackendStatus(ctx, storageBackend, storageBackendStageStatusInput(spec, false, storageBackendReconcileResult{
+				Reason: operatorstatus.ReasonMissingProviderConfiguration, Message: err.Error(),
+			}))
+			return stopReconcile(result), statusErr
+		}
+		return continueReconcile(), nil
+	}
 	secretReady, reason, message, err := r.storageBackendCredentials(ctx, storageBackend.Namespace, spec)
 	if err != nil {
 		return stopReconcileNow(), err

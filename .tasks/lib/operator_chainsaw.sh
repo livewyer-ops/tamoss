@@ -45,6 +45,10 @@ task_operator_chainsaw_up() {
   task_step "Operator Chainsaw: build API image" \
     docker build -t "$api_image" -f src/app/tamoss/Dockerfile .
 
+  task_step "Operator Chainsaw: build test image" \
+    docker build -t livewyer/tamoss-chainsaw:dev \
+      --build-arg API_IMAGE="$api_image" -f operator/test/chainsaw/Dockerfile .
+
   "$kind_bin" delete cluster --name "$cluster" >/dev/null 2>&1 || true
   task_step "Operator Chainsaw: create Kind cluster" \
     "$kind_bin" create cluster \
@@ -57,6 +61,8 @@ task_operator_chainsaw_up() {
     "$kind_bin" load docker-image "$chainsaw_image" --name "$cluster"
   task_step "Operator Chainsaw: load API image" \
     "$kind_bin" load docker-image "$api_image" --name "$cluster"
+  task_step "Operator Chainsaw: load test image" \
+    "$kind_bin" load docker-image livewyer/tamoss-chainsaw:dev --name "$cluster"
 
   task_operator_chainsaw_apply_platform_prerequisites \
     "$kubeconfig" \

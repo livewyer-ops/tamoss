@@ -25,6 +25,9 @@ spec:
             file: ../../fixtures/assert/postgresql-available.yaml
         - apply:
             file: resources/tamoss-api-bundled.yaml
+        - assert:
+            file: ../../fixtures/assert/rustfs-tenant-present.yaml
+            timeout: 120s
         - patch:
             resource:
               apiVersion: rustfs.com/v1alpha1
@@ -71,3 +74,8 @@ spec:
             for:
               condition:
                 name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=ingest-storagebackends-check
+            container: check
+            tail: 50

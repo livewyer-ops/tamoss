@@ -1,0 +1,35 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: default-media
+(status.observedGeneration == metadata.generation): true
+(status.conditions[?type == 'Ready'] | [0].status): 'True'
+---
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: additional-media
+(status.observedGeneration == metadata.generation): true
+(status.conditions[?type == 'Ready'] | [0].status): 'True'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-api
+(status.observedGeneration == metadata.generation): true
+status:
+  replicas: 1
+  updatedReplicas: 1
+  readyReplicas: 1
+  availableReplicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tamoss-worker
+(status.observedGeneration == metadata.generation): true
+status:
+  replicas: 1
+  updatedReplicas: 1
+  readyReplicas: 1
+  availableReplicas: 1

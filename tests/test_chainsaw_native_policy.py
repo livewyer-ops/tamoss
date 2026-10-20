@@ -93,6 +93,42 @@ def test_missing_operation_file_references_are_rejected(tmp_path: Path) -> None:
     assert any("referenced file does not exist" in failure for failure in failures)
 
 
+def test_embedded_fixture_programmes_are_rejected(tmp_path: Path) -> None:
+    module = _policy_module()
+    resource = tmp_path / "fixture.yaml"
+    resource.write_text(
+        "apiVersion: v1\nkind: ConfigMap\ndata:\n"
+        "  check.py: |\n    print('embedded')\n"
+        "---\napiVersion: v1\nkind: Pod\nspec:\n"
+        "  containers:\n    - name: fixture\n      command:\n"
+        "        - /app/.venv/bin/python\n        - -u\n        - -c\n"
+        "        - print('embedded')\n",
+        encoding="utf-8",
+    )
+
+    failures = module._validate_no_shell_resources(tmp_path)
+
+    assert any("keep fixture programmes in source files" in item for item in failures)
+    assert any("invoke a Python source file" in item for item in failures)
+
+
+def test_fixture_source_entrypoints_are_allowed(tmp_path: Path) -> None:
+    module = _policy_module()
+    resource = tmp_path / "fixture.yaml"
+    resource.write_text(
+        "apiVersion: v1\nkind: Pod\nspec:\n"
+        "  containers:\n    - name: fixture\n      command:\n"
+        "        - /app/.venv/bin/python\n        - /tests/issuer.py\n"
+        "        - -c\n        - fixture.toml\n"
+        "    - name: check\n      command:\n"
+        "        - python\n        - -m\n        - pytest\n"
+        "        - -c\n        - pytest.ini\n",
+        encoding="utf-8",
+    )
+
+    assert module._validate_no_shell_resources(tmp_path) == []
+
+
 def test_kubernetes_orchestration_commands_are_rejected(tmp_path: Path) -> None:
     module = _policy_module()
     path = _write_test(

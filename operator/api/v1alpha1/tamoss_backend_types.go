@@ -173,9 +173,20 @@ type S3BackendSpec struct {
 	Tags map[string]apiextensionsv1.JSON `json:"tags,omitempty"`
 }
 
+type S3CredentialSource string
+
+const (
+	S3CredentialSourceSecret      S3CredentialSource = "secret"
+	S3CredentialSourceWebIdentity S3CredentialSource = "web-identity"
+)
+
+// +kubebuilder:validation:XValidation:rule="!has(self.credentialSource) || self.credentialSource != 'web-identity' || !has(self.auth) || !has(self.auth.existingSecret) || self.auth.existingSecret.size() == 0",message="web-identity must not reference a credentials Secret"
 type S3ExternalSpec struct {
-	Endpoint S3EndpointSpec      `json:"endpoint,omitempty"`
-	Auth     SecretReferenceSpec `json:"auth,omitempty"`
+	// CredentialSource selects static Secret credentials or the workload's web identity.
+	//+kubebuilder:validation:Enum=secret;web-identity
+	CredentialSource S3CredentialSource  `json:"credentialSource,omitempty"`
+	Endpoint         S3EndpointSpec      `json:"endpoint,omitempty"`
+	Auth             SecretReferenceSpec `json:"auth,omitempty"`
 	//+kubebuilder:default=us-east-1
 	Region string `json:"region,omitempty"`
 	//+kubebuilder:default=tamoss

@@ -21,6 +21,11 @@ func (t *Tamoss) S3Connection() S3ExternalSpec {
 	return t.Spec.Backends.S3.ConnectionForNamespace(t.ResourceName(""), t.Namespace)
 }
 
+func (t *Tamoss) UsesS3WebIdentity() bool {
+	return t.Spec.Backends.S3.Provider() == S3BackendProvidedByExternal &&
+		t.S3Connection().CredentialSource == S3CredentialSourceWebIdentity
+}
+
 func (t *Tamoss) OAuth2CredentialsSecretName() string {
 	return t.ResourceName("oauth2-creds")
 }

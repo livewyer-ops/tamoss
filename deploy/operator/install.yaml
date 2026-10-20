@@ -802,6 +802,13 @@ spec:
               bucketName:
                 minLength: 1
                 type: string
+              credentialSource:
+                description: CredentialSource defaults to Secret credentials when
+                  omitted.
+                enum:
+                - secret
+                - web-identity
+                type: string
               credentials:
                 properties:
                   existingSecret:
@@ -940,6 +947,15 @@ spec:
                 > 0)
             - message: hibernate StorageBackends must use provider external-s3
               rule: self.usage != 'hibernate' || self.provider == 'external-s3'
+            - message: web-identity requires the default external S3 media backend
+                and its runtime ID
+              rule: '!has(self.credentialSource) || self.credentialSource != ''web-identity''
+                || (self.provider == ''external-s3'' && self.usage == ''media'' &&
+                self.defaultStorage && has(self.id) && self.id == ''f1ab5b54-9703-42ed-b181-11ba1c794a7f'')'
+            - message: web-identity must not reference a credentials Secret
+              rule: '!has(self.credentialSource) || self.credentialSource != ''web-identity''
+                || !has(self.credentials) || !has(self.credentials.existingSecret)
+                || self.credentials.existingSecret.size() == 0'
             - message: hibernate.retention.ttlSecondsAfterResume is required when
                 retention mode is TTL
               rule: '!has(self.hibernate) || !has(self.hibernate.retention) || !has(self.hibernate.retention.mode)
@@ -5804,6 +5820,13 @@ spec:
                             default: tamoss
                             minLength: 1
                             type: string
+                          credentialSource:
+                            description: CredentialSource selects static Secret credentials
+                              or the workload's web identity.
+                            enum:
+                            - secret
+                            - web-identity
+                            type: string
                           endpoint:
                             properties:
                               default:
@@ -5823,6 +5846,11 @@ spec:
                             default: us-east-1
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: web-identity must not reference a credentials Secret
+                          rule: '!has(self.credentialSource) || self.credentialSource
+                            != ''web-identity'' || !has(self.auth) || !has(self.auth.existingSecret)
+                            || self.auth.existingSecret.size() == 0'
                       providedBy:
                         enum:
                         - external

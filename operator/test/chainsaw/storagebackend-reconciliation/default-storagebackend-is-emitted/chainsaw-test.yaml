@@ -26,11 +26,7 @@ spec:
         - apply:
             file: ../../fixtures/tamoss-rustfs-operator-external-db.yaml
         - assert:
-            resource:
-              apiVersion: rustfs.com/v1alpha1
-              kind: Tenant
-              metadata:
-                name: tamoss-s3
+            file: ../../fixtures/assert/rustfs-tenant-present.yaml
             timeout: 120s
         - patch:
             resource:
