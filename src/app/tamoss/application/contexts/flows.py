@@ -392,16 +392,9 @@ class FlowUseCases:
 
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
         flow = self.get_flow(flow_id)
-        try:
-            flow_range = parse_timerange(
-                self._flow_timeranges([flow_id], seed_flows=[flow])[flow_id]
-            )
-        except ValueError as exc:
-            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
-        requested_range = parse_query_timerange(timerange)
-        if requested_range is None:
-            return str(flow_range)
-        return str(flow_range.intersect_with(requested_range))
+        return self._flow_timeranges([flow_id], seed_flows=[flow], timerange=timerange)[
+            flow_id
+        ]
 
     def flow_timeranges(
         self, flow_ids: Iterable[UUID], *, seed_flows: Iterable[FlowRecord] = ()
@@ -413,13 +406,21 @@ class FlowUseCases:
         flow_ids: Iterable[UUID],
         *,
         seed_flows: Iterable[FlowRecord] = (),
+        timerange: str | None = None,
     ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         if not requested_ids:
             return {}
         flows = self._flows_for_timerange_resolution(requested_ids, seed_flows)
-        direct_timeranges = self.repository.flow_timeranges(flow.id for flow in flows)
+        requested_range = query_timerange(timerange)
         try:
+            direct_timeranges = self.repository.flow_timeranges(
+                (flow.id for flow in flows),
+                timerange_start=requested_range.start,
+                timerange_end=requested_range.end,
+                timerange_is_empty=requested_range.is_empty,
+                timerange_is_point=requested_range.is_point,
+            )
             return collection_aware_flow_timeranges(
                 flows,
                 direct_timeranges,

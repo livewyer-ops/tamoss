@@ -19,7 +19,11 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
-from tamoss.domain.segments import SegmentTimerangeBounds, timerange_union
+from tamoss.domain.segments import (
+    SegmentTimerangeBounds,
+    segment_overlaps_bounds,
+    timerange_union,
+)
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
@@ -227,7 +231,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert repository.append_segment_calls == 0
 
 
-def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
+@pytest.mark.parametrize("timerange", [None, "[1:0_2:0)"])
+def test_single_flow_timerange_uses_bounded_collection_lookup(
+    timerange: str | None,
+) -> None:
     repository = CountingRepository(_storage_backend())
     use_cases = _use_cases(repository)
     parent_id = uuid4()
@@ -254,7 +261,7 @@ def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
     )
     repository.reset_counts()
 
-    result = use_cases.flows.flow_timerange(parent_id)
+    result = use_cases.flows.flow_timerange(parent_id, timerange=timerange)
 
     assert result == "[0:0_10:0)"
     assert repository.list_flows_calls == 0
@@ -378,11 +385,31 @@ class CountingRepository:
         limit = kwargs.get("limit") or 100
         return Page(items=flows[:limit], limit=limit)
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
+    def flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        timerange_start: int | None = None,
+        timerange_end: int | None = None,
+        timerange_is_empty: bool = False,
+        timerange_is_point: bool = False,
+    ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         self.flow_timeranges_requests.append(requested_ids)
         return {
-            flow_id: timerange_union(self._segments.get(flow_id, []))
+            flow_id: timerange_union(
+                [
+                    segment
+                    for segment in self._segments.get(flow_id, [])
+                    if not timerange_is_empty
+                    and segment_overlaps_bounds(
+                        segment,
+                        start=timerange_start,
+                        end=timerange_end,
+                        requested_is_point=timerange_is_point,
+                    )
+                ]
+            )
             for flow_id in requested_ids
         }
 

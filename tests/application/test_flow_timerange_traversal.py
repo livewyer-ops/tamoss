@@ -14,8 +14,12 @@ from tests.tams.support import (
 )
 
 
+@pytest.mark.parametrize(
+    "timerange,expected",
+    [("_", "[0:0_10:0)"), ("[1:0_2:0)", "[0:0_10:0)"), ("[10:0]", "()")],
+)
 def test_timerange_read_expands_shared_descendants_once(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, timerange: str, expected: str
 ) -> None:
     depth = 8
     ids = [uuid4() for _ in range(1 + 2 * depth)]
@@ -49,8 +53,11 @@ def test_timerange_read_expands_shared_descendants_once(
         return original(flow)
 
     monkeypatch.setattr(flows, "flow_collection", counted_collection)
-    response = client.get(f"/flows/{ids[0]}", params={"include_timerange": "true"})
+    response = client.get(
+        f"/flows/{ids[0]}",
+        params={"include_timerange": "true", "timerange": timerange},
+    )
 
     assert response.status_code == 200
-    assert response.json()["timerange"] == "[0:0_10:0)"
+    assert response.json()["timerange"] == expected
     assert expansions == Counter(dict.fromkeys(ids, 1))

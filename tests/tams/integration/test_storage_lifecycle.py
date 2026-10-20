@@ -153,6 +153,12 @@ def test_large_segment_timestamps_round_trip_through_http_and_postgres(
     detail = client.get(f"/flows/{flow_id}", params={"include_timerange": "true"})
     assert detail.status_code == 200, detail.text
     assert detail.json()["timerange"] == timerange
+    selected = client.get(
+        f"/flows/{flow_id}",
+        params={"include_timerange": "true", "timerange": f"[{offset}]"},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["timerange"] == timerange
     filtered = client.get(
         "/flows",
         params={

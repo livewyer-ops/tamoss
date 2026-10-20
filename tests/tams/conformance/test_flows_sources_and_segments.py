@@ -140,6 +140,82 @@ def test_flow_metadata_version_is_preserved_on_create_and_bumped_on_update(
     assert fetched.json()["updated_by"]
 
 
+@pytest.mark.parametrize(
+    "timerange,expected",
+    [
+        ("[9:0_10:0)", "[8:0_12:0)"),
+        ("[11:0_19:0)", "[8:0_22:0)"),
+        ("[14:0_15:0)", "()"),
+        ("[30:0_31:0)", "()"),
+        ("[8:0]", "[8:0_12:0)"),
+        ("[12:0]", "()"),
+        ("[11:999999999_12:0)", "[8:0_12:0)"),
+        ("(11:999999999_12:0)", "()"),
+        ("[7:0_8:0)", "()"),
+        ("[7:0_8:0]", "[8:0_12:0)"),
+        ("_9:0)", "[8:0_12:0)"),
+        ("[19:0_", "[18:0_22:0)"),
+        ("()", "()"),
+        ("_", "[8:0_22:0)"),
+        (None, "[8:0_22:0)"),
+    ],
+)
+def test_flow_timerange_encompasses_only_overlapping_segments(
+    client: TestClient, timerange: str | None, expected: str
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    empty_id, _, _ = create_video_flow(client)
+    for start, offset in ((8, 10), (18, 20)):
+        object_id = register_segment(
+            client,
+            flow_id,
+            timerange=f"[{start}:0_{start + 4}:0)",
+            ts_offset=f"{offset}:0",
+        )
+        assert client.get(f"/objects/{object_id}").json()["timerange"] == "[-2:0_2:0)"
+
+    params = {} if timerange is None else {"timerange": timerange}
+    for inclusion in (None, "false", "true"):
+        query = (
+            params if inclusion is None else {**params, "include_timerange": inclusion}
+        )
+        detail = client.get(f"/flows/{flow_id}", params=query)
+        assert detail.status_code == 200
+        if inclusion == "true":
+            assert detail.json()["timerange"] == expected
+        else:
+            assert "timerange" not in detail.json()
+        head = client.head(f"/flows/{flow_id}", params=query)
+        assert head.status_code == 200
+        assert head.content == b""
+    empty = client.get(
+        f"/flows/{empty_id}", params={**params, "include_timerange": "true"}
+    )
+    assert empty.status_code == 200
+    assert empty.json()["timerange"] == "()"
+
+
+def test_filtered_flow_timerange_uses_partial_segment_on_flow_timeline(
+    client: TestClient,
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    register_segment(
+        client,
+        flow_id,
+        timerange="[9:0_10:0)",
+        ts_offset="10:0",
+        object_timerange="[-2:0_2:0)",
+        sample_offset=1,
+        sample_count=1,
+    )
+    response = client.get(
+        f"/flows/{flow_id}",
+        params={"include_timerange": "true", "timerange": "[9:100000000_9:200000000)"},
+    )
+    assert response.status_code == 200
+    assert response.json()["timerange"] == "[9:0_10:0)"
+
+
 @pytest.mark.tamoss_extension
 def test_list_flows_can_include_timerange_compatibility_extension(
     client: TestClient,

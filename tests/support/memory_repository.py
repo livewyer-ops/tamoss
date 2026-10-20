@@ -387,7 +387,15 @@ class FakeTamossRepository:
             identity=lambda flow: flow.id,
         )
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
+    def flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        timerange_start: int | None = None,
+        timerange_end: int | None = None,
+        timerange_is_empty: bool = False,
+        timerange_is_point: bool = False,
+    ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         with self._lock:
             segments = {
@@ -395,7 +403,19 @@ class FakeTamossRepository:
                 for flow_id in requested_ids
             }
         return {
-            flow_id: segment_domain.timerange_union(segments[flow_id])
+            flow_id: segment_domain.timerange_union(
+                [
+                    segment
+                    for segment in segments[flow_id]
+                    if not timerange_is_empty
+                    and segment_domain.segment_overlaps_bounds(
+                        segment,
+                        start=timerange_start,
+                        end=timerange_end,
+                        requested_is_point=timerange_is_point,
+                    )
+                ]
+            )
             for flow_id in requested_ids
         }
 

@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from tamoss.adapters.postgres import PostgresRepository
 from tamoss.adapters.postgres_repository.mappers import _timerange_from_bounds
+from tamoss.application.contexts.flows import query_timerange
 from tamoss.domain.exceptions import SegmentOverlapError
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SegmentRecord
 from tamoss.domain.segments import (
@@ -85,6 +86,9 @@ def test_wide_segment_bounds_cover_repository_operations(
         assert postgres_repo.flow_repository.flow_timeranges([flow.id]) == {
             flow.id: normalised_range
         }
+        assert postgres_repo.flow_repository.flow_timeranges(
+            [flow.id], timerange_start=start, timerange_end=start + 1
+        ) == {flow.id: normalised_range}
         assert repo.segment_delete_timerange(delete_filter) == normalised_range
 
     ordinary = replace(segment, object_id=str(uuid4()), timerange="[0:0_1:0)")
@@ -117,3 +121,46 @@ def test_wide_segment_bounds_cover_repository_operations(
     assert filtered.items == [segment]
     assert repo.delete_segment_batch(delete_filter=delete_filter, limit=1) == [segment]
     assert repo.list_segments(flow.id) == [ordinary]
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("[9:0_10:0)", "[8:0_12:0)"),
+        ("[11:0_19:0)", "[8:0_22:0)"),
+        ("[14:0_15:0)", "()"),
+        ("[12:0]", "()"),
+        ("[22:0]", "[22:0_22:1)"),
+        ("(21:999999999_22:0)", "()"),
+        ("[7:0_8:0)", "()"),
+        ("[7:0_8:0]", "[8:0_12:0)"),
+        ("_9:0)", "[8:0_12:0)"),
+        ("[22:0_", "[22:0_22:1)"),
+        ("()", "()"),
+        ("_", "[8:0_22:1)"),
+    ],
+)
+def test_flow_timeranges_filter_segments_before_aggregation(
+    postgres_repo: PostgresRepository, query: str, expected: str
+) -> None:
+    flow = FlowRecord(
+        id=uuid4(),
+        source_id=uuid4(),
+        data={},
+        format="urn:x-nmos:format:data",
+        container=None,
+    )
+    empty_id = uuid4()
+    postgres_repo.flow_repository.save_flow(flow)
+    for timerange in ("[8:0_12:0)", "[18:0_22:0)", "[22:0]"):
+        postgres_repo.segment_repository.append_segment(
+            SegmentRecord(flow_id=flow.id, object_id=str(uuid4()), timerange=timerange)
+        )
+    bounds = query_timerange(query)
+    assert postgres_repo.flow_repository.flow_timeranges(
+        [flow.id, empty_id],
+        timerange_start=bounds.start,
+        timerange_end=bounds.end,
+        timerange_is_empty=bounds.is_empty,
+        timerange_is_point=bounds.is_point,
+    ) == {flow.id: expected, empty_id: "()"}
