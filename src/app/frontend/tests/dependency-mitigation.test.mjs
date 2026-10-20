@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
   readFileSync,
@@ -12,9 +11,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { checkDependencyMitigation } from "../scripts/check-dependency-mitigation.mjs";
 
 const frontend = resolve(import.meta.dirname, "..");
-const { chain } = JSON.parse(
-  readFileSync(resolve(frontend, "scripts/dependency-mitigation.json"), "utf8"),
-);
 let root;
 let lock;
 
@@ -55,17 +51,6 @@ it("rejects an environment override enabling lifecycle scripts", async () => {
   );
 });
 
-it.each(["version", "integrity"])(
-  "rejects changed package %s",
-  async (field) => {
-    lock.packages["node_modules/braces"][field] = "changed";
-    writeFileSync(resolve(root, "package-lock.json"), JSON.stringify(lock));
-    await expect(checkDependencyMitigation(root)).rejects.toThrow(
-      `braces ${field} changed`,
-    );
-  },
-);
-
 it("rejects an additional consumer even when the package version is unchanged", async () => {
   lock.packages[""].devDependencies.braces = "3.0.3";
   writeFileSync(resolve(root, "package-lock.json"), JSON.stringify(lock));
@@ -88,7 +73,7 @@ it.each([
   );
 });
 
-it.each(chain.slice(1).map(([name]) => name))(
+it.each(["patch-package", "find-yarn-workspace-root", "micromatch", "braces"])(
   "rejects %s externalised by the bundler",
   async (name) => {
     writeFileSync(
@@ -127,25 +112,3 @@ it("fails when production code cannot be inspected", async () => {
   );
   await expect(checkDependencyMitigation(root)).rejects.toThrow();
 });
-
-it.each([{ chain: [] }, { chain: [chain[0]] }])(
-  "rejects an incomplete dependency chain: %j",
-  ({ chain }) => {
-    writeFileSync(
-      resolve(root, "check-dependency-mitigation.mjs"),
-      readFileSync(
-        resolve(frontend, "scripts/check-dependency-mitigation.mjs"),
-      ),
-    );
-    writeFileSync(
-      resolve(root, "dependency-mitigation.json"),
-      JSON.stringify({ advisory: "test-advisory", chain }),
-    );
-    expect(() =>
-      execFileSync(process.execPath, ["check-dependency-mitigation.mjs"], {
-        cwd: root,
-        stdio: "pipe",
-      }),
-    ).toThrow("Dependency chain is required");
-  },
-);

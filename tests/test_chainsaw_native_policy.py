@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,6 +30,27 @@ def _write_test(tmp_path: Path, operation: str) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+@pytest.mark.parametrize("platform", [None, "managed", "simulated", "typo"])
+def test_optional_platform_label_is_validated(
+    tmp_path: Path, platform: str | None
+) -> None:
+    module = _policy_module()
+    labels = {axis: sorted(values)[0] for axis, values in module.AXES.items()}
+    labels.update(target="kind", profile="none")
+    if platform is not None:
+        labels["platform"] = platform
+    (tmp_path / "chainsaw-test.yaml").write_text(
+        "apiVersion: chainsaw.kyverno.io/v1alpha1\n"
+        "kind: Test\nmetadata:\n  labels:\n"
+        + "".join(
+            f"    test.tamoss.io/{axis}: {value}\n" for axis, value in labels.items()
+        )
+        + "spec:\n  steps: []\n"
+    )
+
+    assert module.validate_labels(tmp_path) == (1 if platform == "typo" else 0)
 
 
 def test_inline_scripts_are_rejected(tmp_path: Path) -> None:

@@ -25,6 +25,7 @@ AXES = {
     "lifecycle": {"read-only", "ephemeral", "destructive"},
     "provider": {"none", "cnpg", "rustfs", "authentik", "external", "mixed"},
 }
+OPTIONAL_AXES = {"platform": {"managed", "simulated"}}
 
 SELECTORS = {
     "smoke": "test.tamoss.io/target=kind,test.tamoss.io/tier=smoke",
@@ -37,6 +38,10 @@ SELECTORS = {
         "test.tamoss.io/target=kind,test.tamoss.io/tier in (smoke,standard,extended)"
     ),
     "release": "test.tamoss.io/tier=release,test.tamoss.io/platform!=managed",
+    "managed": (
+        "test.tamoss.io/target=kind,test.tamoss.io/tier=release,"
+        "test.tamoss.io/platform=managed"
+    ),
     "deployed": "test.tamoss.io/target=deployed,test.tamoss.io/lifecycle=read-only",
 }
 
@@ -72,6 +77,11 @@ def validate_labels(root: Path) -> int:
                 continue
             axis = key.rsplit("/", 1)[1]
             if labels[key] not in allowed[axis]:
+                failures.append(f"{path}: unsupported {key}={labels[key]}")
+
+        for axis, values in OPTIONAL_AXES.items():
+            key = f"test.tamoss.io/{axis}"
+            if key in labels and labels[key] not in values:
                 failures.append(f"{path}: unsupported {key}={labels[key]}")
 
         if (

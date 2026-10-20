@@ -24,6 +24,8 @@ vars:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector nightly'
   CHAINSAW_RELEASE_SELECTOR:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector release'
+  CHAINSAW_MANAGED_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector managed'
   CHAINSAW_DEPLOYED_SELECTOR:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector deployed'
 
@@ -252,6 +254,7 @@ tasks:
       CHAINSAW_SELECTOR: '{{default "" .CHAINSAW_SELECTOR}}'
       CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
       CHAINSAW_TASK_ARGS: '{{default "" .CHAINSAW_TASK_ARGS}}'
+      CHAINSAW_REPORT_PATH: '{{default "reports" .CHAINSAW_REPORT_PATH}}'
       CHAINSAW_KEEP_CLUSTER: '{{default "" .CHAINSAW_KEEP_CLUSTER}}'
       CHAINSAW_INSTALL_RUSTFS_OPERATOR: '{{default "" .CHAINSAW_INSTALL_RUSTFS_OPERATOR}}'
       CHAINSAW_INSTALL_CNPG_OPERATOR: '{{default "" .CHAINSAW_INSTALL_CNPG_OPERATOR}}'
@@ -269,6 +272,7 @@ tasks:
       CHAINSAW_SELECTOR: "{{.CHAINSAW_SELECTOR}}"
       CHAINSAW_EXTRA_ARGS: "{{.CHAINSAW_EXTRA_ARGS}}"
       CHAINSAW_TASK_ARGS: "{{.CHAINSAW_TASK_ARGS}}"
+      CHAINSAW_REPORT_PATH: "{{.CHAINSAW_REPORT_PATH}}"
       CHAINSAW_KEEP_CLUSTER: "{{.CHAINSAW_KEEP_CLUSTER}}"
       CHAINSAW_INSTALL_RUSTFS_OPERATOR: "{{.CHAINSAW_INSTALL_RUSTFS_OPERATOR}}"
       CHAINSAW_INSTALL_CNPG_OPERATOR: "{{.CHAINSAW_INSTALL_CNPG_OPERATOR}}"
@@ -292,6 +296,28 @@ tasks:
       - task: e2e:chainsaw:up
         vars:
           CHAINSAW_SELECTOR: "{{.CHAINSAW_SMOKE_SELECTOR}}"
+
+  e2e:chainsaw:managed:up:
+    desc: "Operator: qualify populated upgrades with managed PostgreSQL and RustFS"
+    silent: true
+    vars:
+      SCHEMA_VERSION:
+        sh: jq -er '.releases[-1].schemaRevision' operator/compatibility.yaml
+      PREVIOUS_SCHEMA_VERSION:
+        sh: jq -er '.releases as $releases | $releases[-1].upgrade.from[0] as $previous | $releases[] | select(.version == $previous) | .schemaRevision' operator/compatibility.yaml
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw:up
+        vars:
+          CHAINSAW_CLUSTER_NAME: '{{default "tamoss-managed-upgrade" .CHAINSAW_CLUSTER_NAME}}'
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_INSTALL_CNPG_OPERATOR: "true"
+          CHAINSAW_INSTALL_RUSTFS_OPERATOR: "true"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_MANAGED_SELECTOR}}"
+          SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
+          PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
+          CHAINSAW_REPORT_PATH: reports/managed-upgrade
+          CHAINSAW_KEEP_CLUSTER: '{{default "false" .CHAINSAW_KEEP_CLUSTER}}'
 
   install-manifest:
     silent: true

@@ -175,6 +175,10 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/full-operator-e2e') }}
         run: task operator:e2e:chainsaw:ci:up
 
+      - name: Qualify managed release upgrades
+        if: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+        run: task operator:e2e:chainsaw:managed:up CHAINSAW_KEEP_CLUSTER=false
+
       - name: Capture chainsaw diagnostics
         if: failure() || cancelled()
         run: .github/scripts/collect-chainsaw-diagnostics.sh reports/chainsaw-logs
@@ -186,6 +190,7 @@ jobs:
           name: operator-chainsaw-e2e-${{ github.run_id }}
           path: |
             reports/junit-operator-chainsaw.xml
+            reports/managed-upgrade/junit-operator-chainsaw.xml
             reports/chainsaw-logs/**
           retention-days: 30
           if-no-files-found: ignore

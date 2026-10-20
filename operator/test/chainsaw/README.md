@@ -141,6 +141,8 @@ is the executable source of truth for label values and selector presets.
 | `test.tamoss.io/provider` | `none`, `cnpg`, `rustfs`, `authentik`, `external`, `mixed` |
 | `test.tamoss.io/profile` | `none`, `local-kind`, `edge`, `single-server`, `multi-server` |
 
+The optional `test.tamoss.io/platform` label accepts `managed` or `simulated`.
+
 | Command | Selection |
 | --- | --- |
 | `task operator:e2e:chainsaw:smoke` | Kind-backed smoke tests |
@@ -253,20 +255,15 @@ fixture release suites, which install simulated provider CRDs.
 The scenario retains its resources for cluster teardown; the `up` task removes
 the test cluster unless `CHAINSAW_KEEP_CLUSTER=true`.
 
-Set `SCHEMA_VERSION` and `PREVIOUS_SCHEMA_VERSION` from the current entry in
-`operator/compatibility.yaml`, then run:
+Run:
 
 ```bash
-task operator:e2e:chainsaw:up \
-  CHAINSAW_CLUSTER_NAME=tamoss-release-upgrade \
-  KUBECONFIG=.local/release-upgrade.kubeconfig \
-  CHAINSAW_INSTALL_CNPG_OPERATOR=true \
-  CHAINSAW_INSTALL_RUSTFS_OPERATOR=true \
-  CHAINSAW_SELECTOR=test.tamoss.io/platform=managed \
-  SCHEMA_VERSION="$SCHEMA_VERSION" \
-  PREVIOUS_SCHEMA_VERSION="$PREVIOUS_SCHEMA_VERSION" \
-  CHAINSAW_TASK_ARGS='CHAINSAW_TESTS=operator/test/chainsaw/release-selection'
+task operator:e2e:chainsaw:managed:up
 ```
+
+The task derives schema versions from `operator/compatibility.yaml` and installs
+both provider operators. Tag-time and manually dispatched operator CI run this
+task; its report is `reports/managed-upgrade/junit-operator-chainsaw.xml`.
 
 Other provider scenarios simulate their controllers using owned Pods and
 StatefulSets. Their database and S3 fixtures run separately.

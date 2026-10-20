@@ -14,10 +14,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1] / "operator/test/chainsaw"
 WEB_IDENTITY = "storagebackend-reconciliation/default-web-identity/test_web_identity.py"
-MULTI_BACKEND = (
-    "storagebackend-reconciliation/multiple-storagebackends-ingest/"
-    "test_multiple_storagebackends.py"
-)
 
 
 def load_fixture(relative_path):
@@ -35,21 +31,18 @@ def fixture_imports(monkeypatch):
 
 @pytest.mark.parametrize("scheme", ["file", "data"])
 @pytest.mark.parametrize("method", ["GET", "PUT"])
-@pytest.mark.parametrize("relative_path", [WEB_IDENTITY, MULTI_BACKEND])
-def test_media_checks_reject_non_http_urls(scheme, method, relative_path):
+def test_media_checks_reject_non_http_urls(scheme, method):
     url = f"{scheme}:///private-fixture-data"
-    module = load_fixture(relative_path)
+    module = load_fixture("fixtures/media_requests.py")
 
     with pytest.raises(AssertionError, match=r"HTTP\(S\)"):
         module.request(method, url)
 
 
-@pytest.mark.parametrize("relative_path", [WEB_IDENTITY, MULTI_BACKEND])
 @pytest.mark.parametrize("method", ["GET", "PUT"])
-def test_http_failure_diagnostics_omit_response_secrets(
-    relative_path, method, monkeypatch
-):
-    module = load_fixture(relative_path)
+def test_http_failure_diagnostics_omit_response_secrets(method, monkeypatch):
+    module = load_fixture("fixtures/media_requests.py")
+
     marker = "PRIVATE_RESPONSE_MARKER"
 
     def fail(*_args, **_kwargs):
@@ -61,7 +54,7 @@ def test_http_failure_diagnostics_omit_response_secrets(
             io.BytesIO(marker.encode()),
         )
 
-    monkeypatch.setattr("media_requests.urlopen", fail)
+    monkeypatch.setattr(module, "urlopen", fail)
 
     with pytest.raises(AssertionError) as caught:
         module.request(method, "/flows")
@@ -70,19 +63,17 @@ def test_http_failure_diagnostics_omit_response_secrets(
     assert marker not in "".join(traceback.format_exception(caught.value))
 
 
-@pytest.mark.parametrize("relative_path", [WEB_IDENTITY, MULTI_BACKEND])
 @pytest.mark.parametrize("method", ["GET", "PUT"])
 @pytest.mark.parametrize("error_type", [InvalidURL, URLError, OSError])
-def test_transport_failure_diagnostics_omit_secrets(
-    relative_path, method, error_type, monkeypatch
-):
-    module = load_fixture(relative_path)
+def test_transport_failure_diagnostics_omit_secrets(method, error_type, monkeypatch):
+    module = load_fixture("fixtures/media_requests.py")
+
     marker = "PRIVATE_TRANSPORT_MARKER"
 
     def fail(*_args, **_kwargs):
         raise error_type(f"http://fixture/?X-Amz-Signature={marker}")
 
-    monkeypatch.setattr("media_requests.urlopen", fail)
+    monkeypatch.setattr(module, "urlopen", fail)
 
     with pytest.raises(AssertionError, match="HTTP operation failed") as caught:
         module.request(method, "/flows")
@@ -90,11 +81,11 @@ def test_transport_failure_diagnostics_omit_secrets(
     assert marker not in "".join(traceback.format_exception(caught.value))
 
 
-@pytest.mark.parametrize("relative_path", [WEB_IDENTITY, MULTI_BACKEND])
 @pytest.mark.parametrize("method", ["GET", "PUT"])
 @pytest.mark.parametrize("authority", ["127.0.0.1:1/bad path", "[invalid-host]"])
-def test_malformed_signed_urls_are_redacted(relative_path, method, authority):
-    module = load_fixture(relative_path)
+def test_malformed_signed_urls_are_redacted(method, authority):
+    module = load_fixture("fixtures/media_requests.py")
+
     marker = "PRIVATE_URL_MARKER"
     with pytest.raises(AssertionError) as caught:
         module.request(method, f"http://{authority}?X-Amz-Signature={marker}")

@@ -41,7 +41,7 @@ def runtime_release(version: str, images: dict[str, str]) -> dict:
 
 
 def catalogue(current: dict) -> list[dict]:
-    # Retain published schemas even when a later RC changes them.
+    # Historical records preserve each published release's schema and images.
     entries = []
     for version in current["upgradeFrom"]:
         entry = json.loads((ROOT / "operator/releases" / f"{version}.json").read_text())

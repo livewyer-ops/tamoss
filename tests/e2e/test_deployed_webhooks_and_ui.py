@@ -4,9 +4,8 @@ import json
 import re
 import time
 from contextlib import suppress
-from pathlib import Path
 from string import Template
-from subprocess import CalledProcessError, CompletedProcess, run
+from subprocess import CalledProcessError, CompletedProcess
 from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import uuid4
@@ -775,30 +774,10 @@ def test_deployed_ui_plays_iso_segments_with_shared_init_object(
     e2e_client: E2EClient,
     e2e_target: E2ETarget,
     e2e_browser: Browser,
-    tmp_path: Path,
 ) -> None:
     if not e2e_target.browser_api_available:
         pytest.skip("target does not provide browser API access")
-    run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-stream_loop",
-            "2",
-            "-i",
-            str(REPO_ROOT / "tests/fixtures/e2e/tiny-ingest.mp4"),
-            "-c",
-            "copy",
-            "-hls_time",
-            "1",
-            "-hls_segment_type",
-            "fmp4",
-            "stream.m3u8",
-        ],
-        cwd=tmp_path,
-        check=True,
-    )
+    fixture_dir = REPO_ROOT / "tests/fixtures/e2e/iso-segments"
     flow_id, source_id = str(uuid4()), str(uuid4())
     flow = _video_flow_payload(flow_id, source_id)
     flow["container"] = "video/iso.segment"
@@ -811,7 +790,7 @@ def test_deployed_ui_plays_iso_segments_with_shared_init_object(
     context = e2e_browser.new_context(ignore_https_errors=not e2e_target.verify_tls)
     try:
         e2e_client.request("PUT", f"/flows/{flow_id}", json=flow, expected=201)
-        for path in sorted([tmp_path / "init.mp4", *tmp_path.glob("*.m4s")]):
+        for path in sorted([fixture_dir / "init.mp4", *fixture_dir.glob("*.m4s")]):
             allocation = e2e_client.request_json(
                 "POST",
                 f"/flows/{flow_id}/storage",
@@ -826,26 +805,10 @@ def test_deployed_ui_plays_iso_segments_with_shared_init_object(
                 body=path.read_bytes(),
                 headers=allocation.get("headers"),
             )
-        probe = run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "stream=start_time",
-                "-of",
-                "json",
-                "stream.m3u8",
-            ],
-            cwd=tmp_path,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        start = Timestamp.from_str(json.loads(probe.stdout)["streams"][0]["start_time"])
+        start = Timestamp.from_str("0.2")
         segments = []
         for duration, name in re.findall(
-            r"#EXTINF:([\d.]+),\n([^\n]+)", (tmp_path / "stream.m3u8").read_text()
+            r"#EXTINF:([\d.]+),\n([^\n]+)", (fixture_dir / "stream.m3u8").read_text()
         ):
             end = start + Timestamp.from_str(duration)
             segments.append(

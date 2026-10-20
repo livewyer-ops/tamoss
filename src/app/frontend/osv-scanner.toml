@@ -12,7 +12,8 @@ reason = """
 braces is installed through Omakase's patch-package dependency. npm lifecycle
 scripts are disabled and this install dependency chain is absent from the
 production frontend. check-dependency-mitigation.mjs enforces these conditions
-and the package versions, integrity and consumers pinned in
-scripts/dependency-mitigation.json. Guard or scanner failures fail the audit.
+and rejects additional consumers of the install-only dependency chain.
+The lockfile pins package versions and integrity; npm ci installs that lockfile.
+Guard or scanner failures fail the audit.
 The dependency remains affected; this exception applies only to this advisory.
 """

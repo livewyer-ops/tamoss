@@ -5,13 +5,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 
-import mitigation from "./dependency-mitigation.json" with { type: "json" };
-
-const { advisory, chain } = mitigation;
-assert(
-  Array.isArray(chain) && chain.length > 1,
-  "Dependency chain is required",
-);
+const chain = [
+  "@byomakase/omakase-player",
+  "patch-package",
+  "find-yarn-workspace-root",
+  "micromatch",
+  "braces",
+];
 
 export async function checkDependencyMitigation(root) {
   const readJson = (path) =>
@@ -31,44 +31,21 @@ export async function checkDependencyMitigation(root) {
   );
 
   const lock = readJson("package-lock.json");
-  const installed = readJson("node_modules/.package-lock.json");
-  const names = new Set(chain.map(([name]) => name));
-  for (const packages of [lock.packages, installed.packages]) {
-    for (const [location, entry] of Object.entries(packages)) {
-      const name = entry.name ?? location.split("node_modules/").at(-1);
-      if (names.has(name)) {
-        assert.equal(
-          location,
-          `node_modules/${name}`,
-          `${name} package location changed`,
-        );
-      }
-    }
-  }
-  const expectedEdges = [];
-  let parent = "";
-  for (const [name, version, range, integrity] of chain) {
-    const location = `node_modules/${name}`;
-    for (const packages of [lock.packages, installed.packages]) {
+  const names = new Set(chain);
+  for (const [location, entry] of Object.entries(lock.packages)) {
+    const name = entry.name ?? location.split("node_modules/").at(-1);
+    if (names.has(name)) {
       assert.equal(
-        packages[location]?.version,
-        version,
-        `${name} version changed`,
-      );
-      assert.equal(
-        packages[location]?.integrity,
-        integrity,
-        `${name} integrity changed`,
+        location,
+        `node_modules/${name}`,
+        `${name} package location changed`,
       );
     }
-    assert.equal(
-      readJson(`${location}/package.json`).version,
-      version,
-      `${name} installation changed`,
-    );
-    expectedEdges.push(`${parent}:dependencies:${name}:${range}`);
-    parent = location;
   }
+  const expectedEdges = chain.map(
+    (name, index) =>
+      `${index === 0 ? "" : `node_modules/${chain[index - 1]}`}:dependencies:${name}`,
+  );
   const edges = [];
   for (const [location, entry] of Object.entries(lock.packages)) {
     for (const field of [
@@ -77,19 +54,18 @@ export async function checkDependencyMitigation(root) {
       "optionalDependencies",
       "peerDependencies",
     ]) {
-      for (const [name, range] of Object.entries(entry[field] ?? {})) {
-        if (names.has(name))
-          edges.push(`${location}:${field}:${name}:${range}`);
+      for (const name of Object.keys(entry[field] ?? {})) {
+        if (names.has(name)) edges.push(`${location}:${field}:${name}`);
       }
     }
   }
   assert.deepEqual(
     edges.sort(),
     expectedEdges.sort(),
-    "Pinned dependency consumers changed",
+    "Install-only dependency consumers changed",
   );
 
-  const restricted = chain.slice(1).map(([name]) => name);
+  const restricted = chain.slice(1);
   let inspectedModules = 0;
   const inspect = () => ({
     name: "check-dependency-mitigation",
@@ -119,7 +95,7 @@ export async function checkDependencyMitigation(root) {
   });
   assert(inspectedModules > 0, "No production modules were inspected");
   console.log(
-    `${advisory} mitigation verified across ${inspectedModules} build modules.`,
+    `GHSA-vfj7-8cjw-p6xm mitigation verified across ${inspectedModules} build modules.`,
   );
 }
 

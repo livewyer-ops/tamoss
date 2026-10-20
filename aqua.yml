@@ -49,10 +49,6 @@ packages:
     - name: stackrox/kube-linter@v0.8.3 # operator install manifest and pod security linting
       tags:
           - ci-operator-security
-    - name: grafana/k6@v2.2.0 # optional load-test CLI
-
-    # Cloud & storage
-    - name: aws/aws-cli@2.36.46 # S3-compatible storage diagnostics
     - name: google/osv-scanner@v2.6.0 # .tasks/security.yaml security:audit:osv
       tags:
           - ci-security
@@ -74,13 +70,15 @@ packages:
     - name: BurntSushi/ripgrep@15.2.0 # shell task checks and CI workflow validation
       tags:
           - ci-validate
-    - name: jqlang/jq@jq-1.8.2 # JSON inspection and local diagnostics
+    - name: jqlang/jq@jq-1.8.2 # release metadata and operator qualification
+      tags:
+          - ci-kind
+          - ci-operator-chainsaw
 
 # Notes: aqua cannot provide these OS/system tools.
 # Required to build, test, and deploy:
 # - Docker or Podman (and docker compose) — container build + compose stack
-# - curl, git                             — setup and local scripts
-# Required for deployed playback tests:
-# - ffmpeg (including ffprobe)            — prepares and inspects media fixtures
+# - curl, git, GnuPG                      — setup and plugin signature verification
+# - Helm diff plugin                     — see docs/operations/install.md#helm-diff
 # Optional, only for the ingest helper (src/scripts/ingest_video.sh):
 # - uuidgen (util-linux)                  — generates flow and source identifiers
