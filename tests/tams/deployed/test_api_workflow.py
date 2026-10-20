@@ -323,6 +323,7 @@ def test_deployed_profile_and_init_object_workflow(
                 "init_object_id": init_object_id,
                 "timerange": "[0:0_10:0)",
                 "object_timerange": "[1:0_11:0)",
+                "ts_offset": "-1:0",
             },
             expected=201,
         )

@@ -64,7 +64,7 @@ VALID_WEBHOOK_EVENTS = {
     "sources/updated",
     "sources/deleted",
 }
-RETRIABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+RETRIABLE_STATUS_CODES = {401, 403, 408, 429, 500, 502, 503, 504}
 
 _HTTP_FIELD_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _RESERVED_WEBHOOK_HEADERS = {

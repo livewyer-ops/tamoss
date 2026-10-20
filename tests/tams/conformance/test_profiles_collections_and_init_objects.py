@@ -278,6 +278,7 @@ def test_init_object_lifecycle_direct_put_and_storage_tag_filtering(
             "object_id": media_id,
             "init_object_id": init_id,
             "timerange": "[10:0_20:0)",
+            "ts_offset": "10:0",
             "object_timerange": "[0:0_10:0)",
         },
     )
@@ -312,7 +313,7 @@ def test_init_object_lifecycle_direct_put_and_storage_tag_filtering(
 
     reused = client.post(
         f"/flows/{flow_id}/segments",
-        json={"object_id": media_id, "timerange": "[20:0_30:0)"},
+        json={"object_id": media_id, "timerange": "[20:0_30:0)", "ts_offset": "20:0"},
     )
     assert reused.status_code == 201
     assert client.get(f"/flows/{flow_id}/segments").json()[1]["init_object"]

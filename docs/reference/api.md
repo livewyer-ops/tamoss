@@ -24,6 +24,10 @@ The upstream OpenAPI document is authoritative for request and response fields.
 Capability pages explain TAMOSS persistence and lifecycle choices without
 duplicating that schema.
 
+`GET` and `HEAD` on an unset `max_bit_rate` or `avg_bit_rate` property return
+404. BBC 8.2 does not define the unset response; this is TAMOSS's interpretation.
+The Flow itself remains readable, with the unset property omitted.
+
 ## Product Health Endpoints
 
 These endpoints are TAMOSS operational endpoints, not BBC TAMS resources:

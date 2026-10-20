@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
-from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path, Request, status
 
-from tamoss.api.dependencies import get_storage_use_cases
+from tamoss.api.dependencies import ResourceUUID, get_storage_use_cases
 from tamoss.application.contexts.storage import StorageUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
@@ -24,6 +23,7 @@ async def _reject_explicit_null_storage_body(request: Request) -> None:
     "/flows/{flowId}/storage",
     status_code=status.HTTP_201_CREATED,
     response_model=contract_models.FlowStorage,
+    response_model_exclude_unset=True,
     responses={
         400: {"description": "Bad request. Invalid storage request."},
         403: {"description": "Forbidden."},
@@ -31,7 +31,7 @@ async def _reject_explicit_null_storage_body(request: Request) -> None:
     },
 )
 def allocate_flow_storage(
-    flow_id: Annotated[UUID, Path(alias="flowId")],
+    flow_id: Annotated[ResourceUUID, Path(alias="flowId")],
     storage_request: dict[str, Any] | None = Body(default=None),
     _null_body: None = Depends(_reject_explicit_null_storage_body),
     storage: StorageUseCases = Depends(get_storage_use_cases),

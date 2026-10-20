@@ -2717,6 +2717,8 @@ paths:
           $ref: '#/components/responses/trait_resource_info_head_200'
         '404':
           $ref: '#/components/responses/trait_resource_info_head_404'
+      x-tamoss-unset-property: TAMOSS returns 404 when this property is unset. BBC
+        8.2 does not define a response for an unset bit rate.
     get:
       summary: Flow Maximum Bit Rate
       description: 'Returns the Flow max bit rate property.
@@ -2744,6 +2746,8 @@ paths:
           description: The requested Flow does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
+      x-tamoss-unset-property: TAMOSS returns 404 when this property is unset. BBC
+        8.2 does not define a response for an unset bit rate.
     put:
       summary: Create or Update Flow Maximum Bit Rate
       description: 'Create or update the max bit rate property.
@@ -2819,6 +2823,8 @@ paths:
           $ref: '#/components/responses/trait_resource_info_head_200'
         '404':
           $ref: '#/components/responses/trait_resource_info_head_404'
+      x-tamoss-unset-property: TAMOSS returns 404 when this property is unset. BBC
+        8.2 does not define a response for an unset bit rate.
     get:
       summary: Flow Average Bit Rate
       description: 'Returns the Flow average bit rate property.
@@ -2846,6 +2852,8 @@ paths:
           description: The requested Flow does not exist.
           x-tamoss-error-payload:
             $ref: '#/components/schemas/ErrorPayload'
+      x-tamoss-unset-property: TAMOSS returns 404 when this property is unset. BBC
+        8.2 does not define a response for an unset bit rate.
     put:
       summary: Create or Update Flow Average Bit Rate
       description: 'Create or update the average bit rate property.

@@ -9,6 +9,14 @@ def apply_tamoss_contract_extensions(spec: dict[str, Any]) -> None:
     add_error_payload_contract(spec)
     add_tag_filter_parameters(spec)
     add_flow_list_timerange_extension(spec)
+    for name in ("max_bit_rate", "avg_bit_rate"):
+        path = spec.get("paths", {}).get(f"/flows/{{flowId}}/{name}", {})
+        for method in ("get", "head"):
+            if method in path:
+                path[method]["x-tamoss-unset-property"] = (
+                    "TAMOSS returns 404 when this property is unset. "
+                    "BBC 8.2 does not define a response for an unset bit rate."
+                )
 
 
 def add_error_payload_contract(spec: dict[str, Any]) -> None:

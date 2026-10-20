@@ -15,9 +15,11 @@ from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
 from tamoss.contract.validation import (
+    parse_uuid,
     reject_explicit_nulls,
     reject_model_explicit_nulls,
     strict_contract_model,
+    validate_mime_filter,
 )
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
@@ -30,7 +32,7 @@ from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
-from tamoss.domain.timeranges import normalized_timerange_bounds
+from tamoss.domain.timeranges import normalized_timerange_bounds, parse_timerange
 from tamoss.errors import BadRequest, Forbidden, NotFound
 from tamoss.ports.repositories import (
     FlowCollectionRepository,
@@ -93,6 +95,7 @@ _FLOW_TECHNICAL_MODELS: dict[str, type[BaseModel]] = {
     "urn:x-nmos:format:data": contract_models.FlowData,
     "urn:x-nmos:format:multi": contract_models.FlowMulti,
 }
+_PACKED_YUV_TYPES = ("YUYV", "UYVY", "AYUV", "v210", "v216")
 
 
 @dataclass(frozen=True)
@@ -107,8 +110,9 @@ def parse_query_timerange(timerange: str | None) -> TimeRange | None:
     if timerange is None or timerange in {"", "_"}:
         return None
     try:
-        return TimeRange.from_str(timerange)
-    except Exception as exc:
+        contract_models.Timerange.model_validate(timerange)
+        return parse_timerange(timerange)
+    except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
 
 
@@ -232,6 +236,33 @@ def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
         if variable_frame_rate is not True and not has_frame_rate:
             raise ValueError("frame_rate is required when vfr is false or omitted")
 
+        unc_parameters = essence_parameters.get("unc_parameters")
+        unc_type = (
+            unc_parameters.get("unc_type") if isinstance(unc_parameters, dict) else None
+        )
+        if payload.get("codec") == "video/raw" and (
+            "bit_depth" not in essence_parameters or unc_type is None
+        ):
+            raise ValueError("raw video requires bit_depth and unc_type")
+        if unc_type in _PACKED_YUV_TYPES and (
+            "horiz_chroma_subs" not in essence_parameters
+            or "vert_chroma_subs" not in essence_parameters
+        ):
+            raise ValueError("packed YUV video requires chroma subsampling")
+
+    if format_value == "urn:x-nmos:format:audio" and payload.get("codec") in (
+        "audio/x-raw-int",
+        "audio/x-raw-float",
+    ):
+        bit_depth = essence_parameters.get("bit_depth")
+        if "bit_depth" not in essence_parameters or (
+            payload["codec"] == "audio/x-raw-float" and bit_depth not in (32, 64)
+        ):
+            raise ValueError("raw audio requires a valid bit_depth")
+        unc_parameters = essence_parameters.get("unc_parameters")
+        if not isinstance(unc_parameters, dict) or "unc_type" not in unc_parameters:
+            raise ValueError("raw audio requires unc_type")
+
 
 def ensure_flow_writable(flow: FlowRecord) -> None:
     if flow.read_only:
@@ -331,6 +362,7 @@ class FlowUseCases:
     ) -> Page[FlowRecord]:
         try:
             validate_content_format_filter(format)
+            validate_mime_filter(codec)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid query options.") from exc
         requested_timerange = query_timerange(timerange)
@@ -361,7 +393,7 @@ class FlowUseCases:
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
         flow = self.get_flow(flow_id)
         try:
-            flow_range = TimeRange.from_str(
+            flow_range = parse_timerange(
                 self._flow_timeranges([flow_id], seed_flows=[flow])[flow_id]
             )
         except ValueError as exc:
@@ -466,18 +498,16 @@ class FlowUseCases:
 
     def get_flow_property(
         self, flow_id: UUID, property_name: FlowPropertyName
-    ) -> str | int | bool | None:
+    ) -> str | int | bool:
         flow = self.get_flow(flow_id)
         if property_name == "read_only":
             return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
-            # Unset properties are readable once the Flow exists: empty string
-            # for the string properties, null for the numeric ones (the spec
-            # reserves 404 for a missing Flow and defines no unset form).
             if property_name in {"label", "description"}:
                 return ""
-            return None
+            # BBC defines an integer response but no representation for absence.
+            raise NotFound("The requested Flow property is not set.")
         if property_name in {"label", "description"}:
             if not isinstance(value, str):
                 raise BadRequest("Bad request. Invalid Flow property value.")
@@ -624,9 +654,15 @@ class FlowUseCases:
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
         try:
-            body_flow_id = UUID(str(flow.get("id")))
+            strict_contract_model(
+                contract_models.FlowPut,
+                flow,
+                recursive_non_nullable_fields=_FLOW_CONTRACT_FIELDS,
+            )
+            body_flow_id = parse_uuid(flow.get("id"))
+            parse_uuid(flow.get("source_id"))
         except TypeError, ValueError:
-            raise NotFound("The requested Flow ID in the path is invalid.") from None
+            raise BadRequest("Bad request. Invalid Flow JSON.") from None
         if body_flow_id != flow_id:
             raise NotFound("The requested Flow ID in the path is invalid.")
         supplied_fields = supplied_fields or set(flow)
@@ -699,9 +735,6 @@ class FlowUseCases:
                     **profile.flow_metadata,
                     "profile_id": str(existing.profile_id),
                 }
-
-        if existing is not None and not unlinking_profile:
-            data = self._flow_update_payload(existing, data)
 
         try:
             data = validate_flow_payload(data)
@@ -816,22 +849,6 @@ class FlowUseCases:
             flow=record,
         )
         return record, created
-
-    @staticmethod
-    def _flow_update_payload(
-        existing: FlowRecord, data: dict[str, Any]
-    ) -> dict[str, Any]:
-        payload = dict(data)
-        if "source_id" not in payload and existing.source_id is not None:
-            payload["source_id"] = str(existing.source_id)
-        if "format" not in payload and existing.format is not None:
-            payload["format"] = existing.format
-        if "container" not in payload and existing.container is not None:
-            payload["container"] = existing.container
-        for field_name in ("codec", "essence_parameters"):
-            if field_name not in payload and field_name in existing.data:
-                payload[field_name] = existing.data[field_name]
-        return payload
 
     def referenced_flows_matching_tags_page(
         self,

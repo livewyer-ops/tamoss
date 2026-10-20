@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the TAMOSS FastAPI OpenAPI surface with the BBC TAMS contract."""
+"""Compare the published TAMOSS OpenAPI document with the BBC TAMS contract."""
 
 from __future__ import annotations
 
@@ -64,74 +64,10 @@ def load_candidate_openapi(path: Path | None) -> dict[str, Any]:
     if path is not None:
         return load_yaml(path)
 
-    from tamoss.app import create_app
-    from tamoss.application.use_cases import TamossUseCases
-    from tamoss.settings import Settings, StorageBackendSettings
+    from tamoss.contract.openapi import load_public_openapi
+    from tamoss.settings import Settings
 
-    settings = Settings(
-        auth_required=False,
-        storage_backend=StorageBackendSettings(
-            label="tamoss.storage.primary",
-            provider="tamoss",
-            region="us-east-1",
-            store_product="s3",
-            bucket_name="tamoss-openapi",
-            endpoint_url="https://objects.internal.example.test",
-            public_endpoint_url="https://objects.example.test",
-            access_key="access",
-            secret_key="secret",
-        ),
-    )
-    return create_app(
-        settings,
-        use_cases=TamossUseCases(
-            repository=_OpenApiOnlyRepository(),
-            object_storage=_OpenApiOnlyObjectStorage(),
-            settings=settings,
-        ),
-    ).openapi()
-
-
-class _OpenApiOnlyRepository:
-    """Repository adapter used only while building the runtime OpenAPI schema."""
-
-    @property
-    def service_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def webhook_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def deletion_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def source_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def flow_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def storage_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def segment_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-    @property
-    def object_repository(self) -> _OpenApiOnlyRepository:
-        return self
-
-
-class _OpenApiOnlyObjectStorage:
-    """Object-storage adapter used only while building the runtime OpenAPI schema."""
-
-    pass
+    return load_public_openapi(Settings())
 
 
 def normalized_path(path: str) -> str:
@@ -441,7 +377,10 @@ def content_types(value: Any) -> set[str]:
 def render_markdown(report: ParityReport, *, max_findings: int | None = None) -> str:
     counts = Counter(finding.kind for finding in report.findings)
     lines = [
-        "# TAMOSS OpenAPI Parity",
+        "# TAMOSS published OpenAPI alignment",
+        "",
+        "This compares documents; it does not exercise HTTP handlers "
+        "or prove runtime conformance.",
         "",
         f"- BBC operations: {report.source_operations}",
         f"- TAMOSS operations: {report.candidate_operations}",
@@ -462,7 +401,7 @@ def render_markdown(report: ParityReport, *, max_findings: int | None = None) ->
 
     lines.extend(["", "## Findings", ""])
     if not findings:
-        lines.append("No OpenAPI surface gaps found.")
+        lines.append("No published OpenAPI surface gaps found.")
     else:
         for finding in findings:
             operation = (

@@ -299,7 +299,7 @@ def test_object_instance_updates_are_visible_to_all_reused_object_segments(
     second_flow_id, _, _ = create_video_flow(client)
     reused = client.post(
         f"/flows/{second_flow_id}/segments",
-        json=segment_payload(object_id, "[10:0_20:0)"),
+        json=segment_payload(object_id, "[10:0_20:0)", ts_offset="10:0"),
     )
     assert reused.status_code == 201
 
@@ -861,6 +861,13 @@ def test_segment_deletion_request_lifecycle(
     assert "expiry" not in accepted.json()
 
     listed_requests = client.get("/flow-delete-requests")
+    listed_head = client.head("/flow-delete-requests")
+    assert listed_head.status_code == 200
+    assert listed_head.content == b""
+    assert (
+        listed_head.headers["x-paging-count"]
+        == listed_requests.headers["x-paging-count"]
+    )
     assert listed_requests.status_code == 200
     assert [item["id"] for item in listed_requests.json()] == [request_id]
     request_head = client.head(f"/flow-delete-requests/{request_id}")

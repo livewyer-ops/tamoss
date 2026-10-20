@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from mediatimestamp import TimeRange, Timestamp
+from mediatimestamp import Timestamp
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.types import (
@@ -32,7 +32,7 @@ from tamoss.domain.model import (
     WebhookDeliveryRecord,
     WebhookRecord,
 )
-from tamoss.domain.timeranges import finite_normalized_timerange_bounds
+from tamoss.domain.timeranges import finite_normalized_timerange_bounds, parse_timerange
 from tamoss.errors import normalize_error_payload
 
 
@@ -852,7 +852,7 @@ def _optional_datetime_from_record(value: Any) -> datetime | None:
 
 def _timerange_bounds(timerange: str) -> tuple[int, int]:
     try:
-        parsed = TimeRange.from_str(timerange)
+        parsed = parse_timerange(timerange)
     except Exception as exc:
         raise ValueError("Segment timerange is invalid.") from exc
     try:

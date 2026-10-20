@@ -73,9 +73,10 @@ complete valid replacement technical definition. TAMOSS removes the Profile
 association and strips fields inherited from the old Profile before storing
 the replacement.
 
-Unlinking is explicit because omission means "retain the existing
-association" during an update. A newly created or already direct Flow cannot
-use the empty-string sentinel.
+To retain the association when replacing Flow metadata, include the existing
+`profile_id` and the required Flow and Source identifiers. Omitting both the
+Profile reference and a complete technical definition is invalid. A newly
+created or already direct Flow cannot use the empty-string sentinel.
 
 ## User Interface Boundary
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Body, Depends, Query, Request, Response
 
 from tamoss.api.dependencies import get_service_use_cases
 from tamoss.api.presenters import (
@@ -14,6 +14,7 @@ from tamoss.api.query_params import tag_filter_parameters, validate_query_params
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.contract.generated import contract_models
 from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import strict_contract_model
 from tamoss.domain.tags import parse_tag_filters
 from tamoss.errors import BadRequest
 
@@ -51,10 +52,18 @@ def service(
     },
 )
 def post_service(
-    service_update: contract_models.ServicePost,
+    service_update: dict[str, Any] = Body(...),
     service: ServiceUseCases = Depends(get_service_use_cases),
 ) -> Response:
-    service.update_service_info(contract_dump(service_update))
+    try:
+        validated = strict_contract_model(
+            contract_models.ServicePost,
+            service_update,
+            non_nullable_fields=contract_models.ServicePost.model_fields,
+        )
+    except ValueError as exc:
+        raise BadRequest("Bad request. Invalid service JSON.") from exc
+    service.update_service_info(contract_dump(validated))
     return Response()
 
 
