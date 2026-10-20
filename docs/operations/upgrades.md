@@ -14,6 +14,25 @@ supported upgrade paths, `dependencies.yaml` records tested platform versions,
 The platform `helmfile apply` command requires
 [Helm diff](install.md#helm-diff).
 
+## Environment layout migration
+
+Older generated environments combine a shared base with `tamoss-patch.yaml`.
+The patch contains only overrides, so preserve the fully rendered resources:
+
+1. Render the existing environment with `kubectl kustomize` before changing
+   its base or directory layout. Save the output for comparison.
+2. Put the complete rendered `Tamoss` in `instances/<instance>/tamoss.yaml`,
+   with its instance-owned Namespace in `namespace.yaml`. Preserve names,
+   namespaces, `fullnameOverride`, version pins and custom settings. Carry over
+   any additional instance resources; keep shared resources at the root.
+3. List these files in the instance's `kustomization.yaml`. Replace the old
+   base and patch references in the environment's top-level Kustomization with
+   `instances/<instance>`, preserving resources shared by other instances.
+4. Compare the rendered resources before and after the move; they must be
+   equivalent. Configure the separate operator overlay using the
+   [environment layout](install.md#existing-cluster), keeping
+   `operator/` and `platform-values.yaml` at the environment root.
+
 ## Prepare an existing instance
 
 Before installing an operator that requires release selection, pin
@@ -108,22 +127,35 @@ existing configuration.
 
 ## Managed storage and identity
 
+Platform updates stop on failure without automatic Helm rollback. Diagnose and
+correct the failed release, or restore the verified backup into a matching
+installation. Reverting image versions does not undo data migrations.
+
+### RustFS
+
 Managed RustFS follows `spec.version` when its image override is absent.
 Preserve Tenant names, pools, PVCs and credentials. TAMOSS does not provide a
 default backup for managed RustFS data. Use a backup or replication method
 supported by the storage platform, and test restoring the complete Tenant
-before relying on it. Follow release-specific credential instructions, wait
-for the StatefulSet rollout, and test existing media and new writes. Do not
-downgrade an upgraded data volume.
+before relying on it. Wait for the StatefulSet rollout, and test existing media
+and new writes. Do not downgrade an upgraded data volume.
+
+Generated TAMOSS credentials need no rotation. Before upgrading to RustFS
+1.0.0, configure a valid explicit `RUSTFS_RPC_SECRET` if either root credential
+uses the public `rustfsadmin` default. Invalid credentials can interrupt
+storage; correct the configuration to resume the upgrade. TAMOSS does not
+replace user-owned Secrets.
+
+Include any `x-amz-*` checksum headers, such as
+`x-amz-checksum-mode: ENABLED`, when signing presigned URLs. RustFS 1.0.0 rejects
+unsigned additions. Presigned uploads also support `Content-MD5`.
+
+### Authentik
 
 Authentik follows the shared platform release. Follow its supported upgrade
 sequence and preserve its database, secret key, users and provider identities.
 Verify login, logout and OAuth client access after server and worker rollouts.
 Separate outposts must match the server version.
-
-Platform updates stop on failure without automatic Helm rollback. Diagnose and
-correct the failed release, or restore the verified backup into a matching
-installation. Reverting image versions does not undo data migrations.
 
 ## Status and failed upgrades
 
@@ -151,14 +183,20 @@ If RustFS fails during rollout, inspect the Tenant conditions and the RustFS
 Pod's events and logs. Schema and application updates wait for backend
 readiness. Correct invalid custom configuration to resume the upgrade; storage
 may be unavailable until the rollout recovers. TAMOSS does not replace
-user-owned Secrets. Check the [release notes](../../CHANGELOG.md) for credential
-requirements.
+user-owned Secrets. Check the [RustFS credential requirements](#rustfs).
 
 For `SchemaMigrationFailed`, inspect migration Job logs, database connectivity
 and permissions. Correct the cause and use the existing schema retry action.
 Keep the requested release selected while an upgrade is in progress.
 
 ## Schema migrations and recovery
+
+The upgrade to `8.2.0-oss2` applies Alembic revision `20260924_0008`, which
+converts Segment timestamp bounds from `BIGINT` to `NUMERIC`. PostgreSQL rewrites
+the Segment table and its indexes and refreshes statistics. Reserve a
+maintenance window and enough temporary database space; duration depends on
+Segment volume. Stop ingest and other writes during migration. Media objects
+and checksums are unchanged.
 
 Rehearse migrations with a restored database to estimate locking, disk-space
 requirements and downtime. The migration Job uses the selected API image and

@@ -4,22 +4,68 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
-## 8.2.0-oss2-rc1 - 2026-09-15
+## 8.2.0-oss2 - 2026-10-20
 
-Release candidate for the second TAMOSS release implementing BBC TAMS 8.2.
+### Added
 
-- Fix playback failures caused by oversized Segment response headers.
-- Bound collection timerange traversal across cyclic and deeply nested collections.
-- Preserve listing filters while keeping labels out of pagination tokens, and
-  increase UI proxy response-header buffers for long pagination links.
-- Bound HTTP method metric labels and remove unused repository, storage,
-  collection and webhook helpers.
-- Wait for recorded schema completion in fresh-install checks and compile UI
-  assets on the native builder for multi-architecture images.
+- Select and upgrade each Tamoss instance independently through `spec.version`.
+- Configure shared installation defaults while retaining per-instance overrides.
+- Support AWS web identity for the default external S3 media backend.
+- Support verified TLS connections to external PostgreSQL. See
+  [database TLS configuration](docs/reference/runtime-configuration.md#external-database-tls).
+- Publish release catalogues and tested dependency versions alongside
+  installation assets.
 
-Upgrades from `8.2.0-oss1` retain schema revision `8.2.0-oss1` and require no
-database migration. Deployments with an additional Nginx gateway must also apply
-the [pagination response-header settings](https://github.com/livewyer-ops/tamoss/blob/8.2.0-oss2-rc1/docs/operations/troubleshooting.md#paginated-listings-return-502-through-a-proxy).
+### Fixed
+
+- Correct TAMS 8.2 validation for resource identifiers, metadata and request bodies.
+- Preserve Segment timestamp precision and correct paging boundaries.
+- Return correct Flow timeranges, including empty ranges for gaps in collections.
+- Prevent rejected Segment registrations from changing stored Objects.
+- Correct Segment-deletion webhooks and delivery retries.
+- Fix playback of ISO segments and media that starts after zero.
+- Fix failures caused by oversized response headers and long pagination links.
+- Improve database maintenance and storage readiness checks during upgrades.
+- Enable TLS routing for Traefik ingress resources.
+- Update certifi to 2026.10.19 to remove a trust root affected by compromised
+  CA keys ([security advisory](https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2)).
+
+### Changed
+
+- **Breaking:** organise instance configuration under `instances/<instance>/`.
+  Follow the [environment layout migration guide](docs/operations/upgrades.md#environment-layout-migration).
+- Update RustFS to 1.0.0 and refresh the tested
+  [platform dependencies](deploy/platform/dependencies.yaml).
+- Update Python, Go and frontend dependencies, build tools and CI actions.
+
+### Upgrade notes
+
+Upgrade from `8.2.0-oss1` using the [upgrade guide](docs/operations/upgrades.md).
+Older installations must follow the supported paths in
+[compatibility.yaml](operator/compatibility.yaml).
+
+Before updating the operator, pin each instance to its installed release using
+`spec.version`. Review existing component overrides so that intended components
+follow the selected release.
+
+This release requires a database migration. Schedule a maintenance window,
+stop writes and verify backups before upgrading. Downgrades are unsupported.
+See [migration and recovery guidance](docs/operations/upgrades.md#schema-migrations-and-recovery).
+
+Check the integrations you use:
+
+- RustFS: follow the [storage upgrade guidance](docs/operations/upgrades.md#rustfs)
+  for credential and presigned URL requirements.
+- Authentik: update manually deployed outposts to match the server version.
+- Traefik: review custom logging and file-provider settings against the
+  [chart 41 changes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).
+- cert-manager: review the
+  [monitoring and permission changes](https://github.com/cert-manager/cert-manager/releases/tag/v1.21.0).
+- Additional Nginx gateways: apply the
+  [response-header settings](docs/operations/troubleshooting.md#paginated-listings-return-502-through-a-proxy).
+
+Enable optional S3 web identity after upgrading the operator and instance
+runtime, following the [configuration guide](docs/operations/s3-web-identity.md).
 
 ## 8.2.0-oss1 - 2026-09-09
 
@@ -50,9 +96,12 @@ declarative, Kubernetes-managed ingest.
 ### Upgrade Notes
 
 - The declared direct upgrade starts at `8.1.0-oss6` and requires a database
-  migration. Existing 8.2 candidates retain the same schema revision.
+  migration.
 - Browser upload controls are replaced by API-client or managed `IngestRun`
   workflows.
+- TAMSin `8.2.0-in2` corrects rendered Segment timing. Re-ingest affected media
+  as a new run rather than editing or replaying an existing run; stored Flows
+  are unchanged.
 
 ## 8.1.0-oss6 - 2026-08-08
 
@@ -157,15 +206,3 @@ First release on the TAMS-aligned version scheme.
 - Aligned user-facing documentation and task commands to the operator-only
   install model and the infrastructure deployment profiles.
 - Removed the application chart deployment assets.
-
-## 1.0.0-rc.1
-
-Predates the TAMS-aligned version scheme introduced in `8.0.0-oss1`.
-
-- BBC TAMS v8.0-compatible API surface for sources, flows, flow segments,
-  objects, storage allocation, webhooks, and deletion requests.
-- PostgreSQL persistence, S3-compatible object storage, asynchronous workers,
-  and webhook delivery.
-- Operator and Kind automation for local and remote Kubernetes deployment.
-- Web UI addon for browsing, operational workflows, preview ingest, and preview
-  playback.
