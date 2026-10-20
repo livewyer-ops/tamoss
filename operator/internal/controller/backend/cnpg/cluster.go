@@ -82,14 +82,14 @@ func Reconcile(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamo
 	if err := mutateObject(cluster, mutators...); err != nil {
 		return err
 	}
-	if err := c.Patch(ctx, cluster, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil { //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+	if err := c.Patch(ctx, cluster, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil { //nolint:staticcheck // Server-side apply uses the typed resource objects.
 		return err
 	}
 	if scheduledBackup := BuildScheduledBackup(tamoss); scheduledBackup != nil {
 		if err := mutateObject(scheduledBackup, mutators...); err != nil {
 			return err
 		}
-		return c.Patch(ctx, scheduledBackup, client.Apply, client.FieldOwner(resource.FieldOwner)) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+		return c.Patch(ctx, scheduledBackup, client.Apply, client.FieldOwner(resource.FieldOwner)) //nolint:staticcheck // Server-side apply uses the typed resource objects.
 	}
 	return nil
 }

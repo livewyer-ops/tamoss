@@ -51,7 +51,7 @@ func applyManagedObject(ctx context.Context, c client.Client, desired client.Obj
 }
 
 func applyObjectPatch(ctx context.Context, c client.Client, desired client.Object) error {
-	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(resource.FieldOwner), client.ForceOwnership) //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(resource.FieldOwner), client.ForceOwnership) //nolint:staticcheck // Server-side apply uses the typed resource objects.
 }
 
 // managedObjectChanged reports whether the apply produced a new revision of

@@ -28,7 +28,7 @@ metadata:
   name: tamoss-media
   namespace: tams
 spec:
-  version: <installed-release>
+  version: <release>
   profile: single-server
   ingest:
     sourcePolicy:
@@ -95,7 +95,7 @@ spec:
 ```
 
 The HTTP credential Secret contains a JSON array accepted by TAMSin's
-[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/main/docs/configuration.md#settings)
+[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#settings)
 setting:
 
 ```yaml
@@ -160,7 +160,7 @@ spec:
       name: archive
 ```
 
-See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/main/docs/configuration.md#inputs)
+See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#inputs)
 for selector expansion behaviour.
 
 ## IngestRun Spec Fields

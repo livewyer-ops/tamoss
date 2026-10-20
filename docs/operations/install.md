@@ -9,13 +9,7 @@ Choose the product release and export it as `TAMOSS_VERSION`. The generated
 environment uses it for the operator install reference and initial instance.
 Run `task env:init` from the source revision that publishes that release; the
 same checkout supplies the platform dependency pins.
-Install the [Helm diff plugin](https://github.com/databus23/helm-diff) before
-using Helmfile `apply`:
-
-```bash
-helm plugin install https://github.com/databus23/helm-diff --verify=false
-helm diff version
-```
+Install [Helm diff](#helm-diff) before using Helmfile `apply`.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -65,6 +59,23 @@ default `StorageBackend` for each `Tamoss` instance and reconciles additional
 worker pods consume the registered metadata and mounted runtime credentials;
 they do not create storage backend rows during Kubernetes startup.
 
+## Helm diff
+
+Helmfile `apply` uses the [Helm diff plugin](https://github.com/databus23/helm-diff)
+to change only releases whose rendered configuration differs. With Helm 4,
+`curl` and GnuPG installed, run:
+
+```bash
+task dev:helm-diff
+helm diff version
+```
+
+The task pins the plugin version in `.tasks/dev.yaml`, checks the signing-key
+fingerprint and verifies the release archive before installation. It supports
+Linux and macOS on AMD64 and ARM64. For other platforms, follow the upstream
+installation instructions. If another plugin version is already installed,
+remove it with `helm plugin uninstall diff` before running the task.
+
 ## Operator Runtime
 
 The checked-in operator install includes leader election, voluntary leader
@@ -97,6 +108,10 @@ with `task kind:up`, the task uses the matching Kind environment under
 `PROFILE=multi-server` also uses the checked-in multi-node Kind configuration so
 local validation has separate worker nodes; the remote install path still uses
 normal environment compositions.
+
+These checked-in environments are Kind fixtures. They use local operator builds
+and profile bases; `task env:init` creates the separate structure below for
+published installations.
 
 ## Existing Cluster
 

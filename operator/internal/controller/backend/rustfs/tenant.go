@@ -69,7 +69,7 @@ func Reconcile(ctx context.Context, c client.Client, tamoss *tamossv1alpha1.Tamo
 			return nil, err
 		}
 	}
-	if err := c.Patch(ctx, tenant, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil { //nolint:staticcheck // client.Apply patches remain supported; migrating to client.Client.Apply(ApplyConfiguration) is a wider refactor than this upgrade.
+	if err := c.Patch(ctx, tenant, client.Apply, client.FieldOwner(resource.FieldOwner)); err != nil { //nolint:staticcheck // Server-side apply uses the typed resource objects.
 		return nil, err
 	}
 	return tenant, nil

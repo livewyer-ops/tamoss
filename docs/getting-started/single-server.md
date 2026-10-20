@@ -45,10 +45,9 @@ task kind:up PROFILE=single-server
 This validates the `single-server` profile shape on Kind; it is not the
 existing-cluster install path.
 
-For an existing cluster:
-
-Choose the product release and export it as `TAMOSS_VERSION`. The generated
-environment uses it for the operator install reference and initial instance.
+For an existing cluster, [select a release](../operations/install.md) and install
+[Helm diff](../operations/install.md#helm-diff). Review the [key settings](#key-settings)
+when editing the generated files, then apply and wait for the instance:
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -56,13 +55,13 @@ export KUBECONFIG=/path/to/kubeconfig
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-single-server PROFILE=single-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-single-server/platform-values.yaml
 $EDITOR deploy/environments/my-single-server/operator/defaults.yaml
+task env:apply ENV=my-single-server KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-single-server KUBECONFIG="$KUBECONFIG"
 ```
 
-Work through the [Key Settings](#key-settings), then apply the platform,
-operator and instance with the native commands in the
-[install guide](../operations/install.md#existing-cluster). Use
-`task env:summary` to inspect status if useful.
+The [install guide](../operations/install.md) describes the equivalent native
+Helmfile and Kubernetes commands.
 
 ## Key Settings
 

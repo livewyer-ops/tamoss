@@ -11,7 +11,7 @@
       changes.
 - [ ] `task openapi:check` was run for API, OpenAPI, or BBC vendor changes.
 - [ ] New or changed environment variables are documented in
-      `docs/configuration.md`.
+      `docs/reference/runtime-configuration.md`.
 - [ ] TAMS conformance is unaffected, or `task test:tams` and the
       TAMS conformance inventory were updated.
 - [ ] Operator Chainsaw changes include the relevant local or CI run result.

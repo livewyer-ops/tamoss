@@ -5,7 +5,7 @@
 # TAMOSS
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
 [![BBC TAMS v8.2](https://img.shields.io/badge/BBC%20TAMS-v8.2-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the
@@ -39,19 +39,18 @@ integrations.
 
 ## Quickstart
 
-**Prerequisites:** Docker, `curl`, `git`, and
+**Prerequisites:** Docker, `curl`, `git`, GnuPG and
 [aqua](https://aquaproj.github.io/docs/install) — a single-binary CLI version
 manager. With aqua installed, the rest of the toolchain (`task`, `kind`,
 `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
-Helmfile `apply` also needs the Helm diff plugin.
+Helmfile `apply` also needs [Helm diff](docs/operations/install.md#helm-diff).
 
 Use the local [Kind](https://kind.sigs.k8s.io/) profile first:
 
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
-helm plugin install https://github.com/databus23/helm-diff --verify=false
-helm diff version
+task dev:helm-diff
 
 task kind:up PROFILE=local-kind
 ```
@@ -70,11 +69,8 @@ Open:
 - S3 endpoint: <https://s3.tamoss.localtest.me>
 - Authentik: <https://auth.tamoss.localtest.me>
 
-To install on an existing Kubernetes cluster instead of the disposable
-Kind cluster, use the environment workflow:
-
-Use `task env:init` to scaffold an environment, then apply its native Helmfile
-and Kubernetes resources as described in the [install guide](docs/operations/install.md).
+For an existing Kubernetes cluster, choose the release as described in the
+[install guide](docs/operations/install.md), then create an environment:
 
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com

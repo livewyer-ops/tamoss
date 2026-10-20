@@ -2,7 +2,7 @@
 
 Use this procedure to run the operator-managed API and worker against an
 existing default S3 media bucket using IAM roles for service accounts (IRSA).
-Check the [release prerequisites](../../CHANGELOG.md#upgrade-notes) before
+Check the [release prerequisites](../../CHANGELOG.md#820-oss2) before
 changing an existing installation.
 
 ## Configure the identity and bucket

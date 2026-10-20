@@ -8,7 +8,7 @@ metadata:
   name: tamoss-single-server
   namespace: tams
 spec:
-  version: <installed-release>
+  version: <release>
   profile: single-server
 
   # paused: false

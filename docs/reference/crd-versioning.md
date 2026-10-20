@@ -1,7 +1,8 @@
 # CRD versioning
 
 TAMOSS serves and stores `tamoss.livewyer.io/v1alpha1` for the namespaced
-`Tamoss`, `StorageBackend`, `FlowProfile`, `IngestRun` and `TamossHibernate`
+`Tamoss`, `StorageBackend`, `FlowProfile`, `IngestRun` and
+[`TamossHibernate`](../operations/hibernate-resume.md)
 resources. There is no conversion webhook or additional served version.
 
 The API is alpha. Breaking field, default or validation changes require

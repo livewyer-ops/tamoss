@@ -8,8 +8,8 @@ the same operator flow used by the other profiles.
 - Docker or a compatible container runtime.
 - [`aqua`](https://aquaproj.github.io/) for the pinned toolchain, or
   equivalent versions of Task, Kind, kubectl, Helm, Helmfile, uv, yq, and jq.
-- The [Helm diff plugin](https://github.com/databus23/helm-diff) for Helmfile `apply`.
-- `curl` and `git`.
+- [Helm diff](../operations/install.md#helm-diff) for Helmfile `apply`.
+- `curl`, `git` and GnuPG.
 
 `aqua install` installs the pinned command-line tools used by the tasks. It
 does not preinstall project virtualenvs or browser binaries; validation tasks
@@ -20,8 +20,7 @@ bootstrap those as needed on first run.
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
-helm plugin install https://github.com/databus23/helm-diff --verify=false
-helm diff version
+task dev:helm-diff
 
 task kind:up PROFILE=local-kind
 ```

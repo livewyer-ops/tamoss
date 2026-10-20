@@ -87,9 +87,8 @@ egress rules under `spec.networkPolicy.api`, `spec.networkPolicy.worker`,
 Default egress is port-scoped, not destination-scoped: it names the ports each
 component must reach and permits any destination on them. DNS egress allows TCP
 and UDP on `53` and `8053`, the latter because some clusters enforce policy
-after `kube-dns` Service translation. Destination-scoped defaults are deferred
-until they can be verified against an enforcing CNI, so scope destinations for
-your cluster by declaring rules under `spec.networkPolicy.<component>.egress`;
+after `kube-dns` Service translation. Scope destinations for your cluster by
+declaring rules under `spec.networkPolicy.<component>.egress`;
 the operator renders explicit rules unchanged and adds no defaults alongside
 them.
 
@@ -151,12 +150,12 @@ spec:
             key: ca.pem
 ```
 
-This enables libpq `verify-full` for the API, worker, schema migration,
+The operator configures libpq `verify-full` for the API, worker, schema migration,
 storage registration and deregistration, and FlowProfile Jobs. The database
 hostname must match its certificate. The CA reference is required and cannot
 be optional. These TLS settings take precedence over API and worker
-`PGSSLMODE` and `PGSSLROOTCERT` environment overrides. Omitting `tls` preserves
-the existing connection behaviour.
+`PGSSLMODE` and `PGSSLROOTCERT` environment overrides. Omit `tls` to use the
+runtime's connection settings.
 
 Changing the CA reference refreshes pending schema and FlowProfile Jobs through
 their existing retry and reconciliation controls. Updating a ConfigMap's contents

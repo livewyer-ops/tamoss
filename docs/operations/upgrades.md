@@ -1,9 +1,8 @@
 # Upgrades
 
 Each `Tamoss` instance selects an exact product release through `spec.version`.
-Installing a newer operator leaves that selection unchanged. To upgrade an
-instance, change its version in its source-controlled manifest and apply it.
-Explicit component image overrides continue to take precedence.
+To upgrade an instance, change its version in its source-controlled manifest
+and apply it. Explicit component image overrides take precedence.
 
 The TAMOSS source revision for a release contains the platform dependency pins
 and the matching operator install reference. Use that revision when applying a
@@ -12,9 +11,8 @@ shared platform or operator update. Read the target release's
 supported upgrade paths, `dependencies.yaml` records tested platform versions,
 `catalogue.json` records instance releases supported by the operator, and
 `release.json` includes image references and artefact checksums.
-The platform `helmfile apply` command requires the
-[Helm diff plugin](https://github.com/databus23/helm-diff). Install it with
-`helm plugin install https://github.com/databus23/helm-diff --verify=false` if it is absent.
+The platform `helmfile apply` command requires
+[Helm diff](install.md#helm-diff).
 
 ## Prepare an existing instance
 
@@ -167,9 +165,8 @@ requirements and downtime. The migration Job uses the selected API image and
 its catalogue Alembic revision. Schema changes and the revision update are
 transactional. The operator runs the migration and reports its progress in
 `Tamoss.status.schemaMigration`; inspect the Job logs if it fails.
-The schema-state ConfigMap records both the product schema and Alembic revision.
-Installations with older state records verify their selected revision once.
-An already-applied Alembic revision is not repeated.
+The schema-state ConfigMap records the completed product schema. Alembic records
+the database revision and skips migrations already applied.
 
 The operator does not automatically roll back images or schema. Product release
 downgrades are unsupported. Restore the PostgreSQL and storage backups into a

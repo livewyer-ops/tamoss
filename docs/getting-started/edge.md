@@ -82,22 +82,22 @@ other existing ARM64 cluster, export the path to its kubeconfig first:
 export KUBECONFIG=/path/to/kubeconfig
 ```
 
-Create the environment composition and review its generated files:
-
-Choose the product release and export it as `TAMOSS_VERSION`. The generated
-environment uses it for the operator install reference and initial instance.
+[Select a release](../operations/install.md) and install
+[Helm diff](../operations/install.md#helm-diff). The generated edge platform
+values disable Authentik and use self-signed TLS. Review the [key settings](#key-settings)
+when editing the files, then apply and wait for the instance:
 
 ```bash
 task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-edge PROFILE=edge DOMAIN=tamoss.edge
 $EDITOR deploy/environments/my-edge/platform-values.yaml
 $EDITOR deploy/environments/my-edge/operator/defaults.yaml
+task env:apply ENV=my-edge KUBECONFIG="$KUBECONFIG"
+task env:wait ENV=my-edge KUBECONFIG="$KUBECONFIG"
 task env:summary ENV=my-edge KUBECONFIG="$KUBECONFIG"
 ```
 
-The generated edge platform values disable Authentik and use self-signed TLS
-by default. Work through the [Key Settings](#key-settings), then apply the
-platform, operator and instance with the native commands in the
-[install guide](../operations/install.md#existing-cluster).
+The [install guide](../operations/install.md) describes the equivalent native
+Helmfile and Kubernetes commands.
 
 ## Key Settings
 
