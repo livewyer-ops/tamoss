@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
 import os
@@ -8,10 +10,12 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
+from xml.etree import ElementTree
 
 import boto3
 import botocore.session
 import pytest
+from botocore.awsrequest import AWSResponse
 from botocore.exceptions import ClientError
 from botocore.stub import ANY, Stubber
 from prometheus_client import REGISTRY
@@ -27,6 +31,8 @@ def test_s3_clients_are_reused_and_configured_with_connection_pool(
     created_clients: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def __init__(self, kwargs: dict) -> None:
             self.kwargs = kwargs
 
@@ -182,6 +188,8 @@ def test_runtime_credentials_file_supplies_non_default_backend_credentials(
     created_clients: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             return "https://storage.example.test/presigned"
 
@@ -226,6 +234,8 @@ def test_build_put_request_uses_flow_container_as_content_type(monkeypatch) -> N
     presign_params: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             presign_params.append(kwargs["Params"])
             return "https://storage.example.test/presigned"
@@ -300,6 +310,8 @@ def test_presigned_put_urls_do_not_outlive_allocated_object_timeout(
     presign_calls: list[tuple[str, int]] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             presign_calls.append((args[0], kwargs["ExpiresIn"]))
             return f"https://storage.example.test/{args[0]}"
@@ -340,6 +352,8 @@ def test_runtime_credentials_file_takes_precedence_over_persisted_credentials(
     created_clients: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             return "https://storage.example.test/presigned"
 
@@ -382,6 +396,8 @@ def test_build_get_urls_batch_deduplicates_presigned_requests(monkeypatch) -> No
     calls: list[tuple[str, str, int]] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             calls.append(
                 (
@@ -428,6 +444,8 @@ def test_build_get_urls_batch_skips_presign_when_only_direct_urls_requested(
     calls: list[str] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             calls.append(kwargs["Params"]["Key"])
             return "https://storage.example.test/presigned"
@@ -466,40 +484,114 @@ def test_build_get_urls_batch_skips_presign_when_only_direct_urls_requested(
     ]
 
 
-def test_delete_batch_deduplicates_and_chunks_s3_requests(monkeypatch) -> None:
-    calls: list[dict] = []
-
-    class FakeS3Client:
-        def delete_objects(self, **kwargs) -> dict:
-            calls.append(kwargs)
-            return {}
-
-    monkeypatch.setattr(
-        "tamoss.adapters.object_storage.boto3.client",
-        lambda *args, **kwargs: FakeS3Client(),
-    )
-
+@pytest.fixture()
+def captured_s3_requests(monkeypatch):
     backend = _s3_backend()
     storage = ConfiguredObjectStorage(
-        Settings(
-            auth_required=False,
-            storage_backend=_settings_backend(backend),
-        )
+        Settings(auth_required=False, storage_backend=_settings_backend(backend))
     )
+    requests = []
+
+    def send(request):
+        requests.append(request)
+        return AWSResponse(
+            request.url,
+            200,
+            {},
+            Mock(stream=lambda: iter([b"<DeleteResult/>"])),
+        )
+
+    client = storage._s3_client(backend)
+    monkeypatch.setattr(client._endpoint.http_session, "send", send)
+    yield storage, requests
+    client.close()
+
+
+def test_delete_batch_deduplicates_and_chunks_signed_sha256_requests(
+    captured_s3_requests,
+) -> None:
+    storage, requests = captured_s3_requests
     object_ids = [f"media/{index}.ts" for index in range(1001)]
 
-    storage.delete_batch([*object_ids, object_ids[0]], backend=backend)
+    storage.delete_batch([*object_ids, object_ids[0]])
 
-    assert [call["Bucket"] for call in calls] == ["tamoss-test", "tamoss-test"]
-    assert len(calls[0]["Delete"]["Objects"]) == 1000
-    assert calls[0]["Delete"]["Objects"][0] == {"Key": "media/0.ts"}
-    assert calls[1]["Delete"]["Objects"] == [{"Key": "media/1000.ts"}]
+    assert len(requests) == 2
+    batches = []
+    for request in requests:
+        headers = {key.lower(): value for key, value in request.headers.items()}
+        assert headers["x-amz-checksum-sha256"] == base64.b64encode(
+            hashlib.sha256(request.body).digest()
+        )
+        assert b"x-amz-checksum-sha256" in headers["authorization"]
+        assert urlparse(request.url).path == "/tamoss-test"
+        batches.append(
+            [
+                node.text
+                for node in ElementTree.fromstring(request.body).findall(
+                    "./{*}Object/{*}Key"
+                )
+            ]
+        )
+    assert batches == [object_ids[:1000], object_ids[1000:]]
+
+
+def test_write_sends_signed_payload_without_optional_checksum_trailer(
+    captured_s3_requests,
+) -> None:
+    storage, requests = captured_s3_requests
+    body = b"media bytes"
+
+    storage.write("media/object.ts", body)
+
+    assert len(requests) == 1
+    request = requests[0]
+    headers = {key.lower(): value for key, value in request.headers.items()}
+    assert "content-encoding" not in headers
+    assert "x-amz-trailer" not in headers
+    assert "transfer-encoding" not in headers
+    assert headers["content-length"] == str(len(body))
+    assert headers["x-amz-content-sha256"] == hashlib.sha256(body).hexdigest().encode()
+    assert request.body.read() == body
+
+
+@pytest.mark.parametrize("operation", ["put_object", "upload_part"])
+def test_explicit_upload_checksum_uses_header_without_consuming_body(
+    captured_s3_requests, operation
+) -> None:
+    storage, requests = captured_s3_requests
+    body = b"media with an explicit checksum"
+    client = storage._s3_client(_s3_backend())
+    params = (
+        {"UploadId": "upload", "PartNumber": 1} if operation == "upload_part" else {}
+    )
+
+    getattr(client, operation)(
+        Bucket="tamoss-test",
+        Key="media/object.ts",
+        Body=io.BytesIO(body),
+        ChecksumAlgorithm="SHA256",
+        **params,
+    )
+
+    assert len(requests) == 1
+    request = requests[0]
+    headers = {key.lower(): value for key, value in request.headers.items()}
+    assert "content-encoding" not in headers
+    assert "x-amz-trailer" not in headers
+    assert "transfer-encoding" not in headers
+    assert headers["x-amz-checksum-sha256"] == base64.b64encode(
+        hashlib.sha256(body).digest()
+    )
+    assert b"x-amz-checksum-sha256" in headers["authorization"]
+    assert request.body.read() == body
 
 
 def test_copy_uses_server_side_copy_for_backends_on_same_endpoint(monkeypatch) -> None:
     calls: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def copy(self, **kwargs) -> None:
             assert isinstance(kwargs.pop("SourceClient"), FakeS3Client)
             calls.append(kwargs)
@@ -545,6 +637,8 @@ def test_copy_raises_same_endpoint_copy_errors(monkeypatch) -> None:
     get_object_called = False
 
     class FakeS3Client:
+        meta = Mock()
+
         def copy(self, **kwargs) -> None:
             raise ClientError(
                 {
@@ -622,6 +716,8 @@ def test_copy_streams_between_different_s3_endpoints(monkeypatch, algorithm) -> 
     )
 
     class SourceS3Client:
+        meta = Mock()
+
         def get_object(self, **kwargs):
             assert kwargs == {
                 "Bucket": "tamoss-test",
@@ -636,6 +732,8 @@ def test_copy_streams_between_different_s3_endpoints(monkeypatch, algorithm) -> 
             }
 
     class DestinationS3Client:
+        meta = Mock()
+
         def upload_fileobj(self, body, bucket, key, **kwargs) -> None:
             uploaded.append((bucket, key, body.read(), kwargs.get("ExtraArgs")))
 
@@ -693,6 +791,8 @@ def test_runtime_credentials_file_reloads_on_mtime_change(
     closed_clients: list[str] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def __init__(self, access_key: str) -> None:
             self.access_key = access_key
 
@@ -758,6 +858,8 @@ def test_check_backend_uses_head_bucket_without_creating_bucket(
     calls: list[tuple[str, dict]] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def head_bucket(self, **kwargs) -> None:
             calls.append(("head_bucket", kwargs))
 
@@ -789,6 +891,8 @@ def test_invalid_runtime_credentials_file_keeps_previous_valid_credentials(
     created_clients: list[dict] = []
 
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             return "https://storage.example.test/presigned"
 
@@ -920,6 +1024,8 @@ def _write_credentials_file(
 
 def test_presigned_get_urls_increment_media_metric(monkeypatch) -> None:
     class FakeS3Client:
+        meta = Mock()
+
         def generate_presigned_url(self, *args, **kwargs) -> str:
             return f"https://storage.example.test/{kwargs['Params']['Key']}"
 

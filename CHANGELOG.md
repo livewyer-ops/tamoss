@@ -4,7 +4,14 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
-## 8.2.0-oss3
+## 8.2.0-oss3-rc1
+
+### Fixed
+
+- Use SHA256 request checksums for S3 bulk deletion, including OCI Object Storage.
+- Send explicit S3 upload checksums in headers so copies retain checksum protection on stores without upload trailer support.
+- Resolve dependency security advisories by updating Zod to 4.6.7, Vitest to
+  5.0.5, Black to 26.10.1 and virtualenv to 21.14.13.
 
 ### Changed
 
@@ -16,7 +23,7 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 Upgrade directly from `8.2.0-oss2` using the [upgrade guide](docs/operations/upgrades.md).
 The TAMOSS schema remains at `8.2.0-oss2`; no new TAMOSS database migration is required.
-Apply the platform, then the TAMOSS operator, then select `8.2.0-oss3` on each instance.
+Apply the platform, then the TAMOSS operator, then select `8.2.0-oss3-rc1` on each instance.
 
 Verify restorable backups and allow a maintenance window for database, identity
 and storage restarts. Authentik advances one release series to 2026.5; update

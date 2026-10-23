@@ -233,6 +233,7 @@ class ConfiguredObjectStorage:
             response = client.delete_objects(
                 Bucket=bucket,
                 Delete={"Objects": [{"Key": object_id} for object_id in delete_batch]},
+                ChecksumAlgorithm="SHA256",
             )
             if response.get("Errors"):
                 raise RuntimeError("S3 batch deletion was incomplete; retry required")
@@ -324,7 +325,7 @@ class ConfiguredObjectStorage:
             raise ConfigurationError(
                 f"Storage backend {backend.id} is missing S3 endpoint or credentials."
             )
-        return boto3.client(
+        client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
             aws_access_key_id=backend.access_key or None,
@@ -332,6 +333,7 @@ class ConfiguredObjectStorage:
             region_name=backend.region or "us-east-1",
             config=Config(
                 signature_version="s3v4",
+                request_checksum_calculation="when_required",
                 connect_timeout=self._settings.s3_connect_timeout_seconds,
                 read_timeout=self._settings.s3_read_timeout_seconds,
                 retries={"max_attempts": 2, "mode": "standard"},
@@ -339,6 +341,11 @@ class ConfiguredObjectStorage:
                 s3={"addressing_style": "path"},
             ),
         )
+        for operation in ("PutObject", "UploadPart"):
+            client.meta.events.register(
+                f"before-call.s3.{operation}", _use_header_checksum
+            )
+        return client
 
     def _resolve_backend(self, backend: StorageBackend | None) -> StorageBackend:
         resolved = _configured_backend(backend, self._settings)
@@ -415,6 +422,13 @@ def _same_storage_endpoint(source: StorageBackend, destination: StorageBackend) 
     return (source.endpoint_url or "") == (
         destination.endpoint_url or ""
     ) and source.region == destination.region
+
+
+def _use_header_checksum(*, context: dict[str, Any], **_: Any) -> None:
+    # Retain SDK checksum calculation for stores without aws-chunked support.
+    algorithm = context.get("checksum", {}).get("request_algorithm")
+    if isinstance(algorithm, dict) and algorithm.get("in") == "trailer":
+        algorithm["in"] = "header"
 
 
 def _copy_upload_args(response: dict[str, Any]) -> dict[str, Any]:
