@@ -43,7 +43,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest-cov>=7.1.0",
     "httpx>=0.24.0",
-    "ruff==0.16.10",
+    "ruff==0.17.1",
     "bandit[toml]>=1.9.4",
     "pyyaml>=6.0",
     "mypy>=2.3.0",
