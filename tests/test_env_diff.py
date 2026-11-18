@@ -65,6 +65,7 @@ def test_instance_diff_uses_selected_kustomize_directory(tmp_path: Path) -> None
     (instance_dir / "kustomization.yaml").write_text("resources: []\n")
     operator_dir = tmp_path / "operator"
     operator_dir.mkdir()
+    (operator_dir / "kustomization.yaml").write_text("resources: []\n")
     helmfile = tmp_path / "helmfile.yaml"
     helmfile.touch()
     capture = tmp_path / "diff-args"

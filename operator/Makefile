@@ -121,7 +121,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	TAMOSS_RELEASE_CATALOGUE=$${TAMOSS_RELEASE_CATALOGUE:-config/releases/catalogue.json} go run -ldflags "$(GO_LDFLAGS)" ./cmd
 
 .PHONY: install-manifest
-install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.
+install-manifest: manifests kustomize ## Render the development operator install manifest to ../deploy/operator/install.yaml.
 	mkdir -p ../deploy/operator
 	$(KUSTOMIZE) build config/default > ../deploy/operator/install.yaml
 

@@ -6,6 +6,11 @@ defaults; explicit fields override those defaults.
 The canonical CRD in `operator/config/crd/bases/` remains the exhaustive schema
 source.
 
+`kubectl get tamoss` shows the requested and completed product releases.
+`kubectl get tamoss -o wide` also shows the applied schema and upgrade phase.
+For a blocked upgrade, inspect `.status.upgrade.reason` and
+`.status.upgrade.message`; see the [upgrade guide](../operations/upgrades.md#status-and-failed-upgrades).
+
 Group: `tamoss.livewyer.io`
 
 Version: `v1alpha1`
@@ -144,7 +149,7 @@ When `.spec.backends.s3.providedBy: external` or the external S3 block is set,
 | `.status.endpoints` | Effective API, UI, S3 and shared authentication URLs. |
 | `.status.providers` | Selected provider and ownership model for database, S3, authentication, and routing. |
 | `.status.resolved.images` | Effective API, UI, worker, Console, TAMSin, schema helper, CNPG Postgres, and RustFS image references where rendered. |
-| `.status.resolved.versions` | Selected TAMOSS release and schema target, and BBC TAMS API compatibility version. |
+| `.status.resolved.versions` | Last resolved TAMOSS release and schema target, and BBC TAMS API compatibility version. A blocked selection can retain previous values. |
 | `.status.resolved.generatedSecrets` | Generated Secret names only. Secret values are never exposed. |
 | `.status.resolved.resources` | Generated workload and default StorageBackend resource names. |
 | `.status.resolved.routes` | Generated route object names for API and UI exposure. |

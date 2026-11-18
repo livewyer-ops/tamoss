@@ -85,7 +85,7 @@ func (r *TamossReconciler) validateReleaseState(ctx context.Context, tamoss *tam
 		return &releases.SelectionError{Reason: operatorstatus.ReasonUnsupportedSchemaVersion, Message: fmt.Sprintf("Release %q does not support installed schema %q", release.Version, observed)}
 	}
 	if tamoss.Status.CurrentVersion == "" && observed != "" && observed != release.Schema.Version {
-		return &releases.SelectionError{Reason: "VersionAdoptionRequired", Message: fmt.Sprintf("Pin the release matching installed schema %q before selecting an upgrade", observed)}
+		return &releases.SelectionError{Reason: "VersionAdoptionRequired", Message: fmt.Sprintf("Set spec.version to the installed release matching schema %q, identified from the release record and workload images. Wait for status.currentVersion to match and Ready=True before selecting an upgrade", observed)}
 	}
 	return nil
 }

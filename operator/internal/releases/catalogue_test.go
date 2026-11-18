@@ -4,8 +4,23 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestUnsupportedVersionExplainsInstalledCatalogue(t *testing.T) {
+	catalogue := Catalogue{"dev": {Version: "dev"}, "8.2.0-oss1": {Version: "8.2.0-oss1"}}
+	_, err := catalogue.Select("8.2.0-oss2", "8.2.0-oss1", "")
+	selection, ok := err.(*SelectionError)
+	if !ok || selection.Reason != "UnsupportedVersion" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, message := range []string{`Release "8.2.0-oss2"`, "Supported releases: 8.2.0-oss1, dev.", "published operator install bundle", "all existing instance releases", "wait for the operator rollout"} {
+		if !strings.Contains(selection.Message, message) {
+			t.Errorf("missing %q in %q", message, selection.Message)
+		}
+	}
+}
 
 func TestPublishedEntriesAndTransitions(t *testing.T) {
 	catalogue, err := Load("../../config/releases/catalogue.json")

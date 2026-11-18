@@ -187,6 +187,8 @@ func TestVersionGateLeavesExistingWorkloadsUntouched(t *testing.T) {
 			scheme := hibernateTestScheme(t)
 			instance := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "old", Namespace: "media", UID: "old", Generation: 2}, Spec: tamossv1alpha1.TamossSpec{Version: tc.version, Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: tc.current}}
 			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "old-api", Namespace: "media"}, Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(1))}}
+			migration := tamossv1alpha1.SchemaMigrationStatus{Phase: "Succeeded", AppliedRevision: tc.observed, Attempts: 1, LastAttemptResult: "Succeeded"}
+			instance.Status.SchemaMigration = migration
 			state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "old-schema-state", Namespace: "media"}, Data: map[string]string{schemaStateAppliedVersionKey: tc.observed}}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(instance).WithObjects(instance, deployment, state).Build()
 			r := &TamossReconciler{Client: c, Scheme: scheme, Releases: selectionCatalogue(t), InstanceDefaults: installationConfig(t, tc.defaults)}
@@ -206,6 +208,9 @@ func TestVersionGateLeavesExistingWorkloadsUntouched(t *testing.T) {
 			ready := meta.FindStatusCondition(instance.Status.Conditions, operatorstatus.ConditionReady)
 			if ready == nil || ready.Reason != tc.reason || instance.Status.CurrentVersion != tc.current {
 				t.Fatalf("wrong blocked status: %#v", instance.Status)
+			}
+			if !reflect.DeepEqual(instance.Status.SchemaMigration, migration) {
+				t.Fatal("blocked release changed previous migration history")
 			}
 			jobs := &batchv1.JobList{}
 			if err := c.List(ctx, jobs); err != nil {

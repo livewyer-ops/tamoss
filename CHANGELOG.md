@@ -4,6 +4,18 @@ All notable changes to TAMOSS are documented here.
 
 Release versions track the BBC TAMS API version they implement, followed by an `-ossN` counter for TAMOSS releases against that API version: `8.1.0-oss6` is the sixth TAMOSS release implementing TAMS 8.1. Schema revisions and supported upgrade paths for each release are declared in `operator/compatibility.yaml`.
 
+## Unreleased
+
+### Fixed
+
+- Require an explicit environment operator overlay and validate its rendering
+  before platform changes, preventing accidental development installations.
+- Explain unsupported releases and legacy adoption in operator status, display
+  requested and completed releases, and stop CLI waits on observed release
+  selection errors.
+- Correct the legacy upgrade sequence and start maintenance before shared
+  platform updates.
+
 ## 8.2.0-oss3-rc1
 
 ### Fixed
@@ -79,18 +91,53 @@ Upgrade from `8.2.0-oss1` using the [upgrade guide](docs/operations/upgrades.md)
 Older installations must follow the supported paths in
 [compatibility.yaml](operator/compatibility.yaml).
 
-Before updating the operator, pin each instance to its installed release using
-`spec.version`. Review existing component overrides so that intended components
-follow the selected release.
+The published oss1 CRD does not accept `spec.version`. Prepare the installed
+release pin, then apply it after installing the oss2 CRD and operator. Use the
+published oss2 `install.yaml` asset in the environment operator overlay; the
+checked-in manifests at the oss2 tag contain development configuration.
+Preserve existing instance settings, defaults and operator patches.
 
-This release requires a database migration. Schedule a maintenance window,
-stop writes and verify backups before upgrading. Downgrades are unsupported.
+After migrating the environment layout, verifying backups and starting
+maintenance, apply the oss2 platform prerequisites and verify backend recovery.
+Then complete adoption before requesting oss2:
+
+```bash
+# Run from the oss2 source revision. Set TAMOSS_ENV, INSTANCE and KUBECONFIG
+# for the existing environment. Its operator overlay must reference:
+# https://github.com/livewyer-ops/tamoss/releases/download/8.2.0-oss2/install.yaml
+kubectl --kubeconfig "$KUBECONFIG" apply --server-side -k "deploy/environments/$TAMOSS_ENV/operator"
+kubectl --kubeconfig "$KUBECONFIG" wait --for=condition=Established crd/tamosses.tamoss.livewyer.io --timeout=60s
+kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system rollout status deployment/operator-controller-manager --timeout=5m
+
+# VersionRequired is expected until the installed oss1 release is adopted.
+yq -i '.spec.version = "8.2.0-oss1"' "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE/tamoss.yaml"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+task env:wait ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
+
+yq -i '.spec.version = "8.2.0-oss2"' "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE/tamoss.yaml"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/$TAMOSS_ENV/instances/$INSTANCE"
+task env:wait ENV="$TAMOSS_ENV" INSTANCE="$INSTANCE" KUBECONFIG="$KUBECONFIG"
+```
+
+Review existing component overrides so that intended components follow the
+selected release. Keep writes stopped until authenticated API and retained-data
+checks pass.
+
+Alembic revision `20260924_0008` converts Segment timestamp bounds from `BIGINT`
+to `NUMERIC`. PostgreSQL rewrites the Segment table and its indexes and refreshes
+statistics. Reserve temporary database space and rehearse with representative
+Segment volume to estimate downtime. Media objects and checksums are unchanged.
+Schedule a maintenance window, stop writes and verify backups before platform
+updates or migration. Downgrades are unsupported.
 See [migration and recovery guidance](docs/operations/upgrades.md#schema-migrations-and-recovery).
 
 Check the integrations you use:
 
 - RustFS: follow the [storage upgrade guidance](docs/operations/upgrades.md#rustfs)
   for credential and presigned URL requirements.
+  Before upgrading to RustFS 1.0.0, configure a valid explicit
+  `RUSTFS_RPC_SECRET` if either root credential uses the public `rustfsadmin`
+  default. Generated TAMOSS credentials need no rotation.
 - Authentik: update manually deployed outposts to match the server version.
 - Traefik: review custom logging and file-provider settings against the
   [chart 41 changes](https://github.com/traefik/traefik-helm-chart/releases/tag/v41.0.0).

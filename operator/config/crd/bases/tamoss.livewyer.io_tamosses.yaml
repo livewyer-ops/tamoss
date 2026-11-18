@@ -21,6 +21,20 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .spec.version
+      name: Requested
+      type: string
+    - jsonPath: .status.currentVersion
+      name: Current
+      type: string
+    - jsonPath: .status.schemaVersion
+      name: Schema
+      priority: 1
+      type: string
+    - jsonPath: .status.upgrade.phase
+      name: Upgrade
+      priority: 1
+      type: string
     - jsonPath: .status.providers.db.provider
       name: DB
       type: string
