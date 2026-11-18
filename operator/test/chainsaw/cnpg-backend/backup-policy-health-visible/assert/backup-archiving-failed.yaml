@@ -1,6 +1,0 @@
-apiVersion: tamoss.livewyer.io/v1alpha1
-kind: Tamoss
-metadata:
-  name: tamoss
-(status.conditions[?type == 'BackupPolicyReady'] | [0].status): "False"
-(status.conditions[?type == 'BackupPolicyReady'] | [0].reason): BackupArchivingFailed

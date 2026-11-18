@@ -5,26 +5,28 @@ import (
 	"strings"
 	"testing"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
 )
 
 func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Profile: tamossv1alpha1.TamossProfileLocalKind,
 			Secrets: tamossv1alpha1.SecretsSpec{
 				APIToken: tamossv1alpha1.APITokenSecretSpec{Generate: true},
 			},
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
-	setCommonTamossStatus(tamoss)
+	setCommonTamossStatus(tamoss, testRelease())
 
 	if tamoss.Status.Endpoints.API != "https://api.tamoss.localtest.me" {
 		t.Fatalf("expected default API endpoint, got %q", tamoss.Status.Endpoints.API)
@@ -38,6 +40,9 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Images.UI != "livewyer/tamoss-ui:dev" {
 		t.Fatalf("expected default UI image, got %q", tamoss.Status.Resolved.Images.UI)
 	}
+	if tamoss.Status.Resolved.Images.Console != "livewyer/tamoss-console-api:dev" {
+		t.Fatalf("expected default Console image, got %q", tamoss.Status.Resolved.Images.Console)
+	}
 	if tamoss.Status.Resolved.Images.Worker != "livewyer/tamoss-api:dev" {
 		t.Fatalf("expected worker to use API image, got %q", tamoss.Status.Resolved.Images.Worker)
 	}
@@ -50,6 +55,9 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Images.RustFS != defaults.DefaultRustFSImage {
 		t.Fatalf("expected default RustFS image, got %q", tamoss.Status.Resolved.Images.RustFS)
 	}
+	if tamoss.Status.Resolved.Images.TAMSin != defaults.DefaultTAMSinImage {
+		t.Fatalf("expected default TAMSin image, got %q", tamoss.Status.Resolved.Images.TAMSin)
+	}
 	if tamoss.Status.Resolved.Versions.Schema == "0.0.0" ||
 		tamoss.Status.Resolved.Versions.Schema == "" {
 		t.Fatalf("expected non-placeholder schema version, got %#v", tamoss.Status.Resolved.Versions)
@@ -57,13 +65,16 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	if tamoss.Status.Resolved.Versions.Tamoss != "dev" {
 		t.Fatalf("expected runtime version from local-kind image tag, got %#v", tamoss.Status.Resolved.Versions)
 	}
-	if tamoss.Status.Resolved.Versions.TAMSAPI != schemabundle.SupportedTAMSAPIVersion {
+	if tamoss.Status.Resolved.Versions.TAMSAPI != testRelease().Schema.TAMSAPI {
 		t.Fatalf("expected TAMS API compatibility version, got %#v", tamoss.Status.Resolved.Versions)
 	}
 	if tamoss.Status.Resolved.Resources.API != "example-api" ||
 		tamoss.Status.Resolved.Resources.UI != "example-ui" ||
 		tamoss.Status.Resolved.Resources.Worker != "example-worker" {
 		t.Fatalf("expected workload resource names, got %#v", tamoss.Status.Resolved.Resources)
+	}
+	if tamoss.Status.Resolved.Resources.Console != "" {
+		t.Fatalf("did not expect an opt-in Console resource, got %q", tamoss.Status.Resolved.Resources.Console)
 	}
 	if tamoss.Status.Resolved.Resources.DefaultStorageBackend != "example-storage-default" {
 		t.Fatalf("expected default StorageBackend resource name, got %q", tamoss.Status.Resolved.Resources.DefaultStorageBackend)
@@ -79,16 +90,45 @@ func TestResolvedTamossStatusUsesProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestEndpointStatusUsesExplicitPublicUIURL(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
+			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
+				UIURL: "https://app.example.com:30443/",
+			},
+			Ingress: tamossv1alpha1.IngressSpec{
+				Enabled: ptr.To(true),
+				API:     tamossv1alpha1.IngressHostSpec{Host: "api.example.com"},
+				UI: tamossv1alpha1.UIIngressSpec{Web: tamossv1alpha1.IngressHostSpec{
+					Host: "app.example.com",
+				}},
+				TLS: []networkingv1.IngressTLS{{}},
+			},
+		},
+	}
+
+	status := endpointStatus(tamoss)
+	if status.UI != "https://app.example.com:30443" {
+		t.Fatalf("expected explicit public UI URL in status, got %q", status.UI)
+	}
+}
+
 func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version:          "dev",
 			FullnameOverride: "custom",
 			API: tamossv1alpha1.APIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-api", Tag: "v1.2.3"},
 			},
 			UI: tamossv1alpha1.UIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-ui", Tag: "v1.2.4"},
+			},
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Enabled: ptr.To(true),
+				Image:   tamossv1alpha1.ImageSpec{Repository: "registry.example.com/tamoss-console-api", Tag: "v1.2.5"},
 			},
 			Images: tamossv1alpha1.ComponentImagesSpec{
 				SchemaMigrationPostgresClient: "registry.example.com/postgres-client:v16.4",
@@ -112,15 +152,19 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 			},
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
-	status := resolvedTamossStatus(tamoss)
+	tamoss.Spec.Images.TAMSin = "registry.example.com/tamsin@sha256:" + strings.Repeat("b", 64)
+	status := resolvedTamossStatus(tamoss, testRelease())
 
 	if status.Images.API != "registry.example.com/tamoss-api:v1.2.3" {
 		t.Fatalf("expected overridden API image, got %q", status.Images.API)
 	}
 	if status.Images.UI != "registry.example.com/tamoss-ui:v1.2.4" {
 		t.Fatalf("expected overridden UI image, got %q", status.Images.UI)
+	}
+	if status.Images.Console != "registry.example.com/tamoss-console-api:v1.2.5" || status.Resources.Console != "custom-console" {
+		t.Fatalf("expected overridden Console status, got image=%q resource=%q", status.Images.Console, status.Resources.Console)
 	}
 	if status.Images.SchemaMigrationPostgresClient != "registry.example.com/postgres-client:v16.4" {
 		t.Fatalf("expected overridden schema migration image, got %q", status.Images.SchemaMigrationPostgresClient)
@@ -130,6 +174,9 @@ func TestResolvedTamossStatusReflectsOverridesAndRedactsSecrets(t *testing.T) {
 	}
 	if status.Images.RustFS != "registry.example.com/rustfs:v1" {
 		t.Fatalf("expected overridden RustFS image, got %q", status.Images.RustFS)
+	}
+	if status.Images.TAMSin != "registry.example.com/tamsin@sha256:"+strings.Repeat("b", 64) {
+		t.Fatalf("expected overridden TAMSin image, got %q", status.Images.TAMSin)
 	}
 	if status.GeneratedSecrets.APIToken != "" {
 		t.Fatalf("did not expect a generated API token Secret when token is supplied inline, got %q", status.GeneratedSecrets.APIToken)
@@ -187,10 +234,11 @@ func TestProviderStatusClassifiesManagedProfileDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media"},
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Profile: tamossv1alpha1.TamossProfileLocalKind,
 		},
 	}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
 	status := providerStatus(tamoss)
 
@@ -218,7 +266,7 @@ func TestProviderStatusClassifiesExternalAndDisabledAuth(t *testing.T) {
 		Spec:       minimalTamossSpec(),
 	}
 	tamoss.Spec.Auth = tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByNone}
-	defaults.Apply(tamoss)
+	defaults.Apply(tamoss, defaults.DevelopmentImages)
 
 	status := providerStatus(tamoss)
 

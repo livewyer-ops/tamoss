@@ -1,7 +1,10 @@
-# Profiles
+# Deployment Profiles
 
 Profiles are named default sets for common infrastructure shapes. They are not
 separate products and they do not change the operator install path.
+
+These are deployment profiles. TAMS [Flow Profiles](flow-profiles.md) are a
+separate media-metadata capability.
 
 | Profile | Purpose | Backing services |
 | --- | --- | --- |
@@ -10,18 +13,19 @@ separate products and they do not change the operator install path.
 | `single-server` | One Kubernetes node or a small self-managed cluster. | CNPG and RustFS Operator with single-node durable defaults plus shared Authentik, cert-manager, and Traefik. |
 | `multi-server` | Production reference for multi-node Kubernetes. | Replicated workloads, CNPG, RustFS Operator, shared Authentik, cert-manager, and Traefik. |
 
-Every checked-in instance manifest sets `.spec.profile`. The operator fills in
-defaults for that profile, then explicit YAML fields in the `Tamoss` CR override
-those defaults.
+An instance inherits its profile from the operator's installation defaults.
+Set `.spec.profile` to override it. Explicit fields in the `Tamoss` resource
+also override installation and profile defaults.
 
 Profiles do not define tenant identity. In shared clusters, tenant boundaries
 come from Kubernetes namespaces and the `Tamoss` resources applied in them.
 
 `local-kind`, `single-server`, and `multi-server` default application
 authentication to managed Authentik. Omitting `spec.auth` selects
-`auth.providedBy: authentik-blueprints`, derives `https://auth.<baseDomain>`
-from `spec.publicEndpoint.baseDomain`, and expects the platform Authentik
-install in the `auth` namespace. Use an explicit `spec.auth.providedBy:
+`auth.providedBy: authentik-blueprints` and expects the shared Authentik
+installation. Installation defaults supply its connection settings; without
+those defaults, the operator derives `https://auth.<baseDomain>` from the
+instance domain and uses the `auth` namespace. Use an explicit `spec.auth.providedBy:
 external` or `spec.auth.providedBy: none` only when an environment intentionally
 opts out of the profile default.
 
@@ -68,6 +72,16 @@ NetworkPolicy defaults allow only the traffic TAMOSS commonly needs: ingress
 from routing or monitoring systems to exposed component ports, DNS egress, and
 egress to HTTP/TLS services, PostgreSQL, and S3-compatible storage. A CNI that
 enforces NetworkPolicy is required for those restrictions to take effect.
+UI egress is destination-scoped to the instance API and Console, the managed
+Authentik server, and cluster DNS. Console egress permits DNS and Kubernetes
+API ports by default. Optional `spec.networkPolicy.kubernetesAPIIPBlocks`
+restrict the API rule to declared destinations; see
+[Runtime Configuration](../reference/runtime-configuration.md#workload-overrides).
+
+When those IP blocks are set on Cilium clusters with a self-hosted API server,
+enable `policyCIDRMatchMode: nodes` so standard `NetworkPolicy.ipBlock` peers can match
+the configured control-plane node CIDRs. Without that Cilium setting, Console
+fails closed because its Kubernetes watch traffic is denied.
 
 ## Routing
 
@@ -86,7 +100,9 @@ hostname conflicts are reported through
 
 ## Public Endpoints
 
-Set one base domain when the standard host shape is acceptable:
+Installation defaults derive an instance domain from its name and namespace.
+See [Configuration](../configuration.md#installation-defaults) for the shared
+hostname rules. To set an explicit instance domain:
 
 ```yaml
 spec:
@@ -100,17 +116,18 @@ The operator derives:
 - API: `https://api.<baseDomain>`
 - UI: `https://app.<baseDomain>`
 - S3: `https://s3.<baseDomain>`
-- Authentik: `https://auth.<baseDomain>` for Authentik-backed profiles
+- Authentik: the shared installation URL, or `https://auth.<baseDomain>` when no shared URL is configured
 
 Override a specific endpoint only when that endpoint must deviate from the
 standard shape.
 
 ## TLS Defaults
 
-`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned` and local test TLS
-Secret names. `edge` defaults to `ClusterIssuer/tamoss-edge-selfsigned` with
-edge TLS Secret names. `single-server` and `multi-server` default to
-`ClusterIssuer/tamoss-public` with public TLS Secret names. The matching
+`local-kind` defaults to `ClusterIssuer/tamoss-selfsigned`, `edge` to
+`ClusterIssuer/tamoss-edge-selfsigned`, and `single-server` and `multi-server`
+to `ClusterIssuer/tamoss-public`. Installation defaults can override the issuer
+and derive separate TLS Secret names for each instance. The checked-in Kind
+compositions retain their explicit TLS Secret names. The matching
 single-server and multi-server platform values use `tls.mode: public` to render
 an ACME ClusterIssuer for remote environments:
 
@@ -124,33 +141,16 @@ tls:
 
 Environment compositions only need to override this when the cluster already
 provides cert-manager, a different ClusterIssuer name, or pre-created TLS
-Secrets. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
-instead of receiving the profile default.
+Secrets. Keep the installation's `clusterIssuer` aligned with the platform
+issuer. Explicit `spec.ingress.annotations` in the `Tamoss` CR are preserved
+instead of receiving installation or profile issuer defaults.
 
-## Local Profile Validation
+## Validation Adapters
 
-Run profiles one at a time on Kind:
+Kind-specific environments, such as `deploy/environments/multi-server`, are
+test adapters for these public profiles, not additional deployment profiles.
+The `multi-server` adapter uses one control-plane node and three workers to
+exercise its scheduling shape.
 
-```bash
-task kind:up PROFILE=local-kind
-task kind:up PROFILE=edge
-task kind:up PROFILE=single-server
-task kind:up PROFILE=multi-server
-```
-
-Run the sequential profile gate:
-
-```bash
-task kind:profiles:e2e
-```
-
-The Kind-specific environments, such as `deploy/environments/multi-server`,
-are test adapters for local validation. They are not additional public profiles.
-The `multi-server` local validation path also uses `deploy/kind-multi-server.yaml`
-so Kind creates one control-plane node and three worker nodes while keeping host
-HTTPS ingress on port 443.
-
-Both checked-in Kind configs bind host port `443` to `0.0.0.0` for local browser
-and API testing. Treat that as local development exposure. Other machines on the
-same network may be able to reach the test ingress while the Kind cluster is
-running.
+For the runnable profile matrix and its local network exposure, use the
+[Profile Matrix](../development/testing.md#profile-matrix) development guide.

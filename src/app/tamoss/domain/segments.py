@@ -31,7 +31,7 @@ class SegmentDeleteFilter:
 
 
 def segment_bounds(segment: SegmentRecord) -> tuple[int, int]:
-    parsed = TimeRange.from_str(segment.timerange)
+    parsed = parse_timerange(segment.timerange)
     bounds = finite_normalized_timerange_bounds(parsed)
     assert bounds.start is not None
     assert bounds.end is not None
@@ -138,7 +138,7 @@ def object_timerange_from_segment_fields(
     if not ts_offset:
         return timerange
     offset = Timestamp.from_str(ts_offset)
-    parsed = TimeRange.from_str(timerange)
+    parsed = parse_timerange(timerange)
     if parsed.start is None or parsed.end is None:
         return timerange
     return str(

@@ -2,11 +2,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -14,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -24,7 +26,8 @@ func (r *StorageBackendReconciler) schemaStateReady(ctx context.Context, tamoss 
 	if err := r.Client.Get(ctx, key, state); err != nil {
 		return false
 	}
-	return state.Data[schemaStateAppliedVersionKey] == schemabundle.SchemaVersion
+	release, err := r.Releases.Select(tamoss.Spec.Version, tamoss.Status.CurrentVersion, tamoss.Status.Upgrade.TargetVersion)
+	return err == nil && schemaStateMatchesTarget(state, release.Schema)
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendDatabase(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend, tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) (storageBackendReconcileResult, error) {
@@ -101,7 +104,7 @@ func storageBackendRegistrationJob(storageBackend *tamossv1alpha1.StorageBackend
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
+				Spec: workload_renderer.WithDatabaseTLS(corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:            "storage-backend-register",
@@ -110,7 +113,7 @@ func storageBackendRegistrationJob(storageBackend *tamossv1alpha1.StorageBackend
 						Command:         []string{"/bin/sh", "-ec", storageBackendRegistrationScript()},
 						Env:             storageBackendRegistrationEnv(tamoss, spec),
 					}},
-				},
+				}, tamoss),
 			},
 		},
 	}
@@ -132,7 +135,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
+				Spec: workload_renderer.WithDatabaseTLS(corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:            "storage-backend-deregister",
@@ -141,7 +144,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 						Command:         []string{"/bin/sh", "-ec", storageBackendDeregistrationScript()},
 						Env:             storageBackendDeregistrationEnv(tamoss, spec),
 					}},
-				},
+				}, tamoss),
 			},
 		},
 	}
@@ -149,6 +152,7 @@ func storageBackendDeregistrationJob(storageBackend *tamossv1alpha1.StorageBacke
 
 func storageBackendRegistrationEnv(tamoss *tamossv1alpha1.Tamoss, spec tamossv1alpha1.StorageBackendSpec) []corev1.EnvVar {
 	db := tamoss.DBConnection()
+	tagsJSON := storageBackendTagsJSON(spec.Tags)
 	return []corev1.EnvVar{
 		{Name: "POSTGRES_HOST", Value: db.Host},
 		{Name: "POSTGRES_PORT", Value: db.Port},
@@ -173,6 +177,7 @@ func storageBackendRegistrationEnv(tamoss *tamossv1alpha1.Tamoss, spec tamossv1a
 		{Name: "TAMOSS_STORAGE_REGION", Value: spec.Region},
 		{Name: "TAMOSS_STORAGE_PRODUCT", Value: spec.StoreProduct},
 		{Name: "TAMOSS_STORAGE_TYPE", Value: spec.StoreType},
+		{Name: "TAMOSS_STORAGE_BACKEND_TAGS", Value: tagsJSON},
 		{Name: "TAMOSS_STORAGE_DEFAULT", Value: fmt.Sprintf("%t", spec.DefaultStorage)},
 		{Name: "TAMOSS_STORAGE_BUCKET", Value: spec.BucketName},
 		{Name: "TAMOSS_STORAGE_ENDPOINT", Value: spec.Endpoint.Default.URL},
@@ -234,6 +239,7 @@ func storageBackendDBRegistered(state *corev1.ConfigMap, spec tamossv1alpha1.Sto
 }
 
 func storageBackendRegistrationHash(spec tamossv1alpha1.StorageBackendSpec) string {
+	tagsJSON := storageBackendTagsJSON(spec.Tags)
 	return storageBackendHash(
 		spec.ID,
 		spec.Label,
@@ -241,11 +247,23 @@ func storageBackendRegistrationHash(spec tamossv1alpha1.StorageBackendSpec) stri
 		spec.Region,
 		spec.StoreProduct,
 		spec.StoreType,
+		tagsJSON,
 		fmt.Sprintf("%t", spec.DefaultStorage),
 		spec.BucketName,
 		spec.Endpoint.Default.URL,
 		spec.Endpoint.Public.URL,
 	)
+}
+
+func storageBackendTagsJSON(tags map[string]apiextensionsv1.JSON) string {
+	if tags == nil {
+		tags = map[string]apiextensionsv1.JSON{}
+	}
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func storageBackendDeregistrationHash(spec tamossv1alpha1.StorageBackendSpec) string {

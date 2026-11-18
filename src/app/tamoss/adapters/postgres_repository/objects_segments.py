@@ -10,11 +10,10 @@ from uuid import UUID
 from psycopg import sql
 
 from tamoss.adapters.postgres_repository.mappers import (
-    _append_segment,
     _append_segments,
-    _create_object,
     _create_objects,
     _lock_flow_segments,
+    _lock_media_objects,
     _media_object_from_record,
     _optional_uuid,
     _save_flow,
@@ -35,7 +34,11 @@ from tamoss.domain.model import (
     StorageBackend,
 )
 from tamoss.domain.pagination import Page, resolve_page_window
-from tamoss.domain.segments import SegmentDeleteFilter, SegmentTimerangeBounds
+from tamoss.domain.segments import (
+    SegmentDeleteFilter,
+    SegmentTimerangeBounds,
+    timerange_union,
+)
 
 
 class PostgresObjectSegmentMixin:
@@ -83,13 +86,17 @@ class PostgresObjectSegmentMixin:
                 for row in rows
             }
 
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        with self._connect() as conn, conn.cursor() as cur:
+            _lock_media_objects(cur, object_ids)
+
     def save_object(self, media_object: MediaObjectRecord) -> None:
         with self._connect() as conn, conn.cursor() as cur:
             _save_object(cur, media_object)
 
     def create_object(self, media_object: MediaObjectRecord) -> bool:
         with self._connect() as conn, conn.cursor() as cur:
-            return _create_object(cur, media_object)
+            return bool(_create_objects(cur, [media_object]))
 
     def create_objects(self, media_objects: Iterable[MediaObjectRecord]) -> set[str]:
         with self._connect() as conn, conn.cursor() as cur:
@@ -147,6 +154,15 @@ class PostgresObjectSegmentMixin:
             )
             return [_segment_from_record(row[0]) for row in cur.fetchall()]
 
+    def has_segments(self, flow_id: UUID) -> bool:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS (SELECT 1 FROM tamoss_segments WHERE flow_id = %s)",
+                (flow_id,),
+            )
+            row = cur.fetchone()
+        return bool(row and row[0])
+
     def list_segments_for_objects(
         self, *, flow_id: UUID, object_ids: Iterable[str]
     ) -> list[SegmentRecord]:
@@ -159,7 +175,10 @@ class PostgresObjectSegmentMixin:
                 SELECT record
                 FROM tamoss_segments
                 WHERE flow_id = %(flow_id)s
-                  AND object_id = ANY(%(object_ids)s)
+                  AND (
+                      object_id = ANY(%(object_ids)s)
+                      OR init_object_id = ANY(%(object_ids)s)
+                  )
                 ORDER BY timerange_end, timerange_start, object_id
                 """,
                 {"flow_id": flow_id, "object_ids": requested_ids},
@@ -229,8 +248,8 @@ class PostgresObjectSegmentMixin:
                 WITH candidate_bounds(timerange_start, timerange_end) AS (
                     SELECT *
                     FROM unnest(
-                        %(starts)s::bigint[],
-                        %(ends)s::bigint[]
+                        %(starts)s::numeric[],
+                        %(ends)s::numeric[]
                     )
                 )
                     SELECT record
@@ -305,18 +324,6 @@ class PostgresObjectSegmentMixin:
             cur.execute(
                 sql.SQL(
                     """
-                SELECT MIN(timerange_start), MAX(timerange_end)
-                FROM tamoss_segments
-                WHERE {}
-                """
-                ).format(where_sql),
-                params,
-            )
-            range_row = cur.fetchone()
-
-            cur.execute(
-                sql.SQL(
-                    """
                 SELECT record
                 FROM tamoss_segments
                 WHERE {}
@@ -335,19 +342,16 @@ class PostgresObjectSegmentMixin:
             if len(fetched_segments) > window.limit
             else None
         )
-        matched_timerange = (
-            _timerange_from_bounds(range_row[0], range_row[1]) if range_row else "()"
-        )
         return Page(
             items=items,
             limit=window.limit,
             next_page=next_page,
-            timerange=matched_timerange,
+            timerange=timerange_union(items),
         )
 
     def append_segment(self, segment: SegmentRecord) -> None:
         with self._connect() as conn, conn.cursor() as cur:
-            _append_segment(cur, segment)
+            _append_segments(cur, [segment])
 
     def save_registered_segments(
         self,

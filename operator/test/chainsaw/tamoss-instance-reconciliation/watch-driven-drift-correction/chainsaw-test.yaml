@@ -29,22 +29,37 @@ spec:
             file: ../../fixtures/tamoss-external.yaml
         - assert:
             file: ../../fixtures/assert/tamoss-all-components-ready.yaml
-    # Unlike out-of-band-edits-are-reverted, this step never calls
-    # reconcile-tamoss.sh: the mutation alone must enqueue a reconcile through
-    # the operator's owned-resource watches.
-    - name: mutate managed deployment without a reconcile nudge
+    - name: mutate managed fields and preserve an unmanaged annotation
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: applies out-of-band drift to a managed resource so native assertions can verify watch-driven correction.
-              kubectl -n "$NAMESPACE" patch deployment tamoss-api --type=json \
-                -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
+        - patch:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: tamoss-api
+                namespace: ($namespace)
+                annotations:
+                  example.com/keep: "true"
+              spec:
+                replicas: 1
+        - patch:
+            resource:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: tamoss-api
+                namespace: ($namespace)
+              spec:
+                ports:
+                  - name: drift
+                    port: 9999
+                    protocol: TCP
+                    targetPort: http
         - assert:
-            file: assert/api-deployment-restored.yaml
+            file: assert/api-deployment-annotation-survives-revert.yaml
+            timeout: 3m
+        - assert:
+            file: assert/api-service-restored.yaml
             timeout: 3m
         - assert:
             file: assert/drift-corrected-event.yaml

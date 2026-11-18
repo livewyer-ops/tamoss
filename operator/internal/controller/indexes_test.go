@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -22,6 +23,7 @@ func TestStorageBackendCredentialSecretRequestsFilterReferencingBackends(t *test
 	other.Name = "other"
 	other.Spec.Credentials.ExistingSecret = "other-secret"
 	reconciler := StorageBackendReconciler{
+		Releases: testReleases(),
 		Client: fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(storageBackend, other).
@@ -44,6 +46,7 @@ func TestTamossOwnedObjectListUsesManagedLabels(t *testing.T) {
 		t.Fatalf("add appsv1 scheme: %v", err)
 	}
 	tamoss := &tamossv1alpha1.Tamoss{
+		Spec:       tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "media", UID: types.UID("tamoss-uid")},
 	}
 	owned := deploymentObject("owned", "media", tamossManagedLabelSelector(tamoss), tamossOwnerReference(tamoss))
@@ -75,6 +78,23 @@ func TestOptionalWatchPoliciesIncludeHTTPRouteManagedList(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected HTTPRoute to participate in optional managed-resource policy")
+	}
+}
+
+func TestTamossManagedPoliciesIncludeConsoleRBAC(t *testing.T) {
+	t.Parallel()
+	foundRole := false
+	foundRoleBinding := false
+	for _, policy := range tamossManagedResourcePolicies() {
+		switch policy.object.(type) {
+		case *rbacv1.Role:
+			_, foundRole = policy.list.(*rbacv1.RoleList)
+		case *rbacv1.RoleBinding:
+			_, foundRoleBinding = policy.list.(*rbacv1.RoleBindingList)
+		}
+	}
+	if !foundRole || !foundRoleBinding {
+		t.Fatalf("managed resources must own Console Role and RoleBinding: role=%t roleBinding=%t", foundRole, foundRoleBinding)
 	}
 }
 

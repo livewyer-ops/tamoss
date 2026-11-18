@@ -4,7 +4,7 @@ metadata:
   name: tamoss-delete-cascades-to-cluster
   labels:
     test.tamoss.io/target: kind
-    test.tamoss.io/tier: standard
+    test.tamoss.io/tier: extended
     test.tamoss.io/domain: db
     test.tamoss.io/lifecycle: destructive
     test.tamoss.io/provider: cnpg

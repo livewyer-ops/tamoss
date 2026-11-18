@@ -53,6 +53,14 @@ Read `Tamoss` conditions first:
 | `Degraded=True` | User-actionable reconcile failure. |
 | `Paused=True` | `.spec.paused=true`; writes are suspended. |
 
+For `InstallationDefaultsRequired`, check that the environment's operator
+overlay was applied and supplies the omitted profile and site settings.
+For `InvalidInstallationDefaults`, correct `operator/defaults.yaml` and apply
+that overlay again; the operator reads it at startup. Inspect
+`status.resolved.defaults` and `status.appliedDefaultsRevision` to distinguish
+the loaded configuration from the revision whose rollout completed. See
+[Runtime Configuration](../reference/runtime-configuration.md#installation-defaults).
+
 Then inspect provider ownership:
 
 ```bash
@@ -75,7 +83,7 @@ Treat first start as one product lifecycle rather than disconnected pods:
 | Schema migration | `Tamoss.status.conditions[SchemaMigrated]` | `True` with the desired schema version in status. |
 | Storage database registration | `StorageBackend.status.conditions[DatabaseReady]` | `True` after the TAMS storage backend row is registered. |
 | Identity | `Tamoss.status.conditions[IdentityReady]` | `True`, `ExternalIdentityConfigured`, or not required when auth is disabled. |
-| Workloads | `Tamoss.status.replicas.{api,ui,worker}` | available replicas match desired replicas for enabled components. |
+| Workloads | `Tamoss.status.replicas.{api,ui,worker,console}` | available replicas match desired replicas for enabled components. |
 | Routes | `Tamoss.status.conditions[RoutingReady]` | `True`, or external routing ownership when routes are not managed. |
 
 `task env:summary` and the support bundle read these phases from Kubernetes
@@ -107,6 +115,70 @@ The API separates process health from dependency readiness:
 Readiness checks are read-only. They query database and storage metadata state
 and perform a lightweight object-store bucket check. They do not create schema,
 create buckets, register storage backends, write media, or mutate queue state.
+
+## Webhook Delivery
+
+Check registration time, active status and selectors before changing delivery
+configuration. An absent `flow_collected_by_ids` selects all collections;
+`[]` selects only top-level Flows. The same distinction applies to Sources.
+
+Use `task env:status` to inspect the instance, Pods and recent Kubernetes
+events. Check API and worker logs with `kubectl logs`, and compare delivery
+attempts with the receiver's logs. A missing receiver event does not by itself
+show whether TAMOSS queued or attempted delivery.
+
+- No queued event: inspect registration time, status and selectors.
+- Worker not progressing: inspect worker readiness, replica status and pod logs.
+- HTTP 401/403: compare callback authentication with the receiver's expected key.
+- Target blocked: inspect DNS and egress policy. Delivery pins the checked
+  destination and ignores ambient proxies and netrc credentials. Do not enable
+  all private destinations to work around an unexplained failure.
+- HTTP 2xx but missing records: inspect receiver processing and query filters.
+- Unplayable media: inspect fresh GET URLs, CORS, Object availability,
+  Profile/initialisation metadata and Segment timeranges.
+
+### Recover a Webhook
+
+Fix the receiver or credentials first. Preserve the webhook ID where possible:
+with a write-authorised API token, PUT the full registration to
+`/service/webhooks/{webhookId}` with `status: "created"`, intended filters and
+credentials from their original secret source. Redacted GET output is not a
+replacement for those secrets. Confirm a new event reaches the receiver.
+
+Reactivation does not replay dead rows or reconstruct events never queued.
+Reconcile the receiver against current Source, Flow, Object and Segment
+listings, including collections and deletions. Follow opaque pagination links,
+upsert by resource identity, use fresh media URLs and tolerate duplicate events.
+Delivery is at least once. Do not reset old queue rows to pending: payload URLs
+and registration settings may have changed, and old events can overwrite newer
+state.
+
+Listings are live, not snapshots. Prefer `sort_by=created` for reconciliation
+and recheck concurrent changes separately; quiesce writers when a definitive
+snapshot is required.
+
+Flow and Source listings sorted by `label` use offset pagination, whose tokens
+do not contain label text. Concurrent inserts, deletions or
+label changes can cause skips or repeats between those pages. Continue using
+the returned `Link` or `X-Paging-NextKey`; previously issued label keysets remain
+accepted. Timestamp-sorted listings retain keyset pagination.
+
+## Paginated Listings Return 502 Through a Proxy
+
+If a long filtered query succeeds without pagination but returns 502 with a
+smaller `limit`, check the proxy logs for `upstream sent too big header`.
+Pagination links retain the query filters and can exceed Nginx's default
+response-header buffer. The bundled UI proxy uses a 16 KiB buffer. Apply the
+same settings to any additional Nginx API gateway:
+
+```nginx
+proxy_buffer_size 16k;
+proxy_busy_buffers_size 16k;
+```
+
+Validate with `nginx -t` before reloading. Check both GET and HEAD, then follow
+the next page with the original filters. Request-line limits still apply;
+increasing them also requires enough response-header space for the next link.
 
 ## API Returns 503 StorageBackendMetadataMissing
 
@@ -155,22 +227,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <pod-name> --prev
 
 Worker pods expose `/healthz` and `/readyz` on their metrics port. These
 constant-time probes report process progress and the result of the latest worker
-poll without opening new backend connections. For a deeper dependency check,
-run the diagnostic command in the container:
+poll without opening new backend connections. Use readiness, replica status,
+and pod logs to check the worker:
 
 ```bash
-WORKER_DEPLOYMENT="$(kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  get tamoss "$TAMOSS_NAME" -o jsonpath='{.status.resolved.resources.worker}')"
-kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
-  exec deploy/"$WORKER_DEPLOYMENT" -- /bin/uv run python -m tamoss.worker health
-
 kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get tamoss "$TAMOSS_NAME" \
   -o jsonpath='{.status.replicas.worker}'
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" get pods
+kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" logs <worker-pod> --tail=100
 ```
-
-The worker health command validates runtime configuration, PostgreSQL
-connectivity, and the mounted StorageBackend credentials file. It does not claim
-queue work, send webhooks, delete media, or register storage metadata.
 
 ## API or UI Fails
 
@@ -181,12 +246,15 @@ kubectl --kubeconfig "$KUBECONFIG" -n "$TAMOSS_NAMESPACE" \
   logs -l app.kubernetes.io/component=api --tail=100
 ```
 
-For remote clusters, use the public API hostname configured in the `Tamoss` CR.
+For remote clusters, use the effective API URL from `status.endpoints.api` or
+`task env:summary`.
 
 ## Support Bundle
 
 Generate a local diagnostic bundle before opening a public issue or handing off
-an incident:
+an incident. The instance and operator namespaces must already exist. If
+installation stopped before they were created, inspect the platform with
+`helm list --all-namespaces` and `kubectl --kubeconfig "$KUBECONFIG" get events --all-namespaces` first.
 
 ```bash
 task operator:support-bundle \
@@ -204,7 +272,7 @@ first-start lifecycle phases so version and startup state are visible without
 opening the full resource dump first.
 
 Secret values, sensitive ConfigMaps such as `oauth2-credentials`, direct token
-fields, webhook API-key values, authorization header values, credential-bearing
+fields, webhook API-key values, `Authorization` header values, credential-bearing
 URLs, last-applied annotations, and known credential-bearing environment values
 are redacted. Generated Secret names from `status.resolved.*` remain visible so
 references can be diagnosed, but generated Secret bodies are not shared. The
@@ -254,11 +322,10 @@ reports `ObjectStoreUnreachable`, inspect the `StorageBackend` `BucketReady`,
 `DatabaseReady`, and external diagnostic conditions plus the mounted runtime
 credentials Secret.
 
-For local [Kind](https://kind.sigs.k8s.io/), browser ingest uploads directly
-to `https://s3.tamoss.localtest.me`. If the browser has accepted the app
-origin
-but not the S3 origin, uploads can fail as a CORS or generic network error even
-though the backend is healthy.
+For local [Kind](https://kind.sigs.k8s.io/), playback reads media from
+`https://s3.tamoss.localtest.me`. Trust the S3 certificate as well as the app
+certificate; otherwise media requests can fail with a CORS or network error
+even when the backend is healthy.
 
 For external S3:
 
@@ -418,8 +485,7 @@ For an existing cluster, keep durable changes in the generated environment
 overlay and reapply the supported workflow:
 
 ```bash
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+kubectl --kubeconfig "$KUBECONFIG" apply -k deploy/environments/my-prod
 ```
 
 For a disposable local Kind cluster, recreate the full local environment:
@@ -430,5 +496,6 @@ task kind:e2e PROFILE=local-kind
 task kind:down
 ```
 
-`task kind:down` deletes the local Kind cluster and local runtime state. Do not
-use it as a production reset path.
+`task kind:down` deletes the local Kind cluster and removes its kubeconfig
+context. It leaves other contexts and local files in place. Do not use it as a
+production reset path.

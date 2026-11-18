@@ -1,0 +1,7 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = """
+Approved by maintainer on 2026-09-06: affected OpenPGP packages are not imported.
+task security:audit:osv rejects their introduction on linux/amd64 and linux/arm64;
+other x/crypto advisories remain blocking.
+"""

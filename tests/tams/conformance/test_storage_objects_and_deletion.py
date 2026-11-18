@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,6 +15,7 @@ from tamoss.domain.model import (
     MediaObjectRecord,
     ObjectCopyRecord,
     ObjectInstance,
+    ObjectStorageMetadata,
     StorageBackend,
     utc_now,
 )
@@ -34,9 +37,58 @@ from tests.tams.support import (
     video_flow_payload,
 )
 
-pytestmark = pytest.mark.tams_conformance
+pytestmark = [pytest.mark.tams_conformance, pytest.mark.tams_semantics]
 
 SECONDARY_BACKEND_ID = UUID("22222222-2222-4222-8222-222222222222")
+
+
+@pytest.mark.parametrize(
+    ("object_id", "neighbour_id"),
+    [
+        ("clip%2Fone", "clip/one"),
+        ("clip%20one", "clip one"),
+        ("caf%C3%A9", "café"),
+        ("clip/one", "clip-other"),
+        ("clip%25one", "clip%one"),
+    ],
+)
+def test_encoded_object_identity_survives_reads_and_instance_mutations(
+    client: TestClient, object_id: str, neighbour_id: str
+) -> None:
+    flow_id, _, _ = create_video_flow(client)
+    register_segment(client, flow_id, object_id=object_id)
+    register_segment(client, flow_id, object_id=neighbour_id, timerange="[10:0_20:0)")
+
+    async def check_identity() -> None:
+        # ASGITransport preserves the single path decode performed by a server.
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver",
+        ) as http:
+            target = f"/objects/{quote(object_id, safe='')}"
+            neighbour = f"/objects/{quote(neighbour_id, safe='')}"
+            read = await http.get(target)
+            assert read.status_code == 200
+            assert read.json()["id"] == object_id
+            assert (await http.head(target)).status_code == 200
+
+            registered = await http.post(
+                target + "/instances",
+                json=external_object_instance("https://media.example.test/clip"),
+            )
+            assert registered.status_code == 201
+            query = {"accept_get_urls": "external"}
+            assert len((await http.get(target, params=query)).json()["get_urls"]) == 1
+            assert (await http.get(neighbour, params=query)).json()["get_urls"] == []
+
+            deleted = await http.delete(
+                target + "/instances", params={"label": "external"}
+            )
+            assert deleted.status_code == 204
+            assert (await http.get(target, params=query)).json()["get_urls"] == []
+            assert (await http.get(neighbour)).json()["id"] == neighbour_id
+
+    asyncio.run(check_identity())
 
 
 def test_storage_allocation_and_object_instance_lifecycle(
@@ -163,6 +215,46 @@ def test_storage_allocation_and_object_instance_lifecycle(
     assert final_instance.status_code == 400
 
 
+def test_registration_rechecks_reallocated_object_after_upload_probe(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_cases = client.app.state.tamoss_use_cases
+    flow_id, _, _ = create_video_flow(client)
+    object_id = "reallocated.ts"
+    assert (
+        client.post(
+            f"/flows/{flow_id}/storage", json={"object_ids": [object_id]}
+        ).status_code
+        == 201
+    )
+    upload_allocated_object(client, object_id)
+    metadata = use_cases.object_storage.object_metadata
+    replaced = False
+
+    def probe_then_reallocate(
+        selected_id: str, *, backend: StorageBackend | None = None
+    ) -> ObjectStorageMetadata | None:
+        nonlocal replaced
+        observed = metadata(selected_id, backend=backend)
+        if not replaced:
+            replaced = True
+            use_cases.repository.delete_object(selected_id)
+            use_cases.object_storage.delete(selected_id, backend=backend)
+            use_cases.storage.allocate_flow_storage(
+                flow_id=flow_id, request={"object_ids": [selected_id]}
+            )
+        return observed
+
+    monkeypatch.setattr(
+        use_cases.object_storage, "object_metadata", probe_then_reallocate
+    )
+    response = client.post(
+        f"/flows/{flow_id}/segments", json=segment_payload(object_id)
+    )
+    assert response.status_code == 400
+    assert use_cases.repository.list_segments(flow_id) == []
+
+
 def test_get_url_filters_apply_to_objects_and_segments(client: TestClient) -> None:
     flow_id, object_id = _object_with_external_instance(client)
     use_cases = client.app.state.tamoss_use_cases
@@ -207,7 +299,7 @@ def test_object_instance_updates_are_visible_to_all_reused_object_segments(
     second_flow_id, _, _ = create_video_flow(client)
     reused = client.post(
         f"/flows/{second_flow_id}/segments",
-        json=segment_payload(object_id, "[10:0_20:0)"),
+        json=segment_payload(object_id, "[10:0_20:0)", ts_offset="10:0"),
     )
     assert reused.status_code == 201
 
@@ -769,6 +861,13 @@ def test_segment_deletion_request_lifecycle(
     assert "expiry" not in accepted.json()
 
     listed_requests = client.get("/flow-delete-requests")
+    listed_head = client.head("/flow-delete-requests")
+    assert listed_head.status_code == 200
+    assert listed_head.content == b""
+    assert (
+        listed_head.headers["x-paging-count"]
+        == listed_requests.headers["x-paging-count"]
+    )
     assert listed_requests.status_code == 200
     assert [item["id"] for item in listed_requests.json()] == [request_id]
     request_head = client.head(f"/flow-delete-requests/{request_id}")

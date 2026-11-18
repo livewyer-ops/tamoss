@@ -2,6 +2,10 @@
 
 Start Day 2 work from the `Tamoss` resource. It is the operator's summary of
 schema, backend, identity, rollout, and degradation state.
+Use `status.resolved` and `status.endpoints` for effective settings, including
+inherited defaults. Shared settings are maintained in the environment's
+`operator/defaults.yaml`; see [Upgrades](upgrades.md#installation-defaults) for
+applying them. Instance-specific changes belong in the instance manifest.
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
@@ -42,6 +46,17 @@ kubectl --kubeconfig "$KUBECONFIG" -n tamoss-system logs deploy/operator-control
 | `BucketReady` | The managed or external object-store bucket is reachable for the selected ownership mode. |
 | `DatabaseReady` | The backend registration row exists in the TAMOSS database. |
 | `ExternalS3DiagnosticReady` | Best-effort external S3 browser-upload diagnostics have completed, skipped, or reported a warning reason. |
+
+`FlowProfile` conditions:
+
+| Condition | Meaning |
+| --- | --- |
+| `Ready` | The exact immutable definition is registered or adopted. |
+| `Registered` | The operator has confirmed the desired TAMS Profile registration. |
+| `DeletionBlocked` | A Flow still references the Profile, or another live resource claims the UUID. |
+
+Use `kubectl describe flowprofile <name>` to inspect stable reasons such as
+`InvalidProfile`, `ProfileConflict`, `DuplicateProfileID`, and `ProfileInUse`.
 
 Inspect schema migration attempts without reading Jobs first:
 
@@ -108,9 +123,9 @@ For durable scaling, edit the environment overlay that owns the `Tamoss` CR,
 then reapply it:
 
 ```bash
-$EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task env:apply ENV=my-prod KUBECONFIG="$KUBECONFIG"
-task env:wait ENV=my-prod KUBECONFIG="$KUBECONFIG"
+$EDITOR "deploy/environments/my-prod/instances/$TAMOSS_NAME/tamoss.yaml"
+kubectl --kubeconfig "$KUBECONFIG" apply -k "deploy/environments/my-prod/instances/$TAMOSS_NAME"
+task env:wait ENV=my-prod INSTANCE="$TAMOSS_NAME" KUBECONFIG="$KUBECONFIG"
 ```
 
 For a short investigation, patch the live `Tamoss` CR and then copy the chosen

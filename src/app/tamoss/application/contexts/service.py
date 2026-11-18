@@ -5,6 +5,7 @@ from typing import Any
 
 from tamoss.contract.payloads import JsonPayload, without_none
 from tamoss.domain.model import ServiceMetadata, StorageBackend
+from tamoss.domain.pagination import Page
 from tamoss.ports.repositories import ServiceRepository
 from tamoss.settings import Settings
 
@@ -51,3 +52,20 @@ class ServiceUseCases:
 
     def list_storage_backends(self) -> list[StorageBackend]:
         return self.repository.list_storage_backends()
+
+    def list_storage_backends_page(
+        self,
+        *,
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[StorageBackend]:
+        return self.repository.list_storage_backends_page(
+            tag_values=tag_values,
+            tag_exists=tag_exists,
+            reverse_order=reverse_order,
+            page=page,
+            limit=limit,
+        )

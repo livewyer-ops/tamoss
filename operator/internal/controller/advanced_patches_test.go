@@ -90,6 +90,7 @@ func TestApplyAdvancedResourcePatchesRejectsIdentityChanges(t *testing.T) {
 
 func advancedPatchTamossFixture() *tamossv1alpha1.Tamoss {
 	return &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{Version: "dev"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "example",
 			Namespace: "tams",

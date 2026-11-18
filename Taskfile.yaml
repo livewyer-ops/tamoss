@@ -6,13 +6,9 @@ set: [errexit, nounset, pipefail]
 vars:
   PROJECT_NAME: '{{default "tams" (default (env "PROJECT_NAME") .PROJECT_NAME)}}'
   KUBECONFIG: '{{default (printf "%s.kubeconfig" .PROJECT_NAME) (default (env "KUBECONFIG") .KUBECONFIG)}}'
-  SECRETS_DIR: ".local"
-  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
-  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
-  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
-  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
   KIND_DEMO_INGEST: '{{default "true" (default (env "KIND_DEMO_INGEST") .KIND_DEMO_INGEST)}}'
   KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
   TAMOSS_NAMESPACE: '{{default "tams" .TAMOSS_NAMESPACE}}'
@@ -96,9 +92,6 @@ tasks:
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
           KIND_SUMMARY: "{{.KIND_SUMMARY}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
@@ -107,10 +100,11 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - task: operator:apply
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
-          OPERATOR_KUSTOMIZE_DIR: "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}"
+      - |
+        . .tasks/lib/operator_k8s.sh
+        task_render_development_operator "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}" "{{.KIND_OPERAND_VERSION}}" "{{.KIND_SCHEMA_VERSION}}" "{{.KIND_PREVIOUS_SCHEMA_VERSION}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_apply_operator "{{.KUBECONFIG}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_wait_operator "{{.KUBECONFIG}}" tamoss-system operator-controller-manager
       - task: operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -118,15 +112,18 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
           DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+          DEMO_AUDIO_FILE: "{{.DEMO_AUDIO_FILE}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
       - |
         if [ "{{.KIND_SUMMARY}}" != "false" ]; then
@@ -147,29 +144,20 @@ tasks:
           task_step "Demo media: skip playable media ingest" true
         else
           task_step "Demo media: ingest playable media" \
-            .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}"
+            .tasks/lib/demo_ingest.sh "{{.PROFILE_TARGET_ENV}}" "{{.DEMO_MEDIA_FILE}}" "{{.KUBECONFIG}}" "{{.DEMO_AUDIO_FILE}}"
         fi
 
   kind:down:
-    desc: "Local Kind: delete the disposable Kind cluster and local runtime state"
+    desc: "Local Kind: delete the disposable Kind cluster"
     interactive: true
     silent: true
-    prompt: "This will delete the {{.PROJECT_NAME}} Kind cluster and local runtime state. Continue?"
+    prompt: "This will delete the {{.PROJECT_NAME}} Kind cluster. Continue?"
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
-        if command -v kind >/dev/null 2>&1; then
-          task_step "Local Kind: delete cluster" \
-            task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
-        else
-          echo "Skipping Kind cleanup; kind is unavailable"
-        fi
-      - |
-        set -euo pipefail
-        . .tasks/lib/kind.sh
-        task_step "Local Kind: remove local state" \
-          task_remove_local_kind_state "{{.KUBECONFIG}}" "{{.SECRETS_DIR}}"
+        task_step "Local Kind: delete cluster" \
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
 
   dev:
     desc: "Development: run local API/frontend dev servers with Compose dependencies"
@@ -189,6 +177,9 @@ tasks:
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
+          PROFILE_KIND_ENVIRONMENT_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          PROFILE_TAMOSS_NAME: "{{.PROFILE_TAMOSS_NAME}}"
+          PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
 
   kind:test:
     desc: "Local Kind validation: deploy the selected profile and run deployed checks"
@@ -275,13 +266,14 @@ tasks:
         done
 
   lint:
-    desc: "Development: lint Python/frontend/shell; operator Go and manifest gates are separate"
+    desc: "Development: lint Python/frontend/shell/workflows; operator Go and manifest gates are separate"
     silent: true
     cmds:
       - task: lint:ruff:lint
       - task: lint:mypy
       - task: lint:shell
       - task: lint:eslint
+      - task: lint:actions
 
   check:
     desc: "Development: run lint plus the fast test subset"

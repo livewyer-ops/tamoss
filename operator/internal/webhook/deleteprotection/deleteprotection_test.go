@@ -85,6 +85,28 @@ func TestHandlerIgnoresNonDeleteOperations(t *testing.T) {
 	}
 }
 
+func TestImmutableSpecHandlerRejectsSpecChanges(t *testing.T) {
+	response := NewImmutableSpecHandler("FlowProfile").Handle(context.Background(), admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+		Operation: admissionv1.Update,
+		OldObject: runtime.RawExtension{Raw: []byte(`{"spec":{"label":"old"},"status":{"phase":"Ready"}}`)},
+		Object:    runtime.RawExtension{Raw: []byte(`{"spec":{"label":"new"},"status":{"phase":"Ready"}}`)},
+	}})
+	if response.Allowed {
+		t.Fatal("expected immutable FlowProfile spec update to be denied")
+	}
+}
+
+func TestImmutableSpecHandlerAllowsStatusChanges(t *testing.T) {
+	response := NewImmutableSpecHandler("FlowProfile").Handle(context.Background(), admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+		Operation: admissionv1.Update,
+		OldObject: runtime.RawExtension{Raw: []byte(`{"spec":{"label":"same"},"status":{"phase":"Pending"}}`)},
+		Object:    runtime.RawExtension{Raw: []byte(`{"spec":{"label":"same"},"status":{"phase":"Ready"}}`)},
+	}})
+	if !response.Allowed {
+		t.Fatalf("expected status-only update to be allowed, got %q", response.Result.Message)
+	}
+}
+
 func deleteRequest(kind, name string, annotations map[string]string, user authnv1.UserInfo) admission.Request {
 	metadata := metav1.PartialObjectMetadata{
 		TypeMeta: metav1.TypeMeta{

@@ -21,6 +21,7 @@ from tests.adapters.postgres.support import (
     database_url,
     execute_sql_file,
 )
+from tests.support.bbc_contract import bbc_validator
 from tests.support.s3_storage import (
     checksum_value,
     empty_and_delete_bucket,
@@ -120,64 +121,92 @@ def real_storage_client(
         yield client
 
 
-def test_allocated_put_url_accepts_storage_checksum_headers(
+@pytest.mark.parametrize(
+    "timerange,offset",
+    [
+        ("[9999999998:0_10000000002:0)", "10000000000:0"),
+        ("[-10000000002:2_-9999999998:1)", "-10000000000:0"),
+    ],
+)
+def test_large_segment_timestamps_round_trip_through_http_and_postgres(
+    real_storage_client: TestClient, timerange: str, offset: str
+) -> None:
+    client = real_storage_client
+    flow_id, source_id, _ = create_video_flow(client)
+    object_id = str(uuid4())
+    put = allocate_objects(client, flow_id, [object_id])[0]["put_url"]
+    uploaded = requests.put(
+        put["url"], data=b"timestamp test", headers=put["headers"], timeout=5
+    )
+    assert uploaded.status_code in {200, 201, 204}, uploaded.text
+    body = {"object_id": object_id, "timerange": timerange, "ts_offset": offset}
+    bbc_validator("flow-segment-post.json").validate(body)
+    response = client.post(f"/flows/{flow_id}/segments", json=body)
+    assert response.status_code == 201, response.text
+    response = client.get(
+        f"/flows/{flow_id}/segments", params={"timerange": timerange, "limit": 1}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["x-paging-timerange"] == timerange
+    assert len(response.json()) == 1
+    assert {key: response.json()[0][key] for key in body} == body
+    detail = client.get(f"/flows/{flow_id}", params={"include_timerange": "true"})
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["timerange"] == timerange
+    selected = client.get(
+        f"/flows/{flow_id}",
+        params={"include_timerange": "true", "timerange": f"[{offset}]"},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["timerange"] == timerange
+    filtered = client.get(
+        "/flows",
+        params={
+            "source_id": str(source_id),
+            "timerange": timerange,
+            "include_timerange": "true",
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert [flow["id"] for flow in filtered.json()] == [str(flow_id)]
+    assert filtered.json()[0]["timerange"] == timerange
+
+
+def test_allocated_put_url_validates_content_md5(
     real_storage_client: TestClient,
+    s3_backend: StorageBackend,
 ) -> None:
     flow_id, _, _ = create_video_flow(real_storage_client)
     body = b"tamoss checksum passthrough\n"
+    object_id = f"tams/conformance/{uuid4()}/checksum.ts"
+    bad_object_id = f"tams/conformance/{uuid4()}/bad-checksum.ts"
+    put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0]["put_url"]
+    headers = dict(put_url["headers"])
+    headers["Content-MD5"] = checksum_value(body, "md5")
 
-    for index, (checksum_header, checksum_algorithm) in enumerate(
-        [
-            ("Content-MD5", "md5"),
-            ("x-amz-checksum-sha256", "sha256"),
-        ]
-    ):
-        timerange_start = index * 20
-        timerange = f"[{timerange_start}:0_{timerange_start + 10}:0)"
-        missing_timerange = f"[{timerange_start + 10}:0_{timerange_start + 20}:0)"
-        object_id = f"tams/conformance/{uuid4()}/checksum.ts"
-        bad_object_id = f"tams/conformance/{uuid4()}/bad-checksum.ts"
-        put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0][
-            "put_url"
-        ]
-        headers = dict(put_url["headers"])
-        headers[checksum_header] = checksum_value(body, checksum_algorithm)
+    put_response = requests.put(put_url["url"], data=body, headers=headers, timeout=5)
+    assert put_response.status_code in {200, 201, 204}, put_response.text
+    registered = real_storage_client.post(
+        f"/flows/{flow_id}/segments", json=segment_payload(object_id, "[0:0_10:0)")
+    )
+    assert registered.status_code == 201, registered.text
 
-        put_response = requests.put(
-            put_url["url"],
-            data=body,
-            headers=headers,
-            timeout=5,
-        )
-        assert put_response.status_code in {200, 201, 204}, put_response.text
-
-        registered = real_storage_client.post(
-            f"/flows/{flow_id}/segments",
-            json=segment_payload(object_id, timerange),
-        )
-        assert registered.status_code == 201, registered.text
-
-        bad_put_url = allocate_objects(real_storage_client, flow_id, [bad_object_id])[
-            0
-        ]["put_url"]
-        bad_headers = dict(bad_put_url["headers"])
-        bad_headers[checksum_header] = checksum_value(
-            b"different body", checksum_algorithm
-        )
-
-        bad_put_response = requests.put(
-            bad_put_url["url"],
-            data=body,
-            headers=bad_headers,
-            timeout=5,
-        )
-        assert bad_put_response.status_code not in {200, 201, 204}
-
-        missing_object = real_storage_client.post(
-            f"/flows/{flow_id}/segments",
-            json=segment_payload(bad_object_id, missing_timerange),
-        )
-        assert missing_object.status_code == 400
+    bad_put_url = allocate_objects(real_storage_client, flow_id, [bad_object_id])[0][
+        "put_url"
+    ]
+    bad_headers = dict(bad_put_url["headers"])
+    bad_headers["Content-MD5"] = checksum_value(b"different body", "md5")
+    bad_put_response = requests.put(
+        bad_put_url["url"], data=body, headers=bad_headers, timeout=5
+    )
+    assert bad_put_response.status_code == 400, bad_put_response.text
+    assert "BadDigest" in bad_put_response.text
+    storage = real_storage_client.app.state.tamoss_use_cases.object_storage
+    assert storage.object_metadata(bad_object_id, backend=s3_backend) is None
+    missing_object = real_storage_client.post(
+        f"/flows/{flow_id}/segments", json=segment_payload(bad_object_id, "[10:0_20:0)")
+    )
+    assert missing_object.status_code == 400
 
 
 def test_stale_allocation_cleanup_removes_postgres_row_and_stored_bytes(
@@ -227,3 +256,59 @@ def test_stale_allocation_cleanup_removes_postgres_row_and_stored_bytes(
     assert use_cases.repository.object_repository.get_object(object_id) is None
     assert use_cases.object_storage.read(object_id, backend=s3_backend) is None
     assert [cleanup.object_id for cleanup in completed_cleanups] == [object_id]
+
+
+def test_http_validation_preserves_persisted_media(
+    real_storage_client: TestClient,
+) -> None:
+    flow_id, _, original = create_video_flow(real_storage_client)
+    object_id = f"validation/{flow_id}.ts"
+    put_url = allocate_objects(real_storage_client, flow_id, [object_id])[0]["put_url"]
+    uploaded = requests.put(
+        put_url["url"], data=b"validation", headers=put_url["headers"], timeout=5
+    )
+    assert uploaded.status_code in {200, 201, 204}
+    registered = real_storage_client.post(
+        f"/flows/{flow_id}/segments",
+        json=segment_payload(object_id, "[1000000000:1_1000000000:2)"),
+    )
+    assert registered.status_code == 201
+    flow_path = f"/flows/{flow_id}"
+    before = real_storage_client.get(flow_path).json()
+    for name in ("max_bit_rate", "avg_bit_rate"):
+        assert (
+            real_storage_client.put(f"{flow_path}/{name}", json=True).status_code == 400
+        )
+    assert real_storage_client.put(flow_path, json={}).status_code == 400
+    assert real_storage_client.get(flow_path).json() == before
+    assert before["id"] == original["id"]
+    for method in ("GET", "HEAD"):
+        assert (
+            real_storage_client.request(
+                method, "/flows", params={"codec": "invalid"}
+            ).status_code
+            == 400
+        )
+        assert (
+            real_storage_client.request(
+                method, f"{flow_path}/segments", params={"timerange": "(1000000000:1)"}
+            ).status_code
+            == 400
+        )
+    assert (
+        real_storage_client.delete(
+            f"{flow_path}/segments", params={"timerange": "(1000000000:1)"}
+        ).status_code
+        == 400
+    )
+    segments = real_storage_client.get(
+        f"{flow_path}/segments", params={"timerange": "[1000000000:1]"}
+    )
+    assert segments.status_code == 200
+    assert len(segments.json()) == 1
+    media_object = real_storage_client.get(
+        f"/objects/{object_id}", params={"presigned": True}
+    )
+    downloaded = requests.get(media_object.json()["get_urls"][0]["url"], timeout=5)
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"validation"

@@ -1,8 +1,0 @@
-apiVersion: tamoss.livewyer.io/v1alpha1
-kind: Tamoss
-metadata:
-  name: auth-unreachable
-  namespace: ($namespace)
-status:
-  (conditions[?type == 'IdentityReady'] | [0].status): "False"
-  (conditions[?type == 'IdentityReady'] | [0].reason): AuthentikManagedBlueprintApplyFailed

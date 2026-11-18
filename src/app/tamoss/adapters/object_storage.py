@@ -21,7 +21,7 @@ from tamoss.domain.model import (
     utc_now,
 )
 from tamoss.errors import ConfigurationError
-from tamoss.settings import Settings
+from tamoss.settings import Settings, aws_web_identity_configured
 from tamoss.storage_credentials import StorageBackendCredentialFile
 
 
@@ -35,27 +35,27 @@ class ConfiguredObjectStorage:
         self._lock = RLock()
 
     def build_put_request(
-        self, *, object_id: str, flow_container: str, backend: StorageBackend
+        self,
+        *,
+        object_id: str,
+        content_type: str,
+        backend: StorageBackend,
+        presigned: bool,
     ) -> dict[str, object]:
         backend = self._resolve_backend(backend)
         return {
-            "url": self._presign_put_url(
-                backend=backend,
-                object_id=object_id,
-                content_type=flow_container,
+            "url": (
+                self._presign_put_url(
+                    backend=backend,
+                    object_id=object_id,
+                    content_type=content_type,
+                )
+                if presigned
+                else _public_object_url(backend=backend, object_id=object_id)
             ),
-            "content-type": flow_container,
-            "headers": {"Content-Type": flow_container},
+            "content-type": content_type,
+            "headers": {"Content-Type": content_type},
         }
-
-    def build_get_urls(
-        self, *, object_id: str, backend: StorageBackend
-    ) -> list[dict[str, object]]:
-        backend = self._resolve_backend(backend)
-        return self._build_get_urls_for_resolved_backend(
-            object_id=object_id,
-            backend=backend,
-        )
 
     def build_get_urls_batch(
         self, requests: Iterable[ObjectGetUrlRequest]
@@ -180,20 +180,22 @@ class ConfiguredObjectStorage:
         source = self._resolve_backend(source_backend)
         destination = self._resolve_backend(destination_backend)
         if _same_storage_endpoint(source, destination):
-            self._s3_client(destination).copy_object(
+            self._s3_client(destination).copy(
                 Bucket=_require_bucket(destination),
                 Key=object_id,
                 CopySource={
                     "Bucket": _require_bucket(source),
                     "Key": object_id,
                 },
-                MetadataDirective="COPY",
+                ExtraArgs={"MetadataDirective": "COPY"},
+                SourceClient=self._s3_client(source),
             )
             return
 
         response = self._s3_client(source).get_object(
             Bucket=_require_bucket(source),
             Key=object_id,
+            ChecksumMode="ENABLED",
         )
         body = response["Body"]
         try:
@@ -228,10 +230,13 @@ class ConfiguredObjectStorage:
         client = self._s3_client(resolved_backend)
         bucket = _require_bucket(resolved_backend)
         for delete_batch in _chunked(unique_object_ids, 1000):
-            client.delete_objects(
+            response = client.delete_objects(
                 Bucket=bucket,
                 Delete={"Objects": [{"Key": object_id} for object_id in delete_batch]},
+                ChecksumAlgorithm="SHA256",
             )
+            if response.get("Errors"):
+                raise RuntimeError("S3 batch deletion was incomplete; retry required")
 
     def check_backend(self, backend: StorageBackend) -> None:
         resolved_backend = self._resolve_backend(backend)
@@ -304,18 +309,31 @@ class ConfiguredObjectStorage:
         endpoint_url = (
             backend.public_endpoint_url if public else backend.endpoint_url
         ) or backend.endpoint_url
-        if not endpoint_url or not backend.access_key or not backend.secret_key:
+        configured = self._settings.storage_backend
+        use_web_identity = (
+            not backend.access_key
+            and not backend.secret_key
+            and configured is not None
+            and configured.id == backend.id
+            and not configured.access_key
+            and not configured.secret_key
+            and aws_web_identity_configured()
+        )
+        if not endpoint_url or (
+            not use_web_identity and (not backend.access_key or not backend.secret_key)
+        ):
             raise ConfigurationError(
                 f"Storage backend {backend.id} is missing S3 endpoint or credentials."
             )
-        return boto3.client(
+        client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
-            aws_access_key_id=backend.access_key,
-            aws_secret_access_key=backend.secret_key,
+            aws_access_key_id=backend.access_key or None,
+            aws_secret_access_key=backend.secret_key or None,
             region_name=backend.region or "us-east-1",
             config=Config(
                 signature_version="s3v4",
+                request_checksum_calculation="when_required",
                 connect_timeout=self._settings.s3_connect_timeout_seconds,
                 read_timeout=self._settings.s3_read_timeout_seconds,
                 retries={"max_attempts": 2, "mode": "standard"},
@@ -323,6 +341,11 @@ class ConfiguredObjectStorage:
                 s3={"addressing_style": "path"},
             ),
         )
+        for operation in ("PutObject", "UploadPart"):
+            client.meta.events.register(
+                f"before-call.s3.{operation}", _use_header_checksum
+            )
+        return client
 
     def _resolve_backend(self, backend: StorageBackend | None) -> StorageBackend:
         resolved = _configured_backend(backend, self._settings)
@@ -401,12 +424,35 @@ def _same_storage_endpoint(source: StorageBackend, destination: StorageBackend) 
     ) and source.region == destination.region
 
 
+def _use_header_checksum(*, context: dict[str, Any], **_: Any) -> None:
+    # Retain SDK checksum calculation for stores without aws-chunked support.
+    algorithm = context.get("checksum", {}).get("request_algorithm")
+    if isinstance(algorithm, dict) and algorithm.get("in") == "trailer":
+        algorithm["in"] = "header"
+
+
 def _copy_upload_args(response: dict[str, Any]) -> dict[str, Any]:
     extra_args: dict[str, Any] = {}
     if response.get("ContentType"):
         extra_args["ContentType"] = response["ContentType"]
     if response.get("Metadata"):
         extra_args["Metadata"] = response["Metadata"]
+    for algorithm in (
+        "SHA256",
+        "SHA1",
+        "CRC64NVME",
+        "CRC32C",
+        "CRC32",
+        "SHA512",
+        "MD5",
+        "XXHASH64",
+        "XXHASH3",
+        "XXHASH128",
+    ):
+        if response.get(f"Checksum{algorithm}"):
+            # The SDK calculates the destination checksum for its upload part layout.
+            extra_args["ChecksumAlgorithm"] = algorithm
+            break
     return extra_args
 
 

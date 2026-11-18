@@ -6,3 +6,4 @@ metadata:
 status:
   (conditions[?type == 'IdentityBlueprintSubmitted'] | [0].status): "True"
   (conditions[?type == 'IdentityBlueprintSubmitted'] | [0].reason): ManagedBlueprintApplied
+  (auth.managedBlueprint): (join('', ['tamoss-', $namespace, '-tamoss']))

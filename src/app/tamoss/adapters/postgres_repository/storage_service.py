@@ -4,6 +4,7 @@ from __future__ import annotations
 # Focused store methods run with repository-owned connection and mapper state.
 from uuid import UUID
 
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.mappers import (
@@ -11,7 +12,13 @@ from tamoss.adapters.postgres_repository.mappers import (
     _storage_backend_from_record,
     _storage_backend_to_record,
 )
+from tamoss.adapters.postgres_repository.query_filters import (
+    _append_tag_filter_clauses,
+    _listing_order_sql,
+    _where_sql,
+)
 from tamoss.domain.model import ServiceMetadata, StorageBackend
+from tamoss.domain.pagination import Page, resolve_page_window
 
 _SERVICE_METADATA_ID = "default"
 
@@ -71,6 +78,61 @@ class PostgresStorageServiceMixin:
                 )
                 for row in cur.fetchall()
             ]
+
+    def list_storage_backends_page(
+        self,
+        *,
+        tag_values: dict[str, set[str]],
+        tag_exists: dict[str, bool],
+        reverse_order: bool,
+        page: str | None,
+        limit: int | None,
+    ) -> Page[StorageBackend]:
+        window = resolve_page_window(page=page, limit=limit)
+        clauses: list[sql.Composable] = []
+        params: dict[str, object] = {
+            "offset": window.offset,
+            "limit": window.limit + 1,
+        }
+        _append_tag_filter_clauses(
+            clauses,
+            params,
+            column_sql="backend.tags",
+            value_filters=tag_values,
+            existence_filters=tag_exists,
+        )
+        order_sql = _listing_order_sql(
+            sql.SQL("backend.label"),
+            sql.SQL("backend.id"),
+            descending=reverse_order,
+            missing_first=reverse_order,
+        )
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    """
+                    SELECT backend.record
+                    FROM tamoss_storage_backends AS backend
+                    {}
+                    ORDER BY {}
+                    OFFSET %(offset)s
+                    LIMIT %(limit)s
+                    """
+                ).format(_where_sql(clauses), order_sql),
+                params,
+            )
+            rows = cur.fetchall()
+        items = [
+            _storage_backend_from_record(
+                row[0],
+                configured_storage_backend=self._configured_storage_backend,
+            )
+            for row in rows[: window.limit]
+        ]
+        next_page = (
+            str(window.offset + window.limit) if len(rows) > window.limit else None
+        )
+        return Page(items=items, limit=window.limit, next_page=next_page)
 
     def default_storage_backend(self) -> StorageBackend | None:
         with self._connect() as conn, conn.cursor() as cur:
@@ -141,6 +203,7 @@ class PostgresStorageServiceMixin:
                     bucket_name,
                     endpoint_url,
                     public_endpoint_url,
+                    tags,
                     record,
                     updated_at
                 )
@@ -155,6 +218,7 @@ class PostgresStorageServiceMixin:
                     %(bucket_name)s,
                     %(endpoint_url)s,
                     %(public_endpoint_url)s,
+                    %(tags)s,
                     %(record)s,
                     NOW()
                 )
@@ -168,6 +232,7 @@ class PostgresStorageServiceMixin:
                     bucket_name = EXCLUDED.bucket_name,
                     endpoint_url = EXCLUDED.endpoint_url,
                     public_endpoint_url = EXCLUDED.public_endpoint_url,
+                    tags = EXCLUDED.tags,
                     record = EXCLUDED.record,
                     updated_at = NOW()
                 """,
@@ -181,6 +246,7 @@ class PostgresStorageServiceMixin:
                     "bucket_name": backend.bucket_name,
                     "endpoint_url": backend.endpoint_url,
                     "public_endpoint_url": backend.public_endpoint_url,
+                    "tags": Jsonb(backend.tags),
                     "record": Jsonb(record),
                 },
             )

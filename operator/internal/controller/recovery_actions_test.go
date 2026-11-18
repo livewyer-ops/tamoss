@@ -25,9 +25,9 @@ func TestSchemaRetryClearsTerminalFailureAndDeletesFailedJob(t *testing.T) {
 	tamoss := recoveryTamoss()
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "")
-	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()), tamoss.Namespace)
+	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+testSchemaController().schemaVersionForName()), tamoss.Namespace)
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, job).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -61,9 +61,10 @@ func TestSchemaRetryDuplicateAnnotationDoesNotResetAgain(t *testing.T) {
 	tamoss := recoveryTamoss()
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "retry-1")
-	job := failedJobFixture(tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName()), tamoss.Namespace)
+	job := testSchemaController().schemaMigrationJob(tamoss, false)
+	job.Status = failedJobFixture(job.Name, job.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, job).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -83,10 +84,10 @@ func TestSchemaRetryRepeatedFailureStartsNewAttemptCount(t *testing.T) {
 	tamoss := recoveryTamoss()
 	tamoss.Annotations = map[string]string{AnnotationSchemaRetry: "retry-1"}
 	state := terminalSchemaState(tamoss, "")
-	jobName := tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName())
+	jobName := tamossResourceName(tamoss, "schema-migrate-"+testSchemaController().schemaVersionForName())
 	failed := failedJobFixture(jobName, tamoss.Namespace)
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, failed).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	if _, err := controller.Reconcile(ctx, tamoss); err != nil {
 		t.Fatalf("expected retry reset: %v", err)
@@ -124,10 +125,10 @@ func TestSchemaRetryConsumedMarkerSurvivesSuccessState(t *testing.T) {
 	scheme := storageBackendTestScheme(t)
 	tamoss := recoveryTamoss()
 	state := terminalSchemaState(tamoss, "retry-1")
-	jobName := tamossResourceName(tamoss, "schema-migrate-"+schemaVersionForName())
-	succeeded := succeededJobFixture(jobName, tamoss.Namespace)
+	succeeded := testSchemaController().schemaMigrationJob(tamoss, false)
+	succeeded.Status = succeededJobFixture(succeeded.Name, succeeded.Namespace).Status
 	client := fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(scheme).WithObjects(tamoss, state, succeeded).Build()
-	controller := SchemaController{Client: client, Scheme: scheme}
+	controller := SchemaController{Target: testRelease().Schema, Client: client, Scheme: scheme}
 
 	result, err := controller.Reconcile(ctx, tamoss)
 	if err != nil {
@@ -156,6 +157,7 @@ func TestGeneratedAPITokenRotationReplacesTokenAndAnnotatesRollout(t *testing.T)
 	}
 	recorder := record.NewFakeRecorder(10)
 	reconciler := &TamossReconciler{
+		Releases: testReleases(),
 		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 		Recorder: recorder,
 	}
@@ -170,9 +172,11 @@ func TestGeneratedAPITokenRotationReplacesTokenAndAnnotatesRollout(t *testing.T)
 	if secret.Annotations[annotationAPITokenDone] != "rotate-1" {
 		t.Fatalf("expected rotation consumed annotation, got %#v", secret.Annotations)
 	}
-	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" ||
-		uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
-		t.Fatalf("expected checksum annotations on API and UI deployments")
+	if apiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] == "" {
+		t.Fatal("expected API checksum annotation")
+	}
+	if uiDeployment.Spec.Template.Annotations["checksum/api-token-secret"] != "" {
+		t.Fatal("UI must not roll when the server-side API token rotates")
 	}
 	assertEventContains(t, drainRecorder(recorder), operatorstatus.ReasonAPITokenRotationAccepted)
 }
@@ -191,7 +195,8 @@ func TestGeneratedAPITokenRotationDuplicateValueKeepsToken(t *testing.T) {
 		Data: map[string][]byte{apiTokenKey: []byte("stable-token")},
 	}
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithInterceptorFuncs(fakeApplyInterceptor()).WithScheme(storageBackendTestScheme(t)).WithObjects(existing).Build(),
 	}
 	secret, _, _ := apiTokenObjects(tamoss)
 
@@ -209,7 +214,7 @@ func TestAPITokenRotationRejectsUserSuppliedToken(t *testing.T) {
 	tamoss.Spec.Secrets.APIToken.Token = "literal-token"
 	tamoss.Annotations = map[string]string{AnnotationAPITokenRotate: "rotate-1"}
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 
 	if err := reconciler.prepareAPITokenSecret(context.Background(), tamoss, nil); err != nil {
 		t.Fatalf("expected supplied token rotation rejection without error: %v", err)
@@ -224,7 +229,7 @@ func TestAPITokenRotationRejectsGenerateFalseWithoutToken(t *testing.T) {
 	tamoss.Spec.Secrets.APIToken.Generate = false
 	tamoss.Annotations = map[string]string{AnnotationAPITokenRotate: "rotate-1"}
 	recorder := record.NewFakeRecorder(10)
-	reconciler := &TamossReconciler{Recorder: recorder}
+	reconciler := &TamossReconciler{Releases: testReleases(), Recorder: recorder}
 
 	if err := reconciler.prepareAPITokenSecret(context.Background(), tamoss, nil); err != nil {
 		t.Fatalf("expected invalid rotation rejection without error when no generated secret is rendered: %v", err)

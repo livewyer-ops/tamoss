@@ -12,6 +12,39 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("version", [None, "18.6", "19.6"])
+@pytest.mark.parametrize("kind", ["source", "yaml"])
+def test_cnpg_default_guard_rejects_version_defaults(
+    tmp_path: Path, version: str | None, kind: str
+) -> None:
+    source = tmp_path / "operator/api/v1alpha1/tamoss_backend_types.go"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        (f'//+kubebuilder:default="{version}"\n' if version else "")
+        + "PostgresVersion string\n"
+    )
+    (tmp_path / "defaults.yaml").write_text(
+        "postgresVersion:\n"
+        + (f'  default: "{version}"\n' if version else "")
+        + "  type: string\n"
+    )
+    argument = "defaults.yaml" if kind == "yaml" else ""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'. "$1"; task_check_cnpg_postgres_default_{kind} {argument} "18.6"',
+            "bash",
+            str(ROOT / ".tasks/lib/operator_platform.sh"),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) == (version is None), result.stderr
+
+
 def test_profile_registry_selects_kind_configurations() -> None:
     registry = _load_yaml(ROOT / "deploy/profiles.yaml")
     profiles = {item["id"]: item for item in registry["profiles"]}
@@ -47,8 +80,6 @@ def test_profile_registry_selects_kind_configurations() -> None:
     assert profiles["multi-server"]["targetEnv"] == "tests/targets/multi-server.env"
     assert profiles["edge"]["targetEnv"] == "tests/targets/edge.env"
     for profile in profiles.values():
-        assert "platformKustomizeDir" not in profile
-        assert "remotePlatformKustomizeDir" not in profile
         assert (ROOT / profile["kindConfig"]).is_file()
         assert (ROOT / profile["kindEnvironmentDir"]).is_dir()
         assert (ROOT / profile["instanceKustomizeDir"]).is_dir()
@@ -178,6 +209,13 @@ def test_kind_multi_server_platform_values_render_nodeport() -> None:
 
     assert service["spec"]["type"] == "NodePort"
     assert websecure["nodePort"] == 30443
+    authentik_ingress = _resource(rendered, "Ingress", "authentik-server", "auth")
+    assert (
+        authentik_ingress["metadata"]["annotations"][
+            "traefik.ingress.kubernetes.io/router.tls"
+        ]
+        == "true"
+    )
     assert (
         _resource(rendered, "Secret", "authentik", "auth")["metadata"]["name"]
         == "authentik"
@@ -298,6 +336,62 @@ def _render_tamoss(path: Path) -> dict[str, Any]:
         if item.get("kind") == "Tamoss":
             return item
     raise AssertionError(f"No Tamoss resource rendered from {path}")
+
+
+@pytest.mark.parametrize(
+    "values, field",
+    [
+        (
+            {"traefik": {"enabled": True, "logs": {"general": {"level": "DEBUG"}}}},
+            "logs",
+        ),
+        (
+            {
+                "traefik": {
+                    "enabled": True,
+                    "providers": {"file": {"content": "http: {}"}},
+                }
+            },
+            "content",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {
+                    "prometheus": {"servicemonitor": {"targetPort": "metrics"}}
+                },
+            },
+            "targetPort",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {
+                    "prometheus": {"servicemonitor": {"path": "/metrics"}}
+                },
+            },
+            "path",
+        ),
+        (
+            {
+                "certManager": {"enabled": True},
+                "cert-manager": {"prometheus": {"podmonitor": {"path": "/metrics"}}},
+            },
+            "path",
+        ),
+    ],
+)
+def test_native_platform_charts_reject_removed_overrides(
+    tmp_path, values, field
+) -> None:
+    if shutil.which("helmfile") is None or shutil.which("helm") is None:
+        pytest.skip("helm and helmfile are required for platform checks")
+    path = tmp_path / "values.yaml"
+    path.write_text(yaml.safe_dump(values))
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        _render_platform(path)
+    assert field in caught.value.stderr
+    assert "schema" in caught.value.stderr
 
 
 def _render_platform(values_path: Path) -> list[dict[str, Any]]:

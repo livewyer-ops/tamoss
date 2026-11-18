@@ -1,17 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from mediatimestamp import TimeRange
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from tamoss.application import webhooks as webhooking
 from tamoss.auth import Identity
 from tamoss.contract.generated import contract_models
+from tamoss.contract.serialization import contract_dump
+from tamoss.contract.validation import (
+    parse_uuid,
+    reject_explicit_nulls,
+    reject_model_explicit_nulls,
+    strict_contract_model,
+    validate_mime_filter,
+)
 from tamoss.domain.flow_collections import (
     collected_by_by_flow_id,
     collection_aware_flow_timeranges,
@@ -19,15 +28,17 @@ from tamoss.domain.flow_collections import (
     flow_collection,
     flow_with_collected_by,
 )
+from tamoss.domain.listings import FlowSortBy
 from tamoss.domain.model import FlowRecord, MediaObjectRecord, SourceRecord, utc_now
 from tamoss.domain.pagination import Page
 from tamoss.domain.tags import TagValue, valid_tag_value
-from tamoss.domain.timeranges import normalized_timerange_bounds
+from tamoss.domain.timeranges import normalized_timerange_bounds, parse_timerange
 from tamoss.errors import BadRequest, Forbidden, NotFound
 from tamoss.ports.repositories import (
     FlowCollectionRepository,
     FlowLookupRepository,
     FlowRepository,
+    ProfileRepository,
     WebhookEventRepository,
 )
 
@@ -54,6 +65,37 @@ _SERVER_MANAGED_FLOW_FIELDS = {
     "updated_by",
 }
 VALID_FLOW_FORMATS = {item.value for item in contract_models.ContentFormat}
+INIT_SEGMENTS_FLOW_FORMATS = {
+    "urn:x-nmos:format:video",
+    "urn:x-nmos:format:audio",
+    "urn:x-nmos:format:data",
+    "urn:x-nmos:format:multi",
+}
+_CLOSED_ESSENCE_FIELDS = {
+    "urn:x-nmos:format:video": frozenset(
+        contract_models.EssenceParameters.model_fields
+    ),
+    "urn:x-nmos:format:audio": frozenset(
+        contract_models.EssenceParameters1.model_fields
+    ),
+    "urn:x-tam:format:image": frozenset(
+        contract_models.EssenceParameters2.model_fields
+    ),
+    "urn:x-nmos:format:data": frozenset(
+        contract_models.EssenceParameters3.model_fields
+    ),
+    "urn:x-nmos:format:multi": frozenset(
+        contract_models.EssenceParameters4.model_fields
+    ),
+}
+_FLOW_TECHNICAL_MODELS: dict[str, type[BaseModel]] = {
+    "urn:x-nmos:format:video": contract_models.FlowVideo,
+    "urn:x-nmos:format:audio": contract_models.FlowAudio,
+    "urn:x-tam:format:image": contract_models.FlowImage,
+    "urn:x-nmos:format:data": contract_models.FlowData,
+    "urn:x-nmos:format:multi": contract_models.FlowMulti,
+}
+_PACKED_YUV_TYPES = ("YUYV", "UYVY", "AYUV", "v210", "v216")
 
 
 @dataclass(frozen=True)
@@ -68,8 +110,9 @@ def parse_query_timerange(timerange: str | None) -> TimeRange | None:
     if timerange is None or timerange in {"", "_"}:
         return None
     try:
-        return TimeRange.from_str(timerange)
-    except Exception as exc:
+        contract_models.Timerange.model_validate(timerange)
+        return parse_timerange(timerange)
+    except ValueError as exc:
         raise BadRequest("Bad request. Invalid query options.") from exc
 
 
@@ -116,24 +159,109 @@ def validate_content_format_filter(value: str | None) -> None:
         raise ValueError("format must be a supported BBC content format")
 
 
-def validate_flow_payload(payload: dict[str, Any]) -> None:
+_TECHNICAL_FLOW_FIELDS = {
+    "format",
+    "codec",
+    "container",
+    "avg_bit_rate",
+    "segment_duration",
+    "container_mapping",
+    "essence_parameters",
+}
+_FLOW_CONTRACT_FIELDS = (
+    frozenset(contract_models.FlowCommon.model_fields)
+    | _TECHNICAL_FLOW_FIELDS
+    | {"profile_id"}
+)
+
+
+def validate_flow_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    validate_flow_technical_metadata(payload)
     try:
-        flow = contract_models.Flow.model_validate(payload)
-    except ValidationError as exc:
+        flow = strict_contract_model(
+            contract_models.FlowGet,
+            payload,
+            recursive_non_nullable_fields=_FLOW_CONTRACT_FIELDS,
+        )
+    except (TypeError, ValidationError) as exc:
         raise ValueError("flow payload does not match the BBC TAMS contract") from exc
-
-    if isinstance(flow.root, contract_models.FlowVideo):
-        _validate_video_frame_rate(flow.root.essence_parameters)
+    return contract_dump(flow, exclude_unset=True)
 
 
-def _validate_video_frame_rate(
-    essence: contract_models.EssenceParameters,
-) -> None:
-    if essence.vfr:
-        if essence.frame_rate is not None:
+def validate_flow_technical_metadata(payload: dict[str, Any]) -> None:
+    reject_explicit_nulls(payload, _TECHNICAL_FLOW_FIELDS)
+    format_value = payload.get("format")
+    technical_model = (
+        _FLOW_TECHNICAL_MODELS.get(format_value)
+        if isinstance(format_value, str)
+        else None
+    )
+    if technical_model is not None:
+        reject_model_explicit_nulls(
+            technical_model,
+            payload,
+            field_names=_TECHNICAL_FLOW_FIELDS,
+        )
+    allowed_fields = (
+        _CLOSED_ESSENCE_FIELDS.get(format_value)
+        if isinstance(format_value, str)
+        else None
+    )
+    essence_parameters = payload.get("essence_parameters")
+    if (
+        "essence_parameters" in payload
+        and essence_parameters is None
+        and allowed_fields is not None
+    ):
+        raise ValueError("essence_parameters must not be null")
+    if not isinstance(essence_parameters, dict):
+        return
+
+    if allowed_fields is not None and not essence_parameters.keys() <= allowed_fields:
+        raise ValueError("essence_parameters contains unsupported fields")
+
+    if any(value is None for value in essence_parameters.values()):
+        raise ValueError("essence_parameters fields must not be null")
+    if "init_segments" in essence_parameters and (
+        not isinstance(format_value, str)
+        or format_value not in INIT_SEGMENTS_FLOW_FORMATS
+    ):
+        raise ValueError("init_segments is not supported by this Flow format")
+
+    if format_value == "urn:x-nmos:format:video":
+        variable_frame_rate = essence_parameters.get("vfr", False)
+        has_frame_rate = "frame_rate" in essence_parameters
+        if variable_frame_rate is True and has_frame_rate:
             raise ValueError("frame_rate must not be set when vfr is true")
-    elif essence.frame_rate is None:
-        raise ValueError("frame_rate is required when vfr is false or omitted")
+        if variable_frame_rate is not True and not has_frame_rate:
+            raise ValueError("frame_rate is required when vfr is false or omitted")
+
+        unc_parameters = essence_parameters.get("unc_parameters")
+        unc_type = (
+            unc_parameters.get("unc_type") if isinstance(unc_parameters, dict) else None
+        )
+        if payload.get("codec") == "video/raw" and (
+            "bit_depth" not in essence_parameters or unc_type is None
+        ):
+            raise ValueError("raw video requires bit_depth and unc_type")
+        if unc_type in _PACKED_YUV_TYPES and (
+            "horiz_chroma_subs" not in essence_parameters
+            or "vert_chroma_subs" not in essence_parameters
+        ):
+            raise ValueError("packed YUV video requires chroma subsampling")
+
+    if format_value == "urn:x-nmos:format:audio" and payload.get("codec") in (
+        "audio/x-raw-int",
+        "audio/x-raw-float",
+    ):
+        bit_depth = essence_parameters.get("bit_depth")
+        if "bit_depth" not in essence_parameters or (
+            payload["codec"] == "audio/x-raw-float" and bit_depth not in (32, 64)
+        ):
+            raise ValueError("raw audio requires a valid bit_depth")
+        unc_parameters = essence_parameters.get("unc_parameters")
+        if not isinstance(unc_parameters, dict) or "unc_type" not in unc_parameters:
+            raise ValueError("raw audio requires unc_type")
 
 
 def ensure_flow_writable(flow: FlowRecord) -> None:
@@ -171,17 +299,43 @@ def unlink_flow_collection_references(
         repository.save_flow(parent)
 
 
+def _optional_uuid_value(value: object) -> UUID | None:
+    return UUID(str(value)) if value is not None else None
+
+
+def _requested_profile_id(data: dict[str, Any]) -> UUID | Literal[""] | None:
+    if "profile_id" not in data:
+        return None
+    value = data["profile_id"]
+    if value == "":
+        return ""
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise BadRequest("Bad request. Invalid Profile ID.") from exc
+
+
+def _flow_init_segments(data: dict[str, Any]) -> bool:
+    essence = data.get("essence_parameters")
+    if not isinstance(essence, dict):
+        return False
+    return bool(essence.get("init_segments", False))
+
+
 class FlowUseCases:
     repository: FlowRepository
     webhook_repository: WebhookEventRepository
+    profile_repository: ProfileRepository
 
     def __init__(
         self,
         *,
         repository: FlowRepository,
+        profile_repository: ProfileRepository,
         webhook_repository: WebhookEventRepository,
     ) -> None:
         self.repository = repository
+        self.profile_repository = profile_repository
         self.webhook_repository = webhook_repository
 
     def list_flows(
@@ -190,6 +344,13 @@ class FlowUseCases:
         source_id: UUID | None,
         timerange: str | None,
         format: str | None,
+        profile_id: UUID | None,
+        status: contract_models.FlowStatus | None,
+        init_segments: bool | None,
+        collected_by_ids: set[UUID] | None,
+        top_level_only: bool,
+        sort_by: FlowSortBy,
+        reverse_order: bool,
         codec: str | None,
         label: str | None,
         frame_width: int | None,
@@ -201,6 +362,7 @@ class FlowUseCases:
     ) -> Page[FlowRecord]:
         try:
             validate_content_format_filter(format)
+            validate_mime_filter(codec)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid query options.") from exc
         requested_timerange = query_timerange(timerange)
@@ -211,6 +373,13 @@ class FlowUseCases:
             timerange_is_empty=requested_timerange.is_empty,
             timerange_is_point=requested_timerange.is_point,
             format=format,
+            profile_id=profile_id,
+            status=status.value if status is not None else None,
+            init_segments=init_segments,
+            collected_by_ids=collected_by_ids,
+            top_level_only=top_level_only,
+            sort_by=sort_by,
+            reverse_order=reverse_order,
             codec=codec,
             label=label,
             frame_width=frame_width,
@@ -223,32 +392,35 @@ class FlowUseCases:
 
     def flow_timerange(self, flow_id: UUID, timerange: str | None = None) -> str:
         flow = self.get_flow(flow_id)
-        try:
-            flow_range = TimeRange.from_str(
-                self._flow_timeranges([flow_id], seed_flows=[flow])[flow_id]
-            )
-        except ValueError as exc:
-            raise BadRequest("Bad request. Invalid stored Segment timerange.") from exc
-        requested_range = parse_query_timerange(timerange)
-        if requested_range is None:
-            return str(flow_range)
-        return str(flow_range.intersect_with(requested_range))
+        return self._flow_timeranges([flow_id], seed_flows=[flow], timerange=timerange)[
+            flow_id
+        ]
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
-        return self._flow_timeranges(flow_ids)
+    def flow_timeranges(
+        self, flow_ids: Iterable[UUID], *, seed_flows: Iterable[FlowRecord] = ()
+    ) -> dict[UUID, str]:
+        return self._flow_timeranges(flow_ids, seed_flows=seed_flows)
 
     def _flow_timeranges(
         self,
         flow_ids: Iterable[UUID],
         *,
         seed_flows: Iterable[FlowRecord] = (),
+        timerange: str | None = None,
     ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         if not requested_ids:
             return {}
         flows = self._flows_for_timerange_resolution(requested_ids, seed_flows)
-        direct_timeranges = self.repository.flow_timeranges(flow.id for flow in flows)
+        requested_range = query_timerange(timerange)
         try:
+            direct_timeranges = self.repository.flow_timeranges(
+                (flow.id for flow in flows),
+                timerange_start=requested_range.start,
+                timerange_end=requested_range.end,
+                timerange_is_empty=requested_range.is_empty,
+                timerange_is_point=requested_range.is_point,
+            )
             return collection_aware_flow_timeranges(
                 flows,
                 direct_timeranges,
@@ -264,6 +436,7 @@ class FlowUseCases:
     ) -> list[FlowRecord]:
         flows_by_id = {flow.id: flow for flow in seed_flows}
         pending = list(dict.fromkeys(flow_ids))
+        queued = set(pending)
         index = 0
         while index < len(pending):
             flow_id = pending[index]
@@ -276,7 +449,8 @@ class FlowUseCases:
                 flows_by_id[flow.id] = flow
             for item in flow_collection(flow):
                 child_id = collection_child_id(item)
-                if child_id is not None and child_id not in flows_by_id:
+                if child_id is not None and child_id not in queued:
+                    queued.add(child_id)
                     pending.append(child_id)
         return list(flows_by_id.values())
 
@@ -299,38 +473,42 @@ class FlowUseCases:
         collection: list[dict[str, Any]],
         identity: Identity,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        self._replace_flow_collection(flow, collection)
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            self._replace_flow_collection(flow, collection)
 
-    def _save_and_publish(self, flow: FlowRecord, identity: Identity | None) -> None:
-        touch_flow_metadata(flow, identity=identity)
-        self.repository.save_flow(flow)
-        webhooking.publish_flow_event(
-            repository=self.webhook_repository,
-            resource_repository=self.repository,
-            event_type="flows/updated",
-            flow=flow,
-        )
+    @contextmanager
+    def _edit_flow(
+        self, flow_id: UUID, identity: Identity | None
+    ) -> Iterator[FlowRecord]:
+        with self.repository.unit_of_work():
+            self.repository.lock_flow_segments(flow_id)
+            flow = self.get_flow(flow_id)
+            yield flow
+            touch_flow_metadata(flow, identity=identity)
+            self.repository.save_flow(flow)
+            webhooking.publish_flow_event(
+                repository=self.webhook_repository,
+                resource_repository=self.repository,
+                event_type="flows/updated",
+                flow=flow,
+            )
 
     def delete_flow_collection(self, *, flow_id: UUID, identity: Identity) -> None:
         self.set_flow_collection(flow_id=flow_id, collection=[], identity=identity)
 
     def get_flow_property(
         self, flow_id: UUID, property_name: FlowPropertyName
-    ) -> str | int | bool | None:
+    ) -> str | int | bool:
         flow = self.get_flow(flow_id)
         if property_name == "read_only":
             return flow.read_only
         value = flow.data.get(property_name)
         if value is None:
-            # Unset properties are readable once the Flow exists: empty string
-            # for the string properties, null for the numeric ones (the spec
-            # reserves 404 for a missing Flow and defines no unset form).
             if property_name in {"label", "description"}:
                 return ""
-            return None
+            # BBC defines an integer response but no representation for absence.
+            raise NotFound("The requested Flow property is not set.")
         if property_name in {"label", "description"}:
             if not isinstance(value, str):
                 raise BadRequest("Bad request. Invalid Flow property value.")
@@ -347,21 +525,25 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        if property_name in {"label", "description"}:
-            ensure_flow_writable(flow)
-            if not isinstance(value, str):
-                raise BadRequest("Bad request. Invalid Flow property value.")
-        elif property_name in {"avg_bit_rate", "max_bit_rate"}:
-            ensure_flow_writable(flow)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise BadRequest("Bad request. Invalid Flow bit rate.")
-        else:
-            if not isinstance(value, bool):
-                raise BadRequest("Bad request. Invalid Flow read_only value.")
-            flow.read_only = value
-        flow.data[property_name] = value
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            if property_name in {"label", "description"}:
+                ensure_flow_writable(flow)
+                if not isinstance(value, str):
+                    raise BadRequest("Bad request. Invalid Flow property value.")
+            elif property_name in {"avg_bit_rate", "max_bit_rate"}:
+                ensure_flow_writable(flow)
+                if property_name == "avg_bit_rate" and flow.profile_id is not None:
+                    raise BadRequest(
+                        "Bad request. Profile-backed Flows cannot override "
+                        "average bit rate."
+                    )
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise BadRequest("Bad request. Invalid Flow bit rate.")
+            else:
+                if not isinstance(value, bool):
+                    raise BadRequest("Bad request. Invalid Flow read_only value.")
+                flow.read_only = value
+            flow.data[property_name] = value
 
     def delete_flow_property(
         self,
@@ -370,10 +552,14 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        flow.data.pop(property_name, None)
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            if property_name == "avg_bit_rate" and flow.profile_id is not None:
+                raise BadRequest(
+                    "Bad request. Profile-backed Flows cannot override "
+                    "average bit rate."
+                )
+            flow.data.pop(property_name, None)
 
     def get_flow_tags(self, flow_id: UUID) -> dict[str, TagValue]:
         return self.get_flow(flow_id).tags
@@ -394,11 +580,10 @@ class FlowUseCases:
     ) -> None:
         if not valid_tag_value(value):
             raise BadRequest("Bad request. Invalid Flow tag value.")
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        flow.tags[name] = value
-        flow.data["tags"] = flow.tags
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            flow.tags[name] = value
+            flow.data["tags"] = flow.tags
 
     def delete_flow_tag(
         self,
@@ -407,11 +592,10 @@ class FlowUseCases:
         *,
         identity: Identity | None = None,
     ) -> None:
-        flow = self.get_flow(flow_id)
-        ensure_flow_writable(flow)
-        flow.tags.pop(name, None)
-        flow.data["tags"] = flow.tags
-        self._save_and_publish(flow, identity)
+        with self._edit_flow(flow_id, identity) as flow:
+            ensure_flow_writable(flow)
+            flow.tags.pop(name, None)
+            flow.data["tags"] = flow.tags
 
     def _replace_flow_collection(
         self, flow: FlowRecord, collection: list[dict[str, Any]] | None
@@ -450,7 +634,37 @@ class FlowUseCases:
         supplied_fields: set[str] | None = None,
         identity: Identity,
     ) -> tuple[FlowRecord, bool]:
-        if UUID(str(flow.get("id"))) != flow_id:
+        with self.repository.unit_of_work():
+            # Segment registration takes the same per-Flow lock. Keeping the
+            # capability check and Flow save inside it prevents a concurrent
+            # first Segment from racing an init_segments transition.
+            self.repository.lock_flow_segments(flow_id)
+            return self._put_flow_locked(
+                flow_id=flow_id,
+                flow=flow,
+                supplied_fields=supplied_fields,
+                identity=identity,
+            )
+
+    def _put_flow_locked(
+        self,
+        *,
+        flow_id: UUID,
+        flow: dict[str, Any],
+        supplied_fields: set[str] | None,
+        identity: Identity,
+    ) -> tuple[FlowRecord, bool]:
+        try:
+            strict_contract_model(
+                contract_models.FlowPut,
+                flow,
+                recursive_non_nullable_fields=_FLOW_CONTRACT_FIELDS,
+            )
+            body_flow_id = parse_uuid(flow.get("id"))
+            parse_uuid(flow.get("source_id"))
+        except TypeError, ValueError:
+            raise BadRequest("Bad request. Invalid Flow JSON.") from None
+        if body_flow_id != flow_id:
             raise NotFound("The requested Flow ID in the path is invalid.")
         supplied_fields = supplied_fields or set(flow)
         flow_collection_supplied = "flow_collection" in supplied_fields
@@ -460,21 +674,85 @@ class FlowUseCases:
 
         data = dict(flow)
         tags_supplied = "tags" in data
-        flow_collection = data.pop("flow_collection", None)
         strip_server_managed_flow_fields(
             data,
             preserve_metadata_version=existing is None,
         )
-        replacement_tags = dict(data.get("tags") or {})
 
-        if existing is not None:
-            data = self._flow_update_payload(existing, data)
+        requested_profile_id = _requested_profile_id(data)
+        unlinking_profile = False
+        inherited_profile_fields: set[str] = set()
+        if existing is None and requested_profile_id == "":
+            raise BadRequest("Bad request. A new Flow cannot unlink a Profile.")
+
+        if existing is None and isinstance(requested_profile_id, UUID):
+            profile_id = requested_profile_id
+            self.profile_repository.lock_profile(profile_id)
+            profile = self.profile_repository.get_profile(profile_id)
+            if profile is None:
+                raise BadRequest("Bad request. Profile does not exist.")
+            supplied_technical = (
+                _TECHNICAL_FLOW_FIELDS | set(profile.flow_metadata)
+            ).intersection(supplied_fields)
+            if supplied_technical:
+                raise BadRequest(
+                    "Bad request. Profile-backed Flows cannot override "
+                    "technical metadata."
+                )
+            data = {**data, **profile.flow_metadata, "profile_id": str(profile_id)}
+        elif existing is not None and existing.profile_id is None:
+            if requested_profile_id == "":
+                raise BadRequest("Bad request. The Flow is not Profile-backed.")
+            if isinstance(requested_profile_id, UUID):
+                raise BadRequest(
+                    "Bad request. A Profile cannot be attached to an existing Flow."
+                )
+        elif existing is not None and existing.profile_id is not None:
+            if (
+                isinstance(requested_profile_id, UUID)
+                and requested_profile_id != existing.profile_id
+            ):
+                raise BadRequest(
+                    "Bad request. A Flow cannot be re-pointed to another Profile."
+                )
+            profile = self.profile_repository.get_profile(existing.profile_id)
+            if profile is None:
+                raise BadRequest("Bad request. Stored Flow Profile does not exist.")
+            if requested_profile_id == "":
+                unlinking_profile = True
+                inherited_profile_fields = set(profile.flow_metadata)
+                data.pop("profile_id", None)
+            else:
+                supplied_technical = (
+                    _TECHNICAL_FLOW_FIELDS | set(profile.flow_metadata)
+                ).intersection(supplied_fields)
+                if supplied_technical:
+                    raise BadRequest(
+                        "Bad request. Profile-backed Flows cannot override "
+                        "technical metadata."
+                    )
+                data = {
+                    **data,
+                    **profile.flow_metadata,
+                    "profile_id": str(existing.profile_id),
+                }
 
         try:
-            validate_flow_payload(data)
+            data = validate_flow_payload(data)
         except ValueError as exc:
             raise BadRequest("Bad request. Invalid Flow JSON.") from exc
 
+        if (
+            existing is not None
+            and _flow_init_segments(data) != existing.init_segments
+            and self.repository.has_segments(flow_id)
+        ):
+            raise BadRequest(
+                "Bad request. init_segments cannot change after Segments exist."
+            )
+
+        flow_collection = data.pop("flow_collection", None)
+        replacement_tags = dict(data.get("tags") or {})
         source_id = UUID(str(data["source_id"]))
         format_value = data["format"]
         source_was_created = False
@@ -506,6 +784,9 @@ class FlowUseCases:
                 source_id=source_id,
                 format=format_value,
                 container=data.get("container"),
+                profile_id=_optional_uuid_value(data.get("profile_id")),
+                status=data.get("status"),
+                init_segments=_flow_init_segments(data),
                 read_only=bool(data.get("read_only")),
                 tags=replacement_tags,
                 created=now,
@@ -520,7 +801,13 @@ class FlowUseCases:
             data["metadata_updated"] = now.isoformat()
             data["metadata_version"] = str(uuid4())
             data["updated_by"] = identity.subject
-            stored_data = {**existing.data, **data}
+            existing_data = dict(existing.data)
+            if unlinking_profile:
+                for field_name in (
+                    inherited_profile_fields | _TECHNICAL_FLOW_FIELDS | {"profile_id"}
+                ):
+                    existing_data.pop(field_name, None)
+            stored_data = {**existing_data, **data}
             stored_data.pop("collected_by", None)
             if not tags_supplied:
                 stored_data.pop("tags", None)
@@ -531,7 +818,10 @@ class FlowUseCases:
                 data=stored_data,
                 source_id=source_id,
                 format=format_value,
-                container=data.get("container"),
+                container=stored_data.get("container"),
+                profile_id=_optional_uuid_value(stored_data.get("profile_id")),
+                status=stored_data.get("status"),
+                init_segments=_flow_init_segments(stored_data),
                 read_only=bool(data.get("read_only"))
                 if data.get("read_only") is not None
                 else existing.read_only,
@@ -560,22 +850,6 @@ class FlowUseCases:
             flow=record,
         )
         return record, created
-
-    @staticmethod
-    def _flow_update_payload(
-        existing: FlowRecord, data: dict[str, Any]
-    ) -> dict[str, Any]:
-        payload = dict(data)
-        if "source_id" not in payload and existing.source_id is not None:
-            payload["source_id"] = str(existing.source_id)
-        if "format" not in payload and existing.format is not None:
-            payload["format"] = existing.format
-        if "container" not in payload and existing.container is not None:
-            payload["container"] = existing.container
-        for field_name in ("codec", "essence_parameters"):
-            if field_name not in payload and field_name in existing.data:
-                payload[field_name] = existing.data[field_name]
-        return payload
 
     def referenced_flows_matching_tags_page(
         self,

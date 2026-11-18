@@ -1,0 +1,27 @@
+TAMOSS UI Third-Party Notices
+=============================
+
+This file accompanies the browser assets produced from this source tree.
+
+Omakase Player 1.1.1
+--------------------
+
+Copyright 2026 ByOmakase, LLC
+
+Licensed under the Apache License, Version 2.0.
+
+Source: https://github.com/byomakase/omakase-player/tree/1.1.1
+License: https://github.com/byomakase/omakase-player/blob/1.1.1/LICENSE
+
+Mediabunny 1.53.0
+------------------
+
+Mediabunny is included by Omakase Player and is licensed under the Mozilla
+Public License, Version 2.0. The corresponding Source Code Form for the exact
+resolved version is available from the upstream tag below.
+
+Source: https://github.com/Vanilagy/mediabunny/tree/v1.53.0
+License: https://github.com/Vanilagy/mediabunny/blob/v1.53.0/LICENSE
+
+TAMOSS does not maintain modified copies of either package. The frontend build
+bundles their published modules into browser assets.

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -35,6 +36,8 @@ const (
 // +kubebuilder:validation:XValidation:rule="has(self.usage) == has(oldSelf.usage) && (!has(self.usage) || self.usage == oldSelf.usage)",message="spec.usage is immutable"
 // +kubebuilder:validation:XValidation:rule="self.provider != 'external-s3' || (has(self.endpoint) && has(self.endpoint.default) && has(self.endpoint.default.url) && self.endpoint.default.url.size() > 0)",message="spec.endpoint.default.url is required when spec.provider is external-s3"
 // +kubebuilder:validation:XValidation:rule="self.usage != 'hibernate' || self.provider == 'external-s3'",message="hibernate StorageBackends must use provider external-s3"
+// +kubebuilder:validation:XValidation:rule="!has(self.credentialSource) || self.credentialSource != 'web-identity' || (self.provider == 'external-s3' && self.usage == 'media' && self.defaultStorage && has(self.id) && self.id == 'f1ab5b54-9703-42ed-b181-11ba1c794a7f')",message="web-identity requires the default external S3 media backend and its runtime ID"
+// +kubebuilder:validation:XValidation:rule="!has(self.credentialSource) || self.credentialSource != 'web-identity' || !has(self.credentials) || !has(self.credentials.existingSecret) || self.credentials.existingSecret.size() == 0",message="web-identity must not reference a credentials Secret"
 // +kubebuilder:validation:XValidation:rule="!has(self.hibernate) || !has(self.hibernate.retention) || !has(self.hibernate.retention.mode) || self.hibernate.retention.mode != 'TTL' || (has(self.hibernate.retention.ttlSecondsAfterResume) && self.hibernate.retention.ttlSecondsAfterResume > 0)",message="hibernate.retention.ttlSecondsAfterResume is required when retention mode is TTL"
 type StorageBackendSpec struct {
 	// ID is the BBC TAMS storage backend UUID advertised to clients.
@@ -76,12 +79,20 @@ type StorageBackendSpec struct {
 	//+kubebuilder:validation:MinLength=1
 	StoreType string `json:"storeType,omitempty"`
 
+	// Tags are read-only TAMS metadata clients can use for storage selection.
+	// Each value is either a string or an array of strings, matching the TAMS API.
+	Tags map[string]apiextensionsv1.JSON `json:"tags,omitempty"`
+
 	//+kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName,omitempty"`
 
 	Endpoint S3EndpointSpec `json:"endpoint,omitempty"`
 
 	Credentials SecretReferenceSpec `json:"credentials,omitempty"`
+
+	// CredentialSource defaults to Secret credentials when omitted.
+	//+kubebuilder:validation:Enum=secret;web-identity
+	CredentialSource S3CredentialSource `json:"credentialSource,omitempty"`
 
 	Hibernate StorageBackendHibernateSpec `json:"hibernate,omitempty"`
 }

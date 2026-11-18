@@ -7,10 +7,7 @@ import (
 
 const DevelopmentSchemaVersion = "dev"
 
-var (
-	SchemaVersion                  = DevelopmentSchemaVersion
-	PreviousSupportedSchemaVersion = ""
-)
+var SchemaVersion = DevelopmentSchemaVersion
 
 func Verify() error {
 	return ValidateVersion(SchemaVersion)
@@ -26,12 +23,4 @@ func ValidateVersion(version string) error {
 	default:
 		return nil
 	}
-}
-
-func IsSupportedStartingVersion(version string) bool {
-	value := strings.TrimSpace(version)
-	if value == "" || value == SchemaVersion {
-		return true
-	}
-	return PreviousSupportedSchemaVersion != "" && value == PreviousSupportedSchemaVersion
 }

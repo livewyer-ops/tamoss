@@ -4,6 +4,11 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // TamossStatus defines the observed state of Tamoss
 type TamossStatus struct {
+	// CurrentVersion is the last release with completed schema and workload rollouts.
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	// AppliedDefaultsRevision identifies installation defaults whose rollout completed.
+	AppliedDefaultsRevision string `json:"appliedDefaultsRevision,omitempty"`
+
 	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition    `json:"conditions,omitempty"`
 	Replicas           ReplicaStatus         `json:"replicas,omitempty"`
@@ -35,15 +40,17 @@ type S3BackendStatus struct {
 }
 
 type AuthStatus struct {
-	Provider         AuthProvidedBy `json:"provider,omitempty"`
-	ApplicationSlug  string         `json:"applicationSlug,omitempty"`
-	ManagedBlueprint string         `json:"managedBlueprint,omitempty"`
+	Provider          AuthProvidedBy `json:"provider,omitempty"`
+	PlatformNamespace string         `json:"platformNamespace,omitempty"`
+	ApplicationSlug   string         `json:"applicationSlug,omitempty"`
+	ManagedBlueprint  string         `json:"managedBlueprint,omitempty"`
 }
 
 type ReplicaStatus struct {
-	API    ComponentReplicaStatus `json:"api,omitempty"`
-	Worker ComponentReplicaStatus `json:"worker,omitempty"`
-	UI     ComponentReplicaStatus `json:"ui,omitempty"`
+	API     ComponentReplicaStatus `json:"api,omitempty"`
+	Worker  ComponentReplicaStatus `json:"worker,omitempty"`
+	UI      ComponentReplicaStatus `json:"ui,omitempty"`
+	Console ComponentReplicaStatus `json:"console,omitempty"`
 }
 
 type ComponentReplicaStatus struct {
@@ -52,8 +59,10 @@ type ComponentReplicaStatus struct {
 }
 
 type EndpointStatus struct {
-	API string `json:"api,omitempty"`
-	UI  string `json:"ui,omitempty"`
+	API  string `json:"api,omitempty"`
+	UI   string `json:"ui,omitempty"`
+	Auth string `json:"auth,omitempty"`
+	S3   string `json:"s3,omitempty"`
 }
 
 type BackupPolicyStatus struct {
@@ -90,6 +99,8 @@ type ProviderDomainStatus struct {
 }
 
 type ResolvedStatus struct {
+	Profile          TamossProfile                  `json:"profile,omitempty"`
+	Defaults         InstallationDefaultsStatus     `json:"defaults,omitempty"`
 	Images           ResolvedImageStatus            `json:"images,omitempty"`
 	Versions         ResolvedVersionStatus          `json:"versions,omitempty"`
 	GeneratedSecrets ResolvedGeneratedSecretsStatus `json:"generatedSecrets,omitempty"`
@@ -97,13 +108,20 @@ type ResolvedStatus struct {
 	Routes           ResolvedRouteStatus            `json:"routes,omitempty"`
 }
 
+type InstallationDefaultsStatus struct {
+	Source   string `json:"source,omitempty"`
+	Revision string `json:"revision,omitempty"`
+}
+
 type ResolvedImageStatus struct {
 	API                           string `json:"api,omitempty"`
 	UI                            string `json:"ui,omitempty"`
+	Console                       string `json:"console,omitempty"`
 	Worker                        string `json:"worker,omitempty"`
 	SchemaMigrationPostgresClient string `json:"schemaMigrationPostgresClient,omitempty"`
 	CNPGPostgres                  string `json:"cnpgPostgres,omitempty"`
 	RustFS                        string `json:"rustfs,omitempty"`
+	TAMSin                        string `json:"tamsin,omitempty"`
 }
 
 type ResolvedVersionStatus struct {
@@ -121,6 +139,7 @@ type ResolvedGeneratedSecretsStatus struct {
 type ResolvedResourceStatus struct {
 	API                   string `json:"api,omitempty"`
 	UI                    string `json:"ui,omitempty"`
+	Console               string `json:"console,omitempty"`
 	Worker                string `json:"worker,omitempty"`
 	DefaultStorageBackend string `json:"defaultStorageBackend,omitempty"`
 }
@@ -131,6 +150,9 @@ type ResolvedRouteStatus struct {
 }
 
 type UpgradeStatus struct {
+	// TargetVersion records an unfinished release reconciliation across retries.
+	TargetVersion string `json:"targetVersion,omitempty"`
+
 	Phase   string `json:"phase,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`

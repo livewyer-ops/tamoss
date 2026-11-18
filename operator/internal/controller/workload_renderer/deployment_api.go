@@ -30,12 +30,19 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 	if !tamoss.Spec.Secrets.APIToken.Generate {
 		env = append(env, corev1.EnvVar{Name: "TAMOSS_API_TOKEN", Value: tamoss.Spec.Secrets.APIToken.Token})
 	}
-	env = append(env, literalEnv(
-		tamoss.Spec.API.Env,
-		"TAMOSS_METRICS_BIND_ADDRESS",
-		"TAMOSS_METRICS_PORT",
-	)...)
+	excludedEnv := []string{"TAMOSS_METRICS_BIND_ADDRESS", "TAMOSS_METRICS_PORT"}
+	if forwardAuthEnabled(tamoss) {
+		excludedEnv = append(excludedEnv,
+			"TAMOSS_AUTH_REQUIRED",
+			"TAMOSS_TRUST_FORWARD_AUTH_HEADERS",
+			"TAMOSS_FORWARD_AUTH_SHARED_SECRET",
+			"TAMOSS_FORWARD_AUTH_SHARED_SECRET_FILE",
+			"TAMOSS_FORWARD_AUTH_GROUP_BINDINGS",
+		)
+	}
+	env = append(env, literalEnv(tamoss.Spec.API.Env, excludedEnv...)...)
 	spec := withStorageBackendCredentialsVolume(tamoss.Spec.API.WorkloadCommonSpec, tamoss)
+	spec = withForwardAuthProofVolume(spec, tamoss, ForwardAuthAPIProofSecretKey)
 	return []client.Object{
 		deploymentFor(
 			tamoss,
@@ -47,7 +54,7 @@ func renderAPIDeployment(tamoss *tamossv1alpha1.Tamoss) []client.Object {
 			env,
 			envFromSecrets(tamoss, tamoss.Spec.Secrets.APIToken.Generate, tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG, tamoss.Spec.Backends.S3.Provider() == tamossv1alpha1.S3BackendProvidedByRustFSOperator, oauth2CredentialsSecretName(tamoss), tamoss.Spec.API.EnvFrom),
 			[]corev1.ContainerPort{
-				{Name: "http", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
+				{Name: httpPortName, ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
 				{Name: metricsPortName, ContainerPort: apiMetricsPort, Protocol: corev1.ProtocolTCP},
 			},
 		),

@@ -1,25 +1,26 @@
 <p align="center">
-  <img src="src/app/frontend/public/tamoss-icon.png" alt="TAMOSS logo" width="128">
+  <img src="src/app/frontend/public/tamoss-logo.png" alt="TAMOSS logo" width="320">
 </p>
 
 # TAMOSS
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.14](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
-[![BBC TAMS v8.1](https://img.shields.io/badge/BBC%20TAMS-v8.1-green)](https://github.com/bbc/tams)
+[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
+[![BBC TAMS v8.2](https://img.shields.io/badge/BBC%20TAMS-v8.2-green)](https://github.com/bbc/tams)
 
 TAMOSS is a Kubernetes-native implementation of the
-[BBC TAMS v8.1 API specification](https://github.com/bbc/tams). It installs as
+[BBC TAMS v8.2 API specification](https://github.com/bbc/tams). It installs as
 an operator-driven product with four supported infrastructure profiles:
 `local-kind`, `edge`, `single-server`, and `multi-server`.
 
-The operator reconciles `Tamoss` and `StorageBackend` custom resources into the
-API, worker, UI, schema migration, generated Secrets, routing, and selected
-backend integrations.
+The operator reconciles `Tamoss`, `StorageBackend`, `FlowProfile`, and
+`IngestRun` custom resources into the API, worker, UI, schema migration,
+generated Secrets, routing, Profile registration, and selected backend
+integrations.
 
 ## Features
 
-- **TAMS-compatible media store**: Implements the BBC TAMS v8.1 API for working
+- **TAMS-compatible media store**: Implements the BBC TAMS v8.2 API for working
   with sources, flows, flow segments, tags, storage backends, webhooks, and
   deletion workflows.
 - **Operator-managed runtime**: Reconciles API, worker, UI, schema migration,
@@ -38,16 +39,18 @@ backend integrations.
 
 ## Quickstart
 
-**Prerequisites:** Docker, `curl`, `git`, and
+**Prerequisites:** Docker, `curl`, `git`, GnuPG and
 [aqua](https://aquaproj.github.io/docs/install) — a single-binary CLI version
 manager. With aqua installed, the rest of the toolchain (`task`, `kind`,
 `kubectl`, `helm`, `helmfile`, `chainsaw`, …) is provisioned by `aqua install`.
+Helmfile `apply` also needs [Helm diff](docs/operations/install.md#helm-diff).
 
 Use the local [Kind](https://kind.sigs.k8s.io/) profile first:
 
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
+task dev:helm-diff
 
 task kind:up PROFILE=local-kind
 ```
@@ -66,43 +69,27 @@ Open:
 - S3 endpoint: <https://s3.tamoss.localtest.me>
 - Authentik: <https://auth.tamoss.localtest.me>
 
-To install on an existing Kubernetes cluster instead of the disposable
-Kind cluster, use the environment workflow:
+For an existing Kubernetes cluster, choose the release as described in the
+[install guide](docs/operations/install.md), then create an environment:
 
 ```bash
-task env:init NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
+task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=multi-server DOMAIN=tamoss.example.com
 $EDITOR deploy/environments/my-prod/platform-values.yaml
-$EDITOR deploy/environments/my-prod/tamoss-patch.yaml
-task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig
-task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig
+$EDITOR deploy/environments/my-prod/operator/defaults.yaml
 ```
 
 Remote environments are composition roots: `platform-values.yaml` configures the
-[Helmfile](https://helmfile.readthedocs.io/)-managed platform releases, and the
-[Kustomize](https://kustomize.io/) overlay applies the
-`Tamoss` resources.
-Generated remote environments default to public ACME TLS through
+[Helmfile](https://helmfile.readthedocs.io/)-managed platform releases,
+`operator/defaults.yaml` supplies shared site settings, and each directory under
+`instances/` contains one namespace's Kustomize resources and minimal `Tamoss`
+resource. Add instance fields only when they need to override the defaults.
+Generated single-server and multi-server environments default to public ACME TLS through
 `ClusterIssuer/tamoss-public`; set the ACME email in `platform-values.yaml`
 before applying. Use `tls.mode: existing` for a pre-installed ClusterIssuer or
 `tls.mode: disabled` when TLS Secrets are supplied outside
 [cert-manager](https://cert-manager.io/).
-The raw apply sequence is:
-
-```bash
-(
-  cd deploy/platform
-  helmfile --kubeconfig "$KUBECONFIG" \
-    --file helmfile.yaml.gotmpl \
-    --state-values-file values/defaults.yaml \
-    --state-values-file ../../deploy/environments/<name>/platform-values.yaml \
-    sync \
-    --sync-args "--server-side=true --rollback-on-failure" \
-    --wait \
-    --wait-for-jobs
-)
-kubectl apply --server-side -k deploy/operator
-kubectl apply -k deploy/environments/<name>
-```
+See [Install](docs/operations/install.md#existing-cluster) for DNS, TLS and the
+Helmfile and Kubernetes apply commands.
 
 ## Profiles
 
@@ -165,5 +152,5 @@ See [Development Workflow](docs/development/contributing.md) and
 
 Licensed under the [Apache License 2.0](LICENSE).
 
-This project implements the BBC TAMS v8.1 specification. See
+This project implements the BBC TAMS v8.2 specification. See
 [src/vendor/bbc-tams/](src/vendor/bbc-tams/) for upstream license information.

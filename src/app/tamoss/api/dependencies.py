@@ -1,20 +1,35 @@
 from __future__ import annotations
 
 import json
+from typing import Annotated, cast
+from uuid import UUID
 
 from fastapi import Request
+from pydantic import BeforeValidator
 
 from tamoss.application.contexts.deletion import DeletionUseCases
 from tamoss.application.contexts.flows import FlowUseCases
 from tamoss.application.contexts.objects import ObjectUseCases
+from tamoss.application.contexts.profiles import ProfileUseCases
 from tamoss.application.contexts.segments import SegmentUseCases
 from tamoss.application.contexts.service import ServiceUseCases
 from tamoss.application.contexts.sources import SourceUseCases
 from tamoss.application.contexts.storage import StorageUseCases
 from tamoss.application.contexts.webhooks import WebhookUseCases
 from tamoss.application.use_cases import TamossUseCases
-from tamoss.errors import BadRequest
+from tamoss.contract.validation import parse_uuid
+from tamoss.errors import BadRequest, NotFound
 from tamoss.settings import Settings
+
+
+def _resource_uuid(value: object) -> UUID:
+    try:
+        return cast(UUID, parse_uuid(value))
+    except ValueError:
+        raise NotFound("The requested resource ID in the path is invalid.") from None
+
+
+ResourceUUID = Annotated[UUID, BeforeValidator(_resource_uuid)]
 
 
 async def require_json_body(request: Request) -> None:
@@ -34,6 +49,10 @@ def get_app_settings(request: Request) -> Settings:
 
 def get_service_use_cases(request: Request) -> ServiceUseCases:
     return get_use_cases(request).service
+
+
+def get_profile_use_cases(request: Request) -> ProfileUseCases:
+    return get_use_cases(request).profiles
 
 
 def get_webhook_use_cases(request: Request) -> WebhookUseCases:

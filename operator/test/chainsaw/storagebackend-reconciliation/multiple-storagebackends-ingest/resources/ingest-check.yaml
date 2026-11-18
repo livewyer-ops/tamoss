@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingest-storagebackends-check
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: livewyer/tamoss-chainsaw:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - /app/.venv/bin/python
+            - -m
+            - pytest
+            - --assert=plain
+            - --tb=short
+            - --show-capture=no
+            - -q
+            - /tests/test_multiple_storagebackends.py

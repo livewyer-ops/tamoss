@@ -1,0 +1,17 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: IngestRun
+metadata:
+  name: streamed-ingest
+spec:
+  tamossRef:
+    name: tamoss
+  input:
+    kind: S3
+    uri: s3://tamoss/input/tiny-ingest.mp4
+    sourceRef:
+      name: fixture-s3
+  profile: essence-segments@1
+  sizeClass: small
+  options:
+    maxInputs: 1
+    verify: true

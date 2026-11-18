@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -113,7 +115,7 @@ class SegmentUseCases:
         segment_posts: list[
             tuple[dict[str, Any], contract_models.FlowSegmentPost | None]
         ],
-        upload_checks: dict[str, int | None],
+        upload_checks: dict[tuple[str, datetime], int | None],
     ) -> list[SegmentWriteResult]:
         flow = require_flow(self.flow_repository, flow_id)
         ensure_flow_writable(flow)
@@ -153,20 +155,41 @@ class SegmentUseCases:
             parse_timerange(segment.timerange, field_name="timerange", finite=True)
             for segment in known_segments
         ]
-        media_objects_by_id = self.repository.get_objects(
+        requested_media_object_ids = {
             str(segment_post["object_id"]) for _, segment_post, _ in candidates
-        )
+        }
+        requested_object_ids = requested_media_object_ids | {
+            str(segment_post["init_object_id"])
+            for _, segment_post, _ in candidates
+            if segment_post.get("init_object_id") is not None
+        }
+        if flow.init_segments:
+            # The contract permits init_object_id to be omitted when an existing
+            # media Object is reused. Its persisted media-to-init link is
+            # immutable, so discover those IDs before taking the complete,
+            # globally ordered lock set. The authoritative read below guards
+            # against delete-and-recreate races.
+            requested_object_ids.update(
+                media_object.init_object_id
+                for media_object in self.repository.get_objects(
+                    requested_media_object_ids
+                ).values()
+                if media_object.init_object_id is not None
+            )
+        self.repository.lock_objects(requested_object_ids)
+        media_objects_by_id = self.repository.get_objects(requested_object_ids)
         updated_media_objects: dict[str, MediaObjectRecord] = {}
         accepted_segments: list[SegmentRecord] = []
 
         for index, segment_post, _ in candidates:
             try:
-                segment, media_object, candidate_range = (
+                segment, media_objects, candidate_range = (
                     self._prepare_segment_registration_or_raise(
                         flow=flow,
                         segment_post=segment_post,
                         known_timeranges=known_timeranges,
                         media_objects_by_id=media_objects_by_id,
+                        locked_object_ids=requested_object_ids,
                         upload_checks=upload_checks,
                     )
                 )
@@ -175,7 +198,9 @@ class SegmentUseCases:
                 continue
             known_timeranges.append(candidate_range)
             accepted_segments.append(segment)
-            updated_media_objects[media_object.id] = media_object
+            for media_object in media_objects:
+                media_objects_by_id[media_object.id] = media_object
+                updated_media_objects[media_object.id] = media_object
             results[index] = SegmentWriteResult(segment=segment)
 
         if accepted_segments:
@@ -204,23 +229,24 @@ class SegmentUseCases:
 
     def _verify_controlled_uploads(
         self, payloads: Iterable[dict[str, Any]]
-    ) -> dict[str, int | None]:
+    ) -> dict[tuple[str, datetime], int | None]:
         """Pre-verify uploaded content for controlled objects.
 
         Runs before the registration transaction so the S3 round-trip does not
         extend the per-flow lock hold time or pin a pool connection. Maps
-        object_id to the uploaded content length, or None when the content is
-        missing. Objects whose state changes before the lock is taken fall
-        back to a live check inside the transaction.
+        (object_id, creation time) to the uploaded content length, or None when
+        content is missing. Reallocated IDs require a live check after locking.
         """
         object_ids = {
-            str(payload["object_id"])
+            str(object_id)
             for payload in payloads
-            if isinstance(payload, dict) and payload.get("object_id") is not None
+            if isinstance(payload, dict)
+            for object_id in (payload.get("object_id"), payload.get("init_object_id"))
+            if object_id is not None
         }
         if not object_ids:
             return {}
-        results: dict[str, int | None] = {}
+        results: dict[tuple[str, datetime], int | None] = {}
         for media_object in self.repository.get_objects(object_ids).values():
             if media_object.referenced_by_flows:
                 continue
@@ -231,7 +257,7 @@ class SegmentUseCases:
                     media_object.id,
                     backend=instance.storage_backend,
                 )
-                results[media_object.id] = (
+                results[(media_object.id, media_object.created)] = (
                     (metadata.content_length or 0) if metadata is not None else None
                 )
                 break
@@ -244,15 +270,23 @@ class SegmentUseCases:
         segment_post: dict[str, Any],
         known_timeranges: list[TimeRange],
         media_objects_by_id: dict[str, MediaObjectRecord],
-        upload_checks: dict[str, int | None],
-    ) -> tuple[SegmentRecord, MediaObjectRecord, TimeRange]:
+        locked_object_ids: set[str],
+        upload_checks: dict[tuple[str, datetime], int | None],
+    ) -> tuple[SegmentRecord, list[MediaObjectRecord], TimeRange]:
         candidate_range = self._ensure_segment_timerange_is_available(
             known_timeranges=known_timeranges,
             timerange=str(segment_post["timerange"]),
         )
 
         object_id = str(segment_post["object_id"])
-        media_object = media_objects_by_id.get(object_id)
+        requested_init_object_id = (
+            str(segment_post["init_object_id"])
+            if segment_post.get("init_object_id") is not None
+            else None
+        )
+        if requested_init_object_id == object_id:
+            raise BadRequest("Bad request. Invalid Flow Segment JSON.")
+        media_object = deepcopy(media_objects_by_id.get(object_id))
         existing_object_references = False
         if media_object is None:
             if not segment_post.get("get_urls"):
@@ -261,8 +295,9 @@ class SegmentUseCases:
                     "with get_urls."
                 )
             media_object = MediaObjectRecord(id=object_id)
-            media_objects_by_id[media_object.id] = media_object
         else:
+            if media_object.object_kind == "init":
+                raise BadRequest("Bad request. Init Objects cannot be used as media.")
             existing_object_references = bool(media_object.referenced_by_flows)
             if (
                 _has_controlled_instance(media_object)
@@ -283,6 +318,59 @@ class SegmentUseCases:
                 ):
                     raise BadRequest("Bad request. Invalid Flow Segment JSON.")
 
+        if media_object.content_type is None:
+            media_object.content_type = flow.container
+        elif media_object.content_type != flow.container:
+            raise BadRequest(
+                "Bad request. Media Object content type must match the Flow container."
+            )
+
+        init_object: MediaObjectRecord | None = None
+        resolved_init_object_id = requested_init_object_id
+        if flow.init_segments:
+            resolved_init_object_id = (
+                requested_init_object_id or media_object.init_object_id
+            )
+            if resolved_init_object_id is None:
+                raise BadRequest(
+                    "Bad request. init_object_id is required for this Flow."
+                )
+            if (
+                existing_object_references or media_object.init_object_id is not None
+            ) and media_object.init_object_id != resolved_init_object_id:
+                raise BadRequest(
+                    "Bad request. Media Object already references a different "
+                    "init Object."
+                )
+            init_object = deepcopy(media_objects_by_id.get(resolved_init_object_id))
+            if resolved_init_object_id not in locked_object_ids:
+                raise BadRequest(
+                    "Bad request. init_object_id is required for this Flow."
+                )
+            if init_object is None:
+                raise BadRequest(
+                    "Init Object must be allocated by this service before registration."
+                )
+            if init_object.object_kind == "media" or init_object.timerange is not None:
+                raise BadRequest(
+                    "Bad request. Media Objects cannot be used as init Objects."
+                )
+            if (
+                _has_controlled_instance(init_object)
+                and not init_object.referenced_by_flows
+            ):
+                self._ensure_controlled_object_allocation_matches_flow(
+                    init_object,
+                    flow_id=flow.id,
+                )
+                self._ensure_controlled_object_uploaded(init_object, upload_checks)
+            media_object.init_object_id = resolved_init_object_id
+        elif (
+            requested_init_object_id is not None
+            or media_object.init_object_id is not None
+        ):
+            raise BadRequest("Bad request. init_object_id is not valid for this Flow.")
+
         for get_url in segment_post.get("get_urls") or []:
             try:
                 validate_uncontrolled_instance_append(
@@ -294,10 +382,6 @@ class SegmentUseCases:
             except ValueError as exc:
                 raise BadRequest("Bad request. Invalid Flow Segment JSON.") from exc
 
-        if media_object.first_referenced_by_flow is None:
-            media_object.first_referenced_by_flow = flow.id
-        media_object.allocated_by_flow = None
-        media_object.referenced_by_flows.add(flow.id)
         effective_object_timerange = object_timerange_from_segment_fields(
             timerange=str(segment_post["timerange"]),
             ts_offset=segment_post.get("ts_offset"),
@@ -307,6 +391,24 @@ class SegmentUseCases:
                 else segment_post.get("object_timerange")
             ),
         )
+        object_segment_timerange = object_timerange_from_segment_fields(
+            timerange=str(segment_post["timerange"]),
+            ts_offset=segment_post.get("ts_offset"),
+            object_timerange=None,
+        )
+        if not parse_timerange(effective_object_timerange).contains_subrange(
+            parse_timerange(object_segment_timerange)
+        ):
+            raise BadRequest(
+                "Bad request. Segment timerange must be contained within the "
+                "Object timerange after applying ts_offset."
+            )
+
+        if media_object.first_referenced_by_flow is None:
+            media_object.first_referenced_by_flow = flow.id
+        media_object.allocated_by_flow = None
+        media_object.referenced_by_flows.add(flow.id)
+        media_object.object_kind = "media"
         if not existing_object_references:
             media_object.timerange = timerange_union_strings(
                 [
@@ -328,9 +430,20 @@ class SegmentUseCases:
                 presigned=bool(get_url.get("presigned", False)),
             )
 
+        updated_objects = [media_object]
+        if init_object is not None:
+            if init_object.first_referenced_by_flow is None:
+                init_object.first_referenced_by_flow = flow.id
+            init_object.allocated_by_flow = None
+            init_object.referenced_by_flows.add(flow.id)
+            init_object.object_kind = "init"
+            init_object.timerange = None
+            updated_objects.append(init_object)
+
         segment = SegmentRecord(
             flow_id=flow.id,
             object_id=object_id,
+            init_object_id=resolved_init_object_id,
             timerange=str(segment_post["timerange"]),
             ts_offset=segment_post.get("ts_offset"),
             last_duration=segment_post.get("last_duration"),
@@ -343,14 +456,14 @@ class SegmentUseCases:
             sample_count=segment_post.get("sample_count"),
             key_frame_count=segment_post.get("key_frame_count"),
         )
-        return segment, media_object, candidate_range
+        return segment, updated_objects, candidate_range
 
     def _ensure_controlled_object_uploaded(
         self,
         media_object: MediaObjectRecord,
-        upload_checks: dict[str, int | None],
+        upload_checks: dict[tuple[str, datetime], int | None],
     ) -> None:
-        cached = upload_checks.get(media_object.id, _UNCHECKED)
+        cached = upload_checks.get((media_object.id, media_object.created), _UNCHECKED)
         if cached is not _UNCHECKED:
             if cached is None:
                 raise BadRequest("Bad request. Controlled object content is missing.")
@@ -424,21 +537,40 @@ class SegmentUseCases:
         self,
         segments: list[SegmentRecord],
         *,
+        objects_by_id: Mapping[str, MediaObjectRecord] | None = None,
         accept_get_urls: set[str] | None = None,
         accept_storage_ids: set[str] | None = None,
         presigned: bool | None = None,
         verbose_storage: bool = False,
+        storage_tag_values: dict[str, set[str]] | None = None,
+        storage_tag_exists: dict[str, bool] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        objects_by_id = self.repository.get_objects(
-            segment.object_id for segment in segments
+        resolved_objects = (
+            dict(objects_by_id)
+            if objects_by_id is not None
+            else self.segment_objects(segments)
         )
         return objects_get_urls(
-            objects_by_id.values(),
+            resolved_objects.values(),
             object_storage=self.object_storage,
             accept_get_urls=accept_get_urls,
             accept_storage_ids=accept_storage_ids,
             presigned=presigned,
             verbose_storage=verbose_storage,
+            storage_tag_values=storage_tag_values,
+            storage_tag_exists=storage_tag_exists,
+        )
+
+    def segment_objects(
+        self, segments: Iterable[SegmentRecord]
+    ) -> dict[str, MediaObjectRecord]:
+        return self.repository.get_objects(
+            object_id
+            for segment in segments
+            for object_id in (
+                segment.object_id,
+                *([segment.init_object_id] if segment.init_object_id else []),
+            )
         )
 
 

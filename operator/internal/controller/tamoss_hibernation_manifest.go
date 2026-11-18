@@ -111,7 +111,7 @@ func buildHibernationManifest(tamoss *tamossv1alpha1.Tamoss, storageBackend *tam
 		},
 		Schema: hibernationManifestSchema{
 			Version:      tamoss.Status.SchemaVersion,
-			TAMSAPI:      schemabundle.SupportedTAMSAPIVersion,
+			TAMSAPI:      tamoss.Status.Resolved.Versions.TAMSAPI,
 			Operator:     schemabundle.SchemaVersion,
 			ManifestKind: "TamossHibernate",
 		},

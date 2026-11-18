@@ -9,6 +9,53 @@ fi
 # shellcheck source=.tasks/lib/progress.sh
 . "$task_lib_dir/progress.sh"
 
+# Hash API, UI and Console build inputs so a rebuild changes the Deployment.
+# Resolve paths from the work tree root, regardless of the caller's directory.
+task_kind_operand_tag() {
+  local root paths gitlinks
+
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
+  if [ -z "$root" ]; then
+    printf 'dev'
+    return 0
+  fi
+
+  paths="$(
+    cd "$root" || exit 1
+    git ls-files --cached --others --exclude-standard -- src operator .dockerignore \
+      | sort -u \
+      | while IFS= read -r path; do
+          # Skip gitlinks without failing the pipeline under pipefail.
+          if [ -f "$path" ]; then
+            printf '%s\n' "$path"
+          fi
+        done
+  )"
+
+  # Include reference updates represented only by a staged submodule pointer.
+  gitlinks="$(
+    cd "$root" || exit 1
+    git ls-files --stage -- src operator .dockerignore \
+      | awk '$1 == "160000" { print $4 "\t" $2 }' \
+      | sort
+  )"
+
+  if [ -z "$paths" ] && [ -z "$gitlinks" ]; then
+    printf 'task_kind_operand_tag: no operand build inputs found under %s\n' \
+      "$root" >&2
+    return 1
+  fi
+
+  printf 'dev-%s' "$(
+    cd "$root" || exit 1
+    {
+      printf '%s\n' "$paths"
+      printf '%s\n' "$paths" | git hash-object --stdin-paths
+      printf '%s\n' "$gitlinks"
+    } | sha256sum | cut -c1-12
+  )"
+}
+
 task_kind_ensure_cluster() {
   local project_name="$1"
   local kind_config="$2"
@@ -26,10 +73,10 @@ task_kind_delete_cluster() {
   local kubeconfig="${2:-}"
 
   if [ -n "$kubeconfig" ]; then
-    kind delete cluster --name "$project_name" --kubeconfig "$kubeconfig" || true
-    return
+    kind delete cluster --name "$project_name" --kubeconfig "$kubeconfig"
+  else
+    kind delete cluster --name "$project_name"
   fi
-  kind delete cluster --name "$project_name" || true
 }
 
 task_kind_load_image() {
@@ -85,11 +132,4 @@ task_kind_assert_ready_node_count() {
   echo "If this cluster was created for another profile, run task kind:down and retry." >&2
   kubectl --kubeconfig "$kubeconfig" get nodes >&2 || true
   return 1
-}
-
-task_remove_local_kind_state() {
-  local kubeconfig="$1"
-  local secrets_dir="$2"
-
-  rm -rf "$kubeconfig" "$secrets_dir" || true
 }

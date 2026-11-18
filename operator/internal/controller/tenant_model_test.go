@@ -15,7 +15,7 @@ import (
 
 func TestNamespaceAllowedSupportsMultipleTenantNamespaces(t *testing.T) {
 	watchNamespaces := ParseWatchNamespaces("tams-team-a, tams-team-b")
-	reconciler := TamossReconciler{WatchNamespaces: watchNamespaces}
+	reconciler := TamossReconciler{Releases: testReleases(), WatchNamespaces: watchNamespaces}
 
 	for _, namespace := range []string{"tams-team-a", "tams-team-b"} {
 		if !reconciler.WatchNamespaces.Allows(namespace) {

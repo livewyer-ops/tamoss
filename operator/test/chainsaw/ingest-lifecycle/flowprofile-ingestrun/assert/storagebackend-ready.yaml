@@ -1,0 +1,8 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: StorageBackend
+metadata:
+  name: fixture-storage
+  namespace: ($namespace)
+(status.conditions[?type == 'Ready'] | [0].status): "True"
+(status.conditions[?type == 'Ready'] | [0].reason): StorageBackendReady
+(status.backendID): f1ab5b54-9703-42ed-b181-11ba1c794a7f

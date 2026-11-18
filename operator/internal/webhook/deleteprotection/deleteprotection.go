@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -18,12 +19,20 @@ const (
 
 	TamossWebhookPath          = "/validate-tamoss-livewyer-io-v1alpha1-tamoss-delete"
 	StorageBackendWebhookPath  = "/validate-tamoss-livewyer-io-v1alpha1-storagebackend-delete"
+	FlowProfileWebhookPath     = "/validate-tamoss-livewyer-io-v1alpha1-flowprofile-delete"
 	TamossHibernateWebhookPath = "/validate-tamoss-livewyer-io-v1alpha1-tamosshibernate-delete"
 )
 
 type Handler struct {
 	Kind                 string
 	OperatorCleanupUsers map[string]struct{}
+	ImmutableSpec        bool
+}
+
+func NewImmutableSpecHandler(kind string, operatorCleanupUsers ...string) Handler {
+	handler := NewHandler(kind, operatorCleanupUsers...)
+	handler.ImmutableSpec = true
+	return handler
 }
 
 func NewHandler(kind string, operatorCleanupUsers ...string) Handler {
@@ -37,6 +46,20 @@ func NewHandler(kind string, operatorCleanupUsers ...string) Handler {
 }
 
 func (h Handler) Handle(_ context.Context, req admission.Request) admission.Response {
+	if req.Operation == admissionv1.Update && h.ImmutableSpec {
+		oldSpec, err := objectSpec(req.OldObject.Raw)
+		if err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		newSpec, err := objectSpec(req.Object.Raw)
+		if err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if !reflect.DeepEqual(oldSpec, newSpec) {
+			return admission.Denied(fmt.Sprintf("%s spec is immutable; create a new resource instead.", h.Kind))
+		}
+		return admission.Allowed("immutable spec is unchanged")
+	}
 	if req.Operation != admissionv1.Delete {
 		return admission.Allowed("delete protection only handles delete requests")
 	}
@@ -62,6 +85,19 @@ func (h Handler) Handle(_ context.Context, req admission.Request) admission.Resp
 		name,
 		ConfirmationAnnotation,
 	))
+}
+
+func objectSpec(raw []byte) (any, error) {
+	object := struct {
+		Spec any `json:"spec"`
+	}{}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("admission request did not include an object")
+	}
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, fmt.Errorf("decode admission object: %w", err)
+	}
+	return object.Spec, nil
 }
 
 func deletionConfirmed(annotations map[string]string) bool {

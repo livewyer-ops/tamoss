@@ -16,11 +16,12 @@ import (
 func TestTamossCompletionResultRequeuesForManagedAuthentik(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 45*time.Second {
 		t.Fatalf("expected Authentik completion to requeue after probe interval, got %#v", result)
 	}
@@ -29,26 +30,42 @@ func TestTamossCompletionResultRequeuesForManagedAuthentik(t *testing.T) {
 func TestTamossCompletionResultDoesNotRequeueForExternalAuth(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 0 {
 		t.Fatalf("did not expect external-auth completion to requeue, got %#v", result)
+	}
+}
+
+func TestTamossCompletionResultRequeuesSchemaCleanupForExternalDependencies(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByExternal},
+		},
+	}
+
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 2*time.Second)
+	if result.RequeueAfter != 2*time.Second {
+		t.Fatalf("expected schema cleanup to schedule a retry, got %#v", result)
 	}
 }
 
 func TestTamossCompletionResultRequeuesForProviderManagedBackends(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
+			Version: "dev",
 			Backends: tamossv1alpha1.BackendsSpec{
 				DB: tamossv1alpha1.DBBackendSpec{ProvidedBy: tamossv1alpha1.BackendProvidedByCNPG},
 			},
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 5*time.Minute {
 		t.Fatalf("expected provider-managed backend completion to requeue after dependency probe interval, got %#v", result)
 	}
@@ -57,14 +74,15 @@ func TestTamossCompletionResultRequeuesForProviderManagedBackends(t *testing.T) 
 func TestTamossCompletionResultUsesShortestManagedProbeInterval(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		Spec: tamossv1alpha1.TamossSpec{
-			Auth: tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
+			Version: "dev",
+			Auth:    tamossv1alpha1.AuthSpec{ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints},
 			Backends: tamossv1alpha1.BackendsSpec{
 				S3: tamossv1alpha1.S3BackendSpec{ProvidedBy: tamossv1alpha1.S3BackendProvidedByRustFSOperator},
 			},
 		},
 	}
 
-	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute)
+	result := tamossCompletionResult(tamoss, 45*time.Second, 5*time.Minute, 0)
 	if result.RequeueAfter != 45*time.Second {
 		t.Fatalf("expected shortest managed probe interval, got %#v", result)
 	}
@@ -75,7 +93,7 @@ func TestObservedSchemaStateResultRejectsUnsupportedVersion(t *testing.T) {
 		Data: map[string]string{schemaStateAppliedVersionKey: "unknown"},
 	}
 
-	result, done := observedSchemaStateResult(state, true, []client.Object{state})
+	result, done := testSchemaController().observedSchemaStateResult(state, true, []client.Object{state})
 	if !done {
 		t.Fatal("expected unsupported schema state to finish the stage")
 	}
@@ -86,6 +104,7 @@ func TestObservedSchemaStateResultRejectsUnsupportedVersion(t *testing.T) {
 
 func TestPrepareStorageBackendLifecycleIgnoresDisallowedNamespace(t *testing.T) {
 	reconciler := &StorageBackendReconciler{
+		Releases:        testReleases(),
 		WatchNamespaces: map[string]struct{}{"allowed": {}},
 	}
 	storageBackend := &tamossv1alpha1.StorageBackend{

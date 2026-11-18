@@ -11,6 +11,15 @@ def valid_tag_value(value: TagValue) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+def parse_tag_value_list(value: str) -> set[str]:
+    if value == "":
+        return set()
+    parts = value.split(",")
+    if any(part == "" for part in parts):
+        raise ValueError("tag value lists must not contain empty members")
+    return set(parts)
+
+
 def parse_tag_filters(
     query_params: Mapping[str, str],
 ) -> tuple[dict[str, set[str]], dict[str, bool]]:
@@ -21,7 +30,7 @@ def parse_tag_filters(
             tag_name = key.removeprefix("tag.")
             if tag_name == "{name}":
                 continue
-            values[tag_name] = {part for part in value.split(",") if part}
+            values[tag_name] = parse_tag_value_list(value)
         elif key.startswith("tag_exists."):
             tag_name = key.removeprefix("tag_exists.")
             if tag_name == "{name}":

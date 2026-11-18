@@ -1,0 +1,97 @@
+.statusExplanation {
+  margin: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.metric {
+  min-width: 0;
+  padding: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metric dt {
+  color: var(--muted);
+  font-size: 0.71875rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.metric dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 680;
+}
+
+.confirm {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e4a6a1;
+  border-radius: 5px;
+  background: var(--danger-soft);
+  color: #742b24;
+  font-size: 0.8125rem;
+}
+
+.confirm strong,
+.confirm p {
+  margin: 0;
+}
+
+.feedback {
+  padding: 11px 14px;
+  border: 1px solid #9bc8b5;
+  border-radius: 5px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 0.8125rem;
+}
+
+.errorFeedback {
+  border-color: #e4a6a1;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .metric:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .metric:last-child {
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric {
+    border-right: 0;
+  }
+}

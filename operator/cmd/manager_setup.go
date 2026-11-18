@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -20,7 +21,9 @@ import (
 
 	"github.com/livewyer-ops/tamoss/operator/internal/controller"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
+	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	"github.com/livewyer-ops/tamoss/operator/internal/webhook/deleteprotection"
 )
 
@@ -114,11 +117,19 @@ func setupControllers(
 	dependencyDiscovery *operatordiscovery.Manager,
 	dependencyProbeInterval time.Duration,
 ) error {
+	watchScope := controller.WatchNamespaceSet(watchNamespaces)
+	catalogue, err := releases.Load(os.Getenv("TAMOSS_RELEASE_CATALOGUE"))
+	if err != nil {
+		return fmt.Errorf("load release catalogue: %w", err)
+	}
+	instanceDefaults := defaults.LoadInstallation(os.Getenv("TAMOSS_INSTANCE_DEFAULTS"))
 	tamossReconciler := &controller.TamossReconciler{
+		Releases:                    catalogue,
+		InstanceDefaults:            instanceDefaults,
 		Client:                      mgr.GetClient(),
 		Scheme:                      mgr.GetScheme(),
 		Recorder:                    eventRecorderFor(mgr, "tamoss-controller"),
-		WatchNamespaces:             watchNamespaces,
+		WatchNamespaces:             watchScope,
 		Discovery:                   dependencyDiscovery,
 		DependencyProbeInterval:     dependencyProbeInterval,
 		AuthentikPlatformNamespaces: authentik.NewPlatformNamespacePolicy(os.Getenv("TAMOSS_AUTHENTIK_PLATFORM_NAMESPACES")),
@@ -129,10 +140,29 @@ func setupControllers(
 		return err
 	}
 	if err := (&controller.TamossHibernateReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "tamosshibernate-controller"),
-		WatchNamespaces: watchNamespaces,
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "tamosshibernate-controller"),
+		WatchNamespaces:  watchScope,
+	}).SetupWithManager(mgr); err != nil {
+		return err
+	}
+	ingestLogReader, err := controller.NewIngestPodLogReader(mgr.GetConfig())
+	if err != nil {
+		return err
+	}
+	if err := (&controller.IngestRunReconciler{
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		WatchNamespaces:  watchScope,
+		APIReader:        mgr.GetAPIReader(),
+		InputResolver:    controller.SourcePolicyResolver{Client: mgr.GetClient()},
+		EndpointResolver: controller.PublishedEndpointResolver{Client: mgr.GetClient()},
+		PodLogs:          ingestLogReader,
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -143,11 +173,23 @@ func setupControllers(
 			}
 		})
 	}
-	return (&controller.StorageBackendReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Recorder:        eventRecorderFor(mgr, "storagebackend-controller"),
-		WatchNamespaces: watchNamespaces,
+	if err := (&controller.StorageBackendReconciler{
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "storagebackend-controller"),
+		WatchNamespaces:  watchScope,
+	}).SetupWithManager(mgr); err != nil {
+		return err
+	}
+	return (&controller.FlowProfileReconciler{
+		Releases:         catalogue,
+		InstanceDefaults: instanceDefaults,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorderFor(mgr, "flowprofile-controller"),
+		WatchNamespaces:  watchScope,
 	}).SetupWithManager(mgr)
 }
 
@@ -166,6 +208,12 @@ func registerDeleteProtectionWebhooks(mgr ctrl.Manager) {
 	server.Register(deleteprotection.StorageBackendWebhookPath, &admission.Webhook{
 		Handler: deleteprotection.NewHandler(
 			"StorageBackend",
+			operatorCleanupUsername(operatorNamespaceFromEnv(), operatorServiceAccountFromEnv()),
+		),
+	})
+	server.Register(deleteprotection.FlowProfileWebhookPath, &admission.Webhook{
+		Handler: deleteprotection.NewImmutableSpecHandler(
+			"FlowProfile",
 			operatorCleanupUsername(operatorNamespaceFromEnv(), operatorServiceAccountFromEnv()),
 		),
 	})
@@ -193,7 +241,11 @@ func addHealthChecks(mgr ctrl.Manager) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}
-	return mgr.AddReadyzCheck("readyz", healthz.Ping)
+	ready := healthz.Ping
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		ready = mgr.GetWebhookServer().StartedChecker()
+	}
+	return mgr.AddReadyzCheck("readyz", ready)
 }
 
 func dependencyDiscoveryInterval() time.Duration {

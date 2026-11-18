@@ -2,9 +2,10 @@
  * Centralized runtime configuration.
  *
  * In production, values come from window.__TAMOSS_CONFIG__ (generated in
- * runtime-config.js by docker-entrypoint.sh from TAMOSS_API_URL).
+ * runtime-config.js by docker-entrypoint.sh).
  *
- * In development, values fall back to Vite env variables (VITE_*).
+ * The API path is deliberately fixed to the same origin. The only runtime
+ * override is the optional Console API path.
  *
  * Note: there is no longer a frontend ``s3Endpoint`` — presigned URLs are
  * generated server-side against the configured ``TAMOSS_S3_PUBLIC_ENDPOINT``
@@ -13,11 +14,11 @@
 
 interface TamossConfig {
   apiUrl: string;
-  apiToken: string;
+  controlApiUrl: string;
 }
 
 interface RuntimeConfig {
-  apiUrl: string;
+  controlApiUrl: string;
 }
 
 declare global {
@@ -35,14 +36,12 @@ function resolve(value: string | undefined): string {
 const runtimeConfig = window.__TAMOSS_CONFIG__ ?? {};
 
 export const config: TamossConfig = {
-  /** Base URL for API requests (e.g. https://api.example.com) */
-  apiUrl:
-    resolve(runtimeConfig.apiUrl) ||
-    (import.meta.env.VITE_API_URL as string) ||
-    "/api",
+  /** TAMS is reachable only through the same-origin, read-only proxy. */
+  apiUrl: "/api",
 
-  /**
-   * Dev-only API token sent as Authorization: Bearer header.
-   */
-  apiToken: (import.meta.env.VITE_API_TOKEN as string) || "",
+  /** Same-origin TAMOSS operational API. */
+  controlApiUrl:
+    resolve(runtimeConfig.controlApiUrl) ||
+    (import.meta.env.VITE_CONTROL_API_URL as string) ||
+    "/ui-api/v1",
 };

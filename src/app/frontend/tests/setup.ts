@@ -1,4 +1,4 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
 
 const createStorage = () => {
   const store: Record<string, string> = {};
@@ -11,7 +11,7 @@ const createStorage = () => {
       delete store[key];
     },
     clear: () => {
-      Object.keys(store).forEach((key) => delete store[key]);
+      for (const key of Object.keys(store)) delete store[key];
     },
     get length() {
       return Object.keys(store).length;

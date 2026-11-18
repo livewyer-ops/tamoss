@@ -21,6 +21,11 @@ func (t *Tamoss) S3Connection() S3ExternalSpec {
 	return t.Spec.Backends.S3.ConnectionForNamespace(t.ResourceName(""), t.Namespace)
 }
 
+func (t *Tamoss) UsesS3WebIdentity() bool {
+	return t.Spec.Backends.S3.Provider() == S3BackendProvidedByExternal &&
+		t.S3Connection().CredentialSource == S3CredentialSourceWebIdentity
+}
+
 func (t *Tamoss) OAuth2CredentialsSecretName() string {
 	return t.ResourceName("oauth2-creds")
 }
@@ -49,6 +54,14 @@ func (w WorkerComponentSpec) IsEnabled() bool {
 
 func (u UIComponentSpec) IsEnabled() bool {
 	return boolValue(u.Enabled, true)
+}
+
+func (c ConsoleComponentSpec) IsEnabled() bool {
+	return boolValue(c.Enabled, false)
+}
+
+func (s TamossSpec) ConsoleEnabled() bool {
+	return s.Console.IsEnabled()
 }
 
 func (w WorkloadCommonSpec) DesiredReplicaCount() int32 {

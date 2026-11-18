@@ -1,0 +1,19 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: FlowProfile
+metadata:
+  name: chainsaw-timed-text
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: "true"
+spec:
+  id: 8e35dbf7-d42b-55af-99ce-4a986b456f3b
+  tamossRef:
+    name: tamoss
+  label: Chainsaw timed text
+  description: Profile used by the operator ingest lifecycle test
+  tags:
+    test-purpose: integration
+  flowMetadata:
+    format: urn:x-nmos:format:data
+    codec: application/x-subrip
+    container: application/octet-stream
+    essence_parameters: {}

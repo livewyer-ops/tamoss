@@ -69,6 +69,38 @@ func TestProxyOutpostClientReconcilesAndDeletes(t *testing.T) {
 	}
 }
 
+func TestUIProxyExternalHostUsesExplicitPublicUIURL(t *testing.T) {
+	tamoss := proxyOutpostFixture()
+	tamoss.Spec.PublicEndpoint.UIURL = "https://app.example.com:30443/"
+
+	got, err := UIProxyExternalHost(tamoss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://app.example.com:30443" {
+		t.Fatalf("proxy external host = %q", got)
+	}
+}
+
+func TestUIProxyExternalHostRejectsInvalidPublicUIURL(t *testing.T) {
+	tests := []string{
+		"https://user@app.example.com:30443",
+		"javascript://app.example.com",
+		"https://other.example.com:30443",
+		"https://app.example.com/path",
+		"https://app.example.com:99999",
+	}
+	for _, uiURL := range tests {
+		t.Run(uiURL, func(t *testing.T) {
+			tamoss := proxyOutpostFixture()
+			tamoss.Spec.PublicEndpoint.UIURL = uiURL
+			if _, err := UIProxyExternalHost(tamoss); err == nil {
+				t.Fatalf("expected public UI URL %q to be rejected", uiURL)
+			}
+		})
+	}
+}
+
 func TestProxyOutpostClientFindsExistingApplicationWithSearch(t *testing.T) {
 	tamoss := proxyOutpostFixture()
 	state := proxyOutpostServerState{

@@ -14,14 +14,14 @@ def test_api_cors_preflight_allows_configured_browser_origin() -> None:
     client = _client(
         bbc_parity_settings(
             auth_required=True,
-            cors_allowed_origins=["https://cuttingroom.github.io"],
+            cors_allowed_origins=["https://player.example.com"],
         )
     )
 
     response = client.options(
         "/sources?limit=1",
         headers={
-            "Origin": "https://cuttingroom.github.io",
+            "Origin": "https://player.example.com",
             "Access-Control-Request-Method": "GET",
             "Access-Control-Request-Headers": "authorization,content-type",
         },
@@ -29,7 +29,7 @@ def test_api_cors_preflight_allows_configured_browser_origin() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == (
-        "https://cuttingroom.github.io"
+        "https://player.example.com"
     )
     assert "GET" in response.headers["access-control-allow-methods"]
     assert "authorization" in response.headers["access-control-allow-headers"].lower()
@@ -39,14 +39,14 @@ def test_api_cors_preflight_allows_head_requests() -> None:
     client = _client(
         bbc_parity_settings(
             auth_required=True,
-            cors_allowed_origins=["https://cuttingroom.github.io"],
+            cors_allowed_origins=["https://player.example.com"],
         )
     )
 
     response = client.options(
         "/sources?limit=1",
         headers={
-            "Origin": "https://cuttingroom.github.io",
+            "Origin": "https://player.example.com",
             "Access-Control-Request-Method": "HEAD",
             "Access-Control-Request-Headers": "authorization",
         },
@@ -54,7 +54,7 @@ def test_api_cors_preflight_allows_head_requests() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == (
-        "https://cuttingroom.github.io"
+        "https://player.example.com"
     )
     assert "HEAD" in response.headers["access-control-allow-methods"]
 
@@ -63,18 +63,18 @@ def test_api_cors_headers_are_added_to_auth_errors() -> None:
     client = _client(
         bbc_parity_settings(
             auth_required=True,
-            cors_allowed_origins=["https://cuttingroom.github.io"],
+            cors_allowed_origins=["https://player.example.com"],
         )
     )
 
     response = client.get(
         "/sources?limit=1",
-        headers={"Origin": "https://cuttingroom.github.io"},
+        headers={"Origin": "https://player.example.com"},
     )
 
     assert response.status_code == 401
     assert response.headers["access-control-allow-origin"] == (
-        "https://cuttingroom.github.io"
+        "https://player.example.com"
     )
 
 

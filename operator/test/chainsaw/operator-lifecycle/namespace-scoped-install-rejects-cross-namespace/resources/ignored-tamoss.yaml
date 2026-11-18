@@ -6,6 +6,7 @@ metadata:
     confirmation.tamoss.livewyer.io/deletion: "true"
   namespace: other
 spec:
+  version: dev
   auth:
     required: false
   backends:

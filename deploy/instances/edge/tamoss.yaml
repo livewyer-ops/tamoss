@@ -10,3 +10,6 @@ metadata:
   namespace: tams
 spec:
   profile: edge
+  ingest:
+    sourcePolicy:
+      mode: Disabled

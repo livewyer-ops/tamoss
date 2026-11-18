@@ -30,14 +30,17 @@ spec:
             timeout: 180s
         - apply:
             file: resources/tamoss-explicit-token.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: validates explicit-token rejection and stable Secret data.
-              ./scripts/assert-explicit-token-rotation-rejected.sh
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: tamoss-api-token
+                namespace: ($namespace)
+                (contains(keys(not_null(annotations, `{}`)), 'tamoss.livewyer.io/api-token-rotate-consumed')): false
+              data:
+                TAMOSS_API_TOKEN: dXNlci1zdXBwbGllZC10b2tlbg==
+            timeout: 180s
         - assert:
             file: assert/api-token-rotation-rejected-event.yaml
             timeout: 1m

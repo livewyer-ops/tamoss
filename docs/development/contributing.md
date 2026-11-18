@@ -16,7 +16,7 @@ dependency stack. Stop the [Kind](https://kind.sigs.k8s.io/) stack first
 because both paths use local
 PostgreSQL and S3 ports.
 
-## Kubernetes Confidence Loop
+## Kubernetes testing
 
 ```bash
 task kind:up PROFILE=local-kind
@@ -45,16 +45,6 @@ Use the detailed [Chainsaw](https://kyverno.github.io/chainsaw/) tasks only
 when changing operator reconciliation or
 lifecycle behaviour. Those commands are documented in
 `operator/test/chainsaw/README.md`.
-
-Keep changes small and provable. A commit means the current iteration is ready
-to build on.
-
-## Python Style
-
-Keep module docstrings sparse and meaningful. Package entry points, public
-adapters, and scripts may use them to explain a boundary or execution purpose;
-ordinary implementation modules should not gain boilerplate docstrings solely
-for consistency.
 
 See also:
 

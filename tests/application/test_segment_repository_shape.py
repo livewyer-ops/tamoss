@@ -19,10 +19,15 @@ from tamoss.domain.model import (
     WebhookRecord,
 )
 from tamoss.domain.pagination import Page
-from tamoss.domain.segments import SegmentTimerangeBounds, timerange_union
+from tamoss.domain.segments import (
+    SegmentTimerangeBounds,
+    segment_overlaps_bounds,
+    timerange_union,
+)
 from tamoss.settings import Settings, StorageBackendSettings
 
 from tests.support.object_storage import InMemoryObjectStorage
+from tests.tams.support import video_flow_payload
 
 pytestmark = pytest.mark.architecture
 
@@ -211,6 +216,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert all(result.error is None for result in results)
     assert repository.list_segments_overlapping_calls == 1
     assert repository.lock_flow_segments_calls == 1
+    assert repository.lock_objects_calls == 1
+    assert repository.locked_object_ids == [
+        {_object_id(index) for index in range(SEGMENT_COUNT)}
+    ]
     # One bounded lookup before the transaction (controlled-object upload
     # verification, keeping S3 round-trips outside the flow lock) and one
     # authoritative lookup inside it.
@@ -222,7 +231,10 @@ def test_segment_registration_uses_bounded_repository_shape() -> None:
     assert repository.append_segment_calls == 0
 
 
-def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
+@pytest.mark.parametrize("timerange", [None, "[1:0_2:0)"])
+def test_single_flow_timerange_uses_bounded_collection_lookup(
+    timerange: str | None,
+) -> None:
     repository = CountingRepository(_storage_backend())
     use_cases = _use_cases(repository)
     parent_id = uuid4()
@@ -249,12 +261,32 @@ def test_single_flow_timerange_uses_bounded_collection_lookup() -> None:
     )
     repository.reset_counts()
 
-    result = use_cases.flows.flow_timerange(parent_id)
+    result = use_cases.flows.flow_timerange(parent_id, timerange=timerange)
 
     assert result == "[0:0_10:0)"
     assert repository.list_flows_calls == 0
     assert repository.get_flow_calls == 2
     assert repository.flow_timeranges_requests == [[parent_id, child_id]]
+
+
+def test_flow_listing_reuses_loaded_records_for_timeranges() -> None:
+    repository = CountingRepository(_storage_backend())
+    for _ in range(50):
+        flow = _flow(uuid4())
+        flow.data.update(video_flow_payload(flow.id, flow.source_id))
+        repository.save_flow(flow)
+        repository.append_segment(
+            SegmentRecord(flow_id=flow.id, object_id="media", timerange="[0:1_1:2)")
+        )
+    cases = _use_cases(repository, object_storage=InMemoryObjectStorage())
+    repository.reset_counts()
+    with TestClient(create_app(_settings(), use_cases=cases)) as client:
+        response = client.get("/flows", params={"limit": 50, "include_timerange": True})
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 50
+    assert {item["timerange"] for item in response.json()} == {"[0:1_1:2)"}
+    assert repository.get_flow_calls == 0
+    assert len(repository.flow_timeranges_requests) == 1
 
 
 class CountingRepository:
@@ -278,6 +310,8 @@ class CountingRepository:
         self.append_segment_calls = 0
         self.save_registered_segments_calls = 0
         self.lock_flow_segments_calls = 0
+        self.lock_objects_calls = 0
+        self.locked_object_ids: list[set[str]] = []
 
     @property
     def service_repository(self) -> CountingRepository:
@@ -320,6 +354,10 @@ class CountingRepository:
     def lock_flow_segments(self, flow_id: UUID) -> None:
         self.lock_flow_segments_calls += 1
 
+    def lock_objects(self, object_ids: Iterable[str]) -> None:
+        self.lock_objects_calls += 1
+        self.locked_object_ids.append(set(object_ids))
+
     def default_storage_backend(self) -> StorageBackend:
         return self._storage_backend
 
@@ -347,11 +385,31 @@ class CountingRepository:
         limit = kwargs.get("limit") or 100
         return Page(items=flows[:limit], limit=limit)
 
-    def flow_timeranges(self, flow_ids: Iterable[UUID]) -> dict[UUID, str]:
+    def flow_timeranges(
+        self,
+        flow_ids: Iterable[UUID],
+        *,
+        timerange_start: int | None = None,
+        timerange_end: int | None = None,
+        timerange_is_empty: bool = False,
+        timerange_is_point: bool = False,
+    ) -> dict[UUID, str]:
         requested_ids = list(dict.fromkeys(flow_ids))
         self.flow_timeranges_requests.append(requested_ids)
         return {
-            flow_id: timerange_union(self._segments.get(flow_id, []))
+            flow_id: timerange_union(
+                [
+                    segment
+                    for segment in self._segments.get(flow_id, [])
+                    if not timerange_is_empty
+                    and segment_overlaps_bounds(
+                        segment,
+                        start=timerange_start,
+                        end=timerange_end,
+                        requested_is_point=timerange_is_point,
+                    )
+                ]
+            )
             for flow_id in requested_ids
         }
 
@@ -361,9 +419,6 @@ class CountingRepository:
 
     def get_source(self, source_id: UUID) -> SourceRecord | None:
         return None
-
-    def list_sources(self) -> list[SourceRecord]:
-        return []
 
     def list_sources_page(self, **kwargs) -> Page[SourceRecord]:
         limit = kwargs.get("limit") or 100

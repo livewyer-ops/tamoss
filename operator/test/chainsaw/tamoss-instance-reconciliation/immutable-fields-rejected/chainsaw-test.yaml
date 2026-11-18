@@ -1,7 +1,7 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: immutable-fields-rejected
+  name: invalid-and-immutable-fields-rejected
   labels:
     test.tamoss.io/target: kind
     test.tamoss.io/tier: release
@@ -24,16 +24,45 @@ spec:
 
     - name: immutable tamoss name override is rejected
       try:
-        - error:
+        - apply:
             file: resources/tamoss-fullname-change.yaml
+            expect:
+              - check:
+                  ($error != null): true
 
     - name: immutable storage backend identity changes are rejected
       try:
-        - error:
+        - apply:
             file: resources/storagebackend-id-change.yaml
-        - error:
+            expect:
+              - check:
+                  ($error != null): true
+        - apply:
             file: resources/storagebackend-provider-change.yaml
-        - error:
+            expect:
+              - check:
+                  ($error != null): true
+        - apply:
             file: resources/storagebackend-bucket-change.yaml
-        - error:
+            expect:
+              - check:
+                  ($error != null): true
+        - apply:
             file: resources/storagebackend-tamossref-change.yaml
+            expect:
+              - check:
+                  ($error != null): true
+
+    - name: invalid replica count is rejected
+      try:
+        - apply:
+            file: resources/invalid-replicas.yaml
+            expect:
+              - check:
+                  ($error != null): true
+      finally:
+        - delete:
+            ref:
+              apiVersion: tamoss.livewyer.io/v1alpha1
+              kind: Tamoss
+              name: immutable

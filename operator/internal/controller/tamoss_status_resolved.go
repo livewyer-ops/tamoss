@@ -2,13 +2,14 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/auth/authentik"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/backend/cnpg"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 )
 
 func providerStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.ProviderStatus {
@@ -65,18 +66,21 @@ func routingProviderStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Provide
 	return providerDomainStatus("external", tamossv1alpha1.ProviderOwnershipExternal)
 }
 
-func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.ResolvedStatus {
+func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss, release releases.Release) tamossv1alpha1.ResolvedStatus {
 	status := tamossv1alpha1.ResolvedStatus{
+		Profile: tamoss.Spec.Profile,
 		Images: tamossv1alpha1.ResolvedImageStatus{
 			API:                           resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			UI:                            resolvedImageRef(tamoss.Spec.UI.Image, defaults.DefaultUIRepository),
+			Console:                       resolvedImageRef(tamoss.Spec.Console.Image, defaults.DefaultConsoleRepository),
 			Worker:                        resolvedImageRef(tamoss.Spec.API.Image, defaults.DefaultAPIRepository),
 			SchemaMigrationPostgresClient: schemaMigrationPostgresClientImage(tamoss),
+			TAMSin:                        tamoss.Spec.Images.TAMSin,
 		},
 		Versions: tamossv1alpha1.ResolvedVersionStatus{
-			Schema:  schemabundle.SchemaVersion,
-			Tamoss:  resolvedRuntimeVersion(tamoss),
-			TAMSAPI: schemabundle.SupportedTAMSAPIVersion,
+			Schema:  release.Schema.Version,
+			Tamoss:  tamoss.Spec.Version,
+			TAMSAPI: release.Schema.TAMSAPI,
 		},
 	}
 	if tamoss.Spec.Backends.DB.Provider() == tamossv1alpha1.BackendProvidedByCNPG && tamoss.Spec.Backends.DB.CNPG != nil {
@@ -93,6 +97,9 @@ func resolvedTamossStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.Resolved
 	}
 	if tamoss.Spec.Worker.IsEnabled() {
 		status.Resources.Worker = tamossResourceName(tamoss, "worker")
+	}
+	if tamoss.Spec.ConsoleEnabled() {
+		status.Resources.Console = tamossResourceName(tamoss, "console")
 	}
 	if tamossUsesManagedS3(tamoss) {
 		status.Resources.DefaultStorageBackend = defaultStorageBackendName(tamoss)
@@ -126,14 +133,10 @@ func resolvedImageRef(image tamossv1alpha1.ImageSpec, fallbackRepository string)
 	if tag == "" {
 		tag = defaults.DefaultOperandTag
 	}
-	return fmt.Sprintf("%s:%s", repository, tag)
-}
-
-func resolvedRuntimeVersion(tamoss *tamossv1alpha1.Tamoss) string {
-	if tamoss.Spec.API.Image.Tag != "" {
-		return tamoss.Spec.API.Image.Tag
+	if strings.HasPrefix(tag, "@") {
+		return repository + tag
 	}
-	return defaults.DefaultOperandTag
+	return fmt.Sprintf("%s:%s", repository, tag)
 }
 
 func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {
@@ -141,6 +144,9 @@ func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {
 		Provider: tamoss.Spec.Auth.Provider(),
 	}
 	if status.Provider == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
+		if auth := tamoss.Spec.Auth.AuthentikBlueprints; auth != nil {
+			status.PlatformNamespace = auth.PlatformNamespace
+		}
 		status.ApplicationSlug = tamoss.Spec.Auth.ApplicationSlug(tamoss.Namespace, tamoss.Name)
 		status.ManagedBlueprint = authentik.ManagedBlueprintName(tamoss)
 	}
@@ -148,16 +154,23 @@ func authStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.AuthStatus {
 }
 
 func endpointStatus(tamoss *tamossv1alpha1.Tamoss) tamossv1alpha1.EndpointStatus {
+	publicUIURL := strings.TrimSuffix(strings.TrimSpace(tamoss.Spec.PublicEndpoint.UIURL), "/")
 	if tamoss.Spec.HTTPRoute.Enabled {
+		if publicUIURL == "" {
+			publicUIURL = firstHostnameURL(tamoss.Spec.HTTPRoute.UI.Hostnames, "https")
+		}
 		return tamossv1alpha1.EndpointStatus{
 			API: firstHostnameURL(tamoss.Spec.HTTPRoute.API.Hostnames, "https"),
-			UI:  firstHostnameURL(tamoss.Spec.HTTPRoute.UI.Hostnames, "https"),
+			UI:  publicUIURL,
 		}
 	}
 	if tamoss.Spec.Ingress.IsEnabled() {
+		if publicUIURL == "" {
+			publicUIURL = ingressURL(tamoss.Spec.Ingress.UI.Web.Host, len(tamoss.Spec.Ingress.TLS) > 0)
+		}
 		return tamossv1alpha1.EndpointStatus{
 			API: ingressURL(tamoss.Spec.Ingress.API.Host, len(tamoss.Spec.Ingress.TLS) > 0),
-			UI:  ingressURL(tamoss.Spec.Ingress.UI.Web.Host, len(tamoss.Spec.Ingress.TLS) > 0),
+			UI:  publicUIURL,
 		}
 	}
 	return tamossv1alpha1.EndpointStatus{}

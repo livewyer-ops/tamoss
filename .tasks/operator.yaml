@@ -5,9 +5,9 @@ set: [errexit, nounset, pipefail]
 vars:
   PROFILE: '{{default "local-kind" (default (env "PROFILE") .PROFILE)}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
-  SCHEMA_VERSION: '{{default .VERSION (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
-  TAMS_API_VERSION: '{{default "8.1" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
-  OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
+  TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
+  OPERAND_VERSION: '{{default "dev" (default (env "OPERAND_VERSION") .OPERAND_VERSION)}}'
+  OPERATOR_INSTALL_DIR: '{{default "deploy/operator" .OPERATOR_KUSTOMIZE_DIR}}'
   PLATFORM_DEPENDENCIES_FILE: '{{default "deploy/platform/dependencies.yaml" .PLATFORM_DEPENDENCIES_FILE}}'
   OPERATOR_NAMESPACE: '{{default "tamoss-system" .OPERATOR_NAMESPACE}}'
   OPERATOR_DEPLOYMENT: '{{default "operator-controller-manager" .OPERATOR_DEPLOYMENT}}'
@@ -24,6 +24,8 @@ vars:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector nightly'
   CHAINSAW_RELEASE_SELECTOR:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector release'
+  CHAINSAW_MANAGED_SELECTOR:
+    sh: 'python3 .tasks/lib/chainsaw_labels.py selector managed'
   CHAINSAW_DEPLOYED_SELECTOR:
     sh: 'python3 .tasks/lib/chainsaw_labels.py selector deployed'
 
@@ -38,13 +40,16 @@ tasks:
     silent: true
     vars:
       OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+      SCHEMA_VERSION: '{{default .VERSION (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+      PREVIOUS_SCHEMA_VERSION: '{{default "" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
+      OPERAND_VERSION: '{{default "dev" .OPERAND_VERSION}}'
       STEP_LABEL: '{{default "Operator: build image" .STEP_LABEL}}'
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/progress.sh
         task_step "{{.STEP_LABEL}}" \
-          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}"
+          make -C operator docker-build IMG="{{.OPERATOR_IMAGE}}" VERSION="{{.VERSION}}" SCHEMA_VERSION="{{.SCHEMA_VERSION}}" PREVIOUS_SCHEMA_VERSION="{{.PREVIOUS_SCHEMA_VERSION}}" TAMS_API_VERSION="{{.TAMS_API_VERSION}}" OPERAND_VERSION="{{.OPERAND_VERSION}}"
 
   test:
     desc: "Operator: run unit and envtest suites"
@@ -113,7 +118,7 @@ tasks:
       # concurrent tests would interfere with each other's operator state.
       CHAINSAW_PARALLEL: '{{default "1" .CHAINSAW_PARALLEL}}'
       CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
-      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=kind" .CHAINSAW_SELECTOR}}'
+      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=kind,test.tamoss.io/platform!=managed" .CHAINSAW_SELECTOR}}'
     cmds:
       - |
         set -euo pipefail
@@ -131,7 +136,8 @@ tasks:
           --report-name junit-operator-chainsaw \
           --report-format JUNIT-TEST \
           --report-path "{{.REPORT_PATH}}" \
-          --parallel "{{.CHAINSAW_PARALLEL}}"
+          --parallel "{{.CHAINSAW_PARALLEL}}" \
+          --set-string "schemaVersion={{.SCHEMA_VERSION}}"
         if [ -n "{{.CHAINSAW_SELECTOR}}" ]; then
           set -- "$@" --selector "{{.CHAINSAW_SELECTOR}}"
         fi
@@ -149,30 +155,6 @@ tasks:
         printf 'test operator.chainsaw.labels\n'
         CHAINSAW_ALLOWED_PROFILES="$(task_profiles_list)" \
           python3 .tasks/lib/chainsaw_labels.py validate operator/test/chainsaw
-
-  e2e:chainsaw:render:
-    silent: true
-    vars:
-      CHAINSAW_BIN: '{{default "chainsaw" .CHAINSAW_BIN}}'
-      CHAINSAW_TESTS: '{{default "operator/test/chainsaw" .CHAINSAW_TESTS}}'
-      REPORT_PATH: '{{default "reports" .REPORT_PATH}}'
-      CHAINSAW_SELECTOR: '{{default "test.tamoss.io/target=render" .CHAINSAW_SELECTOR}}'
-    cmds:
-      - task: e2e:chainsaw:labels
-      - |
-        set -euo pipefail
-        . .tasks/lib/progress.sh
-        mkdir -p "{{.REPORT_PATH}}"
-        printf 'test operator.chainsaw.render\n'
-        CHAINSAW_CMD="$(task_resolve_aqua_binary "{{.CHAINSAW_BIN}}")"
-        set -- test "{{.CHAINSAW_TESTS}}" \
-          --config operator/test/chainsaw/configuration.yaml \
-          --report-name junit-operator-chainsaw-render \
-          --report-format JUNIT-TEST \
-          --report-path "{{.REPORT_PATH}}" \
-          --no-cluster \
-          --selector "{{.CHAINSAW_SELECTOR}}"
-        ${CHAINSAW_CMD} "$@" {{.CLI_ARGS}}
 
   e2e:chainsaw:smoke:
     silent: true
@@ -264,12 +246,15 @@ tasks:
         msg: "helmfile required"
     vars:
       CHAINSAW_CLUSTER_NAME: '{{default "tamoss-chainsaw" .CHAINSAW_CLUSTER_NAME}}'
+      SCHEMA_VERSION: '{{default .VERSION (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+      PREVIOUS_SCHEMA_VERSION: '{{default "" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
       KUBECONFIG: '{{default ".local/chainsaw.kubeconfig" .KUBECONFIG}}'
       OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:chainsaw" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
       API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
       CHAINSAW_SELECTOR: '{{default "" .CHAINSAW_SELECTOR}}'
       CHAINSAW_EXTRA_ARGS: '{{default "" .CHAINSAW_EXTRA_ARGS}}'
       CHAINSAW_TASK_ARGS: '{{default "" .CHAINSAW_TASK_ARGS}}'
+      CHAINSAW_REPORT_PATH: '{{default "reports" .CHAINSAW_REPORT_PATH}}'
       CHAINSAW_KEEP_CLUSTER: '{{default "" .CHAINSAW_KEEP_CLUSTER}}'
       CHAINSAW_INSTALL_RUSTFS_OPERATOR: '{{default "" .CHAINSAW_INSTALL_RUSTFS_OPERATOR}}'
       CHAINSAW_INSTALL_CNPG_OPERATOR: '{{default "" .CHAINSAW_INSTALL_CNPG_OPERATOR}}'
@@ -280,9 +265,14 @@ tasks:
       OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       API_IMAGE: "{{.API_IMAGE}}"
       VERSION: "{{.VERSION}}"
+      SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
+      PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
+      TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
+      OPERAND_VERSION: "{{.OPERAND_VERSION}}"
       CHAINSAW_SELECTOR: "{{.CHAINSAW_SELECTOR}}"
       CHAINSAW_EXTRA_ARGS: "{{.CHAINSAW_EXTRA_ARGS}}"
       CHAINSAW_TASK_ARGS: "{{.CHAINSAW_TASK_ARGS}}"
+      CHAINSAW_REPORT_PATH: "{{.CHAINSAW_REPORT_PATH}}"
       CHAINSAW_KEEP_CLUSTER: "{{.CHAINSAW_KEEP_CLUSTER}}"
       CHAINSAW_INSTALL_RUSTFS_OPERATOR: "{{.CHAINSAW_INSTALL_RUSTFS_OPERATOR}}"
       CHAINSAW_INSTALL_CNPG_OPERATOR: "{{.CHAINSAW_INSTALL_CNPG_OPERATOR}}"
@@ -306,6 +296,28 @@ tasks:
       - task: e2e:chainsaw:up
         vars:
           CHAINSAW_SELECTOR: "{{.CHAINSAW_SMOKE_SELECTOR}}"
+
+  e2e:chainsaw:managed:up:
+    desc: "Operator: qualify populated upgrades with managed PostgreSQL and RustFS"
+    silent: true
+    vars:
+      SCHEMA_VERSION:
+        sh: jq -er '.releases[-1].schemaRevision' operator/compatibility.yaml
+      PREVIOUS_SCHEMA_VERSION:
+        sh: jq -er '.releases as $releases | $releases[-1].upgrade.from[0] as $previous | $releases[] | select(.version == $previous) | .schemaRevision' operator/compatibility.yaml
+    cmds:
+      - task: e2e:chainsaw:labels
+      - task: e2e:chainsaw:up
+        vars:
+          CHAINSAW_CLUSTER_NAME: '{{default "tamoss-managed-upgrade" .CHAINSAW_CLUSTER_NAME}}'
+          KUBECONFIG: "{{.KUBECONFIG}}"
+          CHAINSAW_INSTALL_CNPG_OPERATOR: "true"
+          CHAINSAW_INSTALL_RUSTFS_OPERATOR: "true"
+          CHAINSAW_SELECTOR: "{{.CHAINSAW_MANAGED_SELECTOR}}"
+          SCHEMA_VERSION: "{{.SCHEMA_VERSION}}"
+          PREVIOUS_SCHEMA_VERSION: "{{.PREVIOUS_SCHEMA_VERSION}}"
+          CHAINSAW_REPORT_PATH: reports/managed-upgrade
+          CHAINSAW_KEEP_CLUSTER: '{{default "false" .CHAINSAW_KEEP_CLUSTER}}'
 
   install-manifest:
     silent: true
@@ -337,13 +349,13 @@ tasks:
     preconditions:
       - sh: command -v kubectl
         msg: "kubectl required"
-      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
-        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+      - sh: test -d "{{.OPERATOR_INSTALL_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_INSTALL_DIR}} not found"
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/operator_k8s.sh
-        task_apply_operator "{{.KUBECONFIG}}" "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        task_apply_operator "{{.KUBECONFIG}}" "{{.OPERATOR_INSTALL_DIR}}"
       - task: wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -371,13 +383,13 @@ tasks:
     preconditions:
       - sh: command -v kubectl
         msg: "kubectl required"
-      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
-        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+      - sh: test -d "{{.OPERATOR_INSTALL_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_INSTALL_DIR}} not found"
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/operator_k8s.sh
-        task_render_operator_kustomize "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        task_render_operator_kustomize "{{.OPERATOR_INSTALL_DIR}}"
 
   monitoring:template:
     silent: true
@@ -399,6 +411,8 @@ tasks:
         msg: "kubectl required"
       - sh: command -v rg
         msg: "rg required"
+      - sh: command -v yq
+        msg: "yq required"
     cmds:
       - |
         set -euo pipefail
@@ -414,8 +428,10 @@ tasks:
           exit 1
         fi
         rg -q '^#- \.\./prometheus$' operator/config/default/kustomization.yaml
-        rg -q '^kind: ServiceMonitor$' "$monitoring_rendered"
-        rg -q '^kind: PrometheusRule$' "$monitoring_rendered"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1")] | length' "$base_rendered")" = "0"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1" and .kind == "ServiceMonitor")] | length' "$monitoring_rendered")" = "1"
+        test "$(yq ea '[select(.apiVersion == "monitoring.coreos.com/v1" and .kind == "PrometheusRule")] | length' "$monitoring_rendered")" = "1"
+        test "$(yq ea '[select(.kind == "PrometheusRule") | .spec.groups[].rules[] | select(.alert == "TAMOSSReconcileErrors")] | length' "$monitoring_rendered")" = "1"
         rg -Fq 'tamoss_schema_migrations_total{result="failed"}' "$monitoring_rendered"
         rg -Fq 'tamoss_reconcile_phase_count' "$monitoring_rendered"
         rg -Fq 'tamoss_operator_schema_version' "$monitoring_rendered"
@@ -488,13 +504,13 @@ tasks:
     preconditions:
       - sh: command -v kubectl
         msg: "kubectl required"
-      - sh: test -d "{{.OPERATOR_KUSTOMIZE_DIR}}"
-        msg: "operator kustomize dir {{.OPERATOR_KUSTOMIZE_DIR}} not found"
+      - sh: test -d "{{.OPERATOR_INSTALL_DIR}}"
+        msg: "operator kustomize dir {{.OPERATOR_INSTALL_DIR}} not found"
     cmds:
       - |
         set -euo pipefail
         . .tasks/lib/operator_k8s.sh
-        task_uninstall_operator "{{.KUBECONFIG}}" "{{.OPERATOR_KUSTOMIZE_DIR}}"
+        task_uninstall_operator "{{.KUBECONFIG}}" "{{.OPERATOR_INSTALL_DIR}}"
 
   instance:apply:
     silent: true

@@ -3,6 +3,7 @@ kind: Tamoss
 metadata:
   name: tamoss
 spec:
+  version: dev
   fullnameOverride: tamoss
   secrets:
     apiToken:

@@ -68,3 +68,29 @@ func TestAuthSpecAllowsUnscopedOAuth2FullAccessDefault(t *testing.T) {
 		t.Fatal("expected explicit OAuth2 unscoped access policy false to be preserved")
 	}
 }
+
+func TestConsoleEnablementIsExplicit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		ui      *bool
+		console *bool
+		want    bool
+	}{
+		{name: "defaults off", want: false},
+		{name: "follows disabled UI", ui: ptr.To(false), want: false},
+		{name: "explicitly disabled", console: ptr.To(false), want: false},
+		{name: "explicitly enabled", ui: ptr.To(false), console: ptr.To(true), want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spec := TamossSpec{
+				UI:      UIComponentSpec{Enabled: test.ui},
+				Console: ConsoleComponentSpec{Enabled: test.console},
+			}
+			if got := spec.ConsoleEnabled(); got != test.want {
+				t.Fatalf("ConsoleEnabled() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}

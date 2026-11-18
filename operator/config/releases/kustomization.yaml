@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+- name: release-catalogue
+  files:
+  - catalogue.json
+  options:
+    immutable: true

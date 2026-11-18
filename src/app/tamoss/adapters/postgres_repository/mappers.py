@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from mediatimestamp import TimeRange, Timestamp
+from mediatimestamp import Timestamp
 from psycopg.types.json import Jsonb
 
 from tamoss.adapters.postgres_repository.types import (
@@ -32,7 +33,7 @@ from tamoss.domain.model import (
     WebhookDeliveryRecord,
     WebhookRecord,
 )
-from tamoss.domain.timeranges import finite_normalized_timerange_bounds
+from tamoss.domain.timeranges import finite_normalized_timerange_bounds, parse_timerange
 from tamoss.errors import normalize_error_payload
 
 
@@ -52,6 +53,7 @@ def _storage_backend_from_record(
         bucket_name=record.get("bucket_name"),
         endpoint_url=record.get("endpoint_url"),
         public_endpoint_url=record.get("public_endpoint_url"),
+        tags=dict(record.get("tags") or {}),
     )
     if configured_storage_backend.id == backend.id or (
         backend.endpoint_url is not None
@@ -77,6 +79,9 @@ def _flow_from_record(record: FlowRow) -> FlowRecord:
         source_id=_optional_uuid(record.get("source_id")),
         format=record.get("format"),
         container=record.get("container"),
+        profile_id=_optional_uuid(record.get("profile_id")),
+        status=record.get("status"),
+        init_segments=bool(record.get("init_segments", False)),
         read_only=bool(record.get("read_only", False)),
         tags=dict(record.get("tags") or {}),
         created=_datetime_from_record(record.get("created")),
@@ -93,6 +98,7 @@ def _media_object_from_record(
     return MediaObjectRecord(
         id=record["id"],
         timerange=record.get("timerange"),
+        init_object_id=record.get("init_object_id"),
         first_referenced_by_flow=_optional_uuid(record.get("first_referenced_by_flow")),
         allocated_by_flow=_optional_uuid(record.get("allocated_by_flow")),
         referenced_by_flows={
@@ -107,6 +113,8 @@ def _media_object_from_record(
         ],
         key_frame_count=record.get("key_frame_count"),
         bytes_written=int(record.get("bytes_written") or 0),
+        object_kind=record.get("object_kind") or "unassigned",
+        content_type=record.get("content_type"),
         created=_datetime_from_record(record.get("created")),
     )
 
@@ -140,10 +148,16 @@ def _save_flow(cur: PostgresCursor, flow: FlowRecord) -> None:
             source_id,
             format,
             container,
+            profile_id,
+            status,
+            init_segments,
+            label,
+            flow_collection_ids,
             read_only,
             tags,
             record,
             metadata_updated,
+            created,
             segments_updated,
             updated_at
         )
@@ -152,10 +166,16 @@ def _save_flow(cur: PostgresCursor, flow: FlowRecord) -> None:
             %(source_id)s,
             %(format)s,
             %(container)s,
+            %(profile_id)s,
+            %(status)s,
+            %(init_segments)s,
+            %(label)s,
+            %(flow_collection_ids)s,
             %(read_only)s,
             %(tags)s,
             %(record)s,
             %(metadata_updated)s,
+            %(created)s,
             %(segments_updated)s,
             NOW()
         )
@@ -163,10 +183,16 @@ def _save_flow(cur: PostgresCursor, flow: FlowRecord) -> None:
             source_id = EXCLUDED.source_id,
             format = EXCLUDED.format,
             container = EXCLUDED.container,
+            profile_id = EXCLUDED.profile_id,
+            status = EXCLUDED.status,
+            init_segments = EXCLUDED.init_segments,
+            label = EXCLUDED.label,
+            flow_collection_ids = EXCLUDED.flow_collection_ids,
             read_only = EXCLUDED.read_only,
             tags = EXCLUDED.tags,
             record = EXCLUDED.record,
             metadata_updated = EXCLUDED.metadata_updated,
+            created = EXCLUDED.created,
             segments_updated = EXCLUDED.segments_updated,
             updated_at = NOW()
         """,
@@ -175,10 +201,19 @@ def _save_flow(cur: PostgresCursor, flow: FlowRecord) -> None:
             "source_id": flow.source_id,
             "format": flow.format,
             "container": flow.container,
+            "profile_id": flow.profile_id,
+            "status": flow.status,
+            "init_segments": flow.init_segments,
+            "label": flow.data.get("label"),
+            "flow_collection_ids": [
+                UUID(str(item["id"]))
+                for item in (flow.data.get("flow_collection") or [])
+            ],
             "read_only": flow.read_only,
             "tags": Jsonb(flow.tags),
             "record": Jsonb(record),
             "metadata_updated": flow.metadata_updated,
+            "created": flow.created,
             "segments_updated": flow.segments_updated,
         },
     )
@@ -192,6 +227,8 @@ def _save_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> None:
             id,
             first_referenced_by_flow,
             referenced_by_flows,
+            object_kind,
+            content_type,
             record,
             updated_at
         )
@@ -199,12 +236,16 @@ def _save_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> None:
             %(id)s,
             %(first_referenced_by_flow)s,
             %(referenced_by_flows)s,
+            %(object_kind)s,
+            %(content_type)s,
             %(record)s,
             NOW()
         )
         ON CONFLICT (id) DO UPDATE SET
             first_referenced_by_flow = EXCLUDED.first_referenced_by_flow,
             referenced_by_flows = EXCLUDED.referenced_by_flows,
+            object_kind = EXCLUDED.object_kind,
+            content_type = EXCLUDED.content_type,
             record = EXCLUDED.record,
             updated_at = NOW()
         """,
@@ -214,6 +255,8 @@ def _save_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> None:
             "referenced_by_flows": [
                 str(flow_id) for flow_id in media_object.referenced_by_flows
             ],
+            "object_kind": media_object.object_kind,
+            "content_type": media_object.content_type,
             "record": Jsonb(record),
         },
     )
@@ -230,6 +273,8 @@ def _save_objects(
             id,
             first_referenced_by_flow,
             referenced_by_flows,
+            object_kind,
+            content_type,
             record,
             updated_at
         )
@@ -237,12 +282,16 @@ def _save_objects(
             %(id)s,
             %(first_referenced_by_flow)s,
             %(referenced_by_flows)s,
+            %(object_kind)s,
+            %(content_type)s,
             %(record)s,
             NOW()
         )
         ON CONFLICT (id) DO UPDATE SET
             first_referenced_by_flow = EXCLUDED.first_referenced_by_flow,
             referenced_by_flows = EXCLUDED.referenced_by_flows,
+            object_kind = EXCLUDED.object_kind,
+            content_type = EXCLUDED.content_type,
             record = EXCLUDED.record,
             updated_at = NOW()
         """,
@@ -253,44 +302,13 @@ def _save_objects(
                 "referenced_by_flows": [
                     str(flow_id) for flow_id in media_object.referenced_by_flows
                 ],
+                "object_kind": media_object.object_kind,
+                "content_type": media_object.content_type,
                 "record": Jsonb(_media_object_to_record(media_object)),
             }
             for media_object in media_objects
         ],
     )
-
-
-def _create_object(cur: PostgresCursor, media_object: MediaObjectRecord) -> bool:
-    record = _media_object_to_record(media_object)
-    cur.execute(
-        """
-        INSERT INTO tamoss_media_objects (
-            id,
-            first_referenced_by_flow,
-            referenced_by_flows,
-            record,
-            updated_at
-        )
-        VALUES (
-            %(id)s,
-            %(first_referenced_by_flow)s,
-            %(referenced_by_flows)s,
-            %(record)s,
-            NOW()
-        )
-        ON CONFLICT (id) DO NOTHING
-        RETURNING id
-        """,
-        {
-            "id": media_object.id,
-            "first_referenced_by_flow": media_object.first_referenced_by_flow,
-            "referenced_by_flows": [
-                str(flow_id) for flow_id in media_object.referenced_by_flows
-            ],
-            "record": Jsonb(record),
-        },
-    )
-    return cur.fetchone() is not None
 
 
 def _create_objects(
@@ -304,6 +322,8 @@ def _create_objects(
             id,
             first_referenced_by_flow,
             referenced_by_flows,
+            object_kind,
+            content_type,
             record,
             updated_at
         )
@@ -311,14 +331,25 @@ def _create_objects(
             new_object.id,
             new_object.first_referenced_by_flow,
             ARRAY(SELECT jsonb_array_elements_text(new_object.referenced_by_flows)),
+            new_object.object_kind,
+            new_object.content_type,
             new_object.record,
             NOW()
         FROM unnest(
             %(ids)s::text[],
             %(first_referenced_by_flows)s::uuid[],
             %(referenced_by_flows)s::jsonb[],
+            %(object_kinds)s::text[],
+            %(content_types)s::text[],
             %(records)s::jsonb[]
-        ) AS new_object(id, first_referenced_by_flow, referenced_by_flows, record)
+        ) AS new_object(
+            id,
+            first_referenced_by_flow,
+            referenced_by_flows,
+            object_kind,
+            content_type,
+            record
+        )
         ON CONFLICT (id) DO NOTHING
         RETURNING id
         """,
@@ -330,6 +361,12 @@ def _create_objects(
             "referenced_by_flows": [
                 Jsonb([str(flow_id) for flow_id in media_object.referenced_by_flows])
                 for media_object in media_objects
+            ],
+            "object_kinds": [
+                media_object.object_kind for media_object in media_objects
+            ],
+            "content_types": [
+                media_object.content_type for media_object in media_objects
             ],
             "records": [
                 Jsonb(_media_object_to_record(media_object))
@@ -347,54 +384,19 @@ def _lock_flow_segments(cur: PostgresCursor, flow_id: UUID) -> None:
     )
 
 
-def _append_segment(
-    cur: PostgresCursor, segment: SegmentRecord, *, reject_overlaps: bool = False
-) -> None:
-    record = _segment_to_record(segment)
-    timerange_start, timerange_end = _timerange_bounds(segment.timerange)
-    if reject_overlaps:
-        _raise_if_segment_overlaps(
-            cur,
-            flow_id=segment.flow_id,
-            timerange_start=timerange_start,
-            timerange_end=timerange_end,
+def _lock_media_objects(cur: PostgresCursor, object_ids: Iterable[str]) -> None:
+    # Advisory locks also serialize registrations for object IDs whose rows do
+    # not exist yet. Sorting establishes one global order for multi-object
+    # batches, while FOR UPDATE makes other writers of existing rows wait too.
+    for object_id in sorted(set(object_ids)):
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"tamoss_media_objects:{object_id}",),
         )
-    cur.execute(
-        """
-        INSERT INTO tamoss_segments (
-            flow_id,
-            object_id,
-            timerange,
-            timerange_start,
-            timerange_end,
-            record,
-            created
+        cur.execute(
+            "SELECT id FROM tamoss_media_objects WHERE id = %s FOR UPDATE",
+            (object_id,),
         )
-        VALUES (
-            %(flow_id)s,
-            %(object_id)s,
-            %(timerange)s,
-            %(timerange_start)s,
-            %(timerange_end)s,
-            %(record)s,
-            %(created)s
-        )
-        ON CONFLICT (flow_id, object_id, timerange) DO UPDATE SET
-            timerange_start = EXCLUDED.timerange_start,
-            timerange_end = EXCLUDED.timerange_end,
-            record = EXCLUDED.record,
-            updated_at = NOW()
-        """,
-        {
-            "flow_id": segment.flow_id,
-            "object_id": segment.object_id,
-            "timerange": segment.timerange,
-            "timerange_start": timerange_start,
-            "timerange_end": timerange_end,
-            "record": Jsonb(record),
-            "created": segment.created,
-        },
-    )
 
 
 def _append_segments(
@@ -416,6 +418,7 @@ def _append_segments(
             {
                 "flow_id": segment.flow_id,
                 "object_id": segment.object_id,
+                "init_object_id": segment.init_object_id,
                 "timerange": segment.timerange,
                 "timerange_start": timerange_start,
                 "timerange_end": timerange_end,
@@ -434,6 +437,7 @@ def _append_segments(
         INSERT INTO tamoss_segments (
             flow_id,
             object_id,
+            init_object_id,
             timerange,
             timerange_start,
             timerange_end,
@@ -443,6 +447,7 @@ def _append_segments(
         VALUES (
             %(flow_id)s,
             %(object_id)s,
+            %(init_object_id)s,
             %(timerange)s,
             %(timerange_start)s,
             %(timerange_end)s,
@@ -450,6 +455,7 @@ def _append_segments(
             %(created)s
         )
         ON CONFLICT (flow_id, object_id, timerange) DO UPDATE SET
+            init_object_id = EXCLUDED.init_object_id,
             timerange_start = EXCLUDED.timerange_start,
             timerange_end = EXCLUDED.timerange_end,
             record = EXCLUDED.record,
@@ -473,8 +479,8 @@ def _raise_if_segments_overlap(
           AND EXISTS (
               SELECT 1
               FROM unnest(
-                  %(starts)s::bigint[],
-                  %(ends)s::bigint[]
+                  %(starts)s::numeric[],
+                  %(ends)s::numeric[]
               ) AS candidate(timerange_start, timerange_end)
               WHERE segment.timerange_start < candidate.timerange_end
                 AND segment.timerange_end > candidate.timerange_start
@@ -485,28 +491,6 @@ def _raise_if_segments_overlap(
             "flow_id": flow_id,
             "starts": [start for start, _ in bounds],
             "ends": [end for _, end in bounds],
-        },
-    )
-    if cur.fetchone() is not None:
-        raise SegmentOverlapError(SEGMENT_OVERLAP_MESSAGE)
-
-
-def _raise_if_segment_overlaps(
-    cur: PostgresCursor, *, flow_id: UUID, timerange_start: int, timerange_end: int
-) -> None:
-    cur.execute(
-        """
-        SELECT 1
-        FROM tamoss_segments
-        WHERE flow_id = %(flow_id)s
-          AND timerange_start < %(timerange_end)s
-          AND timerange_end > %(timerange_start)s
-        LIMIT 1
-        """,
-        {
-            "flow_id": flow_id,
-            "timerange_start": timerange_start,
-            "timerange_end": timerange_end,
         },
     )
     if cur.fetchone() is not None:
@@ -525,6 +509,7 @@ def _storage_backend_to_record(backend: StorageBackend) -> JsonRecord:
         "bucket_name": backend.bucket_name,
         "endpoint_url": backend.endpoint_url,
         "public_endpoint_url": backend.public_endpoint_url,
+        "tags": backend.tags,
     }
 
 
@@ -559,6 +544,9 @@ def _flow_to_record(flow: FlowRecord) -> JsonRecord:
         "source_id": str(flow.source_id) if flow.source_id else None,
         "format": flow.format,
         "container": flow.container,
+        "profile_id": str(flow.profile_id) if flow.profile_id else None,
+        "status": flow.status,
+        "init_segments": flow.init_segments,
         "read_only": flow.read_only,
         "tags": flow.tags,
         "created": flow.created.isoformat(),
@@ -573,6 +561,7 @@ def _media_object_to_record(media_object: MediaObjectRecord) -> JsonRecord:
     return {
         "id": media_object.id,
         "timerange": media_object.timerange,
+        "init_object_id": media_object.init_object_id,
         "first_referenced_by_flow": str(media_object.first_referenced_by_flow)
         if media_object.first_referenced_by_flow
         else None,
@@ -588,6 +577,8 @@ def _media_object_to_record(media_object: MediaObjectRecord) -> JsonRecord:
         ],
         "key_frame_count": media_object.key_frame_count,
         "bytes_written": media_object.bytes_written,
+        "object_kind": media_object.object_kind,
+        "content_type": media_object.content_type,
         "created": media_object.created.isoformat(),
     }
 
@@ -608,6 +599,7 @@ def _segment_to_record(segment: SegmentRecord) -> JsonRecord:
     return {
         "flow_id": str(segment.flow_id),
         "object_id": segment.object_id,
+        "init_object_id": segment.init_object_id,
         "timerange": segment.timerange,
         "ts_offset": segment.ts_offset,
         "last_duration": segment.last_duration,
@@ -624,6 +616,7 @@ def _segment_from_record(record: JsonRecord) -> SegmentRecord:
         flow_id=UUID(record["flow_id"]),
         object_id=record["object_id"],
         timerange=record["timerange"],
+        init_object_id=record.get("init_object_id"),
         ts_offset=record.get("ts_offset"),
         last_duration=record.get("last_duration"),
         object_timerange=record.get("object_timerange"),
@@ -678,6 +671,7 @@ def _webhook_delivery_from_row(row: DatabaseRow) -> WebhookDeliveryRecord:
     delivery.status = row[1]
     delivery.next_attempt_at = _optional_datetime_from_record(row[2])
     delivery.claimed_at = _optional_datetime_from_record(row[3])
+    delivery.claim_token = delivery.claimed_at
     delivery.claimed_by = row[4]
     delivery.claim_expires_at = _optional_datetime_from_record(row[5])
     return delivery
@@ -724,6 +718,7 @@ def _delete_request_from_row(row: DatabaseRow) -> DeletionRequestRecord:
     request.status = row[1]
     request.updated = _datetime_from_record(row[2])
     request.claimed_at = _optional_datetime_from_record(row[3])
+    request.claim_token = request.claimed_at
     request.claimed_by = row[4]
     request.claim_expires_at = _optional_datetime_from_record(row[5])
     return request
@@ -765,6 +760,7 @@ def _object_cleanup_from_row(row: DatabaseRow) -> ObjectCleanupRecord:
     cleanup.status = row[1]
     cleanup.updated = _datetime_from_record(row[2])
     cleanup.claimed_at = _optional_datetime_from_record(row[3])
+    cleanup.claim_token = cleanup.claimed_at
     cleanup.claimed_by = row[4]
     cleanup.claim_expires_at = _optional_datetime_from_record(row[5])
     return cleanup
@@ -788,6 +784,9 @@ def _object_copy_to_record(copy: ObjectCopyRecord) -> JsonRecord:
     return {
         "id": str(copy.id),
         "object_id": copy.object_id,
+        "object_created": copy.object_created.isoformat()
+        if copy.object_created
+        else None,
         "source_storage_backend_id": str(copy.source_storage_backend_id),
         "destination_storage_backend_id": str(copy.destination_storage_backend_id),
         "status": copy.status,
@@ -803,6 +802,7 @@ def _object_copy_from_row(row: DatabaseRow) -> ObjectCopyRecord:
     copy.status = row[1]
     copy.updated = _datetime_from_record(row[2])
     copy.claimed_at = _optional_datetime_from_record(row[3])
+    copy.claim_token = copy.claimed_at
     copy.claimed_by = row[4]
     copy.claim_expires_at = _optional_datetime_from_record(row[5])
     return copy
@@ -812,6 +812,7 @@ def _object_copy_from_record(record: JsonRecord) -> ObjectCopyRecord:
     return ObjectCopyRecord(
         id=UUID(record["id"]),
         object_id=record["object_id"],
+        object_created=_optional_datetime_from_record(record.get("object_created")),
         source_storage_backend_id=UUID(record["source_storage_backend_id"]),
         destination_storage_backend_id=UUID(record["destination_storage_backend_id"]),
         status=record["status"],
@@ -852,7 +853,7 @@ def _optional_datetime_from_record(value: Any) -> datetime | None:
 
 def _timerange_bounds(timerange: str) -> tuple[int, int]:
     try:
-        parsed = TimeRange.from_str(timerange)
+        parsed = parse_timerange(timerange)
     except Exception as exc:
         raise ValueError("Segment timerange is invalid.") from exc
     try:
@@ -868,11 +869,13 @@ def _timerange_bounds(timerange: str) -> tuple[int, int]:
     return bounds.start, bounds.end
 
 
-def _timerange_from_bounds(start: int | None, end: int | None) -> str:
+def _timerange_from_bounds(
+    start: int | Decimal | None, end: int | Decimal | None
+) -> str:
     if start is None or end is None:
         return "()"
-    start_ts = Timestamp.from_nanosec(start)
-    end_ts = Timestamp.from_nanosec(end)
+    start_ts = Timestamp.from_nanosec(int(start))
+    end_ts = Timestamp.from_nanosec(int(end))
     if start == end:
         return f"[{start_ts}]"
     return f"[{start_ts}_{end_ts})"

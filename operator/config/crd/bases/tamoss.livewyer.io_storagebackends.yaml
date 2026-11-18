@@ -60,6 +60,13 @@ spec:
               bucketName:
                 minLength: 1
                 type: string
+              credentialSource:
+                description: CredentialSource defaults to Secret credentials when
+                  omitted.
+                enum:
+                - secret
+                - web-identity
+                type: string
               credentials:
                 properties:
                   existingSecret:
@@ -147,6 +154,13 @@ spec:
                 default: http_object_store
                 minLength: 1
                 type: string
+              tags:
+                additionalProperties:
+                  x-kubernetes-preserve-unknown-fields: true
+                description: |-
+                  Tags are read-only TAMS metadata clients can use for storage selection.
+                  Each value is either a string or an array of strings, matching the TAMS API.
+                type: object
               tamossRef:
                 description: TamossRef identifies the Tamoss instance that owns the
                   TAMS database registration.
@@ -191,6 +205,15 @@ spec:
                 > 0)
             - message: hibernate StorageBackends must use provider external-s3
               rule: self.usage != 'hibernate' || self.provider == 'external-s3'
+            - message: web-identity requires the default external S3 media backend
+                and its runtime ID
+              rule: '!has(self.credentialSource) || self.credentialSource != ''web-identity''
+                || (self.provider == ''external-s3'' && self.usage == ''media'' &&
+                self.defaultStorage && has(self.id) && self.id == ''f1ab5b54-9703-42ed-b181-11ba1c794a7f'')'
+            - message: web-identity must not reference a credentials Secret
+              rule: '!has(self.credentialSource) || self.credentialSource != ''web-identity''
+                || !has(self.credentials) || !has(self.credentials.existingSecret)
+                || self.credentials.existingSecret.size() == 0'
             - message: hibernate.retention.ttlSecondsAfterResume is required when
                 retention mode is TTL
               rule: '!has(self.hibernate) || !has(self.hibernate.retention) || !has(self.hibernate.retention.mode)

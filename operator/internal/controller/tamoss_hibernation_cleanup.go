@@ -78,7 +78,27 @@ func (r *TamossReconciler) restoredDatabaseReady(ctx context.Context, tamoss *ta
 // completion time is recorded first so a crash between recording and
 // deleting can never lose the fact that the artifact was consumed.
 func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (ctrl.Result, error) {
-	restore := tamoss.Status.Lifecycle.ResolvedRestore
+	var result ctrl.Result
+	if restore := tamoss.Status.Lifecycle.ResolvedRestore; restore != nil {
+		var err error
+		result, err = r.reconcileArtifactRetention(ctx, tamoss, &restore.HibernationArtifactRetention)
+		if err != nil {
+			return result, err
+		}
+	}
+	for _, restore := range tamoss.Status.Lifecycle.PendingArtifactCleanups {
+		pending, err := r.reconcileArtifactRetention(ctx, tamoss, &restore)
+		if err != nil {
+			return result, err
+		}
+		if pending.RequeueAfter > 0 && (result.RequeueAfter == 0 || pending.RequeueAfter < result.RequeueAfter) {
+			result.RequeueAfter = pending.RequeueAfter
+		}
+	}
+	return result, nil
+}
+
+func (r *TamossReconciler) reconcileArtifactRetention(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, restore *tamossv1alpha1.HibernationArtifactRetention) (ctrl.Result, error) {
 	if restore == nil || hibernationArtifactCleanupTerminal(restore.Cleanup.Phase) {
 		return ctrl.Result{}, nil
 	}
@@ -117,7 +137,7 @@ func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context,
 	err := r.Client.Get(ctx, types.NamespacedName{Name: restore.StorageBackendName, Namespace: tamoss.Namespace}, storageBackend)
 	switch {
 	case apierrors.IsNotFound(err):
-		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss,
+		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore,
 			blockedArtifactCleanup(fmt.Sprintf("Artifact StorageBackend %s was not found for cleanup", restore.StorageBackendName)))
 	case err != nil:
 		return ctrl.Result{}, err
@@ -125,13 +145,13 @@ func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context,
 	spec := storageBackend.Spec
 	spec.ApplyDefaults(storageBackend.Namespace, storageBackend.Name)
 	if !spec.IsHibernateDestination() || !spec.IsExternalObjectStore() {
-		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss,
+		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore,
 			blockedArtifactCleanup(fmt.Sprintf("Artifact StorageBackend %s must be an external-s3 hibernate destination for cleanup", storageBackend.Name)))
 	}
 
 	switch spec.Hibernate.Retention.Mode {
 	case "", tamossv1alpha1.HibernationRetentionModeRetain:
-		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, tamossv1alpha1.HibernationArtifactCleanupStatus{
+		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore, tamossv1alpha1.HibernationArtifactCleanupStatus{
 			Phase:   string(tamossv1alpha1.HibernationArtifactCleanupPhaseRetained),
 			Reason:  operatorstatus.ReasonArtifactCleanupRetained,
 			Message: "Hibernation artifact retained by StorageBackend policy",
@@ -140,12 +160,12 @@ func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context,
 		return r.deleteResumeArtifact(ctx, tamoss, storageBackend.Namespace, spec, restore)
 	case tamossv1alpha1.HibernationRetentionModeTTL:
 		if spec.Hibernate.Retention.TTLSecondsAfterResume <= 0 {
-			return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss,
+			return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore,
 				blockedArtifactCleanup("hibernate.retention.ttlSecondsAfterResume must be greater than zero when retention mode is TTL"))
 		}
 		dueAt := restore.ResumedAt.Add(time.Duration(spec.Hibernate.Retention.TTLSecondsAfterResume) * time.Second)
 		if wait := time.Until(dueAt); wait > 0 {
-			err := r.recordArtifactCleanup(ctx, tamoss, tamossv1alpha1.HibernationArtifactCleanupStatus{
+			err := r.recordArtifactCleanup(ctx, tamoss, restore, tamossv1alpha1.HibernationArtifactCleanupStatus{
 				Phase:   string(tamossv1alpha1.HibernationArtifactCleanupPhasePending),
 				Reason:  operatorstatus.ReasonArtifactCleanupPending,
 				Message: fmt.Sprintf("Hibernation artifact cleanup is scheduled for %s", dueAt.UTC().Format(time.RFC3339)),
@@ -154,20 +174,20 @@ func (r *TamossReconciler) reconcileResumeArtifactRetention(ctx context.Context,
 		}
 		return r.deleteResumeArtifact(ctx, tamoss, storageBackend.Namespace, spec, restore)
 	default:
-		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss,
+		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore,
 			blockedArtifactCleanup(fmt.Sprintf("unsupported hibernation retention mode %q", spec.Hibernate.Retention.Mode)))
 	}
 }
 
-func (r *TamossReconciler) deleteResumeArtifact(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, namespace string, spec tamossv1alpha1.StorageBackendSpec, restore *tamossv1alpha1.TamossResolvedRestore) (ctrl.Result, error) {
+func (r *TamossReconciler) deleteResumeArtifact(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, namespace string, spec tamossv1alpha1.StorageBackendSpec, restore *tamossv1alpha1.HibernationArtifactRetention) (ctrl.Result, error) {
 	prefix, err := hibernationArtifactRootPrefix(restore.ManifestKey)
 	if err != nil {
-		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, blockedArtifactCleanup(err.Error()))
+		return ctrl.Result{}, r.recordArtifactCleanup(ctx, tamoss, restore, blockedArtifactCleanup(err.Error()))
 	}
 	objectsDeleted, err := r.artifactCleaner().DeletePrefix(ctx, namespace, spec, prefix)
 	if err != nil {
 		message := fmt.Sprintf("Hibernation artifact cleanup for prefix %s failed, retrying: %v", prefix, err)
-		if recordErr := r.recordArtifactCleanup(ctx, tamoss, tamossv1alpha1.HibernationArtifactCleanupStatus{
+		if recordErr := r.recordArtifactCleanup(ctx, tamoss, restore, tamossv1alpha1.HibernationArtifactCleanupStatus{
 			Phase:   string(tamossv1alpha1.HibernationArtifactCleanupPhasePending),
 			Reason:  operatorstatus.ReasonArtifactCleanupRetrying,
 			Message: message,
@@ -184,7 +204,7 @@ func (r *TamossReconciler) deleteResumeArtifact(ctx context.Context, tamoss *tam
 		ObjectsDeleted: objectsDeleted,
 		CompletedAt:    &now,
 	}
-	if err := r.recordArtifactCleanup(ctx, tamoss, cleanup); err != nil {
+	if err := r.recordArtifactCleanup(ctx, tamoss, restore, cleanup); err != nil {
 		return ctrl.Result{}, err
 	}
 	operatorstatus.EmitNormalEvent(r.Recorder, tamoss, operatorstatus.ReasonArtifactCleanupComplete, cleanup.Message)
@@ -193,16 +213,26 @@ func (r *TamossReconciler) deleteResumeArtifact(ctx context.Context, tamoss *tam
 
 // recordArtifactCleanup persists the cleanup state and emits a warning event
 // once per distinct blocked or retrying condition.
-func (r *TamossReconciler) recordArtifactCleanup(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, cleanup tamossv1alpha1.HibernationArtifactCleanupStatus) error {
-	previous := tamossv1alpha1.HibernationArtifactCleanupStatus{}
-	if tamoss.Status.Lifecycle.ResolvedRestore != nil {
-		previous = tamoss.Status.Lifecycle.ResolvedRestore.Cleanup
-	}
+func (r *TamossReconciler) recordArtifactCleanup(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, restore *tamossv1alpha1.HibernationArtifactRetention, cleanup tamossv1alpha1.HibernationArtifactCleanupStatus) error {
+	previous := restore.Cleanup
 	if err := patchTamossLifecycleStatus(ctx, r.Client, tamoss, func(lifecycle *tamossv1alpha1.TamossLifecycleStatus) {
-		if lifecycle.ResolvedRestore == nil {
+		current := lifecycle.ResolvedRestore
+		if current != nil && current.ManifestKey == restore.ManifestKey && current.StorageBackendName == restore.StorageBackendName {
+			current.Cleanup = cleanup
 			return
 		}
-		lifecycle.ResolvedRestore.Cleanup = cleanup
+		for i := range lifecycle.PendingArtifactCleanups {
+			pending := &lifecycle.PendingArtifactCleanups[i]
+			if pending.ManifestKey != restore.ManifestKey || pending.StorageBackendName != restore.StorageBackendName {
+				continue
+			}
+			if hibernationArtifactCleanupFinished(cleanup.Phase) {
+				lifecycle.PendingArtifactCleanups = append(lifecycle.PendingArtifactCleanups[:i], lifecycle.PendingArtifactCleanups[i+1:]...)
+			} else {
+				pending.Cleanup = cleanup
+			}
+			return
+		}
 	}); err != nil {
 		return err
 	}
@@ -237,6 +267,11 @@ func hibernationArtifactCleanupTerminal(phase string) bool {
 	default:
 		return false
 	}
+}
+
+func hibernationArtifactCleanupFinished(phase string) bool {
+	return phase == string(tamossv1alpha1.HibernationArtifactCleanupPhaseRetained) ||
+		phase == string(tamossv1alpha1.HibernationArtifactCleanupPhaseCompleted)
 }
 
 func hibernationArtifactRootPrefix(manifestKey string) (string, error) {

@@ -25,14 +25,35 @@ spec:
             file: ../../fixtures/assert/postgresql-available.yaml
         - apply:
             file: resources/tamoss-api-bundled.yaml
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: simulates RustFS Tenant readiness because no RustFS controller is running in this contract test.
-              ../../scripts/simulate-rustfs-tenant-ready.sh tamoss-s3 tamoss
+        - assert:
+            file: ../../fixtures/assert/rustfs-tenant-present.yaml
+            timeout: 120s
+        - patch:
+            resource:
+              apiVersion: rustfs.com/v1alpha1
+              kind: Tenant
+              metadata:
+                name: tamoss-s3
+                namespace: ($namespace)
+              status:
+                observedGeneration: 1
+                availableReplicas: 1
+                currentState: Ready
+                pools:
+                  - ssName: tamoss-s3-pool-0
+                    state: Ready
+                conditions:
+                  - type: Ready
+                    status: "True"
+                    reason: Ready
+                    message: Tenant is ready
+            subresource: status
+            timeout: 60s
+        - apply:
+            file: ../../fixtures/rustfs-simulated-statefulset.yaml
+            bindings:
+              - name: tenant
+                value: (x_k8s_get($client, 'rustfs.com/v1alpha1', 'Tenant', $namespace, 'tamoss-s3'))
         - assert:
             file: assert/tamoss-default-ready.yaml
             timeout: 5m
@@ -44,11 +65,18 @@ spec:
 
     - name: ingest through each storage backend
       try:
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: performs API ingest and S3 read-back for each storage backend.
-              ./scripts/ingest-storagebackends.sh
+        - apply:
+            file: resources/ingest-check.yaml
+        - wait:
+            apiVersion: batch/v1
+            kind: Job
+            name: ingest-storagebackends-check
+            timeout: 3m
+            for:
+              condition:
+                name: Complete
+      catch:
+        - podLogs:
+            selector: batch.kubernetes.io/job-name=ingest-storagebackends-check
+            container: check
+            tail: 50

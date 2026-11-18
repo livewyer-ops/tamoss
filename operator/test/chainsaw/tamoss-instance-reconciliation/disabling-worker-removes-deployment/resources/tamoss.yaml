@@ -5,6 +5,7 @@ metadata:
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
+  version: dev
   fullnameOverride: worker-toggle
   secrets:
     apiToken:

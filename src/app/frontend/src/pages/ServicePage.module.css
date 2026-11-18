@@ -1,0 +1,12 @@
+.serviceTitle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.tamsLockup {
+  width: auto;
+  height: 22px;
+  flex: 0 0 auto;
+}

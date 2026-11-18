@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/workload_renderer"
 	operatordiscovery "github.com/livewyer-ops/tamoss/operator/internal/discovery"
 	operatormetrics "github.com/livewyer-ops/tamoss/operator/internal/metrics"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
@@ -37,7 +39,9 @@ const (
 
 	// tamossAppName is the default app.kubernetes.io/name label value for
 	// resources the operator manages.
-	tamossAppName = "tamoss"
+	tamossAppName     = "tamoss"
+	appComponentLabel = "app.kubernetes.io/component"
+	componentAPI      = "api"
 
 	defaultAuthentikProbeInterval         = 30 * time.Second
 	defaultAuthentikRetryGracePeriod      = 10 * time.Minute
@@ -48,6 +52,8 @@ const (
 
 // TamossReconciler reconciles a Tamoss object
 type TamossReconciler struct {
+	Releases                    releases.Catalogue
+	InstanceDefaults            *defaults.Installation
 	Client                      client.Client
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
@@ -70,11 +76,14 @@ type TamossReconciler struct {
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tamoss.livewyer.io,resources=tamosshibernations,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,namespace=system,resources=replicasets;statefulsets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=autoscaling,namespace=system,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,namespace=system,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",namespace=system,resources=configmaps;events;pods;secrets;serviceaccounts;services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=discovery.k8s.io,namespace=system,resources=endpointslices,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,namespace=system,resources=ingresses;networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=policy,namespace=system,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,namespace=system,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=gateway.networking.k8s.io,namespace=system,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=scheduledbackups,verbs=get;list;watch;create;update;patch;delete
@@ -161,7 +170,12 @@ func (r *TamossReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	}
 	recordPhase(tamoss.Status.Phase)
 
-	completion := tamossCompletionResult(tamoss, r.authentikProbeInterval(), r.dependencyProbeInterval())
+	completion := tamossCompletionResult(
+		tamoss,
+		r.authentikProbeInterval(),
+		r.dependencyProbeInterval(),
+		schemaResult.RequeueAfter,
+	)
 	if retention.RequeueAfter > 0 && (completion.RequeueAfter == 0 || retention.RequeueAfter < completion.RequeueAfter) {
 		completion.RequeueAfter = retention.RequeueAfter
 	}
@@ -190,14 +204,25 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		result, err := r.finalizeTamoss(ctx, tamoss)
 		return nil, stopReconcile(result), err
 	}
+	if err := r.validateReleaseState(ctx, tamoss); err != nil {
+		var selection *releases.SelectionError
+		if !errors.As(err, &selection) {
+			return nil, stopReconcileNow(), err
+		}
+		statusErr := r.blockRelease(ctx, tamoss, err)
+		recordPhase(operatorstatus.PhaseDegraded)
+		return nil, stopReconcileNow(), statusErr
+	}
 	original := tamoss.DeepCopy()
 	if controllerutil.AddFinalizer(tamoss, tamossFinalizer) {
 		if err := r.Client.Patch(ctx, tamoss, client.MergeFrom(original)); err != nil {
 			return nil, stopReconcile(ctrl.Result{}), err
 		}
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
+	if err != nil {
+		return nil, stopReconcileNow(), err
+	}
 	if err := r.reconcileHibernationSpec(ctx, resolved); err != nil {
 		return nil, stopReconcile(ctrl.Result{}), err
 	}
@@ -218,6 +243,9 @@ func (r *TamossReconciler) prepareTamossLifecycle(ctx context.Context, tamoss *t
 		}
 		recordPhase(resolved.Status.Phase)
 		return nil, stopReconcile(ctrl.Result{}), nil
+	}
+	if err := r.beginRelease(ctx, resolved); err != nil {
+		return nil, stopReconcileNow(), err
 	}
 	return resolved, continueReconcile(), nil
 }
@@ -310,7 +338,7 @@ func (r *TamossReconciler) reconcileTamossIdentityGates(ctx context.Context, tam
 }
 
 func (r *TamossReconciler) reconcileTamossSchemaStage(ctx context.Context, tamoss *tamossv1alpha1.Tamoss, recordPhase func(string)) (SchemaResult, reconcileControl, error) {
-	schemaResult, err := (&SchemaController{Client: r.Client, Scheme: r.Scheme}).Reconcile(ctx, tamoss)
+	schemaResult, err := (&SchemaController{Client: r.Client, Scheme: r.Scheme, Target: r.Releases[tamoss.Spec.Version].Schema}).Reconcile(ctx, tamoss)
 	if err != nil {
 		return SchemaResult{}, stopReconcile(ctrl.Result{}), err
 	}
@@ -398,6 +426,9 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 	if err := r.prepareAPITokenSecret(ctx, tamoss, desiredObjects); err != nil {
 		return err
 	}
+	if err := r.prepareForwardAuthProofSecret(ctx, tamoss, desiredObjects); err != nil {
+		return err
+	}
 	for _, desired := range schemaResult.ManagedObjects {
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
 	}
@@ -408,6 +439,7 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 		if err := applyAdvancedResourcePatches(tamoss, desired); err != nil {
 			return err
 		}
+		r.stampInstallationDefaults(desired)
 		desiredKeys[canonicalObjectKey(desired)] = struct{}{}
 		result, err := applyManagedObject(ctx, r.Client, desired)
 		if err != nil {
@@ -423,8 +455,8 @@ func (r *TamossReconciler) applyTamossDesiredObjects(ctx context.Context, tamoss
 	return nil
 }
 
-func tamossCompletionResult(tamoss *tamossv1alpha1.Tamoss, authentikProbeInterval, dependencyProbeInterval time.Duration) ctrl.Result {
-	requeueAfter := time.Duration(0)
+func tamossCompletionResult(tamoss *tamossv1alpha1.Tamoss, authentikProbeInterval, dependencyProbeInterval, schemaRequeueAfter time.Duration) ctrl.Result {
+	requeueAfter := schemaRequeueAfter
 	if tamoss.Spec.Auth.Provider() == tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 		requeueAfter = shortestPositiveDuration(requeueAfter, authentikProbeInterval)
 	}
@@ -488,8 +520,8 @@ func gateSchemaDependentWorkloads(objects []client.Object, schemaReady bool) []c
 			filtered = append(filtered, obj)
 			continue
 		}
-		component := deployment.Labels["app.kubernetes.io/component"]
-		if component == "api" || component == "worker" {
+		component := deployment.Labels[appComponentLabel]
+		if component == componentAPI || component == "worker" {
 			continue
 		}
 		filtered = append(filtered, obj)
@@ -533,6 +565,22 @@ func readyMessage(ready bool, schemaResult SchemaResult, identityResult identity
 		return routingResult.Message
 	}
 	return "One or more enabled workloads are not yet available"
+}
+
+// browserAuthCondition reports the browser authentication path on its own
+// condition. An instance whose API and worker are healthy is not Degraded
+// merely because its browser surfaces lack a supported identity provider: the
+// UI and Console already refuse to serve data in that state, and folding it
+// into Ready would also block unrelated features such as IngestRun.
+func browserAuthCondition(tamoss *tamossv1alpha1.Tamoss, configured bool) statusConditionValue {
+	if !tamoss.Spec.UI.IsEnabled() && !tamoss.Spec.ConsoleEnabled() {
+		return boolCondition(true, operatorstatus.ReasonBrowserAuthenticationNotRequired, "No browser surface is enabled")
+	}
+	if !configured {
+		return boolCondition(false, operatorstatus.ReasonBrowserAuthenticationUnavailable,
+			"Enabled browser surfaces do not have a supported trusted authentication path, so they refuse browser API requests")
+	}
+	return boolCondition(true, operatorstatus.ReasonBrowserAuthenticationConfigured, "Enabled browser surfaces have a supported trusted authentication path")
 }
 
 func degradedReason(schemaResult SchemaResult) string {

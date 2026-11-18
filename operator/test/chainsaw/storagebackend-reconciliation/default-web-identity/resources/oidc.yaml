@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: identity-tokens
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oidc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oidc
+  template:
+    metadata:
+      labels:
+        app: oidc
+    spec:
+      securityContext:
+        fsGroup: 10001
+      containers:
+      - name: oidc
+        image: livewyer/tamoss-chainsaw:dev
+        imagePullPolicy: IfNotPresent
+        command:
+        - /app/.venv/bin/python
+        - /tests/oidc_issuer.py
+        volumeMounts:
+        - name: tokens
+          mountPath: /tokens
+        readinessProbe:
+          httpGet:
+            path: /jwks
+            port: 8080
+          periodSeconds: 2
+      volumes:
+      - name: tokens
+        persistentVolumeClaim:
+          claimName: identity-tokens
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oidc
+spec:
+  selector:
+    app: oidc
+  ports:
+  - port: 8080
+    targetPort: 8080

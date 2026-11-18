@@ -1,11 +1,4 @@
-import { QueryClient, type QueryKey } from "@tanstack/react-query";
-
-export const apiQueryKeys = {
-  all: ["api"] as const,
-  scoped(scope: string, parts: readonly unknown[] = []): QueryKey {
-    return [...apiQueryKeys.all, scope, ...parts];
-  },
-};
+import { QueryClient } from "@tanstack/react-query";
 
 export const apiQueryPolicy = {
   retry: 1,

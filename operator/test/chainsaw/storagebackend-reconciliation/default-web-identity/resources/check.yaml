@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: (join('-', ['identity-check', $mode]))
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: check
+        image: livewyer/tamoss-chainsaw:dev
+        imagePullPolicy: IfNotPresent
+        command:
+        - /app/.venv/bin/python
+        - -m
+        - pytest
+        - --assert=plain
+        - --tb=short
+        - --show-capture=no
+        - -q
+        - /tests/test_web_identity.py
+        env:
+        - name: TEST_PHASE
+          value: ($mode)
+        - name: EXPECT_SESSION
+          value: ($session)
+        - name: AWS_EC2_METADATA_DISABLED
+          value: 'true'
+        - name: FIXTURE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-rustfs-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: FIXTURE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-rustfs-auth
+              key: RUSTFS_SECRET_KEY
+        - name: DEFAULT_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-default-s3-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: DEFAULT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-default-s3-auth
+              key: RUSTFS_SECRET_KEY
+        - name: ARCHIVE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-archive-s3-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: ARCHIVE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-archive-s3-auth
+              key: RUSTFS_SECRET_KEY
+        volumeMounts:
+        - name: identity
+          mountPath: /identity
+          readOnly: true
+      volumes:
+      - name: identity
+        persistentVolumeClaim:
+          claimName: identity-tokens

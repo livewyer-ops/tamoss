@@ -9,16 +9,17 @@ VERSION ?= 0.0.1
 IMG ?= livewyer/tamoss-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # Keep this on the same Kubernetes minor as the Kind node image used by the
-# chainsaw suite (kind v0.32.0 defaults to kindest/node v1.36.1).
+# Chainsaw suite (all Kind configurations pin Kubernetes v1.36.4).
 ENVTEST_K8S_VERSION = 1.36.x
 SCHEMA_VERSION ?= $(VERSION)
 PREVIOUS_SCHEMA_VERSION ?=
-TAMS_API_VERSION ?= 8.1
+TAMS_API_VERSION ?= 8.2
 # OPERAND_VERSION sets the operand image tag the operator defaults to when a
 # Tamoss spec omits one. Release builds pass the release version; development
 # builds keep the "dev" fallback.
 OPERAND_VERSION ?= dev
-GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.PreviousSupportedSchemaVersion=$(PREVIOUS_SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/schema.SupportedTAMSAPIVersion=$(TAMS_API_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=$(OPERAND_VERSION)
+MAX_CRD_BYTES ?= 1350000
+GO_LDFLAGS ?= -X github.com/livewyer-ops/tamoss/operator/internal/schema.SchemaVersion=$(SCHEMA_VERSION) -X github.com/livewyer-ops/tamoss/operator/internal/controller/defaults.DefaultOperandTag=$(OPERAND_VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -61,6 +62,16 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+.PHONY: crd-size-budget
+crd-size-budget: manifests ## Fail before generated CRDs approach the API object-size ceiling.
+	@for file in config/crd/bases/*.yaml; do \
+		bytes="$$(wc -c < "$$file")"; \
+		if (( bytes > $(MAX_CRD_BYTES) )); then \
+			echo "$$file is $$bytes bytes; limit is $(MAX_CRD_BYTES)" >&2; \
+			exit 1; \
+		fi; \
+	done
+
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -84,7 +95,7 @@ KUBEBUILDER_ASSETS="$$kubebuilder_assets" go test $$(go list ./... | grep -v /e2
 endef
 
 .PHONY: test
-test: manifests generate fmt vet envtest ## Run tests (full gate: codegen, fmt, vet, envtest suite).
+test: crd-size-budget generate fmt vet envtest ## Run tests (full gate: codegen, fmt, vet, envtest suite).
 	$(run-envtest-suite)
 
 .PHONY: test-fast
@@ -107,7 +118,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run -ldflags "$(GO_LDFLAGS)" ./cmd
+	TAMOSS_RELEASE_CATALOGUE=$${TAMOSS_RELEASE_CATALOGUE:-config/releases/catalogue.json} go run -ldflags "$(GO_LDFLAGS)" ./cmd
 
 .PHONY: install-manifest
 install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.
@@ -143,8 +154,8 @@ DEADCODE ?= $(LOCALBIN)/deadcode-$(GO_TOOLS_VERSION)
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
 ENVTEST_VERSION ?= release-0.24
-GOLANGCI_LINT_VERSION ?= v2.12.2
-GO_TOOLS_VERSION ?= v0.44.0
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GO_TOOLS_VERSION ?= v0.50.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.

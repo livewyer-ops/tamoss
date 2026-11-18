@@ -1,9 +1,11 @@
 # Stage 1: Build
-FROM node:26-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26.8.2-alpine AS build
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# .npmrc carries ignore-scripts and must land before the install, otherwise the
+# image build is the one path that still executes dependency lifecycle scripts.
+COPY package.json package-lock.json* .npmrc ./
 RUN npm ci
 
 COPY . .
@@ -11,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production
-FROM nginx:1.31.3-alpine
+FROM nginx:1.31.6-alpine
 
 # Remove default nginx config and the top-level user directive, which is only
 # valid when the nginx master process starts as root.
@@ -31,9 +33,6 @@ RUN sed -i 's/\r$//' /usr/local/bin/tamoss-ui-entrypoint.sh \
 COPY --from=build /app/dist /usr/share/nginx/html
 RUN mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.template \
   && chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx /run
-
-# Runtime environment variables consumed by the entrypoint.
-ENV TAMOSS_API_URL=/api
 
 USER 101:101
 

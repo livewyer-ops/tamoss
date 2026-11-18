@@ -8,7 +8,8 @@ the same operator flow used by the other profiles.
 - Docker or a compatible container runtime.
 - [`aqua`](https://aquaproj.github.io/) for the pinned toolchain, or
   equivalent versions of Task, Kind, kubectl, Helm, Helmfile, uv, yq, and jq.
-- `curl` and `git`.
+- [Helm diff](../operations/install.md#helm-diff) for Helmfile `apply`.
+- `curl`, `git` and GnuPG.
 
 `aqua install` installs the pinned command-line tools used by the tasks. It
 does not preinstall project virtualenvs or browser binaries; validation tasks
@@ -19,6 +20,7 @@ bootstrap those as needed on first run.
 ```bash
 aqua install
 export PATH="$(aqua root-dir)/bin:$PATH"
+task dev:helm-diff
 
 task kind:up PROFILE=local-kind
 ```
@@ -68,7 +70,7 @@ targeting one of the other profiles.
 ## Access
 
 The local Kind profile uses [Traefik](https://traefik.io/) on host port 443.
-It does not require
+Keep that port free of other local cluster routing rules. It does not require
 application NodePorts or port-forwarding.
 
 - API docs: <https://api.tamoss.localtest.me/docs>
@@ -77,9 +79,12 @@ application NodePorts or port-forwarding.
 - Authentik: <https://auth.tamoss.localtest.me>
 
 Local Kind uses self-signed TLS. Browser trust is per origin, so accept or
-trust the local certificate warning for each origin you open. Browser ingest
-uploads directly to the S3 origin, so make sure
+trust the local certificate warning for each origin you open. Playback reads
+directly from the S3 origin, so make sure
 `https://s3.tamoss.localtest.me` is accepted as well as the app origin.
+Operator-created [TAMSin](https://github.com/livewyer-ops/tamsin) Jobs disable
+certificate verification only for this disposable profile; every
+remote-capable profile retains strict TLS validation.
 
 Inspect the install:
 
@@ -114,8 +119,10 @@ and runs the deployed TAMS/product checks.
 task kind:down
 ```
 
-`task kind:down` deletes the disposable Kind cluster and local runtime state. It
-does not delete `Tamoss` resources individually before removing the cluster.
+`task kind:down` deletes the disposable Kind cluster and removes its context
+from the selected kubeconfig. It leaves other kubeconfig contexts and local
+files in place. It does not delete `Tamoss` resources individually before
+removing the cluster.
 
 See also:
 

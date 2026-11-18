@@ -1,6 +1,7 @@
 package defaults
 
 import (
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +21,7 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.DesiredReplicaCount(); got != 2 {
 		t.Fatalf("expected API replicas 2, got %d", got)
@@ -31,30 +32,52 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	if got := tamoss.Spec.UI.DesiredReplicaCount(); got != 2 {
 		t.Fatalf("expected UI replicas 2, got %d", got)
 	}
-	if !tamoss.Spec.API.PDB.IsEnabled() || !tamoss.Spec.Worker.PDB.IsEnabled() || !tamoss.Spec.UI.PDB.IsEnabled() {
+	if got := tamoss.Spec.Console.DesiredReplicaCount(); got != 2 {
+		t.Fatalf("expected Console replicas 2, got %d", got)
+	}
+	if !tamoss.Spec.API.PDB.IsEnabled() || !tamoss.Spec.Worker.PDB.IsEnabled() || !tamoss.Spec.UI.PDB.IsEnabled() || !tamoss.Spec.Console.PDB.IsEnabled() {
 		t.Fatalf("expected multi-server PDB defaults to be enabled")
 	}
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.API.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Worker.WorkloadCommonSpec)
 	assertRestrictedWorkloadSecurity(t, tamoss.Spec.UI.WorkloadCommonSpec)
+	assertRestrictedWorkloadSecurity(t, tamoss.Spec.Console.WorkloadCommonSpec)
+	if tamoss.Spec.Console.SecurityContext.ReadOnlyRootFilesystem == nil || !*tamoss.Spec.Console.SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatalf("expected Console read-only root filesystem default, got %#v", tamoss.Spec.Console.SecurityContext)
+	}
 	if !tamoss.Spec.NetworkPolicy.IsEnabled() {
 		t.Fatalf("expected multi-server NetworkPolicy default enabled")
 	}
 	assertAPIHTTPProbes(t, tamoss.Spec.API.WorkloadCommonSpec)
+	assertUIHTTPProbes(t, tamoss.Spec.UI.WorkloadCommonSpec)
+	assertConsoleHTTPProbes(t, tamoss.Spec.Console.WorkloadCommonSpec)
 	if len(tamoss.Spec.NetworkPolicy.API.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.API.Egress) == 0 ||
 		len(tamoss.Spec.NetworkPolicy.UI.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.UI.Egress) == 0 ||
-		len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 {
+		len(tamoss.Spec.NetworkPolicy.Worker.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Worker.Egress) == 0 ||
+		len(tamoss.Spec.NetworkPolicy.Console.Ingress) == 0 || len(tamoss.Spec.NetworkPolicy.Console.Egress) == 0 {
 		t.Fatalf("expected multi-server NetworkPolicy rules, got %#v", tamoss.Spec.NetworkPolicy)
 	}
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[0], 8000)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.API.Ingress[0].Ports[1], 9090)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Ingress[0].Ports[0], 9090)
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Ingress[0].Ports[0], 8080)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[0], 53, corev1.ProtocolTCP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[1], 53, corev1.ProtocolUDP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[2], 8053, corev1.ProtocolTCP)
-	assertNetworkPolicyPortAndProtocol(t, tamoss.Spec.NetworkPolicy.API.Egress[0].Ports[3], 8053, corev1.ProtocolUDP)
-	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.UI.Egress[1].Ports[0], 8000)
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.API.Egress[0])
+	if len(tamoss.Spec.NetworkPolicy.UI.Egress) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", tamoss.Spec.NetworkPolicy.UI.Egress)
+	}
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.UI.Egress[0])
+	assertPortScopedTCPRule(t, tamoss.Spec.NetworkPolicy.UI.Egress[1], 8000, 80, 9000)
+	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Console.Ingress[0].Ports[0], 8080)
+	if len(tamoss.Spec.NetworkPolicy.Console.Egress) != 2 {
+		t.Fatalf("expected port-scoped DNS and Kubernetes API Console egress, got %#v", tamoss.Spec.NetworkPolicy.Console.Egress)
+	}
+	assertPortScopedDNSRule(t, tamoss.Spec.NetworkPolicy.Console.Egress[0])
+	assertPortScopedTCPRule(t, tamoss.Spec.NetworkPolicy.Console.Egress[1], 443, 6443)
+	consoleIngressLabels := tamoss.Spec.NetworkPolicy.Console.Ingress[0].From[0].PodSelector.MatchLabels
+	if consoleIngressLabels["app.kubernetes.io/component"] != "ui" ||
+		consoleIngressLabels["app.kubernetes.io/instance"] != tamoss.Name {
+		t.Fatalf("expected Console ingress restricted to this instance UI, got %#v", consoleIngressLabels)
+	}
 	assertNetworkPolicyPort(t, tamoss.Spec.NetworkPolicy.Worker.Egress[1].Ports[4], 8080)
 	if tamoss.Spec.API.Affinity == nil || tamoss.Spec.API.Affinity.PodAntiAffinity == nil {
 		t.Fatalf("expected API pod anti-affinity default")
@@ -68,6 +91,9 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 		labels["app.kubernetes.io/instance"] != "tamoss-multi-server" ||
 		labels["app.kubernetes.io/name"] != "tamoss" {
 		t.Fatalf("unexpected anti-affinity labels: %#v", labels)
+	}
+	if tamoss.Spec.Console.Affinity == nil || tamoss.Spec.Console.Affinity.PodAntiAffinity == nil {
+		t.Fatalf("expected Console pod anti-affinity default")
 	}
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
@@ -96,6 +122,115 @@ func TestApplyMultiServerDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyMultiServerAllowsUIToReachOptInConsole(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Enabled: ptr.To(true),
+			},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	rules := tamoss.Spec.NetworkPolicy.UI.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", rules)
+	}
+	assertPortScopedDNSRule(t, rules[0])
+	// The API, Console, and Authentik forward-auth ports the UI must reach.
+	assertPortScopedTCPRule(t, rules[1], 8000, 8080, 80, 9000)
+}
+
+func TestApplyMultiServerAllowsConsoleServiceAndTargetPorts(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+			Service: tamossv1alpha1.ServiceSpec{
+				Console: tamossv1alpha1.ServicePortsSpec{
+					Ports: []corev1.ServicePort{{Name: "http", Port: 8181}},
+				},
+			},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	rules := tamoss.Spec.NetworkPolicy.UI.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected port-scoped DNS and application UI egress, got %#v", rules)
+	}
+	assertPortScopedDNSRule(t, rules[0])
+	// A CNI may enforce egress before or after Service translation, so both the
+	// Console Service port and its container target port are allowed.
+	assertPortScopedTCPRule(t, rules[1], 8000, 8181, 8080, 80, 9000)
+}
+
+// spec.networkPolicy.kubernetesAPIIPBlocks is an optional tightening of the
+// Kubernetes API rule. Omitting it leaves that rule port-scoped rather than
+// removing it, because destination-scoped egress is deferred.
+func TestApplyMultiServerConsoleKubernetesAPIEgressIsPortScopedWithoutIPBlocks(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	rules := tamoss.Spec.NetworkPolicy.Console.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected DNS and Kubernetes API rules, got %#v", rules)
+	}
+	assertPortScopedDNSRule(t, rules[0])
+	assertPortScopedTCPRule(t, rules[1], 443, 6443)
+}
+
+func TestApplyMultiServerScopesConsoleKubernetesAPIEgressToDeclaredIPBlocks(t *testing.T) {
+	t.Parallel()
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "media", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: ptr.To(true)},
+			NetworkPolicy: tamossv1alpha1.NetworkPolicySpec{KubernetesAPIIPBlocks: []networkingv1.IPBlock{
+				{CIDR: "10.96.0.1/32"},
+				{CIDR: "192.0.2.10/31", Except: []string{"192.0.2.11/32"}},
+			}},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	rules := tamoss.Spec.NetworkPolicy.Console.Egress
+	if len(rules) != 2 {
+		t.Fatalf("expected DNS and Kubernetes API rules, got %#v", rules)
+	}
+	apiRule := rules[1]
+	if len(apiRule.To) != 2 || apiRule.To[0].IPBlock == nil || apiRule.To[0].IPBlock.CIDR != "10.96.0.1/32" ||
+		apiRule.To[1].IPBlock == nil || apiRule.To[1].IPBlock.CIDR != "192.0.2.10/31" ||
+		!slices.Equal(apiRule.To[1].IPBlock.Except, []string{"192.0.2.11/32"}) {
+		t.Fatalf("unexpected Kubernetes API peers: %#v", apiRule.To)
+	}
+	if len(apiRule.Ports) != 2 {
+		t.Fatalf("expected Service and target API ports, got %#v", apiRule.Ports)
+	}
+	assertNetworkPolicyPort(t, apiRule.Ports[0], 443)
+	assertNetworkPolicyPort(t, apiRule.Ports[1], 6443)
+	// Declaring API-server blocks tightens that one rule only; DNS stays
+	// port-scoped so an unmatched resolver cannot remove DNS from the Console.
+	assertPortScopedDNSRule(t, rules[0])
+}
+
 func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-kind", Namespace: "tams"},
@@ -104,10 +239,16 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
+	if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyPublicHTTPS {
+		t.Fatalf("local-kind ingest source policy = %q, want PublicHTTPS", got)
+	}
 
 	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.localtest.me" {
 		t.Fatalf("expected local base domain, got %q", got)
+	}
+	if got := tamoss.Spec.PublicEndpoint.UIURL; got != "https://app.tamoss.localtest.me" {
+		t.Fatalf("expected derived public UI URL, got %q", got)
 	}
 	if !tamoss.Spec.Ingress.IsEnabled() {
 		t.Fatalf("expected local ingress enabled")
@@ -117,6 +258,9 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	}
 	if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-selfsigned" {
 		t.Fatalf("expected cert issuer annotation, got %q", got)
+	}
+	if got := tamoss.Spec.Ingress.Annotations["traefik.ingress.kubernetes.io/router.tls"]; got != "true" {
+		t.Fatalf("expected Traefik TLS annotation, got %q", got)
 	}
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.localtest.me" {
 		t.Fatalf("expected derived API host, got %q", got)
@@ -143,6 +287,7 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 		authentik.APITokenSecretRef.Key != "AUTHENTIK_BOOTSTRAP_TOKEN" {
 		t.Fatalf("unexpected Authentik defaults: %#v", authentik)
 	}
+	assertDefaultAuthentikAdminBinding(t, authentik)
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected local CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
 	}
@@ -180,6 +325,49 @@ func TestApplyLocalKindPublicEndpointDefaults(t *testing.T) {
 	}
 }
 
+func TestProductionProfilesDefaultIngestSourcePolicyToDisabled(t *testing.T) {
+	for _, profile := range []tamossv1alpha1.TamossProfile{
+		tamossv1alpha1.TamossProfileSingleServer,
+		tamossv1alpha1.TamossProfileMultiServer,
+		tamossv1alpha1.TamossProfileEdge,
+	} {
+		t.Run(string(profile), func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{Profile: profile}}
+			Apply(tamoss, DevelopmentImages)
+			if got := tamoss.Spec.Ingest.SourcePolicy.Mode; got != tamossv1alpha1.IngestSourcePolicyDisabled {
+				t.Fatalf("production ingest source policy = %q, want Disabled", got)
+			}
+		})
+	}
+}
+
+func TestApplyConsoleEnablementIsExplicit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		ui      *bool
+		console *bool
+		want    bool
+	}{
+		{name: "default", want: false},
+		{name: "UI disabled", ui: ptr.To(false), want: false},
+		{name: "Console disabled", console: ptr.To(false), want: false},
+		{name: "Console explicitly enabled", ui: ptr.To(false), console: ptr.To(true), want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{
+				UI:      tamossv1alpha1.UIComponentSpec{Enabled: test.ui},
+				Console: tamossv1alpha1.ConsoleComponentSpec{Enabled: test.console},
+			}}
+			Apply(tamoss, DevelopmentImages)
+			if got := tamoss.Spec.ConsoleEnabled(); got != test.want {
+				t.Fatalf("ConsoleEnabled() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-single-server", Namespace: "tams"},
@@ -191,7 +379,7 @@ func TestApplySingleServerManagedBackendDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if tamoss.Spec.Backends.DB.Provider() != tamossv1alpha1.BackendProvidedByCNPG {
 		t.Fatalf("expected single-server CNPG backend, got %s", tamoss.Spec.Backends.DB.Provider())
@@ -238,7 +426,7 @@ func TestApplyEdgeDefaults(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.PublicEndpoint.BaseDomain; got != "tamoss.edge" {
 		t.Fatalf("expected edge base domain, got %q", got)
@@ -322,7 +510,7 @@ func TestApplyRemoteProfilesDefaultToPublicTLSIssuer(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; got != "tamoss-public" {
 				t.Fatalf("expected public cert issuer annotation, got %q", got)
@@ -357,7 +545,7 @@ func TestAuthentikProfilesDefaultToManagedAuthentik(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 				t.Fatalf("expected Authentik Blueprint auth for %s, got %s", profile, got)
@@ -374,8 +562,59 @@ func TestAuthentikProfilesDefaultToManagedAuthentik(t *testing.T) {
 				authentik.APITokenSecretRef.Key != "AUTHENTIK_BOOTSTRAP_TOKEN" {
 				t.Fatalf("unexpected Authentik defaults for %s: %#v", profile, authentik)
 			}
+			assertDefaultAuthentikAdminBinding(t, authentik)
 		})
 	}
+}
+
+func assertDefaultAuthentikAdminBinding(t *testing.T, authentik *tamossv1alpha1.AuthentikBlueprintsSpec) {
+	t.Helper()
+	if len(authentik.GroupBindings) != 1 ||
+		authentik.GroupBindings[0].GroupName != defaultAuthentikAdminGroupName ||
+		len(authentik.GroupBindings[0].Permissions) != 1 ||
+		authentik.GroupBindings[0].Permissions[0] != "admin" {
+		t.Fatalf("expected default Authentik administrator binding, got %#v", authentik.GroupBindings)
+	}
+}
+
+func TestAuthentikDefaultsPreserveExplicitGroupBindings(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "tamoss", Namespace: "tams"},
+		Spec: tamossv1alpha1.TamossSpec{
+			Profile: tamossv1alpha1.TamossProfileMultiServer,
+			Auth: tamossv1alpha1.AuthSpec{
+				ProvidedBy: tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+				AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{
+					GroupBindings: []tamossv1alpha1.AuthentikGroupBindingSpec{{
+						GroupName:   "tamoss-viewers",
+						Permissions: []string{"viewer"},
+					}},
+				},
+			},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	bindings := tamoss.Spec.Auth.AuthentikBlueprints.GroupBindings
+	if len(bindings) != 1 || bindings[0].GroupName != "tamoss-viewers" || len(bindings[0].Permissions) != 1 || bindings[0].Permissions[0] != "viewer" {
+		t.Fatalf("explicit Authentik group binding was replaced: %#v", bindings)
+	}
+}
+
+func TestCustomManagedAuthentikDefaultsAdministratorBinding(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{
+		Spec: tamossv1alpha1.TamossSpec{
+			Auth: tamossv1alpha1.AuthSpec{
+				ProvidedBy:          tamossv1alpha1.AuthProvidedByAuthentikBlueprints,
+				AuthentikBlueprints: &tamossv1alpha1.AuthentikBlueprintsSpec{},
+			},
+		},
+	}
+
+	Apply(tamoss, DevelopmentImages)
+
+	assertDefaultAuthentikAdminBinding(t, tamoss.Spec.Auth.AuthentikBlueprints)
 }
 
 func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
@@ -392,10 +631,25 @@ func TestApplyPreservesExplicitIngressAnnotations(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if _, ok := tamoss.Spec.Ingress.Annotations["cert-manager.io/cluster-issuer"]; ok {
 		t.Fatalf("did not expect default cert issuer annotation when annotations are explicit")
+	}
+}
+
+func TestApplyPreservesExplicitTraefikTLSAnnotation(t *testing.T) {
+	tamoss := &tamossv1alpha1.Tamoss{Spec: tamossv1alpha1.TamossSpec{
+		Profile: tamossv1alpha1.TamossProfileLocalKind,
+		Ingress: tamossv1alpha1.IngressSpec{Annotations: map[string]string{
+			defaultTraefikTLSAnnotation: "false",
+		}},
+	}}
+
+	Apply(tamoss, DevelopmentImages)
+
+	if got := tamoss.Spec.Ingress.Annotations[defaultTraefikTLSAnnotation]; got != "false" {
+		t.Fatalf("explicit Traefik TLS annotation was replaced: %q", got)
 	}
 }
 
@@ -419,7 +673,7 @@ func TestManagedRustFSProfileDefaultsMeetOperatorMinimum(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			rustfs := tamoss.Spec.Backends.S3.RustFSOperator
 			if rustfs == nil || len(rustfs.Pools) == 0 {
@@ -446,7 +700,7 @@ func TestApplyMultiServerPublicEndpointDefaultsRustFS(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.example.com" {
 		t.Fatalf("expected derived API ingress host, got %q", got)
@@ -486,7 +740,7 @@ func TestApplyPublicEndpointDefaultsNormalizeBaseDomain(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.tamoss.example.com" {
 		t.Fatalf("expected normalized API ingress host, got %q", got)
@@ -515,6 +769,7 @@ func TestApplyPublicEndpointDefaultsPreserveOverrides(t *testing.T) {
 			Profile: tamossv1alpha1.TamossProfileSingleServer,
 			PublicEndpoint: tamossv1alpha1.PublicEndpointSpec{
 				BaseDomain:      "tamoss.example.com",
+				UIURL:           "https://app.tamoss.example.com:30443",
 				TLSSecretName:   "shared-tls",
 				S3TLSSecretName: "s3-default-tls",
 			},
@@ -551,13 +806,16 @@ func TestApplyPublicEndpointDefaultsPreserveOverrides(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Ingress.API.Host; got != "api.override.example.com" {
 		t.Fatalf("expected explicit API ingress host preserved, got %q", got)
 	}
 	if got := tamoss.Spec.Ingress.UI.Web.Host; got != "app.tamoss.example.com" {
 		t.Fatalf("expected missing UI ingress host derived, got %q", got)
+	}
+	if got := tamoss.Spec.PublicEndpoint.UIURL; got != "https://app.tamoss.example.com:30443" {
+		t.Fatalf("expected explicit public UI URL preserved, got %q", got)
 	}
 	if got := tamoss.Spec.Ingress.TLS[0].SecretName; got != "explicit-tls" {
 		t.Fatalf("expected explicit TLS secret preserved, got %q", got)
@@ -599,7 +857,7 @@ func TestSupportedProfilesUseOperatorManagedBackends(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.Backends.DB.Provider(); got != tamossv1alpha1.BackendProvidedByCNPG {
 				t.Fatalf("expected CNPG database backend for %s, got %s", profile, got)
@@ -628,7 +886,7 @@ func TestSupportedProfilesUseWorkerHTTPProbes(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			assertWorkerHTTPProbe(t, "readiness", tamoss.Spec.Worker.ReadinessProbe, "/readyz", 10, 3)
 			assertWorkerHTTPProbe(t, "liveness", tamoss.Spec.Worker.LivenessProbe, "/healthz", 30, 3)
@@ -658,7 +916,7 @@ func TestApplyPreservesExplicitWorkerProbes(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if tamoss.Spec.Worker.ReadinessProbe != readiness {
 		t.Fatalf("expected explicit worker readiness probe to be preserved")
@@ -692,7 +950,7 @@ func TestApplyPublicEndpointDefaultsPreserveExternalProviders(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByExternal {
 		t.Fatalf("expected external auth preserved, got %s", got)
@@ -758,7 +1016,7 @@ func TestApplyPreservesExplicitOverrides(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.DesiredReplicaCount(); got != 4 {
 		t.Fatalf("expected explicit API replicas 4, got %d", got)
@@ -842,6 +1100,47 @@ func assertNetworkPolicyPortAndProtocol(t *testing.T, port networkingv1.NetworkP
 	}
 }
 
+// assertPortScopedDNSRule checks the default DNS rule stays port-scoped.
+// Destination scoping is deferred: naming resolvers is only safe when the peer
+// list covers every resolver a supported cluster may run, and an unmatched
+// resolver removes DNS from the workload entirely.
+func assertPortScopedDNSRule(t *testing.T, rule networkingv1.NetworkPolicyEgressRule) {
+	t.Helper()
+	if len(rule.To) != 0 {
+		t.Fatalf("expected port-scoped DNS egress, got peers %#v", rule.To)
+	}
+	want := []struct {
+		port     int32
+		protocol corev1.Protocol
+	}{
+		{53, corev1.ProtocolTCP},
+		{53, corev1.ProtocolUDP},
+		{8053, corev1.ProtocolTCP},
+		{8053, corev1.ProtocolUDP},
+	}
+	if len(rule.Ports) != len(want) {
+		t.Fatalf("expected the DNS Service and post-DNAT target ports, got %#v", rule.Ports)
+	}
+	for index, expected := range want {
+		assertNetworkPolicyPortAndProtocol(t, rule.Ports[index], expected.port, expected.protocol)
+	}
+}
+
+// assertPortScopedTCPRule checks a default egress rule allows exactly the given
+// TCP ports to any destination.
+func assertPortScopedTCPRule(t *testing.T, rule networkingv1.NetworkPolicyEgressRule, ports ...int32) {
+	t.Helper()
+	if len(rule.To) != 0 {
+		t.Fatalf("expected port-scoped egress, got peers %#v", rule.To)
+	}
+	if len(rule.Ports) != len(ports) {
+		t.Fatalf("expected %d egress ports, got %#v", len(ports), rule.Ports)
+	}
+	for index, port := range ports {
+		assertNetworkPolicyPortAndProtocol(t, rule.Ports[index], port, corev1.ProtocolTCP)
+	}
+}
+
 func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 	t.Helper()
 	if spec.ReadinessProbe == nil || spec.ReadinessProbe.HTTPGet == nil {
@@ -861,6 +1160,47 @@ func assertAPIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
 	}
 	if spec.StartupProbe.HTTPGet.Path != "/healthz" {
 		t.Fatalf("expected API startup path /healthz, got %q", spec.StartupProbe.HTTPGet.Path)
+	}
+}
+
+func assertConsoleHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
+	t.Helper()
+	checks := []struct {
+		name string
+		got  *corev1.Probe
+		path string
+	}{
+		{name: "readiness", got: spec.ReadinessProbe, path: "/ui-api/v1/readyz"},
+		{name: "liveness", got: spec.LivenessProbe, path: "/ui-api/v1/healthz"},
+		{name: "startup", got: spec.StartupProbe, path: "/ui-api/v1/healthz"},
+	}
+	for _, check := range checks {
+		if check.got == nil || check.got.HTTPGet == nil || check.got.HTTPGet.Path != check.path || check.got.HTTPGet.Port.StrVal != "http" {
+			t.Fatalf("unexpected Console %s probe: %#v", check.name, check.got)
+		}
+	}
+}
+
+func assertUIHTTPProbes(t *testing.T, spec tamossv1alpha1.WorkloadCommonSpec) {
+	t.Helper()
+	checks := []struct {
+		name string
+		got  *corev1.Probe
+		path string
+	}{
+		// Readiness probes /healthz rather than /readyz. /readyz reports 503
+		// while browser authentication is unconfigured and exists only from 8.2
+		// onwards, so probing it would block rollouts of a pinned earlier UI
+		// image and remove the Pod from its Service for a state the instance
+		// already reports on BrowserAuthenticationReady.
+		{name: "readiness", got: spec.ReadinessProbe, path: "/healthz"},
+		{name: "liveness", got: spec.LivenessProbe, path: "/healthz"},
+		{name: "startup", got: spec.StartupProbe, path: "/healthz"},
+	}
+	for _, check := range checks {
+		if check.got == nil || check.got.HTTPGet == nil || check.got.HTTPGet.Path != check.path || check.got.HTTPGet.Port.StrVal != "http" {
+			t.Fatalf("unexpected UI %s probe: %#v", check.name, check.got)
+		}
 	}
 }
 
@@ -897,7 +1237,7 @@ func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
 				},
 			}
 
-			Apply(tamoss)
+			Apply(tamoss, DevelopmentImages)
 
 			if got := tamoss.Spec.API.Image.Tag; got != DefaultOperandTag {
 				t.Fatalf("expected API image tag %q for %s, got %q", DefaultOperandTag, profile, got)
@@ -905,14 +1245,18 @@ func TestApplyDefaultsOperandImageTagsForAllProfiles(t *testing.T) {
 			if got := tamoss.Spec.UI.Image.Tag; got != DefaultOperandTag {
 				t.Fatalf("expected UI image tag %q for %s, got %q", DefaultOperandTag, profile, got)
 			}
+			if got := tamoss.Spec.Console.Image.Tag; got != DefaultOperandTag {
+				t.Fatalf("expected Console image tag %q for %s, got %q", DefaultOperandTag, profile, got)
+			}
 		})
 	}
 }
 
-func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
-	original := DefaultOperandTag
-	DefaultOperandTag = "8.1.0-test"
-	t.Cleanup(func() { DefaultOperandTag = original })
+func TestApplyDefaultsOperandImageTagsFollowSelectedRelease(t *testing.T) {
+	images := DevelopmentImages
+	images.API = DefaultAPIRepository + ":selected"
+	images.UI = DefaultUIRepository + ":selected"
+	images.Console = DefaultConsoleRepository + ":selected"
 
 	tamoss := &tamossv1alpha1.Tamoss{
 		ObjectMeta: metav1.ObjectMeta{Name: "tamoss-edge", Namespace: "tams"},
@@ -921,13 +1265,16 @@ func TestApplyDefaultsOperandImageTagsFollowBuildVersion(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, images)
 
-	if got := tamoss.Spec.API.Image.Tag; got != "8.1.0-test" {
-		t.Fatalf("expected API image tag to follow the build version, got %q", got)
+	if got := tamoss.Spec.API.Image.Tag; got != "selected" {
+		t.Fatalf("expected API image tag to follow the selected release, got %q", got)
 	}
-	if got := tamoss.Spec.UI.Image.Tag; got != "8.1.0-test" {
-		t.Fatalf("expected UI image tag to follow the build version, got %q", got)
+	if got := tamoss.Spec.UI.Image.Tag; got != "selected" {
+		t.Fatalf("expected UI image tag to follow the selected release, got %q", got)
+	}
+	if got := tamoss.Spec.Console.Image.Tag; got != "selected" {
+		t.Fatalf("expected Console image tag to follow the selected release, got %q", got)
 	}
 }
 
@@ -942,16 +1289,22 @@ func TestApplyDefaultsPreserveExplicitOperandImageTags(t *testing.T) {
 			UI: tamossv1alpha1.UIComponentSpec{
 				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-ui"},
 			},
+			Console: tamossv1alpha1.ConsoleComponentSpec{
+				Image: tamossv1alpha1.ImageSpec{Tag: "pinned-console"},
+			},
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.API.Image.Tag; got != "pinned-api" {
 		t.Fatalf("expected explicit API image tag preserved, got %q", got)
 	}
 	if got := tamoss.Spec.UI.Image.Tag; got != "pinned-ui" {
 		t.Fatalf("expected explicit UI image tag preserved, got %q", got)
+	}
+	if got := tamoss.Spec.Console.Image.Tag; got != "pinned-console" {
+		t.Fatalf("expected explicit Console image tag preserved, got %q", got)
 	}
 }
 
@@ -966,7 +1319,7 @@ func TestApplyEdgeHonoursAuthentikBlueprints(t *testing.T) {
 		},
 	}
 
-	Apply(tamoss)
+	Apply(tamoss, DevelopmentImages)
 
 	if got := tamoss.Spec.Auth.Provider(); got != tamossv1alpha1.AuthProvidedByAuthentikBlueprints {
 		t.Fatalf("expected edge to keep the Authentik provider, got %s", got)

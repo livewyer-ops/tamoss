@@ -5,6 +5,7 @@
 !**/.env.example
 .envrc
 .local/
+/deploy/environments/dev-*
 garden.yaml
 RULES.md
 tests/targets/remote.env
@@ -49,8 +50,6 @@ coverage/
 *.tsbuildinfo
 
 # Local tool state.
-.claude/
-.codex
 .tmp/
 tmp/
 tests/fixtures/media/generated/
@@ -73,6 +72,3 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 .history/
-
-# Local Claude working notes (not for publication)
-claudedocs/

@@ -1,7 +1,7 @@
 # Platform
 
 Runtime platform installation is orchestrated by `helmfile.yaml.gotmpl`.
-Environment compositions select platform behavior through their
+Environment compositions select platform behaviour through their
 `platform-values.yaml` file, merged on top of `values/defaults.yaml`.
 
 Helmfile installs each major platform dependency as a separate Helm release:
@@ -22,9 +22,10 @@ From this directory:
 helmfile --kubeconfig "$KUBECONFIG" \
   --file helmfile.yaml.gotmpl \
   --state-values-file values/defaults.yaml \
-  --state-values-file ../../deploy/environments/local-kind/platform-values.yaml \
-  sync \
-  --sync-args "--server-side=true --rollback-on-failure" \
+  --state-values-file ../environments/local-kind/platform-values.yaml \
+  apply \
+  --skip-diff-on-install \
+  --sync-args "--server-side=true" \
   --wait \
   --wait-for-jobs
 ```

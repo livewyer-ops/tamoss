@@ -1,0 +1,96 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: Tamoss
+metadata:
+  name: tamoss
+  annotations:
+    confirmation.tamoss.livewyer.io/deletion: 'true'
+spec:
+  version: dev
+  fullnameOverride: tamoss
+  secrets:
+    apiToken:
+      generate: true
+      token: ''
+  auth:
+    providedBy: none
+    required: false
+  api:
+    enabled: true
+    replicaCount: 1
+    image:
+      repository: livewyer/tamoss-api
+      tag: dev
+      pullPolicy: IfNotPresent
+    resources:
+      limits:
+        memory: 512Mi
+    env:
+      AWS_ROLE_ARN: arn:aws:iam::123456789012:role/tamoss
+      AWS_WEB_IDENTITY_TOKEN_FILE: /identity/token
+      AWS_ENDPOINT_URL_STS: http://rustfs-svc:9000
+      AWS_EC2_METADATA_DISABLED: 'true'
+    volumes:
+    - name: identity
+      persistentVolumeClaim:
+        claimName: identity-tokens
+    volumeMounts:
+    - name: identity
+      mountPath: /identity
+      readOnly: true
+  worker:
+    enabled: true
+    replicaCount: 1
+    pdb:
+      enabled: false
+    env:
+      AWS_ROLE_ARN: arn:aws:iam::123456789012:role/tamoss
+      AWS_WEB_IDENTITY_TOKEN_FILE: /identity/token
+      AWS_ENDPOINT_URL_STS: http://rustfs-svc:9000
+      AWS_EC2_METADATA_DISABLED: 'true'
+    volumes:
+    - name: identity
+      persistentVolumeClaim:
+        claimName: identity-tokens
+    volumeMounts:
+    - name: identity
+      mountPath: /identity
+      readOnly: true
+  ui:
+    enabled: true
+    replicaCount: 0
+    image:
+      repository: livewyer/tamoss-ui
+      tag: dev
+      pullPolicy: IfNotPresent
+  backends:
+    db:
+      providedBy: external
+      applyFixtures: false
+      external:
+        host: postgresql
+        port: '5432'
+        database: tams
+        auth:
+          existingSecret: tams-postgresql-auth
+          secretKeys:
+            username: username
+            password: password
+    s3:
+      providedBy: external
+      external:
+        endpoint:
+          default:
+            url: http://rustfs-svc:9000
+        region: us-east-1
+        bucket: tamoss
+        credentialSource: web-identity
+        auth: null
+  httpRoute:
+    enabled: false
+  networkPolicy:
+    enabled: false
+  serviceAccount:
+    create: true
+    automount: false
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/tamoss

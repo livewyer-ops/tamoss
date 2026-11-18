@@ -14,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
-	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
 )
 
 func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, storageBackend *tamossv1alpha1.StorageBackend) (ctrl.Result, error) {
@@ -31,6 +30,9 @@ func (r *StorageBackendReconciler) finalizeStorageBackend(ctx context.Context, s
 	tamoss, found, err := r.storageBackendTamoss(ctx, storageBackend, spec)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if found && tamoss.DeletionTimestamp.IsZero() && !spec.IsHibernateDestination() && !r.schemaStateReady(ctx, tamoss) {
+		return ctrl.Result{RequeueAfter: defaultProviderReadinessProbeInterval}, nil
 	}
 	if shouldDeleteBucket {
 		result, err := r.reconcileStorageBackendBucketDeletion(ctx, storageBackend, tamoss, spec)
@@ -91,9 +93,8 @@ func (r *StorageBackendReconciler) storageBackendTamoss(ctx context.Context, sto
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
-	return resolved, true, nil
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
+	return resolved, true, err
 }
 
 func (r *StorageBackendReconciler) reconcileStorageBackendCleanupJob(ctx context.Context, desiredJob *batchv1.Job, hash, reasonPrefix, messagePrefix string) (storageBackendReconcileResult, error) {

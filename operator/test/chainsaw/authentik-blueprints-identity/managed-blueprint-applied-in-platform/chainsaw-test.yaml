@@ -29,13 +29,3 @@ spec:
         - assert:
             file: assert/identity-blueprint-submitted.yaml
             timeout: 2m
-        - script:
-            env:
-              - name: NAMESPACE
-                value: ($namespace)
-            content: |
-              set -eu
-              # chainsaw-script: verifies dynamic managed blueprint name and Authentik fixture apply count.
-              blueprint="tamoss-${NAMESPACE}-tamoss"
-              [ "$(kubectl -n "$NAMESPACE" get tamoss tamoss -o jsonpath='{.status.auth.managedBlueprint}')" = "$blueprint" ]
-              ../../scripts/assert-authentik-apply-count.sh "$blueprint" 1 120

@@ -12,14 +12,17 @@ endpoint annotations are evaluated eagerly against the factory's closure.
 
 import inspect
 from collections.abc import Callable
+from functools import partial
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Request, Response, status
+from pydantic import BeforeValidator
 
-from tamoss.api.dependencies import require_json_body
+from tamoss.api.dependencies import ResourceUUID, require_json_body
 from tamoss.api.presenters import head_response
 from tamoss.api.query_params import validate_query_params
+from tamoss.contract.validation import validate_json_scalar
 
 GetValue = Callable[[Any, UUID], Any]
 SetValue = Callable[[Any, UUID, Any, Request], None]
@@ -47,7 +50,7 @@ def register_scalar_property_routes(
     """Register GET/HEAD, PUT and optional DELETE routes for one property."""
 
     def read_property(
-        entity_id: Annotated[UUID, Path(alias=path_alias)],
+        entity_id: Annotated[ResourceUUID, Path(alias=path_alias)],
         request: Request,
         use_cases: Any = Depends(use_cases_dependency),
     ) -> Any:
@@ -78,7 +81,7 @@ def register_scalar_property_routes(
             inspect.Parameter(
                 "entity_id",
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=Annotated[UUID, Path(alias=path_alias)],
+                annotation=Annotated[ResourceUUID, Path(alias=path_alias)],
             ),
             inspect.Parameter(
                 "request",
@@ -88,8 +91,13 @@ def register_scalar_property_routes(
             inspect.Parameter(
                 body_param,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=body_type,
-                default=body,
+                annotation=Annotated[
+                    body_type,
+                    body,
+                    BeforeValidator(
+                        partial(validate_json_scalar, expected_type=body_type)
+                    ),
+                ],
             ),
             inspect.Parameter(
                 "use_cases",
@@ -112,7 +120,7 @@ def register_scalar_property_routes(
         return
 
     def delete_property(
-        entity_id: Annotated[UUID, Path(alias=path_alias)],
+        entity_id: Annotated[ResourceUUID, Path(alias=path_alias)],
         request: Request,
         use_cases: Any = Depends(use_cases_dependency),
     ) -> Response:

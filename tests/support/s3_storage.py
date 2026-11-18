@@ -83,6 +83,7 @@ def s3_client(backend: StorageBackend):
         aws_secret_access_key=backend.secret_key,
         region_name=backend.region,
         config=Config(
+            signature_version="s3v4",
             s3={"addressing_style": "path"},
             connect_timeout=2,
             read_timeout=2,
@@ -128,7 +129,7 @@ def s3_access_key() -> str:
         os.getenv("TAMOSS_TEST_S3_ACCESS_KEY")
         or os.getenv("BUCKET_USER")
         or os.getenv("TAMOSS_S3_ACCESS_KEY")
-        or "rustfsadmin"
+        or "tamoss-local"
     )
 
 
@@ -137,5 +138,5 @@ def s3_secret_key() -> str:
         os.getenv("TAMOSS_TEST_S3_SECRET_KEY")
         or os.getenv("BUCKET_PASSWORD")
         or os.getenv("TAMOSS_S3_SECRET_KEY")
-        or "rustfsadmin"
+        or "tamoss-local-secret"
     )

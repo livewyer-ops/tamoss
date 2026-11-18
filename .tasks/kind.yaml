@@ -6,10 +6,26 @@ set: [errexit, nounset, pipefail]
 vars:
   PROFILE: '{{default "local-kind" .PROFILE}}'
   VERSION: '{{default "0.0.1" (default (env "VERSION") .VERSION)}}'
-  API_IMAGE: '{{default "livewyer/tamoss-api:dev" (default (env "API_IMAGE") .API_IMAGE)}}'
-  UI_IMAGE: '{{default "livewyer/tamoss-ui:dev" (default (env "UI_IMAGE") .UI_IMAGE)}}'
-  OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  # Keep Kind schema defaults out of the standalone operator build scope.
+  # 0.0.1 is the schema marker emitted by pre-8.2 Kind builds.
+  KIND_SCHEMA_VERSION: '{{default "dev-20260924-0008" (default (env "SCHEMA_VERSION") .SCHEMA_VERSION)}}'
+  KIND_PREVIOUS_SCHEMA_VERSION: '{{default "0.0.1" (default (env "PREVIOUS_SCHEMA_VERSION") .PREVIOUS_SCHEMA_VERSION)}}'
+  TAMS_API_VERSION: '{{default "8.2" (default (env "TAMS_API_VERSION") .TAMS_API_VERSION)}}'
+  OPERAND_TAG:
+    sh: '. .tasks/lib/kind.sh; task_kind_operand_tag'
+  KIND_OPERAND_VERSION: '{{default .OPERAND_TAG (env "OPERAND_VERSION")}}'
+  # Prefixed because included Taskfile vars are visible globally: an unprefixed
+  # image variable declared here would be in scope for every other included
+  # taskfile, overriding the defaults they set for themselves. The KIND_ prefix
+  # keeps these confined to the Kind path, and the tasks below pass them under
+  # the unprefixed names the callees expect.
+  KIND_API_IMAGE: '{{default (printf "livewyer/tamoss-api:%s" .OPERAND_TAG) (default (env "API_IMAGE") .API_IMAGE)}}'
+  KIND_UI_IMAGE: '{{default (printf "livewyer/tamoss-ui:%s" .OPERAND_TAG) (default (env "UI_IMAGE") .UI_IMAGE)}}'
+  KIND_CONSOLE_IMAGE: '{{default (printf "livewyer/tamoss-console-api:%s" .OPERAND_TAG) (default (env "CONSOLE_IMAGE") .CONSOLE_IMAGE)}}'
+  KIND_OPERATOR_IMAGE: '{{default "livewyer/tamoss-operator:dev" (default (env "OPERATOR_IMAGE") .OPERATOR_IMAGE)}}'
+  LOCAL_OPERATOR_KUSTOMIZE_DIR: '{{default "deploy/operator/local" .LOCAL_OPERATOR_KUSTOMIZE_DIR}}'
   DEMO_MEDIA_FILE: '{{default "deploy/demo/tamoss-demo.ts" .DEMO_MEDIA_FILE}}'
+  DEMO_AUDIO_FILE: '{{default "deploy/demo/tamoss-demo-audio.ts" .DEMO_AUDIO_FILE}}'
   KIND_DEMO_INGEST: '{{default "true" (default (env "KIND_DEMO_INGEST") .KIND_DEMO_INGEST)}}'
   KIND_SUMMARY: '{{default "true" (default (env "KIND_SUMMARY") .KIND_SUMMARY)}}'
   PROFILE_TARGET_ENV:
@@ -36,9 +52,10 @@ tasks:
       - task: image
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          API_IMAGE: "{{.KIND_API_IMAGE}}"
+          UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.KIND_CONSOLE_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
 
   delete:
     silent: true
@@ -64,12 +81,14 @@ tasks:
         vars:
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
       - task: image:load
         vars:
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           API_IMAGE: "{{.API_IMAGE}}"
           UI_IMAGE: "{{.UI_IMAGE}}"
+          CONSOLE_IMAGE: "{{.CONSOLE_IMAGE}}"
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
 
   image:build:
@@ -80,10 +99,15 @@ tasks:
         . .tasks/lib/kind.sh
         task_kind_build_image "TAMOSS API" "{{.API_IMAGE}}" "src/app/tamoss/Dockerfile" "."
         task_kind_build_image "TAMOSS UI" "{{.UI_IMAGE}}" "" "src/app/frontend"
+        task_kind_build_image "TAMOSS Console API" "{{.CONSOLE_IMAGE}}" "operator/Dockerfile.console-api" "."
       - task: :operator:image:build
         vars:
           OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
           VERSION: "{{.VERSION}}"
+          SCHEMA_VERSION: "{{.KIND_SCHEMA_VERSION}}"
+          PREVIOUS_SCHEMA_VERSION: "{{.KIND_PREVIOUS_SCHEMA_VERSION}}"
+          TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
+          OPERAND_VERSION: "{{.KIND_OPERAND_VERSION}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
 
   image:load:
@@ -94,6 +118,7 @@ tasks:
         . .tasks/lib/kind.sh
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS API" "{{.API_IMAGE}}"
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS UI" "{{.UI_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS Console API" "{{.CONSOLE_IMAGE}}"
         task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
 
   operator:reload:
@@ -109,12 +134,16 @@ tasks:
     cmds:
       - task: :operator:image:build
         vars:
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
           VERSION: "{{.VERSION}}"
+          SCHEMA_VERSION: "{{.KIND_SCHEMA_VERSION}}"
+          PREVIOUS_SCHEMA_VERSION: "{{.KIND_PREVIOUS_SCHEMA_VERSION}}"
+          TAMS_API_VERSION: "{{.TAMS_API_VERSION}}"
+          OPERAND_VERSION: "{{.KIND_OPERAND_VERSION}}"
           STEP_LABEL: "Local Kind: build TAMOSS operator image"
       - |
         . .tasks/lib/kind.sh
-        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.OPERATOR_IMAGE}}"
+        task_kind_load_image "{{.PROJECT_NAME}}" "TAMOSS operator" "{{.KIND_OPERATOR_IMAGE}}"
       - task: :operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -122,20 +151,20 @@ tasks:
   e2e:fresh:
     silent: true
     cmds:
-      - rm -f {{.KUBECONFIG}}
       - |
         . .tasks/lib/kind.sh
         task_step "Local Kind: delete existing cluster" \
-          task_kind_delete_cluster "{{.PROJECT_NAME}}"
+          task_kind_delete_cluster "{{.PROJECT_NAME}}" "{{.KUBECONFIG}}"
       - task: :kind:create
         vars:
           PROFILE: "{{.PROFILE}}"
           PROJECT_NAME: "{{.PROJECT_NAME}}"
           KIND_CONFIG: "{{.KIND_CONFIG}}"
           KUBECONFIG: "{{.KUBECONFIG}}"
-          API_IMAGE: "{{.API_IMAGE}}"
-          UI_IMAGE: "{{.UI_IMAGE}}"
-          OPERATOR_IMAGE: "{{.OPERATOR_IMAGE}}"
+          KIND_API_IMAGE: "{{.KIND_API_IMAGE}}"
+          KIND_UI_IMAGE: "{{.KIND_UI_IMAGE}}"
+          KIND_CONSOLE_IMAGE: "{{.KIND_CONSOLE_IMAGE}}"
+          KIND_OPERATOR_IMAGE: "{{.KIND_OPERATOR_IMAGE}}"
       - |
         set -euo pipefail
         . .tasks/lib/kind.sh
@@ -144,9 +173,11 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
-      - task: :operator:apply
-        vars:
-          KUBECONFIG: "{{.KUBECONFIG}}"
+      - |
+        . .tasks/lib/operator_k8s.sh
+        task_render_development_operator "{{.LOCAL_OPERATOR_KUSTOMIZE_DIR}}" "{{.KIND_OPERAND_VERSION}}" "{{.KIND_SCHEMA_VERSION}}" "{{.KIND_PREVIOUS_SCHEMA_VERSION}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_apply_operator "{{.KUBECONFIG}}" ".local/kind-operator-{{.PROJECT_NAME}}"
+        task_wait_operator "{{.KUBECONFIG}}" tamoss-system operator-controller-manager
       - task: :operator:restart
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
@@ -154,15 +185,18 @@ tasks:
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :env:wait
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           ENV_DIR: "{{.PROFILE_KIND_ENVIRONMENT_DIR}}"
+          INSTANCE: "{{.PROFILE_TAMOSS_NAME}}"
       - task: :kind:demo:ingest
         vars:
           KUBECONFIG: "{{.KUBECONFIG}}"
           PROFILE_TARGET_ENV: "{{.PROFILE_TARGET_ENV}}"
           DEMO_MEDIA_FILE: "{{.DEMO_MEDIA_FILE}}"
+          DEMO_AUDIO_FILE: "{{.DEMO_AUDIO_FILE}}"
           KIND_DEMO_INGEST: "{{.KIND_DEMO_INGEST}}"
       - task: :e2e:deployed
         vars:

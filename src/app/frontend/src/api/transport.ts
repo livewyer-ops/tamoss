@@ -8,13 +8,32 @@ type QueryParamValue = QueryScalar | readonly QueryScalar[];
 export type QueryParams = Record<string, QueryParamValue | null | undefined>;
 type RequestHeaders = Record<string, string>;
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 export type PagingParams = QueryParams & {
   limit?: string | number;
   page?: string;
 };
 
+/** Encode identifiers as path segments; reject dots that URL parsing resolves. */
+export function path(
+  literals: TemplateStringsArray,
+  ...values: ReadonlyArray<string | number>
+): string {
+  let result = literals[0];
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === "." || values[index] === "..") {
+      throw new Error("Invalid resource identifier.");
+    }
+    result += encodeURIComponent(values[index]) + literals[index + 1];
+  }
+  return result;
+}
+
 export function errorMessageFromText(text: string): string {
-  if (!text.trim()) return "Unknown error";
+  if (!text.trim()) return "Service request failed";
   try {
     const data = JSON.parse(text) as { summary?: unknown; detail?: unknown };
     if (typeof data.summary === "string") return data.summary;
@@ -57,11 +76,9 @@ export class ApiError extends Error {
 
 export class ApiTransport {
   private baseUrl: string;
-  private token: string;
 
-  constructor(baseUrl: string, token = "") {
-    this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-    this.token = token;
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   }
 
   private buildUrl(path: string, params?: QueryParams): string {
@@ -82,17 +99,8 @@ export class ApiTransport {
       const encodedValue = Array.isArray(value)
         ? value.map(String).join(",")
         : String(value);
-      if (encodedValue.length > 0) {
-        url.searchParams.set(key, encodedValue);
-      }
+      url.searchParams.set(key, encodedValue);
     }
-  }
-
-  private authHeaders(): Record<string, string> {
-    if (this.token) {
-      return { Authorization: `Bearer ${this.token}` };
-    }
-    return {};
   }
 
   protected async request<T>(
@@ -121,8 +129,9 @@ export class ApiTransport {
   protected async requestPaginated<T>(
     path: string,
     params?: QueryParams,
+    options: ApiRequestOptions = {},
   ): Promise<PaginatedResponse<T>> {
-    const response = await this.fetchResponse(path, {}, params);
+    const response = await this.fetchResponse(path, options, params);
     return {
       data: await this.readJson<T[]>(response),
       ...this.paging(response),
@@ -146,7 +155,6 @@ export class ApiTransport {
     const jsonContent = config.jsonContent ?? true;
     const headers: RequestHeaders = {
       ...(jsonContent ? { "Content-Type": "application/json" } : {}),
-      ...this.authHeaders(),
       ...(options.headers as RequestHeaders),
     };
 
@@ -156,7 +164,7 @@ export class ApiTransport {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "Unknown error");
+      const text = await response.text().catch(() => "Service request failed");
       throw new ApiError(response.status, errorMessageFromText(text));
     }
 
@@ -164,9 +172,6 @@ export class ApiTransport {
   }
 
   private async readJson<T>(response: Response): Promise<T> {
-    if (typeof response.text !== "function") {
-      return response.json() as Promise<T>;
-    }
     const text = await response.text();
     if (!text.trim()) {
       return undefined as T;
@@ -179,9 +184,8 @@ export class ApiTransport {
     limit?: number;
   } {
     const nextKey = response.headers.get("X-Paging-NextKey") ?? undefined;
-    const limit = response.headers.get("X-Paging-Limit")
-      ? parseInt(response.headers.get("X-Paging-Limit")!, 10)
-      : undefined;
+    const limitHeader = response.headers.get("X-Paging-Limit");
+    const limit = limitHeader ? parseInt(limitHeader, 10) : undefined;
     return { nextKey, limit };
   }
 }

@@ -1,0 +1,10 @@
+apiVersion: tamoss.livewyer.io/v1alpha1
+kind: IngestRun
+metadata:
+  name: streamed-ingest
+  namespace: ($namespace)
+(status.phase): Succeeded
+(status.conditions[?type == 'Ready'] | [0].reason): IngestSucceeded
+(status.output.rootFlowID != ''): true
+(status.output.sourceID != ''): true
+(status.progress.bytesUploaded > `0`): true

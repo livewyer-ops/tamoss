@@ -2,7 +2,7 @@
 
 This directory contains the TAMOSS Kubernetes operator. Public install and
 operations guidance lives under `../docs/`; this README is for maintainers
-working on operator code and generated artifacts.
+working on operator code and generated artefacts.
 
 ## Public Docs
 
@@ -71,7 +71,7 @@ task operator:e2e:chainsaw:focus KUBECONFIG=/path/to/kubeconfig -- <test-dir-nam
 task operator:e2e:chainsaw:focus KUBECONFIG=/path/to/kubeconfig SELECTOR='test.tamoss.io/suite=smoke'
 ```
 
-## Generated Artifacts
+## Generated Artefacts
 
 - CRDs, RBAC, and webhook manifests are generated from Go API/controller code.
 - The public operator Kustomize install is rendered under `deploy/operator`.
@@ -83,22 +83,44 @@ task operator:manifests
 task operator:install-manifest
 ```
 
-## Install Boundary
+## Release catalogue
 
-The public TAMOSS install path is the checked-in deploy tree. Use:
+`spec.version` selects an entry in the operator installation's immutable
+`catalogue.json`. The release workflow builds the current entry from
+`compatibility.yaml` and image build digests, then embeds it in `install.yaml`.
+It also publishes the catalogue and records its checksum in `release.json`.
+
+When preparing a release, declare its schema revision, Alembic revision,
+runtime images and supported predecessor in `compatibility.yaml`. Copy each
+supported predecessor's published `runtime` record from `release.json` into
+`releases/<version>.json`. Preserve those historical records unchanged,
+including any supported prerelease whose schema differs from the final release.
+
+After changing current metadata, regenerate the development catalogue and
+installation:
 
 ```bash
-kubectl apply -k deploy/platform/<profile>
-kubectl apply --server-side -k deploy/operator
-kubectl apply -k deploy/environments/<name>
+python3 .github/scripts/release-catalogue.py --development --output operator/config/releases/catalogue.json
+task operator:install-manifest
 ```
 
-Local source builds use:
-
-```bash
-task kind:up PROFILE=local-kind
-```
+Local builds use `spec.version: dev`. `task kind:up` generates a separate
+catalogue with the locally built operand tag and schema target. Published
+installations use exact releases as described in the
+[installation guide](../docs/operations/install.md).
+The resources in `config/samples/` target local builds; replace `dev` with a
+supported release when adapting them for a published installation.
 
 ## License
 
 Licensed under the Apache License 2.0. See `../LICENSE`.
+
+## Installation defaults
+
+`TAMOSS_INSTANCE_DEFAULTS` points to an optional mounted YAML file. The default
+installation mounts an empty immutable ConfigMap; generated environment overlays
+replace the volume reference with their own hashed ConfigMap. Kustomize changes
+the Pod template when the file changes, so the manager reads it once at startup.
+All instance controllers use the same resolver. See
+[Runtime Configuration](../docs/reference/runtime-configuration.md#installation-defaults) for supported
+settings and precedence.

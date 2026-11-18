@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import timedelta
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from tamoss import worker
+from tamoss.adapters.object_storage import ConfiguredObjectStorage
 from tamoss.application.contexts import deletion_processor
 from tamoss.domain.model import StorageBackend, utc_now
 
@@ -254,10 +256,12 @@ def test_delete_worker_batches_object_cleanup_by_backend(
     )
 
 
+@pytest.mark.parametrize("failure", ["exception", "s3-response"])
 def test_delete_worker_retries_planned_cleanup_after_storage_failure(
     tamoss_app: FastAPI,
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    failure: str,
 ) -> None:
     use_cases = route_worker_to_app(tamoss_app)
     flow_id, _, _ = create_video_flow(client)
@@ -280,6 +284,15 @@ def test_delete_worker_retries_planned_cleanup_after_storage_failure(
         nonlocal attempts
         attempts += 1
         if attempts == 1:
+            if failure == "s3-response":
+                storage = ConfiguredObjectStorage(use_cases.settings)
+                s3 = Mock()
+                s3.delete_objects.return_value = {
+                    "Errors": [{"Key": object_id, "Code": "AccessDenied"}]
+                }
+                monkeypatch.setattr(storage, "_s3_client", lambda _backend: s3)
+                storage.delete_batch(failed_object_ids, backend=backend)
+                return
             raise RuntimeError("storage delete unavailable")
         original_delete_batch(failed_object_ids, backend=backend)
 
@@ -307,6 +320,7 @@ def test_delete_worker_retries_planned_cleanup_after_storage_failure(
     assert failed.timerange_remaining is None
     cleanups = use_cases.repository.list_object_cleanups(delete_request_id=request_id)
     assert cleanups[0].object_id == object_id
+    assert cleanups[0].status == "error"
     assert client.get(f"/flows/{flow_id}").status_code == 404
     assert client.get(f"/objects/{object_id}").status_code == 404
     assert (

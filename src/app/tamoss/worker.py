@@ -115,11 +115,10 @@ def purge_finished_queue_records(
     """
     if retention_seconds <= 0:
         return 0
-    purge = getattr(use_cases.repository, "purge_finished_worker_records", None)
-    if not callable(purge):
-        return 0
     cutoff = utc_now() - timedelta(seconds=retention_seconds)
-    return int(purge(older_than=cutoff, limit=limit))
+    return use_cases.webhooks.repository.purge_finished_worker_records(
+        older_than=cutoff, limit=limit
+    )
 
 
 def _default_worker_id() -> str:

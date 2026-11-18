@@ -3,35 +3,104 @@ version: "3"
 
 set: [errexit, nounset, pipefail]
 
+# Dependency auditing.
+#
+# This file is the single definition of what "audited" means. CI calls these
+# tasks rather than repeating the commands in workflow YAML, so a local
+# `task security:audit` and a CI run cannot report different things.
+#
+# Scanner failures and findings outside the advisory-specific approvals in
+# each ecosystem's osv-scanner.toml are fatal.
+
 tasks:
   audit:
+    desc: Audit dependencies for known vulnerabilities
     cmds:
-      - task: audit:osv
-      - task: audit:python
-      - task: audit:frontend
+      - |
+        status=0
+        for check in python frontend:signatures osv; do
+          task "security:audit:$check" || status=1
+        done
+        exit "$status"
 
-  audit:osv:
+  audit:python:
+    desc: Audit the locked Python dependency set
+    cmds:
+      - mkdir -p reports
+      # Audit the exported lockfile rather than the installed environment.
+      # Auditing the environment queries PyPI's JSON API once per package
+      # (including the private project name), so the job fails whenever that
+      # API wobbles; OSV takes the whole set in a single request.
+      - uv export --project src --frozen --no-emit-project --output-file reports/requirements-audit.txt
+      - uv run --project src --with pip-audit pip-audit -s osv --no-deps -r reports/requirements-audit.txt
+
+  audit:frontend:
+    desc: Audit frontend runtime and build dependencies
+    dir: src/app/frontend
     preconditions:
       - sh: command -v osv-scanner
         msg: "osv-scanner is required; run aqua install"
+    # The full audit already scans this lockfile through audit:osv. Keep this
+    # focused entry point on the same advisory policy, including dev packages.
     cmds:
-      - mkdir -p reports
       - |
-        osv-scanner \
-          --recursive \
-          --experimental-exclude=src/vendor/bbc-tams/examples \
-          --format=sarif \
-          --output-file=reports/osv-scanner.sarif \
-          ./
+        guard_status=0
+        node scripts/check-dependency-mitigation.mjs || guard_status=1
+        status=0
+        osv-scanner --lockfile=package-lock.json || status=$?
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
+        exit "$guard_status"
 
-  audit:python:
-    cmds:
-      - uv run --project src --with pip-audit pip-audit
-
-  audit:frontend:
+  audit:frontend:signatures:
+    desc: Verify frontend packages against registry signatures and provenance
     dir: src/app/frontend
     preconditions:
       - sh: command -v npm
         msg: "npm not found"
+      - sh: test -d node_modules
+        msg: "node_modules is required for signature verification; run task setup"
+    # Checks each installed package against the registry's signature and, where
+    # published, its provenance attestation. Unlike the advisory audits this
+    # can catch tampering that no vulnerability database knows about yet.
     cmds:
-      - npm audit --audit-level=high --omit=dev
+      - npm audit signatures
+
+  audit:frontend:dev:
+    desc: Audit frontend runtime and build dependencies
+    cmds:
+      - task: audit:frontend
+
+  audit:osv:
+    desc: Scan every ecosystem for known vulnerabilities via OSV
+    preconditions:
+      - sh: command -v osv-scanner
+        msg: "osv-scanner is required; run aqua install"
+    # Covers Go and all npm dependencies, including build tools. Broad Go call
+    # analysis stays disabled. The Go and frontend exclusions have separate
+    # checks for their import and execution boundaries.
+    cmds:
+      - mkdir -p reports
+      - |
+        guard_status=0
+        node src/app/frontend/scripts/check-dependency-mitigation.mjs || guard_status=1
+        for arch in amd64 arm64; do
+          if ! packages="$(cd operator && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go list -mod=readonly -deps -test ./...)" || [ -z "$packages" ]; then
+            printf 'OpenPGP exclusion check failed for linux/%s.\n' "$arch" >&2
+            guard_status=1
+            continue
+          fi
+          match_status=0
+          printf '%s\n' "$packages" | grep -E '^golang[.]org/x/crypto/openpgp(/|$)' || match_status=$?
+          if [ "$match_status" -ne 1 ]; then
+            printf 'GO-2026-5932 exclusion is invalid for linux/%s: OpenPGP import or failed import check.\n' "$arch" >&2
+            guard_status=1
+          fi
+        done
+        set -- --recursive --no-call-analysis=go --experimental-exclude=src/vendor/bbc-tams/examples
+        status=0
+        osv-scanner "$@" --format=sarif --output-file=reports/osv-scanner.sarif ./ || status=$?
+        if [ "$status" -ne 0 ]; then
+          osv-scanner "$@" ./ || true
+          exit "$status"
+        fi
+        exit "$guard_status"

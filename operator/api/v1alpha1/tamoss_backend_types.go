@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 type BackendsSpec struct {
@@ -38,6 +39,14 @@ type DBExternalSpec struct {
 	//+kubebuilder:validation:MinLength=1
 	Database string              `json:"database,omitempty"`
 	Auth     SecretReferenceSpec `json:"auth,omitempty"`
+	// TLS enables certificate and hostname verification for every database consumer.
+	TLS *DBTLSSpec `json:"tls,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="has(self.caConfigMap.name) && self.caConfigMap.name.size() > 0 && self.caConfigMap.key.size() > 0 && (!has(self.caConfigMap.optional) || !self.caConfigMap.optional)",message="database TLS requires a non-optional CA ConfigMap name and key"
+type DBTLSSpec struct {
+	// CAConfigMap selects the PEM CA bundle in the Tamoss namespace.
+	CAConfigMap corev1.ConfigMapKeySelector `json:"caConfigMap"`
 }
 
 type DBBundledSpec struct {
@@ -48,8 +57,7 @@ type DBBundledSpec struct {
 type DBCNPGSpec struct {
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:default=1
-	Instances int32 `json:"instances,omitempty"`
-	//+kubebuilder:default="18"
+	Instances       int32                       `json:"instances,omitempty"`
 	PostgresVersion string                      `json:"postgresVersion,omitempty"`
 	Storage         BackendStorageSpec          `json:"storage,omitempty"`
 	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -168,11 +176,25 @@ type S3BackendSpec struct {
 	External       *S3ExternalSpec       `json:"external,omitempty"`
 	Bundled        *S3BundledSpec        `json:"bundled,omitempty"`
 	RustFSOperator *S3RustFSOperatorSpec `json:"rustfsOperator,omitempty"`
+	// Tags are advertised on the operator-managed default TAMS storage backend.
+	// Each value is either a string or an array of strings, matching the TAMS API.
+	Tags map[string]apiextensionsv1.JSON `json:"tags,omitempty"`
 }
 
+type S3CredentialSource string
+
+const (
+	S3CredentialSourceSecret      S3CredentialSource = "secret"
+	S3CredentialSourceWebIdentity S3CredentialSource = "web-identity"
+)
+
+// +kubebuilder:validation:XValidation:rule="!has(self.credentialSource) || self.credentialSource != 'web-identity' || !has(self.auth) || !has(self.auth.existingSecret) || self.auth.existingSecret.size() == 0",message="web-identity must not reference a credentials Secret"
 type S3ExternalSpec struct {
-	Endpoint S3EndpointSpec      `json:"endpoint,omitempty"`
-	Auth     SecretReferenceSpec `json:"auth,omitempty"`
+	// CredentialSource selects static Secret credentials or the workload's web identity.
+	//+kubebuilder:validation:Enum=secret;web-identity
+	CredentialSource S3CredentialSource  `json:"credentialSource,omitempty"`
+	Endpoint         S3EndpointSpec      `json:"endpoint,omitempty"`
+	Auth             SecretReferenceSpec `json:"auth,omitempty"`
 	//+kubebuilder:default=us-east-1
 	Region string `json:"region,omitempty"`
 	//+kubebuilder:default=tamoss

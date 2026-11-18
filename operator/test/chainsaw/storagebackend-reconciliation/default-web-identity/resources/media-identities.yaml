@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tams-default-s3-auth
+type: Opaque
+stringData:
+  RUSTFS_ACCESS_KEY: tamoss-default
+  RUSTFS_SECRET_KEY: tamoss-default-fixture-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tams-archive-s3-auth
+type: Opaque
+stringData:
+  RUSTFS_ACCESS_KEY: tamoss-archive
+  RUSTFS_SECRET_KEY: tamoss-archive-fixture-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-policies
+data:
+  tamoss.json: |
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+          "Resource": ["arn:aws:s3:::tamoss"]
+        },
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+          "Resource": ["arn:aws:s3:::tamoss/*"]
+        },
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject"],
+          "Resource": ["arn:aws:s3:::archive/*"]
+        }
+      ]
+    }
+  archive.json: |
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+          "Resource": ["arn:aws:s3:::archive"]
+        },
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+          "Resource": ["arn:aws:s3:::archive/*"]
+        },
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject"],
+          "Resource": ["arn:aws:s3:::tamoss/*"]
+        }
+      ]
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: media-identity-setup
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+      - &admin
+        name: default-policy
+        image: rustfs/rc:v0.1.36
+        command: [rc]
+        args: [admin, policy, create, fixture, tamoss-media, /policies/tamoss.json]
+        env:
+        - name: FIXTURE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-rustfs-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: FIXTURE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-rustfs-auth
+              key: RUSTFS_SECRET_KEY
+        - name: RC_HOST_fixture
+          value: http://$(FIXTURE_ACCESS_KEY):$(FIXTURE_SECRET_KEY)@rustfs-svc:9000
+        - name: DEFAULT_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-default-s3-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: DEFAULT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-default-s3-auth
+              key: RUSTFS_SECRET_KEY
+        - name: ARCHIVE_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-archive-s3-auth
+              key: RUSTFS_ACCESS_KEY
+        - name: ARCHIVE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: tams-archive-s3-auth
+              key: RUSTFS_SECRET_KEY
+        volumeMounts:
+        - name: policies
+          mountPath: /policies
+          readOnly: true
+      - <<: *admin
+        name: archive-policy
+        args: [admin, policy, create, fixture, archive-media, /policies/archive.json]
+      - <<: *admin
+        name: default-user
+        args: [admin, user, add, fixture, $(DEFAULT_ACCESS_KEY), $(DEFAULT_SECRET_KEY)]
+      - <<: *admin
+        name: archive-user
+        args: [admin, user, add, fixture, $(ARCHIVE_ACCESS_KEY), $(ARCHIVE_SECRET_KEY)]
+      - <<: *admin
+        name: default-policy-attachment
+        args: [admin, policy, attach, fixture, tamoss-media, --user, $(DEFAULT_ACCESS_KEY)]
+      containers:
+      - <<: *admin
+        name: archive-policy-attachment
+        args: [admin, policy, attach, fixture, archive-media, --user, $(ARCHIVE_ACCESS_KEY)]
+      volumes:
+      - name: policies
+        configMap:
+          name: media-policies

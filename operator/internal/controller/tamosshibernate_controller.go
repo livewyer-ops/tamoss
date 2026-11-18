@@ -25,17 +25,19 @@ import (
 
 	tamossv1alpha1 "github.com/livewyer-ops/tamoss/operator/api/v1alpha1"
 	"github.com/livewyer-ops/tamoss/operator/internal/controller/defaults"
-	schemabundle "github.com/livewyer-ops/tamoss/operator/internal/schema"
+	"github.com/livewyer-ops/tamoss/operator/internal/releases"
 	operatorstatus "github.com/livewyer-ops/tamoss/operator/internal/status"
 )
 
 type TamossHibernateReconciler struct {
-	Client          client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	WatchNamespaces WatchNamespaceSet
-	ManifestWriter  HibernationManifestWriter
-	PollInterval    time.Duration
+	Releases         releases.Catalogue
+	InstanceDefaults *defaults.Installation
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	Recorder         record.EventRecorder
+	WatchNamespaces  WatchNamespaceSet
+	ManifestWriter   HibernationManifestWriter
+	PollInterval     time.Duration
 }
 
 const tamossHibernateFinalizer = "tamosshibernate.tamoss.livewyer.io/finalizer"
@@ -49,7 +51,7 @@ const tamossHibernateFinalizer = "tamosshibernate.tamoss.livewyer.io/finalizer"
 //+kubebuilder:rbac:groups="",namespace=system,resources=pods;secrets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,namespace=system,resources=deployments,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=clusters,verbs=get;list;watch;update;patch;delete
-//+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=backups,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=backups,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=postgresql.cnpg.io,namespace=system,resources=scheduledbackups,verbs=get;list;watch;update;patch
 
 func (r *TamossHibernateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -322,8 +324,10 @@ func (r *TamossHibernateReconciler) resolveHibernateTamoss(ctx context.Context, 
 		}
 		return nil, false, err
 	}
-	resolved := tamoss.DeepCopy()
-	defaults.Apply(resolved)
+	resolved, err := resolveTamoss(tamoss, r.Releases, r.InstanceDefaults)
+	if err != nil {
+		return nil, false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, releaseErrorReason(err), err.Error(), tamossv1alpha1.HibernationArtifactStatus{})
+	}
 	return resolved, true, nil
 }
 
@@ -408,6 +412,20 @@ func (r *TamossHibernateReconciler) acceptOperationRetry(ctx context.Context, hi
 	if hibernate.Status.AcceptedRetry == value {
 		return false, nil
 	}
+	backup := &cnpgv1.Backup{}
+	key := types.NamespacedName{Name: hibernate.Name, Namespace: hibernate.Namespace}
+	if err := r.Client.Get(ctx, key, backup); err != nil && !apierrors.IsNotFound(err) {
+		return false, err
+	}
+	if metav1.IsControlledBy(backup, hibernate) && backup.Status.Phase == cnpgv1.BackupPhaseFailed {
+		// A terminal Backup cannot run again. Wait for its removal before accepting the retry.
+		if backup.DeletionTimestamp.IsZero() {
+			if err := r.Client.Delete(ctx, backup, client.Preconditions{UID: &backup.UID}); err != nil && !apierrors.IsNotFound(err) {
+				return false, err
+			}
+		}
+		return true, nil
+	}
 	original := hibernate.DeepCopy()
 	hibernate.Status.Phase = ""
 	hibernate.Status.Reason = operatorstatus.ReasonReconciling
@@ -472,12 +490,12 @@ func (r *TamossHibernateReconciler) validateHibernateSourceSchema(ctx context.Co
 		return true, nil
 	}
 	condition := meta.FindStatusCondition(tamoss.Status.Conditions, operatorstatus.ConditionSchemaMigrated)
-	if condition == nil || condition.Status != metav1.ConditionTrue {
+	if condition == nil || condition.Status != metav1.ConditionTrue || !r.InstanceDefaults.AppliedTo(tamoss) {
 		message := fmt.Sprintf("Tamoss %s is waiting for schema migration before hibernation", tamoss.Name)
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseResolvingSource, operatorstatus.ReasonSchemaNotReady, message, artifact)
 	}
 	version := strings.TrimSpace(tamoss.Status.SchemaVersion)
-	if version == "" || !schemabundle.IsSupportedStartingVersion(version) {
+	if version == "" || !r.Releases[tamoss.Spec.Version].Schema.Supports(version) {
 		message := fmt.Sprintf("Tamoss %s schema version %q is not supported for hibernation", tamoss.Name, version)
 		return false, r.updateHibernateStatus(ctx, hibernate, tamossv1alpha1.TamossOperationPhaseFailed, operatorstatus.ReasonUnsupportedSchemaVersion, message, artifact)
 	}
@@ -535,7 +553,7 @@ func hibernateSecretKey(secretName, key string) *cnpgv1.SecretKeySelector {
 
 func (r *TamossHibernateReconciler) quiesceTamossWorkloads(ctx context.Context, tamoss *tamossv1alpha1.Tamoss) (bool, error) {
 	quiesced := true
-	for _, component := range []string{"worker", "api", "ui"} {
+	for _, component := range []string{"worker", componentAPI, "ui", "console"} {
 		autoscaler := &autoscalingv2.HorizontalPodAutoscaler{}
 		key := types.NamespacedName{Name: tamoss.ResourceName(component), Namespace: tamoss.Namespace}
 		if err := r.Client.Get(ctx, key, autoscaler); err == nil {
@@ -635,7 +653,7 @@ func (r *TamossHibernateReconciler) ensureHibernateCNPGBackup(ctx context.Contex
 				Labels: map[string]string{
 					"app.kubernetes.io/name":                    tamossAppName,
 					appInstanceLabel:                            tamoss.Name,
-					"app.kubernetes.io/component":               "hibernate",
+					appComponentLabel:                           "hibernate",
 					"app.kubernetes.io/managed-by":              "tamoss-operator",
 					"tamoss.livewyer.io/tamosshibernate":        hibernate.Name,
 					"tamoss.livewyer.io/tamosshibernate-driver": string(hibernateDriver(hibernate)),

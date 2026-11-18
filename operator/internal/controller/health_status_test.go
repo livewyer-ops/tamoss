@@ -57,7 +57,7 @@ func TestBackupPolicyConditionConfigured(t *testing.T) {
 
 func TestObservedBackupPolicyMissingScheduledBackup(t *testing.T) {
 	tamoss := cnpgBackupTamoss(true)
-	reconciler := &TamossReconciler{Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).Build()}
+	reconciler := &TamossReconciler{Releases: testReleases(), Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).Build()}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
 	if err != nil {
@@ -76,7 +76,8 @@ func TestObservedBackupPolicyArchivingUnknown(t *testing.T) {
 	scheduled := scheduledBackup(tamoss)
 	cluster := cnpgCluster(tamoss)
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
 	}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
@@ -107,7 +108,8 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 	cluster.Status.LastFailedBackup = "2026-05-22T12:00:00Z"         //nolint:staticcheck // see above
 	cluster.Status.FirstRecoverabilityPoint = "2026-05-22T10:00:00Z" //nolint:staticcheck // see above
 	reconciler := &TamossReconciler{
-		Client: fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
+		Releases: testReleases(),
+		Client:   fake.NewClientBuilder().WithScheme(healthStatusScheme(t)).WithObjects(scheduled, cluster).Build(),
 	}
 
 	condition, status, err := reconciler.observedBackupPolicy(context.Background(), tamoss)
@@ -137,9 +139,11 @@ func TestObservedBackupPolicyFailureAndHealthy(t *testing.T) {
 
 func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	var probedPath string
+	var probedOrigin string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probedPath = r.URL.Path
-		w.Header().Set("Access-Control-Allow-Origin", "https://app.tamoss.example.com")
+		probedOrigin = r.Header.Get("Origin")
+		w.Header().Set("Access-Control-Allow-Origin", probedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -150,7 +154,7 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	spec := externalStorageBackendSpecFixture()
 	spec.BucketName = "archive"
 	spec.Endpoint.Public.URL = server.URL
-	reconciler := &StorageBackendReconciler{HTTPClient: server.Client()}
+	reconciler := &StorageBackendReconciler{Releases: testReleases(), HTTPClient: server.Client()}
 
 	diagnostic := reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
 	if diagnostic.Status != metav1.ConditionTrue || diagnostic.Reason != operatorstatus.ReasonExternalS3DiagnosticReady {
@@ -159,6 +163,16 @@ func TestExternalS3DiagnosticSuccessFailureAndSkipped(t *testing.T) {
 	if probedPath != "/archive" {
 		t.Fatalf("expected preflight against the bucket URL, got path %q", probedPath)
 	}
+	if probedOrigin != "https://app.tamoss.example.com" {
+		t.Fatalf("expected derived UI origin, got %q", probedOrigin)
+	}
+
+	tamoss.Spec.PublicEndpoint.UIURL = "https://app.tamoss.example.com:30443/"
+	diagnostic = reconciler.externalS3Diagnostic(context.Background(), tamoss, spec)
+	if diagnostic.Status != metav1.ConditionTrue || probedOrigin != "https://app.tamoss.example.com:30443" {
+		t.Fatalf("expected diagnostic to use the exact public UI origin, got origin %q and result %#v", probedOrigin, diagnostic)
+	}
+	tamoss.Spec.PublicEndpoint.UIURL = ""
 
 	blockedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
