@@ -5,7 +5,7 @@ metadata:
     app.kubernetes.io/name: tamoss
     app.kubernetes.io/instance: example
     app.kubernetes.io/managed-by: tamoss-operator
-    tamoss.livewyer.io/authentik-version: "2026.2"
+    tamoss.livewyer.io/authentik-version: "2026.5"
 entries:
   - model: authentik_providers_oauth2.scopemapping
     id: scope-tams-api-admin
@@ -56,6 +56,14 @@ entries:
       name: tamoss-tams-example
       client_id: client-id
       client_secret: client-secret
+      grant_types:
+        - authorization_code
+        - implicit
+        - hybrid
+        - refresh_token
+        - client_credentials
+        - password
+        - urn:ietf:params:oauth:grant-type:device_code
       authorization_flow: !Find
         - authentik_flows.flow
         - - slug

@@ -2,7 +2,7 @@ enabled: false
 
 image:
   repository: rustfs/operator
-  tag: "0.0.1"
+  tag: "0.0.8"
   pullPolicy: IfNotPresent
 
 resources:

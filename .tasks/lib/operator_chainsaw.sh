@@ -126,7 +126,7 @@ EOF
   helmfile_args=(
     sync
     --selector component=cert-manager
-    --sync-args "--server-side=true --rollback-on-failure"
+    --sync-args "--rollback-on-failure"
     --wait
     --wait-for-jobs
   )
