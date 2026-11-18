@@ -8,6 +8,8 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 
 ### Fixed
 
+- Update the UI image to NGINX 1.31.9 for CVE-2026-123633 and CVE-2026-123007.
+  Both vulnerabilities require HTTP/2. The UI listener has HTTP/2 disabled by default.
 - Require an explicit environment operator overlay and validate its rendering
   before platform changes, preventing accidental development installations.
 - Explain unsupported releases and legacy adoption in operator status, display
