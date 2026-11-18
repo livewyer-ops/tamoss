@@ -12,22 +12,19 @@ func TestPublishedEntriesAndTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := catalogue["8.2.0-oss1"]
-	rc := catalogue["8.2.0-oss2-rc2"]
-	if rc.Schema.Version != old.Schema.Version || rc.Schema.DatabaseRevision != "20260810_0007" || catalogue["dev"].Schema.DatabaseRevision != "20260924_0008" {
-		t.Fatal("published RC schema was replaced by current family metadata")
+	old := catalogue["8.2.0-oss2"]
+	if old.Schema.Version != "8.2.0-oss2" || old.Schema.DatabaseRevision != "20260924_0008" || catalogue["dev"].Schema.DatabaseRevision != old.Schema.DatabaseRevision {
+		t.Fatal("published OSS2 schema was replaced by current family metadata")
 	}
 	for _, tc := range []struct {
 		desired, current string
 		allowed          bool
 	}{
 		{old.Version, "", true},
-		{rc.Version, old.Version, true},
 		{"dev", old.Version, true},
-		{"dev", rc.Version, true},
 		{old.Version, old.Version, true},
-		{old.Version, rc.Version, false},
-		{"dev", "8.1.0-oss6", false},
+		{old.Version, "dev", false},
+		{"dev", "8.2.0-oss1", false},
 		{"", old.Version, false},
 		{"latest", old.Version, false},
 	} {

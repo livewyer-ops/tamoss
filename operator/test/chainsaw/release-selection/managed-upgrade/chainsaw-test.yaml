@@ -29,14 +29,14 @@ spec:
               - name: instance
                 value: previous
               - name: version
-                value: 8.2.0-oss1
+                value: 8.2.0-oss2
         - apply:
             file: resources/instance.yaml
             bindings:
               - name: instance
                 value: candidate
               - name: version
-                value: 8.2.0-oss2-rc2
+                value: 8.2.0-oss2
         - assert:
             file: resources/ready.yaml
             timeout: 10m
@@ -44,7 +44,7 @@ spec:
               - name: instance
                 value: previous
               - name: version
-                value: 8.2.0-oss1
+                value: 8.2.0-oss2
         - command:
             entrypoint: kubectl
             env:
@@ -94,7 +94,7 @@ spec:
               - name: instance
                 value: candidate
               - name: version
-                value: 8.2.0-oss2-rc2
+                value: 8.2.0-oss2
         - command:
             entrypoint: kubectl
             env:
@@ -139,6 +139,13 @@ spec:
                 value: "True"
 
     - name: upgrade previous and preserve stored data
+      bindings:
+        - name: previousSchemaData
+          value: (x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'previous-schema-state').data)
+        - name: candidateSchemaData
+          value: (x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'candidate-schema-state').data)
+        - name: candidateAPISpec
+          value: (x_k8s_get($client, 'apps/v1', 'Deployment', $namespace, 'candidate-api').spec)
       try:
         - patch:
             resource:
@@ -219,7 +226,7 @@ spec:
               - name: instance
                 value: candidate
               - name: version
-                value: 8.2.0-oss2-rc2
+                value: 8.2.0-oss2
         - command:
             entrypoint: kubectl
             env:
@@ -244,10 +251,34 @@ spec:
               - "SELECT version_num FROM alembic_version;"
             check:
               ($error == null): true
-              (trim_space($stdout)): "20260810_0007"
+              (trim_space($stdout)): "20260924_0008"
+
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: previous-schema-state
+              data: ($previousSchemaData)
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: candidate-schema-state
+              data: ($candidateSchemaData)
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: candidate-api
+              spec: ($candidateAPISpec)
 
     - name: recover a failed storage rollout and preserve stored data
       bindings:
+        - name: candidateSchemaData
+          value: (x_k8s_get($client, 'v1', 'ConfigMap', $namespace, 'candidate-schema-state').data)
         - name: originalEnv
           value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'Tamoss', $namespace, 'candidate').spec.backends.s3.rustfsOperator.env)
         - name: apiGeneration
@@ -301,7 +332,7 @@ spec:
               - "SELECT version_num FROM alembic_version;"
             check:
               ($error == null): true
-              (trim_space($stdout)): "20260810_0007"
+              (trim_space($stdout)): "20260924_0008"
         - assert:
             file: resources/ready.yaml
             bindings:
@@ -391,3 +422,10 @@ spec:
               metadata:
                 name: candidate-s3-creds
                 resourceVersion: ($credentialsVersion)
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: candidate-schema-state
+              data: ($candidateSchemaData)

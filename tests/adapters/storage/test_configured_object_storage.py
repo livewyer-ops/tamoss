@@ -204,11 +204,19 @@ def test_streamed_copy_preserves_source_checksum_algorithms(
         empty_and_delete_bucket(destination)
 
 
+@pytest.mark.parametrize("streamed", [False, True])
 def test_managed_multipart_copy_preserves_bytes_and_metadata(
-    object_storage, s3_backend
+    object_storage, s3_backend, streamed
 ):
     destination = replace(
-        s3_backend, id=uuid4(), bucket_name=f"tamoss-copy-{uuid4().hex[:12]}"
+        s3_backend,
+        id=uuid4(),
+        bucket_name=f"tamoss-copy-{uuid4().hex[:12]}",
+        endpoint_url=(
+            f"{s3_backend.endpoint_url.rstrip('/')}/"
+            if streamed
+            else s3_backend.endpoint_url
+        ),
     )
     ensure_bucket(destination)
     body = bytes(range(256)) * (64 * 1024)
@@ -220,21 +228,25 @@ def test_managed_multipart_copy_preserves_bytes_and_metadata(
         Body=body,
         ContentType="video/mp2t",
         Metadata={"origin": "source"},
+        ChecksumSHA256=checksum_value(body, "sha256"),
     )
     parts = []
     destination_client = object_storage._s3_client(destination)
     destination_client.meta.events.register(
-        "before-call.s3.UploadPartCopy", lambda **kwargs: parts.append(kwargs)
+        f"before-call.s3.{'UploadPart' if streamed else 'UploadPartCopy'}",
+        lambda **kwargs: parts.append(kwargs),
     )
     try:
         object_storage.copy(
             object_id, source_backend=s3_backend, destination_backend=destination
         )
         assert len(parts) >= 2
-        assert object_storage.read(object_id, backend=destination) == body
-        metadata = destination_client.head_object(
-            Bucket=destination.bucket_name, Key=object_id
+        metadata = destination_client.get_object(
+            Bucket=destination.bucket_name, Key=object_id, ChecksumMode="ENABLED"
         )
+        assert metadata["Body"].read() == body
+        if streamed:
+            assert metadata["ChecksumSHA256"]
         assert metadata["ContentType"] == "video/mp2t"
         assert metadata["Metadata"] == {"origin": "source"}
     finally:
