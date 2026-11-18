@@ -1,3 +1,4 @@
+import { Events } from "hls.js";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlowSegmentParams } from "@/api/client";
 import type { ApiRequestOptions } from "@/api/transport";
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => {
       getDuration: vi.fn(() => 12),
       getPlaybackEngine: vi.fn(() => ({
         hls: {
+          constructor: { Events },
           on: vi.fn(),
           off: vi.fn(),
           audioTrack: 0,

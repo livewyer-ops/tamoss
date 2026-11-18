@@ -7,7 +7,8 @@ import {
   PlayerEventType,
 } from "@byomakase/omakase-player/dist/omakase-player.es.js";
 import "@byomakase/omakase-player/dist/omakase-player.css";
-import { type ErrorData, Events } from "hls.js";
+import type Hls from "hls.js";
+import type { Events } from "hls.js";
 import { installSensitiveConsoleErrorRedaction } from "@/player/console-redaction";
 import {
   descriptorMediaUrls,
@@ -486,7 +487,8 @@ export function createOmakasePreview({
     if (plan.kind === "hls") {
       const hls = player.player.getPlaybackEngine(MainMediaType.HLS).hls;
       if (!hls) throw new Error("HLS playback engine is unavailable");
-      const onError = (_event: Events.ERROR, data: ErrorData) => {
+      const events = (hls.constructor as typeof Hls).Events;
+      const onError = (_event: Events.ERROR, data: { fatal: boolean }) => {
         if (data.fatal) reportPlaybackFailure();
       };
       const onSwitching = () => {
@@ -498,14 +500,14 @@ export function createOmakasePreview({
         switchingAudio = false;
         checkBuffer();
       };
-      hls.on(Events.ERROR, onError);
-      hls.on(Events.AUDIO_TRACK_SWITCHING, onSwitching);
-      hls.on(Events.AUDIO_TRACK_SWITCHED, onSwitched);
+      hls.on(events.ERROR, onError);
+      hls.on(events.AUDIO_TRACK_SWITCHING, onSwitching);
+      hls.on(events.AUDIO_TRACK_SWITCHED, onSwitched);
       subscriptions.push({
         unsubscribe() {
-          hls.off(Events.ERROR, onError);
-          hls.off(Events.AUDIO_TRACK_SWITCHING, onSwitching);
-          hls.off(Events.AUDIO_TRACK_SWITCHED, onSwitched);
+          hls.off(events.ERROR, onError);
+          hls.off(events.AUDIO_TRACK_SWITCHING, onSwitching);
+          hls.off(events.AUDIO_TRACK_SWITCHED, onSwitched);
         },
       });
       const selected = plan.audioTracks.findIndex(
@@ -524,10 +526,8 @@ export function createOmakasePreview({
           scrubberClickSeek: true,
           zoomWheelEnabled: true,
           style: {
-            stageMinWidth: 640,
+            minWidth: 640,
             backgroundFill: "#f7f8f8",
-            headerBackgroundFill: "#eef1f2",
-            footerBackgroundFill: "#eef1f2",
             playheadFill: "#172126",
             playheadLineWidth: 2,
             playheadPlayProgressFill: "#007b67",

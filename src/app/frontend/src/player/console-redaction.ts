@@ -10,7 +10,7 @@ let originalConsoleError: ConsoleError | undefined;
 let installedConsoleError: ConsoleError | undefined;
 
 /**
- * Omakase 1.1.1 logs hls.js ErrorData directly. Keep signed URLs out of that
+ * Omakase logs hls.js ErrorData directly. Keep signed URLs out of that
  * pinned third-party logging path while a preview owns them in memory.
  */
 export function installSensitiveConsoleErrorRedaction(

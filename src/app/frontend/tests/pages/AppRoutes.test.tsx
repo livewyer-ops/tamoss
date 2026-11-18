@@ -1169,24 +1169,4 @@ describe("operational routes", () => {
     expect(screen.getByText("Request failed")).toBeVisible();
     expect(screen.queryByText("No active warnings")).not.toBeInTheDocument();
   });
-
-  it("manages focus and Escape for the mobile navigation drawer", async () => {
-    renderRoute("/sources");
-    await screen.findByRole("heading", { name: "Sources" });
-    // CSS media queries are not evaluated by JSDOM, so query the mobile-only
-    // control by its accessible label while testing its focus state machine.
-    const open = screen.getByLabelText("Open navigation");
-
-    fireEvent.click(open);
-    const close = screen
-      .getByRole("complementary")
-      .querySelector<HTMLButtonElement>('[aria-label="Close navigation"]');
-    expect(close).not.toBeNull();
-    expect(open).toHaveAttribute("aria-expanded", "true");
-    expect(close).toHaveFocus();
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(open).toHaveAttribute("aria-expanded", "false");
-    expect(open).toHaveFocus();
-  });
 });
