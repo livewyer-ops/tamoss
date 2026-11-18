@@ -8,7 +8,7 @@ LABEL "org.opencontainers.image.authors"="LiveWyer"
 LABEL "org.opencontainers.image.description"="TAMOSS API server"
 LABEL "org.opencontainers.image.source"="https://github.com/livewyer-ops/tamoss"
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /uvx /bin/
 
 WORKDIR /app
 RUN addgroup -S -g 1001 tamoss && adduser -S -D -H -u 1001 -G tamoss tamoss && chown tamoss:tamoss /app
