@@ -15,22 +15,23 @@ spec:
     chartVersion: 41.5.0
     source: https://github.com/traefik/traefik/releases/tag/v3.7.13
   authentik:
-    version: 2026.2.7
+    version: 2026.5.7
     chart: goauthentik/authentik
-    chartVersion: 2026.2.3
-    source: https://github.com/goauthentik/authentik/releases/tag/version/2026.2.7
+    chartVersion: 2026.5.6
+    source: https://github.com/goauthentik/authentik/releases/tag/version/2026.5.7
   cnpg:
-    version: v1.30.0
+    version: v1.30.1
     chart: cloudnative-pg/cloudnative-pg
-    chartVersion: 0.29.0
-    source: https://github.com/cloudnative-pg/cloudnative-pg/releases/tag/v1.30.0
+    chartVersion: 0.29.1
+    source: https://github.com/cloudnative-pg/cloudnative-pg/releases/tag/v1.30.1
   rustfsOperator:
-    chartVersion: 0.1.0
-    imageTag: 0.0.1
+    chartVersion: 0.2.0
+    imageTag: 0.0.8
     repository: https://github.com/rustfs/operator.git
-    ref: ff80d847806eb7cfc9c4a33769715a6b0f3145dd
+    ref: f291e13af4648dda57aff1e01e4fb869f43d976e
     manifest: deploy/platform/charts/rustfs-operator/templates/rustfs-operator.yaml
     crdManifest: deploy/platform/charts/rustfs-operator/templates/tenant-crd.yaml
+    policyBindingCRDManifest: deploy/platform/charts/rustfs-operator/templates/policybinding-crd.yaml
   rustfs:
     version: 1.0.0
     source: https://github.com/rustfs/rustfs/releases/tag/1.0.0

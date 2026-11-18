@@ -34,7 +34,7 @@ func selectionCatalogue(t *testing.T) releases.Catalogue {
 func TestReleaseSelectionIsPerInstanceAndDoesNotPersistDefaults(t *testing.T) {
 	ctx := context.Background()
 	catalogue := selectionCatalogue(t)
-	old := catalogue["8.2.0-oss1"]
+	old := catalogue["8.2.0-oss2"]
 	next := catalogue["dev"]
 	first := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "first", Namespace: "media", UID: "first"}, Spec: tamossv1alpha1.TamossSpec{Version: old.Version, Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: old.Version}}
 	second := first.DeepCopy()
@@ -125,13 +125,61 @@ func TestReleaseOverridesAndRemoval(t *testing.T) {
 	}
 }
 
+func TestAPIOnlyReleasePreservesSchemaState(t *testing.T) {
+	ctx := context.Background()
+	catalogue := selectionCatalogue(t)
+	old := catalogue["8.2.0-oss2"]
+	next := catalogue["dev"]
+	next.Schema.Version = old.Schema.Version
+	next.Schema.PreviousVersion = old.Schema.Version
+	catalogue[next.Version] = next
+	instance := &tamossv1alpha1.Tamoss{
+		ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "media"},
+		Spec:       tamossv1alpha1.TamossSpec{Version: next.Version, Profile: tamossv1alpha1.TamossProfileEdge},
+		Status:     tamossv1alpha1.TamossStatus{CurrentVersion: old.Version},
+	}
+	state := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace},
+		Data: map[string]string{
+			schemaStateAppliedVersionKey: old.Schema.Version,
+			schemaStateLastAppliedAtKey:  "2026-10-20T12:00:00Z",
+			schemaStateJobUIDKey:         "published-migration",
+			schemaStateFixturesKey:       "true",
+		},
+	}
+	scheme := storageBackendTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(state).Build()
+	resolved, err := resolveTamoss(instance, catalogue, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&SchemaController{Client: c, Scheme: scheme, Target: next.Schema}).Reconcile(ctx, resolved)
+	if err != nil || !result.Ready {
+		t.Fatalf("API-only update did not accept existing schema: %#v, %v", result, err)
+	}
+	actual := &corev1.ConfigMap{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(state), actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual.Data, state.Data) {
+		t.Fatal("API-only update changed migration state")
+	}
+	jobs := &batchv1.JobList{}
+	if err := c.List(ctx, jobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Items) != 0 {
+		t.Fatal("API-only update repeated the schema migration")
+	}
+}
+
 func TestVersionGateLeavesExistingWorkloadsUntouched(t *testing.T) {
 	for _, tc := range []struct{ version, current, observed, reason, defaults string }{
-		{"", "", "8.2.0-oss1", "VersionRequired", ""},
-		{"unknown", "", "8.2.0-oss1", "UnsupportedVersion", ""},
-		{"8.2.0-oss1", "8.2.0-oss2-rc2", "8.2.0-oss1", "UnsupportedUpgrade", ""},
-		{"dev", "", "8.2.0-oss1", "VersionAdoptionRequired", ""},
-		{"8.2.0-oss1", "8.2.0-oss1", "future", operatorstatus.ReasonUnsupportedSchemaVersion, ""},
+		{"", "", "8.2.0-oss2", "VersionRequired", ""},
+		{"unknown", "", "8.2.0-oss2", "UnsupportedVersion", ""},
+		{"8.2.0-oss2", "dev", "8.2.0-oss2", "UnsupportedUpgrade", ""},
+		{"dev", "", "8.2.0-oss2", "VersionAdoptionRequired", ""},
+		{"8.2.0-oss2", "8.2.0-oss2", "future", operatorstatus.ReasonUnsupportedSchemaVersion, ""},
 		{"dev", "dev", "", "InvalidInstallationDefaults", "profile: invalid"},
 	} {
 		t.Run(tc.reason, func(t *testing.T) {
@@ -198,7 +246,7 @@ func TestReleaseCompletionWaitsForRequestedWorkloadGeneration(t *testing.T) {
 func TestReleaseSelectionCannotChangeAfterBackendWorkBegins(t *testing.T) {
 	ctx := context.Background()
 	catalogue := selectionCatalogue(t)
-	raw := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "media"}, Spec: tamossv1alpha1.TamossSpec{Version: "dev", Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: "8.2.0-oss1", SchemaVersion: "8.2.0-oss1"}}
+	raw := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: "instance", Namespace: "media"}, Spec: tamossv1alpha1.TamossSpec{Version: "dev", Profile: tamossv1alpha1.TamossProfileEdge}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: "8.2.0-oss2", SchemaVersion: "8.2.0-oss2"}}
 	c := fake.NewClientBuilder().WithScheme(hibernateTestScheme(t)).WithStatusSubresource(raw).WithObjects(raw).Build()
 	r := &TamossReconciler{Client: c, Releases: catalogue}
 	resolved, err := resolveTamoss(raw, catalogue, nil)
@@ -214,10 +262,10 @@ func TestReleaseSelectionCannotChangeAfterBackendWorkBegins(t *testing.T) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(raw), raw); err != nil {
 		t.Fatal(err)
 	}
-	if raw.Status.CurrentVersion != "8.2.0-oss1" || raw.Status.SchemaVersion != "8.2.0-oss1" || raw.Status.Upgrade.TargetVersion != "dev" {
+	if raw.Status.CurrentVersion != "8.2.0-oss2" || raw.Status.SchemaVersion != "8.2.0-oss2" || raw.Status.Upgrade.TargetVersion != "dev" {
 		t.Fatal("starting an upgrade changed the applied version")
 	}
-	raw.Spec.Version = "8.2.0-oss1"
+	raw.Spec.Version = "8.2.0-oss2"
 	if _, err := resolveTamoss(raw, catalogue, nil); releaseErrorReason(err) != "UpgradeInProgress" {
 		t.Fatalf("unfinished upgrade accepted a rollback: %v", err)
 	}
@@ -245,7 +293,7 @@ func TestDependentControllersUseTheInstanceSchemaTarget(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(hibernateTestScheme(t)).Build()
 	storage := &StorageBackendReconciler{Client: c, Releases: catalogue}
 	profiles := &FlowProfileReconciler{Client: c, Releases: catalogue}
-	for _, version := range []string{"8.2.0-oss1", "8.2.0-oss2-rc2", "dev"} {
+	for _, version := range []string{"8.2.0-oss2", "dev"} {
 		instance := &tamossv1alpha1.Tamoss{ObjectMeta: metav1.ObjectMeta{Name: version, Namespace: "media"}, Spec: tamossv1alpha1.TamossSpec{Version: version}, Status: tamossv1alpha1.TamossStatus{CurrentVersion: version}}
 		state := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: instance.ResourceName("schema-state"), Namespace: instance.Namespace}, Data: map[string]string{schemaStateAppliedVersionKey: catalogue[version].Schema.Version}}
 		if err := c.Create(ctx, state); err != nil {
