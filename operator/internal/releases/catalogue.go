@@ -3,6 +3,7 @@ package releases
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -78,17 +79,17 @@ func Load(path string) (Catalogue, error) {
 
 func (c Catalogue) Select(version, current, pending string) (Release, error) {
 	if version == "" {
-		return Release{}, &SelectionError{"VersionRequired", "Set spec.version to the installed TAMOSS release before reconciliation can continue"}
+		return Release{}, &SelectionError{"VersionRequired", "Set spec.version to the installed TAMOSS release and wait for status.currentVersion to match and Ready=True before selecting an upgrade. For a new instance, select a release supported by this operator"}
 	}
 	target, exists := c[version]
 	if !exists {
-		return Release{}, &SelectionError{"UnsupportedVersion", fmt.Sprintf("Release %q is not supported by this operator installation", version)}
+		return Release{}, &SelectionError{"UnsupportedVersion", fmt.Sprintf("Release %q is not supported by this operator installation. Supported releases: %s. Apply a published operator install bundle supporting the requested release and all existing instance releases, then wait for the operator rollout before retrying", version, strings.Join(slices.Sorted(maps.Keys(c)), ", "))}
 	}
 	if pending != "" && pending != version {
 		return Release{}, &SelectionError{"UpgradeInProgress", fmt.Sprintf("Complete the selected upgrade to %q before changing spec.version", pending)}
 	}
 	if current != "" && current != version && (c[current].Version == "" || !slices.Contains(target.UpgradeFrom, current)) {
-		return Release{}, &SelectionError{"UnsupportedUpgrade", fmt.Sprintf("Release %q cannot be upgraded directly to %q", current, version)}
+		return Release{}, &SelectionError{"UnsupportedUpgrade", fmt.Sprintf("Release %q cannot be upgraded directly to %q. Follow the supported upgrade sequence in the release notes; downgrades are unsupported", current, version)}
 	}
 	return target, nil
 }

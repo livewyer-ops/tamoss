@@ -48,6 +48,12 @@ controller, RBAC and webhooks. The environment layer applies one or more
 namespaced `Tamoss` custom resources. `task env:apply` is an optional shortcut;
 `task env:wait` and `task env:status` are optional status helpers.
 
+`task env:apply` and `task env:diff` require the environment's operator overlay
+and validate that it renders before running platform commands. Checked-in
+`deploy/operator` manifests are for development, including in a release-tag
+checkout. Use the published release asset for installations. Explicit custom
+overlays can be selected with `OPERATOR_KUSTOMIZE_DIR`.
+
 For multiple tenant namespaces, install the platform and operator once, then
 apply namespace-local `Tamoss`, `StorageBackend`, and optional `FlowProfile`
 resources in each tenant
@@ -78,7 +84,7 @@ remove it with `helm plugin uninstall diff` before running the task.
 
 ## Operator Runtime
 
-The checked-in operator install includes leader election, voluntary leader
+The operator installation includes leader election, voluntary leader
 release on shutdown, readiness/liveness probes, a startup probe for slower
 initial cache and webhook setup, and bounded
 [Authentik](https://goauthentik.io/) HTTP clients. The

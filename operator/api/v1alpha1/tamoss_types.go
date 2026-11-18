@@ -9,6 +9,10 @@ import (
 //+kubebuilder:subresource:status
 //+kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.phase`
 //+kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+//+kubebuilder:printcolumn:name="Requested",type=string,JSONPath=`.spec.version`
+//+kubebuilder:printcolumn:name="Current",type=string,JSONPath=`.status.currentVersion`
+//+kubebuilder:printcolumn:name="Schema",type=string,JSONPath=`.status.schemaVersion`,priority=1
+//+kubebuilder:printcolumn:name="Upgrade",type=string,JSONPath=`.status.upgrade.phase`,priority=1
 //+kubebuilder:printcolumn:name="DB",type=string,JSONPath=`.status.providers.db.provider`
 //+kubebuilder:printcolumn:name="S3",type=string,JSONPath=`.status.providers.s3.provider`
 //+kubebuilder:printcolumn:name="Routing",type=string,JSONPath=`.status.providers.routing.provider`
