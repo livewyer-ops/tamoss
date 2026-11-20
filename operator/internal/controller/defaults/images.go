@@ -12,7 +12,7 @@ const (
 	DefaultPostgresClientImage = "postgres:18.6-alpine"
 	DefaultCNPGPostgresVersion = "18.6"
 	DefaultRustFSImage         = "rustfs/rustfs:1.0.0"
-	DefaultTAMSinImage         = "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
+	DefaultTAMSinImage         = "ghcr.io/livewyer-ops/tamsin:8.2.0-in3@sha256:e28e43ce069fc1c241d102228139822bc6423c6d5cca58fafdef88346c51e2e0"
 )
 
 var DevelopmentImages = releases.Images{

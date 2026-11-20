@@ -7,7 +7,7 @@ spec:
     name: tamoss
   input:
     kind: S3
-    uri: s3://tamoss/input/tiny.srt
+    uri: s3://tamoss/input/tiny-ingest.mp4
     sourceRef:
       name: fixture-s3
   profile: preserve@1
@@ -16,13 +16,13 @@ spec:
     maxInputs: 1
     verify: true
     tamsFlowProfiles:
-      - format: data
+      - format: video
         index: 0
         profileRef:
-          name: chainsaw-timed-text
+          name: chainsaw-video
   output:
     flowMetadata:
-      label: Chainsaw profiled timed text
+      label: Chainsaw profiled video
       description: TAMSin ingest using an operator-managed TAMS Flow Profile
       tags:
         test-purpose: integration

@@ -147,9 +147,7 @@ type IngestRunOptions struct {
 }
 
 // IngestRunFlowMetadata is a deliberately constrained subset of TAMS Flow
-// metadata. TAMSin applies it to every Flow in the generated graph without
-// exposing its general JSON override or technical media fields through the
-// Kubernetes API.
+// metadata. TAMSin applies it to the root Flow and independently stored essences.
 type IngestRunFlowMetadata struct {
 	// Label is the short human-readable name applied to generated Flows.
 	// +kubebuilder:validation:MinLength=1

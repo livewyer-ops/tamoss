@@ -72,8 +72,8 @@ kubectl -n "$TAMOSS_NAMESPACE" get ingestrun "$INGEST_RUN" -w
 ```
 
 The output block is optional. It is available only when `maxInputs` is exactly
-one. TAMSin applies this metadata to the root and member Flows in the generated
-graph. The `_tamsin_` tag prefix is reserved.
+one. TAMSin applies this metadata to the root Flow and independently stored
+essences. The `_tamsin_` tag prefix is reserved.
 
 The Console deliberately has no POST endpoint or create form. Use `kubectl`,
 GitOps, or deployment automation with explicit Kubernetes RBAC.

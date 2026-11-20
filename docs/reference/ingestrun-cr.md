@@ -95,7 +95,7 @@ spec:
 ```
 
 The HTTP credential Secret contains a JSON array accepted by TAMSin's
-[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#settings)
+[`source.http_headers`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in3/docs/configuration.md#settings)
 setting:
 
 ```yaml
@@ -160,8 +160,8 @@ spec:
       name: archive
 ```
 
-See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md#inputs)
-for selector expansion behaviour.
+See [TAMSin input reference](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in3/docs/configuration.md#inputs)
+for selector expansion behaviour. Inputs must contain MP4 or MPEG-TS media.
 
 ## IngestRun Spec Fields
 
@@ -179,9 +179,9 @@ for selector expansion behaviour.
 | `.spec.options.maxInputs` | Maximum S3 prefix expansion, from 1 to 10,000. Defaults to 1,000. |
 | `.spec.options.concurrency` | Parallel inputs, from 0 to 32. Zero selects the size-class default. |
 | `.spec.options.tamsFlowProfiles` | Optional TAMS Flow Profile assignments. Each item selects an essence `format`, zero-based stream `index`, and exactly one of `profileRef` or `profileID`. Format and index pairs must be unique. |
-| `.spec.output.flowMetadata.label` | Optional human-readable label, from 1 to 256 characters, applied by TAMSin to every Flow generated from the input. Requires `.spec.options.maxInputs: 1`; immutable. |
-| `.spec.output.flowMetadata.description` | Optional description, from 1 to 4,096 characters, applied by TAMSin to every Flow generated from the input. Requires `.spec.options.maxInputs: 1`; immutable. |
-| `.spec.output.flowMetadata.tags` | Up to 32 TAMS tags whose values are a string or an array of strings. TAMSin merges them into every Flow generated from the input. Requires `.spec.options.maxInputs: 1`; immutable. Names beginning with `_tamsin_`, in any letter case, are reserved. |
+| `.spec.output.flowMetadata.label` | Optional human-readable label, from 1 to 256 characters. Requires `.spec.options.maxInputs: 1`; immutable. |
+| `.spec.output.flowMetadata.description` | Optional description, from 1 to 4,096 characters. Requires `.spec.options.maxInputs: 1`; immutable. |
+| `.spec.output.flowMetadata.tags` | Up to 32 TAMS tags whose values are a string or an array of strings. Requires `.spec.options.maxInputs: 1`; immutable. Names beginning with `_tamsin_`, in any letter case, are reserved. |
 | `.spec.desiredState` | `Running` or `Cancelled`. Defaults to `Running`; cancellation is a one-way transition. |
 | `.spec.retryOf.name` | Name of a terminal parent run. |
 | `.spec.retryOf.uid` | Exact parent UID, preventing a replacement object with the same name from becoming the retry source. |
@@ -191,8 +191,8 @@ retry must preserve the parent's target, input, profile, size class, options,
 and output intent.
 
 `spec.output` is a curated metadata contract, not an arbitrary TAMSin argument
-surface. Its metadata applies to the complete generated Flow graph. It cannot
-set Flow IDs, Source IDs, `created_by`, generation,
+surface. Its metadata applies to the root Flow and independently stored
+essences. It cannot set Flow IDs, Source IDs, `created_by`, generation,
 read-only state, codec, container, essence parameters, Segment duration,
 FFmpeg arguments, or other technical metadata. TAMOSS renders the accepted
 fields through TAMSin's `--flow-metadata` option.
