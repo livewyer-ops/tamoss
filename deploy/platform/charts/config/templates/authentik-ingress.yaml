@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/component: server
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: authentik
-    app.kubernetes.io/version: "2026.2.3"
+    app.kubernetes.io/version: "2026.5.7"
   annotations:
     traefik.ingress.kubernetes.io/router.tls: "true"
   {{- if ne $tlsMode "disabled" }}

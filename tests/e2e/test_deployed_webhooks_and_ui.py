@@ -220,6 +220,16 @@ def test_deployed_ui_ingress_authenticates_and_proxies_api(
         _login_through_ui_ingress(page, e2e_target)
         page.on("pageerror", record_tamoss_page_error)
         page.get_by_role("heading", name="Overview", exact=True).wait_for()
+        page.set_viewport_size({"width": 390, "height": 844})
+        open_menu = page.get_by_role("button", name="Open navigation")
+        close_menu = page.get_by_role("complementary", name="Navigation").get_by_role(
+            "button", name="Close navigation"
+        )
+        open_menu.click()
+        expect(close_menu).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(open_menu).to_have_attribute("aria-expanded", "false")
+        expect(open_menu).to_be_focused()
         runtime_config = page.evaluate("() => window.__TAMOSS_CONFIG__")
         assert runtime_config == {"controlApiUrl": "/ui-api/v1"}
 

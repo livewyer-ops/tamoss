@@ -429,7 +429,6 @@ task_apply_env_platform() {
     task_platform_helmfile "$kubeconfig" "$helmfile_path" "$values_file" "$timeout" \
       apply \
       --skip-diff-on-install \
-      --sync-args "--server-side=true" \
       --wait \
       --wait-for-jobs
 
@@ -534,6 +533,8 @@ task_apply_env() {
   local platform_timeout="$5"
   local rendered namespace name instances
 
+  task_validate_operator_kustomize "$operator_kustomize_dir" || return $?
+
   rendered="$(mktemp)"
   trap "rm -f '$rendered'" EXIT
 
@@ -583,10 +584,13 @@ task_wait_env() {
   local kubeconfig="$2"
   local timeout="$3"
   local instance="${4:-}"
-  local rendered namespace name instances defaults_revision=""
+  local rendered namespace name instances defaults_nonempty defaults_revision=""
 
-  if [ -f "$environment_dir/operator/defaults.yaml" ] && yq -e 'length > 0' "$environment_dir/operator/defaults.yaml" >/dev/null; then
-    defaults_revision="sha256:$(sha256sum "$environment_dir/operator/defaults.yaml" | cut -d ' ' -f 1)"
+  if [ -f "$environment_dir/operator/defaults.yaml" ]; then
+    defaults_nonempty="$(yq 'length > 0' "$environment_dir/operator/defaults.yaml")" || return $?
+    if [ "$defaults_nonempty" = "true" ]; then
+      defaults_revision="sha256:$(sha256sum "$environment_dir/operator/defaults.yaml" | cut -d ' ' -f 1)"
+    fi
   fi
 
   rendered="$(mktemp)"
@@ -633,6 +637,7 @@ task_show_env_status() {
       printf '\n=== %s (%s) ===\n' "$name" "$namespace"
     fi
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o wide
+    task_print_tamoss_release_status "$kubeconfig" "$namespace" "$name"
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" get pods,svc,ingress
     if kubectl --kubeconfig "$kubeconfig" api-resources --api-group=gateway.networking.k8s.io | grep -q '^httproutes'; then
       kubectl --kubeconfig "$kubeconfig" -n "$namespace" get httproute
@@ -651,6 +656,8 @@ task_diff_env() {
   local operator_kustomize_dir="$5"
   local values_file="$environment_dir/platform-values.yaml"
   local instance="${6:-}"
+
+  task_validate_operator_kustomize "$operator_kustomize_dir" || return $?
 
   if [ ! -f "$values_file" ]; then
     echo "Environment platform values $values_file were not found." >&2
@@ -1073,7 +1080,9 @@ task_print_instance_summary() {
   else
     printf '\nTAMOSS is %s\n' "${phase:-unknown}"
   fi
-  printf '\nFirst-start lifecycle\n'
+  printf '\nRelease\n'
+  task_print_tamoss_release_status "$kubeconfig" "$api_namespace" "$tamoss_name"
+  printf '\nLifecycle\n'
   task_condition_summary "$kubeconfig" "$api_namespace" "Dependencies and backends" tamoss "$tamoss_name" "BackendsReady"
   if [ -n "$default_storagebackend" ]; then
     task_condition_summary "$kubeconfig" "$api_namespace" "Default bucket" storagebackend "$default_storagebackend" "BucketReady"

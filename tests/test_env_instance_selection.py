@@ -82,10 +82,11 @@ def rendered_fixture(tmp_path: Path) -> Path:
     return target
 
 
-def run_env_helper(script: str) -> subprocess.CompletedProcess[str]:
+def run_env_helper(script: str, **variables: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-c", f". .tasks/lib/env.sh\n{script}"],
         cwd=ROOT,
+        env={**os.environ, **variables},
         capture_output=True,
         text=True,
         check=False,
@@ -199,10 +200,12 @@ def test_instance_apply_uses_native_kustomize_for_generated_instances(
         [
             "bash",
             "-c",
-            ". .tasks/lib/env.sh\n"
-            'task_step() { shift; "$@"; }\n'
-            'kubectl() { printf "%s\\n" "$*" > "$KUBECTL_CALLED"; }\n'
-            'task_apply_env_instance "$ENVIRONMENT" kubeconfig prod-a',
+            (
+                ". .tasks/lib/env.sh\n"
+                'task_step() { shift; "$@"; }\n'
+                'kubectl() { printf "%s\\n" "$*" > "$KUBECTL_CALLED"; }\n'
+                'task_apply_env_instance "$ENVIRONMENT" kubeconfig prod-a'
+            ),
         ],
         cwd=ROOT,
         env=env,
@@ -242,6 +245,129 @@ kubectl() {
     if defaults_revision:
         assert f"appliedDefaultsRevision}}={defaults_revision}" in lines[2]
     assert "--for=condition=Ready" in lines[-1]
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "VersionRequired",
+        "VersionAdoptionRequired",
+        "UnsupportedVersion",
+        "UnsupportedUpgrade",
+        "UpgradeInProgress",
+        "UnsupportedSchemaVersion",
+    ],
+)
+@pytest.mark.parametrize("observed_generation", [6, 7])
+def test_wait_only_stops_for_blockers_from_requested_generation(
+    reason: str, observed_generation: int
+) -> None:
+    result = run_env_helper(
+        """
+task_step() { shift; "$@"; }
+kubectl() {
+  case "$*" in
+    *jsonpath='{.spec.version}') printf 'selected-release' ;;
+    *jsonpath='{.metadata.generation}') printf '7' ;;
+    *'jsonpath={range '*) printf '%s %s' "$OBSERVED_GENERATION" "$REASON" ;;
+    *go-template=*) printf 'Upgrade: Blocked (%s) - correction needed\\n' "$REASON" ;;
+    *) printf '%s\\n' "$*" ;;
+  esac
+}
+task_wait_tamoss_instance kubeconfig media instance 15m
+""",
+        OBSERVED_GENERATION=str(observed_generation),
+        REASON=reason,
+    )
+    blocked = observed_generation == 7
+    assert result.returncode == int(blocked), result.stderr
+    assert "observedGeneration}=7" in result.stdout
+    assert ("currentVersion}=selected-release" in result.stdout) != blocked
+    assert ("--for=condition=Ready" in result.stdout) != blocked
+    assert (f"Blocked ({reason}) - correction needed" in result.stderr) == blocked
+
+
+@pytest.mark.parametrize(
+    "failed_wait",
+    [
+        "observedGeneration",
+        "currentVersion",
+        "appliedDefaultsRevision",
+        "condition=Ready",
+    ],
+)
+@pytest.mark.parametrize("diagnostic_status", [0, 9])
+def test_wait_failure_keeps_exit_status_and_prints_diagnostics(
+    failed_wait: str, diagnostic_status: int
+) -> None:
+    result = run_env_helper(
+        """
+task_step() { shift; "$@"; }
+kubectl() {
+  case "$*" in
+    *jsonpath='{.spec.version}') printf 'selected-release' ;;
+    *jsonpath='{.metadata.generation}') printf '7' ;;
+    *'jsonpath={range '*) printf '7 ReleaseProgressing' ;;
+    *go-template=*) printf 'release diagnostics\\n'; return "$DIAGNOSTIC_STATUS" ;;
+    *"$FAILED_WAIT"*) return 42 ;;
+    *) printf '%s\\n' "$*" ;;
+  esac
+}
+task_wait_tamoss_instance kubeconfig media instance 1s sha256:expected
+""",
+        FAILED_WAIT=failed_wait,
+        DIAGNOSTIC_STATUS=str(diagnostic_status),
+    )
+    assert result.returncode == 42
+    assert "release diagnostics" in result.stderr
+
+
+def test_unpinned_instance_reports_adoption_without_waiting() -> None:
+    result = run_env_helper(
+        """
+kubectl() {
+  case "$*" in
+    *jsonpath='{.spec.version}') return 0 ;;
+    *jsonpath='{.metadata.generation}') printf '1' ;;
+    *go-template=*) printf 'Requested release: not selected\\n' ;;
+    *) printf 'unexpected wait\\n' ;;
+  esac
+}
+task_wait_tamoss_instance kubeconfig media instance 15m
+"""
+    )
+    assert result.returncode == 1
+    assert "requires spec.version" in result.stderr
+    assert "Requested release: not selected" in result.stderr
+    assert "unexpected wait" not in result.stdout
+
+
+@pytest.mark.parametrize("defaults", ["{}\n", "[\n"])
+def test_wait_accepts_empty_defaults_and_rejects_invalid_yaml(
+    tmp_path: Path, defaults: str
+) -> None:
+    if shutil.which("yq") is None:
+        pytest.skip("yq is required to inspect defaults")
+    operator = tmp_path / "operator"
+    operator.mkdir()
+    (operator / "defaults.yaml").write_text(defaults)
+    result = run_env_helper(
+        """
+task_render_environment() { :; }
+task_tamoss_instances_for() { printf 'instance\\n'; }
+task_tamoss_field_from_rendered() { printf 'media\\n'; }
+task_wait_tamoss_instance() { printf 'wait reached\\n'; }
+task_wait_env "$TEST_ENVIRONMENT" kubeconfig 1m
+""",
+        TEST_ENVIRONMENT=str(tmp_path),
+    )
+    if defaults == "{}\n":
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+        assert "wait reached" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "wait reached" not in result.stdout
 
 
 def test_generated_environment_inherits_hashed_operator_defaults(

@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRuntime } from "@/control/runtime";
 
@@ -55,10 +54,14 @@ function renderProbe() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const Wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  );
-  return { client, ...render(<Probe />, { wrapper: Wrapper }) };
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 function snapshot(observedAt: string, name: string) {

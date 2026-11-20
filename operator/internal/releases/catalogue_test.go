@@ -4,30 +4,42 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestUnsupportedVersionExplainsInstalledCatalogue(t *testing.T) {
+	catalogue := Catalogue{"dev": {Version: "dev"}, "8.2.0-oss1": {Version: "8.2.0-oss1"}}
+	_, err := catalogue.Select("8.2.0-oss2", "8.2.0-oss1", "")
+	selection, ok := err.(*SelectionError)
+	if !ok || selection.Reason != "UnsupportedVersion" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, message := range []string{`Release "8.2.0-oss2"`, "Supported releases: 8.2.0-oss1, dev.", "published operator install bundle", "all existing instance releases", "wait for the operator rollout"} {
+		if !strings.Contains(selection.Message, message) {
+			t.Errorf("missing %q in %q", message, selection.Message)
+		}
+	}
+}
 
 func TestPublishedEntriesAndTransitions(t *testing.T) {
 	catalogue, err := Load("../../config/releases/catalogue.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := catalogue["8.2.0-oss1"]
-	rc := catalogue["8.2.0-oss2-rc2"]
-	if rc.Schema.Version != old.Schema.Version || rc.Schema.DatabaseRevision != "20260810_0007" || catalogue["dev"].Schema.DatabaseRevision != "20260924_0008" {
-		t.Fatal("published RC schema was replaced by current family metadata")
+	old := catalogue["8.2.0-oss2"]
+	if old.Schema.Version != "8.2.0-oss2" || old.Schema.DatabaseRevision != "20260924_0008" || catalogue["dev"].Schema.DatabaseRevision != old.Schema.DatabaseRevision {
+		t.Fatal("published OSS2 schema was replaced by current family metadata")
 	}
 	for _, tc := range []struct {
 		desired, current string
 		allowed          bool
 	}{
 		{old.Version, "", true},
-		{rc.Version, old.Version, true},
 		{"dev", old.Version, true},
-		{"dev", rc.Version, true},
 		{old.Version, old.Version, true},
-		{old.Version, rc.Version, false},
-		{"dev", "8.1.0-oss6", false},
+		{old.Version, "dev", false},
+		{"dev", "8.2.0-oss1", false},
 		{"", old.Version, false},
 		{"latest", old.Version, false},
 	} {

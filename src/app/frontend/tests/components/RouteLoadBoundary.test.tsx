@@ -7,6 +7,10 @@ import {
   reloadStaleAssetsOnce,
 } from "@/components/RouteLoadBoundary";
 
+function BrokenView(): never {
+  throw new Error("invalid response");
+}
+
 afterEach(() => {
   sessionStorage.clear();
 });
@@ -25,10 +29,6 @@ describe("isStaleAssetError", () => {
   });
 
   it("does not describe an ordinary render failure as a console update", () => {
-    function BrokenView(): never {
-      throw new Error("invalid response");
-    }
-
     const report = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       render(

@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => {
     ranges = [[0, 12]];
     hlsEvents = new Map<string, (...args: unknown[]) => void>();
     hls = {
+      constructor: { Events },
       config: { maxBufferLength: 30 },
       audioTrack: 0,
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) =>

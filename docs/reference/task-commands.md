@@ -27,7 +27,7 @@ names or descriptions change.
 | --- | --- |
 | `task env:init TAMOSS_VERSION="$TAMOSS_VERSION" NAME=my-prod PROFILE=single-server DOMAIN=tamoss.example.com` | Scaffold platform values, an operator overlay and an instance Kustomize directory. Use `PROFILE=edge` for the ARM64 single-node profile. |
 | `task env:instance:init TAMOSS_VERSION="$TAMOSS_VERSION" ENV=my-prod INSTANCE=second` | Add an instance Kustomize directory to the environment. `NAMESPACE` defaults to the instance name; optional `PROFILE` and `DOMAIN` override inherited settings. |
-| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Convenience sequence for applying platform Helmfile releases, the TAMOSS operator and all environment resources. |
+| `task env:apply ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Validate the environment operator overlay, then apply platform Helmfile releases, the TAMOSS operator and all environment resources. Missing overlays fail before platform changes. |
 | `task env:instance:apply ENV=my-prod INSTANCE=second KUBECONFIG=/path/to/kubeconfig` | Apply the selected instance Kustomize directory. |
 | `task env:diff ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Diff platform Helmfile releases, TAMOSS operator and the environment. Add `INSTANCE=<name>` to diff one instance. |
 | `task env:wait ENV=my-prod KUBECONFIG=/path/to/kubeconfig` | Wait for observed instance generations, requested releases and the environment's defaults revision, then `Ready=True`. |
