@@ -7,16 +7,6 @@ stringData:
   AWS_ACCESS_KEY_ID: tamoss-local
   AWS_SECRET_ACCESS_KEY: tamoss-local-secret
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ingest-input-fixture
-data:
-  tiny.srt: |
-    1
-    00:00:00,000 --> 00:00:01,000
-    TAMOSS integration fixture
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -52,23 +42,13 @@ spec:
             - http://rustfs-svc:9000
             - s3
             - cp
-            - /fixture/
-            - s3://tamoss/input/
-            - --recursive
+            - /fixture/tiny-ingest.mp4
+            - s3://tamoss/input/tiny-ingest.mp4
           volumeMounts:
             - name: fixture
-              mountPath: /fixture/tiny.srt
-              subPath: tiny.srt
-              readOnly: true
-            - name: fixture
-              mountPath: /fixture/tiny-ingest.mp4
-              subPath: tiny-ingest.mp4
+              mountPath: /fixture
               readOnly: true
       volumes:
         - name: fixture
-          projected:
-            sources:
-              - configMap:
-                  name: ingest-input-fixture
-              - configMap:
-                  name: ingest-media-fixture
+          configMap:
+            name: ingest-media-fixture

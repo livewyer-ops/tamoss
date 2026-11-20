@@ -1,19 +1,26 @@
 apiVersion: tamoss.livewyer.io/v1alpha1
 kind: FlowProfile
 metadata:
-  name: chainsaw-timed-text
+  name: chainsaw-video
   annotations:
     confirmation.tamoss.livewyer.io/deletion: "true"
 spec:
   id: 8e35dbf7-d42b-55af-99ce-4a986b456f3b
   tamossRef:
     name: tamoss
-  label: Chainsaw timed text
+  label: Chainsaw video
   description: Profile used by the operator ingest lifecycle test
   tags:
     test-purpose: integration
   flowMetadata:
-    format: urn:x-nmos:format:data
-    codec: application/x-subrip
-    container: application/octet-stream
-    essence_parameters: {}
+    format: urn:x-nmos:format:video
+    codec: video/h264
+    container: video/mp4
+    essence_parameters:
+      frame_width: 64
+      frame_height: 64
+      frame_rate: {numerator: 10, denominator: 1}
+      pixel_aspect_ratio: {numerator: 1, denominator: 1}
+      aspect_ratio: {numerator: 1, denominator: 1}
+      interlace_mode: progressive
+      bit_depth: 8

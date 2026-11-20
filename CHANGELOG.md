@@ -18,6 +18,14 @@ Release versions track the BBC TAMS API version they implement, followed by an `
 - Correct the legacy upgrade sequence and start maintenance before shared
   platform updates.
 
+### Changed
+
+- Update managed ingest to TAMSin `8.2.0-in3`. It accepts MP4 and MPEG-TS
+  inputs and corrects gaps between continuous MPEG-TS Segments. Convert other
+  input formats before ingest. Re-ingesting earlier media can create new Flows
+  and upload the media again. Flow metadata applies to the root and to
+  independently stored essences.
+
 ## 8.2.0-oss3-rc1
 
 ### Fixed

@@ -106,7 +106,7 @@ spec:
               - name: FLOW_ID
                 value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'IngestRun', $namespace, 'profiled-ingest').status.output.rootFlowID)
               - name: PROFILE_ID
-                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-timed-text').status.profileID)
+                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-video').status.profileID)
             args:
               - -n
               - $NAMESPACE
@@ -120,7 +120,7 @@ spec:
               - tams
               - -At
               - -c
-              - "SELECT count(*) FROM tamoss_flows WHERE id = '$FLOW_ID'::uuid AND profile_id = '$PROFILE_ID'::uuid AND label = 'Chainsaw profiled timed text';"
+              - "SELECT count(*) FROM tamoss_flows WHERE id = '$FLOW_ID'::uuid AND profile_id = '$PROFILE_ID'::uuid AND label = 'Chainsaw profiled video';"
             timeout: 30s
             check:
               ($error == null): true
@@ -131,7 +131,7 @@ spec:
               - name: NAMESPACE
                 value: ($namespace)
               - name: PROFILE_ID
-                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-timed-text').status.profileID)
+                value: (x_k8s_get($client, 'tamoss.livewyer.io/v1alpha1', 'FlowProfile', $namespace, 'chainsaw-video').status.profileID)
             args:
               - -n
               - $NAMESPACE
@@ -145,7 +145,7 @@ spec:
               - tams
               - -At
               - -c
-              - "SELECT count(*) FROM tamoss_profiles WHERE id = '$PROFILE_ID'::uuid AND label = 'Chainsaw timed text';"
+              - "SELECT count(*) FROM tamoss_profiles WHERE id = '$PROFILE_ID'::uuid AND label = 'Chainsaw video';"
             timeout: 30s
             check:
               ($error == null): true

@@ -74,7 +74,7 @@ not create either `IngestRun` or `FlowProfile` resources.
 
 ## Remote Input Handling
 
-TAMSin uses its native `auto` input mode. Eligible segmented HTTP and S3
+TAMSin accepts MP4 and MPEG-TS media. It uses its native `auto` input mode. Eligible segmented HTTP and S3
 inputs stream without staging the whole file. HTTP streaming requires a strong
 ETag, a known length and byte-range support; S3 reads use a Version ID or ETag.
 If streaming is unavailable, TAMSin stages the input before changing TAMS.
@@ -113,11 +113,12 @@ writes. Check the previous attempt's output before requesting another run.
 A single-input run can carry constrained human-facing metadata for the Flow
 graph produced from that input: `label`, `description`, and ordinary TAMS
 tags. TAMOSS translates this intent to TAMSin's
-[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in2/docs/configuration.md)
+[`--flow-metadata`](https://github.com/livewyer-ops/tamsin/blob/8.2.0-in3/docs/configuration.md)
 argument. It does not expose arbitrary Flow JSON, technical media overrides,
 FFmpeg arguments, identifiers, or TAMSin's wider CLI.
 
-TAMSin applies the metadata to the root and every member Flow it generates.
+TAMSin applies the metadata to the root Flow. Independently stored essences
+inherit it. Muxed collection members retain their own metadata.
 Output intent requires `options.maxInputs: 1`: metadata for a manifest or
 prefix expansion needs a separate per-input template contract rather than an
 implicit convention. Tags whose names start with `_tamsin_` remain owned by

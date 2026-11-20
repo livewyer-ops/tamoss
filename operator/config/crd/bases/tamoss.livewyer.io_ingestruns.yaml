@@ -203,9 +203,7 @@ spec:
                   flowMetadata:
                     description: |-
                       IngestRunFlowMetadata is a deliberately constrained subset of TAMS Flow
-                      metadata. TAMSin applies it to every Flow in the generated graph without
-                      exposing its general JSON override or technical media fields through the
-                      Kubernetes API.
+                      metadata. TAMSin applies it to the root Flow and independently stored essences.
                     properties:
                       description:
                         description: |-

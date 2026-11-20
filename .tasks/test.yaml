@@ -22,7 +22,7 @@ tasks:
     desc: "Validation: exercise the pinned TAMSin release asset and event contract"
     silent: true
     vars:
-      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3
+      TAMSIN_IMAGE: ghcr.io/livewyer-ops/tamsin:8.2.0-in3@sha256:e28e43ce069fc1c241d102228139822bc6423c6d5cca58fafdef88346c51e2e0
       EVENT_DIR: '{{.ROOT_DIR}}/reports/tamsin-release-events'
     preconditions:
       - sh: command -v docker
@@ -35,7 +35,7 @@ tasks:
       - docker pull '{{.TAMSIN_IMAGE}}'
       - |
         version="$(docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --version)"
-        test "$version" = "tamsin version 8.2.0-in2 (889a6e7624342e1e502ed74d0f189cf2bc3e7737, 2026-09-08T09:59:50+01:00)"
+        test "$version" = "tamsin version 8.2.0-in3 (a8ec93963535edb98394381ef6ec49a0141f63c7, 2026-11-20T13:12:54Z)"
         printf '%s\n' "$version" > '{{.EVENT_DIR}}/version.txt'
       - |
         docker run --rm --pull=never '{{.TAMSIN_IMAGE}}' --format json profiles > '{{.EVENT_DIR}}/profiles.json'
@@ -45,7 +45,7 @@ tasks:
 
         report = json.load(open(sys.argv[1], encoding="utf-8"))
         assert report["schema_version"] == "1.0"
-        assert report["profile_policy_version"] == "1"
+        assert report["profile_policy_version"] == "2"
         assert [profile["selection"] for profile in report["profiles"]] == [
             "preserve@1",
             "demux@1",
