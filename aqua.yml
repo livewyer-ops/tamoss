@@ -17,7 +17,7 @@ registries:
 packages:
     # Core dev tools
     - name: go-task/task@v3.53.1 # Taskfile.yaml / .tasks/*.yaml
-    - name: astral-sh/uv@0.12.24 # src/pyproject.toml, uv.lock, every `task test:*`
+    - name: astral-sh/uv@0.13.7 # src/pyproject.toml, uv.lock, every `task test:*`
     - name: cli/cli@v2.101.0 # gh CLI for PR/issue management from dev machines
 
     # Kubernetes / deploy tooling
