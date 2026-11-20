@@ -202,7 +202,7 @@ def test_openpgp_exclusion_fails_closed_and_still_scans(
 def test_audit_policy_only_excludes_approved_advisories() -> None:
     for directory, advisories in (
         ("operator", {"GO-2026-5932"}),
-        ("src/app/frontend", {"GHSA-776f-qx25-q3cc", "GHSA-vfj7-8cjw-p6xm"}),
+        ("src/app/frontend", {"GHSA-vfj7-8cjw-p6xm"}),
     ):
         policy = tomllib.loads((REPO_ROOT / directory / "osv-scanner.toml").read_text())
         assert set(policy) == {"IgnoredVulns"}
@@ -216,8 +216,6 @@ def test_audit_policy_only_excludes_approved_advisories() -> None:
     )
     assert tasks["audit:frontend:dev"]["cmds"] == [{"task": "audit:frontend"}]
     assert tasks["audit:frontend:signatures"]["cmds"] == ["npm audit signatures"]
-    frontend = json.loads((REPO_ROOT / "src/app/frontend/package.json").read_text())
-    assert frontend["dependencies"]["@byomakase/omakase-player"] == "1.1.1"
 
 
 @pytest.mark.parametrize("task", ["audit:frontend", "audit:osv"])

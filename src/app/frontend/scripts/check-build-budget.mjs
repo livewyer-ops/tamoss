@@ -7,13 +7,13 @@ const INITIAL_JS_GZIP_LIMIT = 200 * 1024;
 const OMAKASE_LAZY_GZIP_LIMIT = 1.4 * 1024 * 1024;
 const DIRECT_RUNTIME_PACKAGE_LIMIT = 7;
 const OMAKASE_PACKAGE = "@byomakase/omakase-player";
-const OMAKASE_VERSION = "1.1.1";
+const OMAKASE_VERSION = "1.3.0";
 const OMAKASE_INTEGRITY =
-  "sha512-Bc5Md7N3hpeSBeTJgjg1/qNeUmm2MNmSv2cgxmrOoTzXYjoySjczlfRZQG0Rwyz+qarYTcwMCqt9yvLOhGapHA==";
+  "sha512-/TNzre/yBCHOgDGnYg3KA++FMr3FrZlS6MyIvyKvuObuzsdJNecZfNRtd4h7YQRZx51X8tfGF1M3IFFrCdHjQQ==";
 const HLS_PACKAGE = "hls.js";
-const HLS_VERSION = "1.7.3";
+const HLS_VERSION = "1.7.4";
 const HLS_INTEGRITY =
-  "sha512-MsPlx6yVW4Qv4C7mEVou4/gk/5cN2dVxOTnrNjPSmyH2f0Ln+/UkG10Ax1PE6OvrmTVPKgQYozTtBaPOuCzq7A==";
+  "sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==";
 const OMAKASE_PREVIEW_SOURCE = "src/player/MediaPreview.tsx";
 const OMAKASE_JS_MARKERS = ["OmakaseTrackApi", "OmakaseVttVersion"];
 const OMAKASE_CSS_MARKER = "omakase-player";
@@ -149,8 +149,8 @@ function assertExactHlsPackage() {
   const lockedRoot = packageLock.packages?.[""];
   const lockedHls = packageLock.packages?.[`node_modules/${HLS_PACKAGE}`];
   if (
-    packageManifest.dependencies?.[HLS_PACKAGE] !== HLS_VERSION ||
-    lockedRoot?.dependencies?.[HLS_PACKAGE] !== HLS_VERSION
+    packageManifest.devDependencies?.[HLS_PACKAGE] !== HLS_VERSION ||
+    lockedRoot?.devDependencies?.[HLS_PACKAGE] !== HLS_VERSION
   ) {
     throw new Error(`${HLS_PACKAGE} must be exactly pinned to ${HLS_VERSION}.`);
   }

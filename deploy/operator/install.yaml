@@ -1079,6 +1079,20 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .spec.version
+      name: Requested
+      type: string
+    - jsonPath: .status.currentVersion
+      name: Current
+      type: string
+    - jsonPath: .status.schemaVersion
+      name: Schema
+      priority: 1
+      type: string
+    - jsonPath: .status.upgrade.phase
+      name: Upgrade
+      priority: 1
+      type: string
     - jsonPath: .status.providers.db.provider
       name: DB
       type: string
@@ -2234,6 +2248,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -2291,6 +2312,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -2347,7 +2373,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -2479,19 +2505,6 @@ spec:
                           "MountOption" mounts all eligible Pod volumes with `-o context` mount option.
                           This requires all Pods that share the same volume to use the same SELinux label.
                           It is not possible to share the same volume among privileged and unprivileged Pods.
-                          Eligible volumes are in-tree FibreChannel and iSCSI volumes, and all CSI volumes
-                          whose CSI driver announces SELinux support by setting spec.seLinuxMount: true in their
-                          CSIDriver instance. Other volumes are always re-labelled recursively.
-                          "MountOption" value is allowed only when SELinuxMount feature gate is enabled.
-
-                          If not specified and SELinuxMount feature gate is enabled, "MountOption" is used.
-                          If not specified and SELinuxMount feature gate is disabled, "MountOption" is used for ReadWriteOncePod volumes
-                          and "Recursive" for all other volumes.
-
-                          This field affects only Pods that have SELinux label set, either in PodSecurityContext or in SecurityContext of all containers.
-
-                          All Pods that use the same volume should use the same seLinuxChangePolicy, otherwise some pods can get stuck in ContainerCreating state.
-                          Note that this field cannot be set when spec.os.name is windows.
                         type: string
                       seLinuxOptions:
                         description: |-
@@ -2653,6 +2666,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -2710,6 +2730,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -2766,7 +2791,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -3064,6 +3089,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -3121,6 +3153,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -3177,7 +3214,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -3236,10 +3273,21 @@ spec:
                       description: VolumeMount describes a mounting of a Volume within
                         a container.
                       properties:
-                        mountPath:
+                        bindMountOptions:
                           description: |-
-                            Path within the container at which the volume should be mounted.  Must
-                            not contain ':'.
+                            bindMountOptions is the list of additional bind mount options to apply when
+                            mounting this volume into the container. Allowed values are noexec,
+                            nodev, and nosuid. These are Linux mount options and have no effect on
+                            Windows nodes.
+                            This field is not supported with image volumes.
+                            This is an alpha field and requires enabling the VolumeBindMountOptions feature gate.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        mountPath:
+                          description: Path within the container at which the volume
+                            should be mounted.
                           type: string
                         mountPropagation:
                           description: |-
@@ -3274,8 +3322,6 @@ spec:
 
                             If this field is set to IfPossible or Enabled, MountPropagation must be set to
                             None (or be unspecified, which defaults to None).
-
-                            If this field is not specified, it is treated as an equivalent of Disabled.
                           type: string
                         subPath:
                           description: |-
@@ -3510,6 +3556,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items if unspecified, each key-value pair in the Data field of the referenced
@@ -3543,6 +3596,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -3630,6 +3690,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: Items is a list of downward API volume
                                 file
@@ -3695,6 +3762,13 @@ spec:
                                     - resource
                                     type: object
                                     x-kubernetes-map-type: atomic
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - path
                                 type: object
@@ -3713,6 +3787,18 @@ spec:
                                 Must be an empty string (default) or Memory.
                                 More info: https://kubernetes.io/docs/concepts/storage/volumes#emptydir
                               type: string
+                            mode:
+                              description: |-
+                                mode specifies the permission bits for the emptyDir directory, in numeric
+                                notation (e.g., 0755, 01777). Must be a value between 0000 and 01777.
+                                If not specified, defaults to 0777.
+                                This might be in conflict with other options that affect the file
+                                mode, like fsGroup. If fsGroup is specified, the fsGroup permissions
+                                will override the mode specified here.
+                                This field has no effect on Windows.
+                                This field is alpha and requires EmptyDirVolumeMode featuregate to be enabled.
+                              format: int32
+                              type: integer
                             sizeLimit:
                               anyOf:
                               - type: integer
@@ -3742,17 +3828,6 @@ spec:
                                a PersistentVolumeClaim (see EphemeralVolumeSource for more
                                information on the connection between this volume type
                                and PersistentVolumeClaim).
-
-                            Use PersistentVolumeClaim or one of the vendor-specific
-                            APIs for volumes that persist for longer than the lifecycle
-                            of an individual pod.
-
-                            Use CSI for light-weight local ephemeral volumes if the CSI driver is meant to
-                            be used that way - see the documentation of the driver for
-                            more information.
-
-                            A pod can use both types of ephemeral volumes and
-                            persistent volumes at the same time.
                           properties:
                             volumeClaimTemplate:
                               description: |-
@@ -3767,16 +3842,7 @@ spec:
                                 An existing PVC with that name that is not owned by the pod
                                 will *not* be used for the pod to avoid using an unrelated
                                 volume by mistake. Starting the pod is then blocked until
-                                the unrelated PVC is removed. If such a pre-created PVC is
-                                meant to be used by the pod, the PVC has to updated with an
-                                owner reference to the pod once the pod exists. Normally
-                                this should not be necessary, but it may be useful when
-                                manually reconstructing a broken cluster.
-
-                                This field is read-only and no changes will be made by Kubernetes
-                                to the PVC after it has been created.
-
-                                Required, must not be nil.
+                                the unrelated PVC is removed.
                               properties:
                                 metadata:
                                   description: |-
@@ -3806,8 +3872,8 @@ spec:
                                         * An existing PVC (PersistentVolumeClaim)
                                         If the provisioner or an external controller can support the specified data source,
                                         it will create a new volume based on the contents of the specified data source.
-                                        When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
-                                        and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                                        dataSource contents will be copied to dataSourceRef, and dataSourceRef contents will be
+                                        copied to dataSource when dataSourceRef.namespace is not specified.
                                         If the namespace is specified, then dataSourceRef will not be copied to dataSource.
                                       properties:
                                         apiGroup:
@@ -3842,18 +3908,6 @@ spec:
                                         compatibility, when namespace isn't specified in dataSourceRef,
                                         both fields (dataSource and dataSourceRef) will be set to the same
                                         value automatically if one of them is empty and the other is non-empty.
-                                        When namespace is specified in dataSourceRef,
-                                        dataSource isn't set to the same value and must be empty.
-                                        There are three important differences between dataSource and dataSourceRef:
-                                        * While dataSource only allows two specific types of objects, dataSourceRef
-                                          allows any non-core object, as well as PersistentVolumeClaim objects.
-                                        * While dataSource ignores disallowed values (dropping them), dataSourceRef
-                                          preserves all values, and generates an error if a disallowed value is
-                                          specified.
-                                        * While dataSource only allows local objects, dataSourceRef allows objects
-                                          in any namespaces.
-                                        (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
-                                        (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
                                       properties:
                                         apiGroup:
                                           description: |-
@@ -3976,7 +4030,6 @@ spec:
                                         If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
                                         set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
                                         exists.
-                                        More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
                                       type: string
                                     volumeMode:
                                       description: |-
@@ -4211,12 +4264,6 @@ spec:
                             - IfNotPresent: the kubelet pulls if the reference isn't already present on disk. Container creation will fail if the reference isn't present and the pull fails.
 
                             The volume gets re-resolved if the pod gets deleted and recreated, which means that new remote content will become available on pod recreation.
-                            A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
-                            The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
-                            The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                            The volume will be mounted read-only (ro).
-                            Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
-                            The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                           properties:
                             pullPolicy:
                               description: |-
@@ -4420,6 +4467,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             sources:
                               description: |-
                                 sources is the list of volume projections. Each entry in this list
@@ -4519,6 +4573,13 @@ spec:
                                           Mutually-exclusive with name.  The contents of all selected
                                           ClusterTrustBundles will be unified and deduplicated.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -4559,6 +4620,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -4655,6 +4723,13 @@ spec:
                                               - resource
                                               type: object
                                               x-kubernetes-map-type: atomic
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - path
                                           type: object
@@ -4676,27 +4751,6 @@ spec:
                                       Kubelet will begin trying to rotate the certificate at the time indicated
                                       by the signer using the PodCertificateRequest.Status.BeginRefreshAt
                                       timestamp.
-
-                                      Kubelet can write a single file, indicated by the credentialBundlePath
-                                      field, or separate files, indicated by the keyPath and
-                                      certificateChainPath fields.
-
-                                      The credential bundle is a single file in PEM format.  The first PEM
-                                      entry is the private key (in PKCS#8 format), and the remaining PEM
-                                      entries are the certificate chain issued by the signer (typically,
-                                      signers will return their certificate chain in leaf-to-root order).
-
-                                      Prefer using the credential bundle format, since your application code
-                                      can read it atomically.  If you use keyPath and certificateChainPath,
-                                      your application must make two separate file reads. If these coincide
-                                      with a certificate rotation, it is possible that the private key and leaf
-                                      certificate you read may not correspond to each other.  Your application
-                                      will need to check for this condition, and re-read until they are
-                                      consistent.
-
-                                      The named signer controls chooses the format of the certificate it
-                                      issues; consult the signer implementation's documentation to learn how to
-                                      use the certificates it issues.
                                     properties:
                                       certificateChainPath:
                                         description: |-
@@ -4762,6 +4816,13 @@ spec:
                                         description: Kubelet's generated CSRs will
                                           be addressed to this signer.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                       userAnnotations:
                                         additionalProperties:
                                           type: string
@@ -4821,6 +4882,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -4868,6 +4936,13 @@ spec:
                                           path is the path relative to the mount point of the file to project the
                                           token into.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -5074,6 +5149,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items If unspecified, each key-value pair in the Data field of the referenced
@@ -5107,6 +5189,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -5628,7 +5717,9 @@ spec:
                                   in the Tamoss namespace.
                                 properties:
                                   key:
-                                    description: The key to select.
+                                    description: |-
+                                      The key to select from the ConfigMap's Data field.
+                                      Keys in the BinaryData field are not currently propagated to container env vars.
                                     type: string
                                   name:
                                     default: ""
@@ -5763,10 +5854,7 @@ spec:
                                         * Kubernetes-defined prefixed names:
                                           * 'kubernetes.io/h2c' - HTTP/2 prior knowledge over cleartext as described in https://www.rfc-editor.org/rfc/rfc9113.html#name-starting-http-2-with-prior-
                                           * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
-                                          * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
-
-                                        * Other protocols should use implementation-defined prefixed names such as
-                                        mycompany.com/my-custom-protocol.
+                                          * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.
                                       type: string
                                     name:
                                       description: |-
@@ -5950,7 +6038,9 @@ spec:
                                       description: Selects a key of a ConfigMap.
                                       properties:
                                         key:
-                                          description: The key to select.
+                                          description: |-
+                                            The key to select from the ConfigMap's Data field.
+                                            Keys in the BinaryData field are not currently propagated to container env vars.
                                           type: string
                                         name:
                                           default: ""
@@ -7199,6 +7289,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -7256,6 +7353,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -7312,7 +7414,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -7444,19 +7546,6 @@ spec:
                           "MountOption" mounts all eligible Pod volumes with `-o context` mount option.
                           This requires all Pods that share the same volume to use the same SELinux label.
                           It is not possible to share the same volume among privileged and unprivileged Pods.
-                          Eligible volumes are in-tree FibreChannel and iSCSI volumes, and all CSI volumes
-                          whose CSI driver announces SELinux support by setting spec.seLinuxMount: true in their
-                          CSIDriver instance. Other volumes are always re-labelled recursively.
-                          "MountOption" value is allowed only when SELinuxMount feature gate is enabled.
-
-                          If not specified and SELinuxMount feature gate is enabled, "MountOption" is used.
-                          If not specified and SELinuxMount feature gate is disabled, "MountOption" is used for ReadWriteOncePod volumes
-                          and "Recursive" for all other volumes.
-
-                          This field affects only Pods that have SELinux label set, either in PodSecurityContext or in SecurityContext of all containers.
-
-                          All Pods that use the same volume should use the same seLinuxChangePolicy, otherwise some pods can get stuck in ContainerCreating state.
-                          Note that this field cannot be set when spec.os.name is windows.
                         type: string
                       seLinuxOptions:
                         description: |-
@@ -7618,6 +7707,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -7675,6 +7771,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -7731,7 +7832,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -8029,6 +8130,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -8086,6 +8194,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -8142,7 +8255,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -8201,10 +8314,21 @@ spec:
                       description: VolumeMount describes a mounting of a Volume within
                         a container.
                       properties:
-                        mountPath:
+                        bindMountOptions:
                           description: |-
-                            Path within the container at which the volume should be mounted.  Must
-                            not contain ':'.
+                            bindMountOptions is the list of additional bind mount options to apply when
+                            mounting this volume into the container. Allowed values are noexec,
+                            nodev, and nosuid. These are Linux mount options and have no effect on
+                            Windows nodes.
+                            This field is not supported with image volumes.
+                            This is an alpha field and requires enabling the VolumeBindMountOptions feature gate.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        mountPath:
+                          description: Path within the container at which the volume
+                            should be mounted.
                           type: string
                         mountPropagation:
                           description: |-
@@ -8239,8 +8363,6 @@ spec:
 
                             If this field is set to IfPossible or Enabled, MountPropagation must be set to
                             None (or be unspecified, which defaults to None).
-
-                            If this field is not specified, it is treated as an equivalent of Disabled.
                           type: string
                         subPath:
                           description: |-
@@ -8475,6 +8597,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items if unspecified, each key-value pair in the Data field of the referenced
@@ -8508,6 +8637,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -8595,6 +8731,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: Items is a list of downward API volume
                                 file
@@ -8660,6 +8803,13 @@ spec:
                                     - resource
                                     type: object
                                     x-kubernetes-map-type: atomic
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - path
                                 type: object
@@ -8678,6 +8828,18 @@ spec:
                                 Must be an empty string (default) or Memory.
                                 More info: https://kubernetes.io/docs/concepts/storage/volumes#emptydir
                               type: string
+                            mode:
+                              description: |-
+                                mode specifies the permission bits for the emptyDir directory, in numeric
+                                notation (e.g., 0755, 01777). Must be a value between 0000 and 01777.
+                                If not specified, defaults to 0777.
+                                This might be in conflict with other options that affect the file
+                                mode, like fsGroup. If fsGroup is specified, the fsGroup permissions
+                                will override the mode specified here.
+                                This field has no effect on Windows.
+                                This field is alpha and requires EmptyDirVolumeMode featuregate to be enabled.
+                              format: int32
+                              type: integer
                             sizeLimit:
                               anyOf:
                               - type: integer
@@ -8707,17 +8869,6 @@ spec:
                                a PersistentVolumeClaim (see EphemeralVolumeSource for more
                                information on the connection between this volume type
                                and PersistentVolumeClaim).
-
-                            Use PersistentVolumeClaim or one of the vendor-specific
-                            APIs for volumes that persist for longer than the lifecycle
-                            of an individual pod.
-
-                            Use CSI for light-weight local ephemeral volumes if the CSI driver is meant to
-                            be used that way - see the documentation of the driver for
-                            more information.
-
-                            A pod can use both types of ephemeral volumes and
-                            persistent volumes at the same time.
                           properties:
                             volumeClaimTemplate:
                               description: |-
@@ -8732,16 +8883,7 @@ spec:
                                 An existing PVC with that name that is not owned by the pod
                                 will *not* be used for the pod to avoid using an unrelated
                                 volume by mistake. Starting the pod is then blocked until
-                                the unrelated PVC is removed. If such a pre-created PVC is
-                                meant to be used by the pod, the PVC has to updated with an
-                                owner reference to the pod once the pod exists. Normally
-                                this should not be necessary, but it may be useful when
-                                manually reconstructing a broken cluster.
-
-                                This field is read-only and no changes will be made by Kubernetes
-                                to the PVC after it has been created.
-
-                                Required, must not be nil.
+                                the unrelated PVC is removed.
                               properties:
                                 metadata:
                                   description: |-
@@ -8771,8 +8913,8 @@ spec:
                                         * An existing PVC (PersistentVolumeClaim)
                                         If the provisioner or an external controller can support the specified data source,
                                         it will create a new volume based on the contents of the specified data source.
-                                        When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
-                                        and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                                        dataSource contents will be copied to dataSourceRef, and dataSourceRef contents will be
+                                        copied to dataSource when dataSourceRef.namespace is not specified.
                                         If the namespace is specified, then dataSourceRef will not be copied to dataSource.
                                       properties:
                                         apiGroup:
@@ -8807,18 +8949,6 @@ spec:
                                         compatibility, when namespace isn't specified in dataSourceRef,
                                         both fields (dataSource and dataSourceRef) will be set to the same
                                         value automatically if one of them is empty and the other is non-empty.
-                                        When namespace is specified in dataSourceRef,
-                                        dataSource isn't set to the same value and must be empty.
-                                        There are three important differences between dataSource and dataSourceRef:
-                                        * While dataSource only allows two specific types of objects, dataSourceRef
-                                          allows any non-core object, as well as PersistentVolumeClaim objects.
-                                        * While dataSource ignores disallowed values (dropping them), dataSourceRef
-                                          preserves all values, and generates an error if a disallowed value is
-                                          specified.
-                                        * While dataSource only allows local objects, dataSourceRef allows objects
-                                          in any namespaces.
-                                        (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
-                                        (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
                                       properties:
                                         apiGroup:
                                           description: |-
@@ -8941,7 +9071,6 @@ spec:
                                         If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
                                         set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
                                         exists.
-                                        More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
                                       type: string
                                     volumeMode:
                                       description: |-
@@ -9176,12 +9305,6 @@ spec:
                             - IfNotPresent: the kubelet pulls if the reference isn't already present on disk. Container creation will fail if the reference isn't present and the pull fails.
 
                             The volume gets re-resolved if the pod gets deleted and recreated, which means that new remote content will become available on pod recreation.
-                            A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
-                            The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
-                            The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                            The volume will be mounted read-only (ro).
-                            Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
-                            The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                           properties:
                             pullPolicy:
                               description: |-
@@ -9385,6 +9508,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             sources:
                               description: |-
                                 sources is the list of volume projections. Each entry in this list
@@ -9484,6 +9614,13 @@ spec:
                                           Mutually-exclusive with name.  The contents of all selected
                                           ClusterTrustBundles will be unified and deduplicated.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -9524,6 +9661,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -9620,6 +9764,13 @@ spec:
                                               - resource
                                               type: object
                                               x-kubernetes-map-type: atomic
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - path
                                           type: object
@@ -9641,27 +9792,6 @@ spec:
                                       Kubelet will begin trying to rotate the certificate at the time indicated
                                       by the signer using the PodCertificateRequest.Status.BeginRefreshAt
                                       timestamp.
-
-                                      Kubelet can write a single file, indicated by the credentialBundlePath
-                                      field, or separate files, indicated by the keyPath and
-                                      certificateChainPath fields.
-
-                                      The credential bundle is a single file in PEM format.  The first PEM
-                                      entry is the private key (in PKCS#8 format), and the remaining PEM
-                                      entries are the certificate chain issued by the signer (typically,
-                                      signers will return their certificate chain in leaf-to-root order).
-
-                                      Prefer using the credential bundle format, since your application code
-                                      can read it atomically.  If you use keyPath and certificateChainPath,
-                                      your application must make two separate file reads. If these coincide
-                                      with a certificate rotation, it is possible that the private key and leaf
-                                      certificate you read may not correspond to each other.  Your application
-                                      will need to check for this condition, and re-read until they are
-                                      consistent.
-
-                                      The named signer controls chooses the format of the certificate it
-                                      issues; consult the signer implementation's documentation to learn how to
-                                      use the certificates it issues.
                                     properties:
                                       certificateChainPath:
                                         description: |-
@@ -9727,6 +9857,13 @@ spec:
                                         description: Kubelet's generated CSRs will
                                           be addressed to this signer.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                       userAnnotations:
                                         additionalProperties:
                                           type: string
@@ -9786,6 +9923,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -9833,6 +9977,13 @@ spec:
                                           path is the path relative to the mount point of the file to project the
                                           token into.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -10039,6 +10190,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items If unspecified, each key-value pair in the Data field of the referenced
@@ -10072,6 +10230,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -10655,9 +10820,7 @@ spec:
                                   of the last element in request path, it is not a match (e.g. /foo/bar
                                   matches /foo/bar/baz, but does not match /foo/barbaz).
                                 * ImplementationSpecific: Interpretation of the Path matching is up to
-                                  the IngressClass. Implementations can treat this as a separate PathType
-                                  or treat it identically to Prefix or Exact path types.
-                                Implementations are required to support all path types.
+                                  the IngressClass.
                               type: string
                           required:
                           - backend
@@ -10789,9 +10952,7 @@ spec:
                                       of the last element in request path, it is not a match (e.g. /foo/bar
                                       matches /foo/bar/baz, but does not match /foo/barbaz).
                                     * ImplementationSpecific: Interpretation of the Path matching is up to
-                                      the IngressClass. Implementations can treat this as a separate PathType
-                                      or treat it identically to Prefix or Exact path types.
-                                    Implementations are required to support all path types.
+                                      the IngressClass.
                                   type: string
                               required:
                               - backend
@@ -12444,10 +12605,7 @@ spec:
                                 * Kubernetes-defined prefixed names:
                                   * 'kubernetes.io/h2c' - HTTP/2 prior knowledge over cleartext as described in https://www.rfc-editor.org/rfc/rfc9113.html#name-starting-http-2-with-prior-
                                   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
-                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
-
-                                * Other protocols should use implementation-defined prefixed names such as
-                                mycompany.com/my-custom-protocol.
+                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.
                               type: string
                             name:
                               description: |-
@@ -12519,10 +12677,7 @@ spec:
                                 * Kubernetes-defined prefixed names:
                                   * 'kubernetes.io/h2c' - HTTP/2 prior knowledge over cleartext as described in https://www.rfc-editor.org/rfc/rfc9113.html#name-starting-http-2-with-prior-
                                   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
-                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
-
-                                * Other protocols should use implementation-defined prefixed names such as
-                                mycompany.com/my-custom-protocol.
+                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.
                               type: string
                             name:
                               description: |-
@@ -12607,10 +12762,7 @@ spec:
                                 * Kubernetes-defined prefixed names:
                                   * 'kubernetes.io/h2c' - HTTP/2 prior knowledge over cleartext as described in https://www.rfc-editor.org/rfc/rfc9113.html#name-starting-http-2-with-prior-
                                   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
-                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
-
-                                * Other protocols should use implementation-defined prefixed names such as
-                                mycompany.com/my-custom-protocol.
+                                  * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.
                               type: string
                             name:
                               description: |-
@@ -13737,6 +13889,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -13794,6 +13953,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -13850,7 +14014,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -13982,19 +14146,6 @@ spec:
                           "MountOption" mounts all eligible Pod volumes with `-o context` mount option.
                           This requires all Pods that share the same volume to use the same SELinux label.
                           It is not possible to share the same volume among privileged and unprivileged Pods.
-                          Eligible volumes are in-tree FibreChannel and iSCSI volumes, and all CSI volumes
-                          whose CSI driver announces SELinux support by setting spec.seLinuxMount: true in their
-                          CSIDriver instance. Other volumes are always re-labelled recursively.
-                          "MountOption" value is allowed only when SELinuxMount feature gate is enabled.
-
-                          If not specified and SELinuxMount feature gate is enabled, "MountOption" is used.
-                          If not specified and SELinuxMount feature gate is disabled, "MountOption" is used for ReadWriteOncePod volumes
-                          and "Recursive" for all other volumes.
-
-                          This field affects only Pods that have SELinux label set, either in PodSecurityContext or in SecurityContext of all containers.
-
-                          All Pods that use the same volume should use the same seLinuxChangePolicy, otherwise some pods can get stuck in ContainerCreating state.
-                          Note that this field cannot be set when spec.os.name is windows.
                         type: string
                       seLinuxOptions:
                         description: |-
@@ -14194,6 +14345,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -14251,6 +14409,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -14307,7 +14470,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -14605,6 +14768,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -14662,6 +14832,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -14718,7 +14893,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -14777,10 +14952,21 @@ spec:
                       description: VolumeMount describes a mounting of a Volume within
                         a container.
                       properties:
-                        mountPath:
+                        bindMountOptions:
                           description: |-
-                            Path within the container at which the volume should be mounted.  Must
-                            not contain ':'.
+                            bindMountOptions is the list of additional bind mount options to apply when
+                            mounting this volume into the container. Allowed values are noexec,
+                            nodev, and nosuid. These are Linux mount options and have no effect on
+                            Windows nodes.
+                            This field is not supported with image volumes.
+                            This is an alpha field and requires enabling the VolumeBindMountOptions feature gate.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        mountPath:
+                          description: Path within the container at which the volume
+                            should be mounted.
                           type: string
                         mountPropagation:
                           description: |-
@@ -14815,8 +15001,6 @@ spec:
 
                             If this field is set to IfPossible or Enabled, MountPropagation must be set to
                             None (or be unspecified, which defaults to None).
-
-                            If this field is not specified, it is treated as an equivalent of Disabled.
                           type: string
                         subPath:
                           description: |-
@@ -15051,6 +15235,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items if unspecified, each key-value pair in the Data field of the referenced
@@ -15084,6 +15275,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -15171,6 +15369,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: Items is a list of downward API volume
                                 file
@@ -15236,6 +15441,13 @@ spec:
                                     - resource
                                     type: object
                                     x-kubernetes-map-type: atomic
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - path
                                 type: object
@@ -15254,6 +15466,18 @@ spec:
                                 Must be an empty string (default) or Memory.
                                 More info: https://kubernetes.io/docs/concepts/storage/volumes#emptydir
                               type: string
+                            mode:
+                              description: |-
+                                mode specifies the permission bits for the emptyDir directory, in numeric
+                                notation (e.g., 0755, 01777). Must be a value between 0000 and 01777.
+                                If not specified, defaults to 0777.
+                                This might be in conflict with other options that affect the file
+                                mode, like fsGroup. If fsGroup is specified, the fsGroup permissions
+                                will override the mode specified here.
+                                This field has no effect on Windows.
+                                This field is alpha and requires EmptyDirVolumeMode featuregate to be enabled.
+                              format: int32
+                              type: integer
                             sizeLimit:
                               anyOf:
                               - type: integer
@@ -15283,17 +15507,6 @@ spec:
                                a PersistentVolumeClaim (see EphemeralVolumeSource for more
                                information on the connection between this volume type
                                and PersistentVolumeClaim).
-
-                            Use PersistentVolumeClaim or one of the vendor-specific
-                            APIs for volumes that persist for longer than the lifecycle
-                            of an individual pod.
-
-                            Use CSI for light-weight local ephemeral volumes if the CSI driver is meant to
-                            be used that way - see the documentation of the driver for
-                            more information.
-
-                            A pod can use both types of ephemeral volumes and
-                            persistent volumes at the same time.
                           properties:
                             volumeClaimTemplate:
                               description: |-
@@ -15308,16 +15521,7 @@ spec:
                                 An existing PVC with that name that is not owned by the pod
                                 will *not* be used for the pod to avoid using an unrelated
                                 volume by mistake. Starting the pod is then blocked until
-                                the unrelated PVC is removed. If such a pre-created PVC is
-                                meant to be used by the pod, the PVC has to updated with an
-                                owner reference to the pod once the pod exists. Normally
-                                this should not be necessary, but it may be useful when
-                                manually reconstructing a broken cluster.
-
-                                This field is read-only and no changes will be made by Kubernetes
-                                to the PVC after it has been created.
-
-                                Required, must not be nil.
+                                the unrelated PVC is removed.
                               properties:
                                 metadata:
                                   description: |-
@@ -15347,8 +15551,8 @@ spec:
                                         * An existing PVC (PersistentVolumeClaim)
                                         If the provisioner or an external controller can support the specified data source,
                                         it will create a new volume based on the contents of the specified data source.
-                                        When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
-                                        and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                                        dataSource contents will be copied to dataSourceRef, and dataSourceRef contents will be
+                                        copied to dataSource when dataSourceRef.namespace is not specified.
                                         If the namespace is specified, then dataSourceRef will not be copied to dataSource.
                                       properties:
                                         apiGroup:
@@ -15383,18 +15587,6 @@ spec:
                                         compatibility, when namespace isn't specified in dataSourceRef,
                                         both fields (dataSource and dataSourceRef) will be set to the same
                                         value automatically if one of them is empty and the other is non-empty.
-                                        When namespace is specified in dataSourceRef,
-                                        dataSource isn't set to the same value and must be empty.
-                                        There are three important differences between dataSource and dataSourceRef:
-                                        * While dataSource only allows two specific types of objects, dataSourceRef
-                                          allows any non-core object, as well as PersistentVolumeClaim objects.
-                                        * While dataSource ignores disallowed values (dropping them), dataSourceRef
-                                          preserves all values, and generates an error if a disallowed value is
-                                          specified.
-                                        * While dataSource only allows local objects, dataSourceRef allows objects
-                                          in any namespaces.
-                                        (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
-                                        (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
                                       properties:
                                         apiGroup:
                                           description: |-
@@ -15517,7 +15709,6 @@ spec:
                                         If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
                                         set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
                                         exists.
-                                        More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
                                       type: string
                                     volumeMode:
                                       description: |-
@@ -15752,12 +15943,6 @@ spec:
                             - IfNotPresent: the kubelet pulls if the reference isn't already present on disk. Container creation will fail if the reference isn't present and the pull fails.
 
                             The volume gets re-resolved if the pod gets deleted and recreated, which means that new remote content will become available on pod recreation.
-                            A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
-                            The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
-                            The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                            The volume will be mounted read-only (ro).
-                            Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
-                            The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                           properties:
                             pullPolicy:
                               description: |-
@@ -15961,6 +16146,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             sources:
                               description: |-
                                 sources is the list of volume projections. Each entry in this list
@@ -16060,6 +16252,13 @@ spec:
                                           Mutually-exclusive with name.  The contents of all selected
                                           ClusterTrustBundles will be unified and deduplicated.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -16100,6 +16299,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -16196,6 +16402,13 @@ spec:
                                               - resource
                                               type: object
                                               x-kubernetes-map-type: atomic
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - path
                                           type: object
@@ -16217,27 +16430,6 @@ spec:
                                       Kubelet will begin trying to rotate the certificate at the time indicated
                                       by the signer using the PodCertificateRequest.Status.BeginRefreshAt
                                       timestamp.
-
-                                      Kubelet can write a single file, indicated by the credentialBundlePath
-                                      field, or separate files, indicated by the keyPath and
-                                      certificateChainPath fields.
-
-                                      The credential bundle is a single file in PEM format.  The first PEM
-                                      entry is the private key (in PKCS#8 format), and the remaining PEM
-                                      entries are the certificate chain issued by the signer (typically,
-                                      signers will return their certificate chain in leaf-to-root order).
-
-                                      Prefer using the credential bundle format, since your application code
-                                      can read it atomically.  If you use keyPath and certificateChainPath,
-                                      your application must make two separate file reads. If these coincide
-                                      with a certificate rotation, it is possible that the private key and leaf
-                                      certificate you read may not correspond to each other.  Your application
-                                      will need to check for this condition, and re-read until they are
-                                      consistent.
-
-                                      The named signer controls chooses the format of the certificate it
-                                      issues; consult the signer implementation's documentation to learn how to
-                                      use the certificates it issues.
                                     properties:
                                       certificateChainPath:
                                         description: |-
@@ -16303,6 +16495,13 @@ spec:
                                         description: Kubelet's generated CSRs will
                                           be addressed to this signer.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                       userAnnotations:
                                         additionalProperties:
                                           type: string
@@ -16362,6 +16561,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -16409,6 +16615,13 @@ spec:
                                           path is the path relative to the mount point of the file to project the
                                           token into.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -16615,6 +16828,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items If unspecified, each key-value pair in the Data field of the referenced
@@ -16648,6 +16868,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -17782,6 +18009,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -17839,6 +18073,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -17895,7 +18134,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -18027,19 +18266,6 @@ spec:
                           "MountOption" mounts all eligible Pod volumes with `-o context` mount option.
                           This requires all Pods that share the same volume to use the same SELinux label.
                           It is not possible to share the same volume among privileged and unprivileged Pods.
-                          Eligible volumes are in-tree FibreChannel and iSCSI volumes, and all CSI volumes
-                          whose CSI driver announces SELinux support by setting spec.seLinuxMount: true in their
-                          CSIDriver instance. Other volumes are always re-labelled recursively.
-                          "MountOption" value is allowed only when SELinuxMount feature gate is enabled.
-
-                          If not specified and SELinuxMount feature gate is enabled, "MountOption" is used.
-                          If not specified and SELinuxMount feature gate is disabled, "MountOption" is used for ReadWriteOncePod volumes
-                          and "Recursive" for all other volumes.
-
-                          This field affects only Pods that have SELinux label set, either in PodSecurityContext or in SecurityContext of all containers.
-
-                          All Pods that use the same volume should use the same seLinuxChangePolicy, otherwise some pods can get stuck in ContainerCreating state.
-                          Note that this field cannot be set when spec.os.name is windows.
                         type: string
                       seLinuxOptions:
                         description: |-
@@ -18201,6 +18427,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -18258,6 +18491,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -18314,7 +18552,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -18612,6 +18850,13 @@ spec:
                       grpc:
                         description: GRPC specifies a GRPC HealthCheckRequest.
                         properties:
+                          mode:
+                            description: |-
+                              mode specifies the connection mode for the gRPC health probe.
+                              Set to "TLS" to use TLS without certificate verification.
+                              Set to "Plaintext" to use a plaintext (insecure) connection explicitly.
+                              If not specified, the probe uses a plaintext (insecure) connection.
+                            type: string
                           port:
                             description: Port number of the gRPC service. Number must
                               be in the range 1 to 65535.
@@ -18669,6 +18914,11 @@ spec:
                               Number must be in the range 1 to 65535.
                               Name must be an IANA_SVC_NAME.
                             x-kubernetes-int-or-string: true
+                          protocol:
+                            description: |-
+                              Protocol selects the wire protocol for the probe connection.
+                              Nil defaults to HTTP/1.1.
+                            type: string
                           scheme:
                             description: |-
                               Scheme to use for connecting to the host.
@@ -18725,7 +18975,7 @@ spec:
                           Value must be non-negative integer. The value zero indicates stop immediately via
                           the kill signal (no opportunity to shut down).
                           This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
-                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                          Minimum value is 1. spec.
                         format: int64
                         type: integer
                       timeoutSeconds:
@@ -18784,10 +19034,21 @@ spec:
                       description: VolumeMount describes a mounting of a Volume within
                         a container.
                       properties:
-                        mountPath:
+                        bindMountOptions:
                           description: |-
-                            Path within the container at which the volume should be mounted.  Must
-                            not contain ':'.
+                            bindMountOptions is the list of additional bind mount options to apply when
+                            mounting this volume into the container. Allowed values are noexec,
+                            nodev, and nosuid. These are Linux mount options and have no effect on
+                            Windows nodes.
+                            This field is not supported with image volumes.
+                            This is an alpha field and requires enabling the VolumeBindMountOptions feature gate.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: set
+                        mountPath:
+                          description: Path within the container at which the volume
+                            should be mounted.
                           type: string
                         mountPropagation:
                           description: |-
@@ -18822,8 +19083,6 @@ spec:
 
                             If this field is set to IfPossible or Enabled, MountPropagation must be set to
                             None (or be unspecified, which defaults to None).
-
-                            If this field is not specified, it is treated as an equivalent of Disabled.
                           type: string
                         subPath:
                           description: |-
@@ -19058,6 +19317,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items if unspecified, each key-value pair in the Data field of the referenced
@@ -19091,6 +19357,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -19178,6 +19451,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: Items is a list of downward API volume
                                 file
@@ -19243,6 +19523,13 @@ spec:
                                     - resource
                                     type: object
                                     x-kubernetes-map-type: atomic
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - path
                                 type: object
@@ -19261,6 +19548,18 @@ spec:
                                 Must be an empty string (default) or Memory.
                                 More info: https://kubernetes.io/docs/concepts/storage/volumes#emptydir
                               type: string
+                            mode:
+                              description: |-
+                                mode specifies the permission bits for the emptyDir directory, in numeric
+                                notation (e.g., 0755, 01777). Must be a value between 0000 and 01777.
+                                If not specified, defaults to 0777.
+                                This might be in conflict with other options that affect the file
+                                mode, like fsGroup. If fsGroup is specified, the fsGroup permissions
+                                will override the mode specified here.
+                                This field has no effect on Windows.
+                                This field is alpha and requires EmptyDirVolumeMode featuregate to be enabled.
+                              format: int32
+                              type: integer
                             sizeLimit:
                               anyOf:
                               - type: integer
@@ -19290,17 +19589,6 @@ spec:
                                a PersistentVolumeClaim (see EphemeralVolumeSource for more
                                information on the connection between this volume type
                                and PersistentVolumeClaim).
-
-                            Use PersistentVolumeClaim or one of the vendor-specific
-                            APIs for volumes that persist for longer than the lifecycle
-                            of an individual pod.
-
-                            Use CSI for light-weight local ephemeral volumes if the CSI driver is meant to
-                            be used that way - see the documentation of the driver for
-                            more information.
-
-                            A pod can use both types of ephemeral volumes and
-                            persistent volumes at the same time.
                           properties:
                             volumeClaimTemplate:
                               description: |-
@@ -19315,16 +19603,7 @@ spec:
                                 An existing PVC with that name that is not owned by the pod
                                 will *not* be used for the pod to avoid using an unrelated
                                 volume by mistake. Starting the pod is then blocked until
-                                the unrelated PVC is removed. If such a pre-created PVC is
-                                meant to be used by the pod, the PVC has to updated with an
-                                owner reference to the pod once the pod exists. Normally
-                                this should not be necessary, but it may be useful when
-                                manually reconstructing a broken cluster.
-
-                                This field is read-only and no changes will be made by Kubernetes
-                                to the PVC after it has been created.
-
-                                Required, must not be nil.
+                                the unrelated PVC is removed.
                               properties:
                                 metadata:
                                   description: |-
@@ -19354,8 +19633,8 @@ spec:
                                         * An existing PVC (PersistentVolumeClaim)
                                         If the provisioner or an external controller can support the specified data source,
                                         it will create a new volume based on the contents of the specified data source.
-                                        When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
-                                        and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                                        dataSource contents will be copied to dataSourceRef, and dataSourceRef contents will be
+                                        copied to dataSource when dataSourceRef.namespace is not specified.
                                         If the namespace is specified, then dataSourceRef will not be copied to dataSource.
                                       properties:
                                         apiGroup:
@@ -19390,18 +19669,6 @@ spec:
                                         compatibility, when namespace isn't specified in dataSourceRef,
                                         both fields (dataSource and dataSourceRef) will be set to the same
                                         value automatically if one of them is empty and the other is non-empty.
-                                        When namespace is specified in dataSourceRef,
-                                        dataSource isn't set to the same value and must be empty.
-                                        There are three important differences between dataSource and dataSourceRef:
-                                        * While dataSource only allows two specific types of objects, dataSourceRef
-                                          allows any non-core object, as well as PersistentVolumeClaim objects.
-                                        * While dataSource ignores disallowed values (dropping them), dataSourceRef
-                                          preserves all values, and generates an error if a disallowed value is
-                                          specified.
-                                        * While dataSource only allows local objects, dataSourceRef allows objects
-                                          in any namespaces.
-                                        (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
-                                        (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
                                       properties:
                                         apiGroup:
                                           description: |-
@@ -19524,7 +19791,6 @@ spec:
                                         If the resource referred to by volumeAttributesClass does not exist, this PersistentVolumeClaim will be
                                         set to a Pending state, as reflected by the modifyVolumeStatus field, until such as a resource
                                         exists.
-                                        More info: https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/
                                       type: string
                                     volumeMode:
                                       description: |-
@@ -19759,12 +20025,6 @@ spec:
                             - IfNotPresent: the kubelet pulls if the reference isn't already present on disk. Container creation will fail if the reference isn't present and the pull fails.
 
                             The volume gets re-resolved if the pod gets deleted and recreated, which means that new remote content will become available on pod recreation.
-                            A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
-                            The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
-                            The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                            The volume will be mounted read-only (ro).
-                            Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
-                            The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                           properties:
                             pullPolicy:
                               description: |-
@@ -19968,6 +20228,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             sources:
                               description: |-
                                 sources is the list of volume projections. Each entry in this list
@@ -20067,6 +20334,13 @@ spec:
                                           Mutually-exclusive with name.  The contents of all selected
                                           ClusterTrustBundles will be unified and deduplicated.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -20107,6 +20381,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -20203,6 +20484,13 @@ spec:
                                               - resource
                                               type: object
                                               x-kubernetes-map-type: atomic
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - path
                                           type: object
@@ -20224,27 +20512,6 @@ spec:
                                       Kubelet will begin trying to rotate the certificate at the time indicated
                                       by the signer using the PodCertificateRequest.Status.BeginRefreshAt
                                       timestamp.
-
-                                      Kubelet can write a single file, indicated by the credentialBundlePath
-                                      field, or separate files, indicated by the keyPath and
-                                      certificateChainPath fields.
-
-                                      The credential bundle is a single file in PEM format.  The first PEM
-                                      entry is the private key (in PKCS#8 format), and the remaining PEM
-                                      entries are the certificate chain issued by the signer (typically,
-                                      signers will return their certificate chain in leaf-to-root order).
-
-                                      Prefer using the credential bundle format, since your application code
-                                      can read it atomically.  If you use keyPath and certificateChainPath,
-                                      your application must make two separate file reads. If these coincide
-                                      with a certificate rotation, it is possible that the private key and leaf
-                                      certificate you read may not correspond to each other.  Your application
-                                      will need to check for this condition, and re-read until they are
-                                      consistent.
-
-                                      The named signer controls chooses the format of the certificate it
-                                      issues; consult the signer implementation's documentation to learn how to
-                                      use the certificates it issues.
                                     properties:
                                       certificateChainPath:
                                         description: |-
@@ -20310,6 +20577,13 @@ spec:
                                         description: Kubelet's generated CSRs will
                                           be addressed to this signer.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                       userAnnotations:
                                         additionalProperties:
                                           type: string
@@ -20369,6 +20643,13 @@ spec:
                                                 May not contain the path element '..'.
                                                 May not start with the string '..'.
                                               type: string
+                                            user:
+                                              description: |-
+                                                user is Optional: The owner UID of the created file.
+                                                If specified, the item-level user field takes precedence over defaultUser.
+                                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                              format: int64
+                                              type: integer
                                           required:
                                           - key
                                           - path
@@ -20416,6 +20697,13 @@ spec:
                                           path is the path relative to the mount point of the file to project the
                                           token into.
                                         type: string
+                                      user:
+                                        description: |-
+                                          user is Optional: The owner UID of the created file.
+                                          If specified, the item-level user field takes precedence over defaultUser.
+                                          (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                        format: int64
+                                        type: integer
                                     required:
                                     - path
                                     type: object
@@ -20622,6 +20910,13 @@ spec:
                                 mode, like fsGroup, and the result can be other mode bits set.
                               format: int32
                               type: integer
+                            defaultUser:
+                              description: |-
+                                defaultUser is Optional: The owner UID of the created files by default.
+                                The defaultUser field is only used as a fallback when the item-level user field is unset.
+                                (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                              format: int64
+                              type: integer
                             items:
                               description: |-
                                 items If unspecified, each key-value pair in the Data field of the referenced
@@ -20655,6 +20950,13 @@ spec:
                                       May not contain the path element '..'.
                                       May not start with the string '..'.
                                     type: string
+                                  user:
+                                    description: |-
+                                      user is Optional: The owner UID of the created file.
+                                      If specified, the item-level user field takes precedence over defaultUser.
+                                      (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                    format: int64
+                                    type: integer
                                 required:
                                 - key
                                 - path
@@ -22252,59 +22554,37 @@ data:
   catalogue.json: |
     [
       {
-        "version": "8.2.0-oss1",
-        "sourceCommit": "239d2206db9facf41e85527f66a4fde2e50155c6",
+        "version": "8.2.0-oss2",
+        "sourceCommit": "4091499b44adabcc5b35c12f08523e9bf40056dc",
         "upgradeFrom": [
-          "8.1.0-oss6"
+          "8.2.0-oss1",
+          "8.2.0-oss2-rc2"
         ],
         "schema": {
-          "version": "8.2.0-oss1",
-          "previousVersion": "8.1.0-oss2",
-          "databaseRevision": "20260810_0007",
-          "tamsAPI": "8.2"
-        },
-        "images": {
-          "api": "livewyer/tamoss-api@sha256:7a63613f2d6fcc45dd11f6fc032f13c3d0bcdef503616e34f063247f470e81de",
-          "ui": "livewyer/tamoss-ui@sha256:56f4d0651f180edf6a07e85f8a1e3682b80b3a1e036c4d661ef04a355a84dbe1",
-          "console": "livewyer/tamoss-console-api@sha256:efaa97bada53b1199ab3315b5856cf16f78f3ae881e46322e502ba968661a587",
-          "postgresClient": "postgres:18-alpine",
-          "cnpgPostgresVersion": "18",
-          "rustfs": "rustfs/rustfs:1.0.0-beta.3",
-          "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
-        }
-      },
-      {
-        "version": "8.2.0-oss2-rc2",
-        "sourceCommit": "e688090c21365dd65a9b81d877412e6df1091a04",
-        "upgradeFrom": [
-          "8.2.0-oss1"
-        ],
-        "schema": {
-          "version": "8.2.0-oss1",
+          "version": "8.2.0-oss2",
           "previousVersion": "8.2.0-oss1",
-          "databaseRevision": "20260810_0007",
+          "databaseRevision": "20260924_0008",
           "tamsAPI": "8.2"
         },
         "images": {
-          "api": "livewyer/tamoss-api@sha256:c6e1288a78a94edb98d44712fb4d09fc5942b5f0db6445e0f3cb812af4599ae4",
-          "ui": "livewyer/tamoss-ui@sha256:63803978edb2645f6242e03712442196cffe9f71c4209cb3c90639021b42ccff",
-          "console": "livewyer/tamoss-console-api@sha256:da63e82185453272f5f13f9588a133469ff0942bbb41a3b8239f2a14339f1df7",
           "postgresClient": "postgres:18.6-alpine",
           "cnpgPostgresVersion": "18.6",
           "rustfs": "rustfs/rustfs:1.0.0",
-          "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3"
+          "tamsin": "ghcr.io/livewyer-ops/tamsin:8.2.0-in2@sha256:3b573d94fabec8ec7d07ae44e406f8ee72d8cc04e793ab628e6981b09c8b71e3",
+          "api": "livewyer/tamoss-api@sha256:73eea1da9c96f5a4a152500a7a6c62201c16d78e539f893a864710d1d03a1868",
+          "ui": "livewyer/tamoss-ui@sha256:4d2461e99b755f1acb7de0d7e6873a7180469d6d7330c1d78b816a5f70bb3a14",
+          "console": "livewyer/tamoss-console-api@sha256:2bb0f1326afbe74ccd71c5165d857fb913b4eb5917a9ac53d404f00a1258f599"
         }
       },
       {
         "version": "dev",
         "sourceCommit": "",
         "upgradeFrom": [
-          "8.2.0-oss1",
-          "8.2.0-oss2-rc2"
+          "8.2.0-oss2"
         ],
         "schema": {
           "version": "dev",
-          "previousVersion": "8.2.0-oss1",
+          "previousVersion": "8.2.0-oss2",
           "databaseRevision": "20260924_0008",
           "tamsAPI": "8.2"
         },
@@ -22322,7 +22602,7 @@ data:
 immutable: true
 kind: ConfigMap
 metadata:
-  name: operator-release-catalogue-8bbc942tmk
+  name: operator-release-catalogue-82999mk7gk
   namespace: tamoss-system
 ---
 apiVersion: v1
@@ -22504,7 +22784,7 @@ spec:
           name: operator-instance-defaults-5d92246b49
         name: instance-defaults
       - configMap:
-          name: operator-release-catalogue-8bbc942tmk
+          name: operator-release-catalogue-82999mk7gk
         name: release-catalogue
 ---
 apiVersion: cert-manager.io/v1

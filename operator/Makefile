@@ -60,7 +60,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=768 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: crd-size-budget
 crd-size-budget: manifests ## Fail before generated CRDs approach the API object-size ceiling.
@@ -121,7 +121,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	TAMOSS_RELEASE_CATALOGUE=$${TAMOSS_RELEASE_CATALOGUE:-config/releases/catalogue.json} go run -ldflags "$(GO_LDFLAGS)" ./cmd
 
 .PHONY: install-manifest
-install-manifest: manifests kustomize ## Render the public operator install manifest to ../deploy/operator/install.yaml.
+install-manifest: manifests kustomize ## Render the development operator install manifest to ../deploy/operator/install.yaml.
 	mkdir -p ../deploy/operator
 	$(KUSTOMIZE) build config/default > ../deploy/operator/install.yaml
 

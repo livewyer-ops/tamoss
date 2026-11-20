@@ -6,6 +6,7 @@ import "strings"
 // An empty set allows every namespace.
 type WatchNamespaceSet map[string]struct{}
 
+// Allows reports whether the namespace is in scope.
 func (s WatchNamespaceSet) Allows(namespace string) bool {
 	if len(s) == 0 {
 		return true
@@ -14,6 +15,7 @@ func (s WatchNamespaceSet) Allows(namespace string) bool {
 	return ok
 }
 
+// ParseWatchNamespaces reads a comma-separated namespace allow-list.
 func ParseWatchNamespaces(raw string) WatchNamespaceSet {
 	namespaces := WatchNamespaceSet{}
 	for _, item := range strings.Split(raw, ",") {

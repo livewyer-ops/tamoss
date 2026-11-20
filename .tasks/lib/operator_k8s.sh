@@ -23,6 +23,21 @@ task_render_operator_kustomize() {
   kubectl kustomize "$operator_kustomize_dir"
 }
 
+task_validate_operator_kustomize() {
+  local operator_kustomize_dir="$1"
+  local result=0
+
+  if [ ! -d "$operator_kustomize_dir" ]; then
+    echo "Operator overlay $operator_kustomize_dir was not found. Create an environment operator overlay referencing the published release install.yaml; see docs/operations/upgrades.md#environment-layout-migration. For development, set OPERATOR_KUSTOMIZE_DIR explicitly." >&2
+    return 1
+  fi
+  task_render_operator_kustomize "$operator_kustomize_dir" >/dev/null || result=$?
+  if [ "$result" -ne 0 ]; then
+    echo "Cannot render operator overlay $operator_kustomize_dir. Check its Kustomization and release install URL before applying the environment." >&2
+  fi
+  return "$result"
+}
+
 task_render_operator_monitoring() {
   kubectl kustomize operator/config/prometheus
 }
@@ -76,16 +91,33 @@ task_apply_tamoss_instance() {
     kubectl --kubeconfig "$kubeconfig" apply -f "$tamoss_cr"
 }
 
+task_print_tamoss_release_status() {
+  kubectl --kubeconfig "$1" -n "$2" get "tamoss/$3" -o go-template='Requested release: {{if .spec.version}}{{.spec.version}}{{else}}not selected{{end}}
+Completed release: {{if .status.currentVersion}}{{.status.currentVersion}}{{else}}not yet observed{{end}}
+Applied schema: {{if .status.schemaVersion}}{{.status.schemaVersion}}{{else}}not yet observed{{end}}
+Upgrade: {{if .status.upgrade.phase}}{{.status.upgrade.phase}}{{else}}not yet observed{{end}}{{with .status.upgrade.reason}} ({{.}}){{end}}{{with .status.upgrade.message}} - {{.}}{{end}}
+'
+}
+
 task_wait_tamoss_instance() {
+  local result=0
+  task_wait_tamoss_release "$@" || result=$?
+  if [ "$result" -ne 0 ]; then
+    task_print_tamoss_release_status "$1" "$2" "$3" >&2 || true
+  fi
+  return "$result"
+}
+
+task_wait_tamoss_release() {
   local kubeconfig="$1"
   local namespace="$2"
   local name="$3"
   local timeout="$4"
   local defaults_revision="${5:-}"
 
-  local version generation
-  version="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.spec.version}')"
-  generation="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.metadata.generation}')"
+  local version generation observed_reason
+  version="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.spec.version}')" || return $?
+  generation="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" -o jsonpath='{.metadata.generation}')" || return $?
   if [ -z "$version" ]; then
     echo "Tamoss/$name requires spec.version before it can become ready." >&2
     return 1
@@ -93,14 +125,21 @@ task_wait_tamoss_instance() {
   task_step "Instance: wait for Tamoss/$name generation $generation" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
       --for="jsonpath={.status.conditions[?(@.type==\"Ready\")].observedGeneration}=$generation" \
-      "tamoss/$name" --timeout="$timeout"
+      "tamoss/$name" --timeout="$timeout" || return $?
+  observed_reason="$(kubectl --kubeconfig "$kubeconfig" -n "$namespace" get "tamoss/$name" \
+    -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.observedGeneration}{" "}{.reason}{end}')" || return $?
+  case "$observed_reason" in
+    "$generation VersionRequired"|"$generation VersionAdoptionRequired"|"$generation UnsupportedVersion"|"$generation UnsupportedUpgrade"|"$generation UpgradeInProgress"|"$generation UnsupportedSchemaVersion")
+      return 1
+      ;;
+  esac
   task_step "Instance: wait for Tamoss/$name release $version" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
-      --for="jsonpath={.status.currentVersion}=$version" "tamoss/$name" --timeout="$timeout"
+      --for="jsonpath={.status.currentVersion}=$version" "tamoss/$name" --timeout="$timeout" || return $?
   if [ -n "$defaults_revision" ]; then
     task_step "Instance: wait for Tamoss/$name installation defaults" \
       kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
-        --for="jsonpath={.status.appliedDefaultsRevision}=$defaults_revision" "tamoss/$name" --timeout="$timeout"
+        --for="jsonpath={.status.appliedDefaultsRevision}=$defaults_revision" "tamoss/$name" --timeout="$timeout" || return $?
   fi
   task_step "Instance: wait for Tamoss/$name Ready" \
     kubectl --kubeconfig "$kubeconfig" -n "$namespace" wait \
