@@ -17,7 +17,7 @@ registries:
 packages:
     # Core dev tools
     - name: go-task/task@v3.53.1 # Taskfile.yaml / .tasks/*.yaml
-    - name: astral-sh/uv@0.12.24 # src/pyproject.toml, uv.lock, every `task test:*`
+    - name: astral-sh/uv@0.13.7 # src/pyproject.toml, uv.lock, every `task test:*`
     - name: cli/cli@v2.101.0 # gh CLI for PR/issue management from dev machines
 
     # Kubernetes / deploy tooling
@@ -40,7 +40,7 @@ packages:
     - name: kyverno/chainsaw@v0.2.15 # operator/test/chainsaw
       tags:
           - ci-operator-chainsaw
-    - name: golang/go@go1.27.2 # operator/go.mod and controller builds
+    - name: golang/go@go1.27.3 # operator/go.mod and controller builds
       tags:
           - ci-security
     - name: yannh/kubeconform@v0.8.0 # generated operator CRD/install manifest linting
@@ -54,7 +54,7 @@ packages:
           - ci-security
 
     # Languages & runtimes
-    - name: nodejs/node@v26.12.0 # frontend local npm scripts
+    - name: nodejs/node@v26.13.1 # frontend local npm scripts
     # uv manages the Python 3.14 toolchain used by CI and the API container.
     # Go is pinned with Kubernetes tooling above because only the operator uses it.
 
