@@ -1,6 +1,6 @@
 module github.com/livewyer-ops/tamoss/operator
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/cloudnative-pg/cloudnative-pg v1.30.1
