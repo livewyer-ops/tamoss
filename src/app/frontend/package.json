@@ -42,7 +42,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^5.0.0",
-    "jsdom": "^30.0.1",
+    "jsdom": "^31.0.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
