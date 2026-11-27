@@ -28,7 +28,7 @@ jobs:
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -103,7 +103,7 @@ jobs:
         run: echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
@@ -137,7 +137,7 @@ jobs:
           echo "go=$(python3 .github/scripts/aqua-version.py golang/go | sed 's/^go//')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ steps.aqua-versions.outputs.go }}
           cache-dependency-path: operator/go.sum
